@@ -25,6 +25,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
+pub mod cascade;
 pub mod comprehend;
 pub mod concept;
 pub mod engine;
@@ -35,6 +36,7 @@ pub mod produce;
 pub mod spectrum;
 pub mod text;
 
+pub use cascade::{CascadeConfig, Response};
 pub use comprehend::ComprehensionResult;
 pub use concept::{ConceptId, ConceptRegistry};
 pub use engine::{GroundedLanguage, LanguageStats};
@@ -150,6 +152,17 @@ pub fn pos_bias_weight(stage: u32) -> f32 {
         _ => 0.15,
     }
 }
+
+/// Cascade content-intent combine weights (V1 content stage): the
+/// comprehended prompt dominates; prior discourse context contributes
+/// less. (The drive / goal / listener / episodic weights map to brain
+/// subsystems V2 doesn't have yet — they enter as optional modulation.)
+pub const CASCADE_W_PROMPT: f32 = 1.0;
+pub const CASCADE_W_CONTEXT: f32 = 0.25;
+
+/// Speech-repair perturbation fraction — each recurrent retry adds this
+/// much Gaussian-ish noise to the content intent (V1 `REPAIR_NOISE_FRAC`).
+pub const CASCADE_REPAIR_NOISE_FRAC: f32 = 0.1;
 
 // -------------------------------------------------------------------------
 // Shared math — ports of the V1 `static` helpers in grounded_language.c.

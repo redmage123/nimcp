@@ -65,6 +65,17 @@ impl GroundedLanguage {
     /// Comprehend a text span (see module docs). Mutates discourse state
     /// (pushes the turn vector) and bumps `stats.total_comprehensions`.
     pub fn comprehend(&mut self, text: &str) -> ComprehensionResult {
+        self.comprehend_inner(text, true)
+    }
+
+    /// Comprehend without pushing the discourse turn — used by
+    /// self-comprehension in the cascade, so re-reading one's own output
+    /// doesn't pollute the discourse history.
+    pub fn comprehend_no_discourse(&mut self, text: &str) -> ComprehensionResult {
+        self.comprehend_inner(text, false)
+    }
+
+    fn comprehend_inner(&mut self, text: &str, push_discourse: bool) -> ComprehensionResult {
         let dim = self.lexicon.semantic_dim;
         let tokens = tokenize(text);
         if tokens.is_empty() {
@@ -133,7 +144,9 @@ impl GroundedLanguage {
         #[allow(clippy::cast_precision_loss)]
         let confidence = known as f32 * inv_wc;
         normalize_vector(&mut sem);
-        self.discourse.push_turn(&sem);
+        if push_discourse {
+            self.discourse.push_turn(&sem);
+        }
 
         ComprehensionResult {
             semantic_vector: sem,
