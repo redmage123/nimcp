@@ -81,6 +81,18 @@ impl Discourse {
         &self.context_vector
     }
 
+    /// Turn vector `back` steps from the newest (V1
+    /// `grounded_language_get_recent_turn_vector`): `back == 1` is the
+    /// newest turn, `back == 2` the one before it. Returns `None` when
+    /// `back == 0` or fewer than `back` turns exist.
+    #[must_use]
+    pub fn recent_turn_vector(&self, back: usize) -> Option<&[f32]> {
+        if back == 0 || self.turns.len() < back {
+            return None;
+        }
+        Some(&self.turns[self.turns.len() - back])
+    }
+
     /// Number of turns currently retained.
     #[must_use]
     pub fn depth(&self) -> usize {

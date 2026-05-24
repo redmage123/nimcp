@@ -148,6 +148,12 @@ pub struct LanguageConfig {
     pub min_produce_words: usize,
     /// Recurrent cascade settling iterations (1 = single pass).
     pub recurrent_max_iters: usize,
+    /// Opt-in: blend a reasoning conclusion into the cascade content
+    /// intent (V1 `reason_in_content`, Tier-1 Step E). Default OFF;
+    /// runtime-togglable via [`Brain::set_reason_in_content`]. Dormant
+    /// until V2 grows a reasoning subsystem to supply the vector.
+    #[serde(default)]
+    pub reason_in_content: bool,
 }
 
 impl Default for LanguageConfig {
@@ -161,6 +167,7 @@ impl Default for LanguageConfig {
             default_stage: 4,
             min_produce_words: 1,
             recurrent_max_iters: 1,
+            reason_in_content: false,
         }
     }
 }
@@ -208,6 +215,9 @@ pub struct Brain {
     /// (regex/templates rebuild from bundled data); only ML weights are
     /// checkpointed.
     toxicity: Option<ToxicityStack>,
+    /// Runtime `reason_in_content` toggle (V1 RPC parity). Initialized
+    /// from `LanguageConfig`; gates the cascade reasoning-blend source.
+    lang_reason_in_content: bool,
     /// Phase 6c — training-loss tracker for the adaptive network. Always
     /// present; `count == 0` before the first `learn()`.
     adaptive_loss: stats::LossTracker,
@@ -341,6 +351,10 @@ impl Brain {
         } else {
             (None, None)
         };
+        let lang_reason_in_content = config
+            .language
+            .as_ref()
+            .is_some_and(|c| c.reason_in_content);
 
         tracing::info!(
             layers = ?config.adaptive.layers,
@@ -431,6 +445,7 @@ impl Brain {
             memory,
             language,
             toxicity,
+            lang_reason_in_content,
             adaptive_loss: stats::LossTracker::default(),
             lnn_loss,
             thalamic_router,
@@ -837,11 +852,16 @@ impl Brain {
             }
         }
 
-        // (2) Cascade production.
+        // (2) Cascade production. V2 has no working-memory / imagination /
+        // reasoning subsystems yet, so no `ContentSources` are supplied —
+        // the cascade applies native discourse continuity only. The
+        // `reason_in_content` flag is threaded for parity (it gates the
+        // reasoning blend once a source exists).
         let cascade_cfg = CascadeConfig {
             stage,
             min_produce_words: cfg.min_produce_words,
             recurrent_max_iters: cfg.recurrent_max_iters,
+            reason_in_content: self.lang_reason_in_content,
         };
         let gl = self
             .language
@@ -878,6 +898,19 @@ impl Brain {
             .ok_or_else(|| Error::Config("toxicity stack not configured on this brain".into()))?;
         let r = tox.classify(text);
         Ok((r.predicted_harm, r.fairness_violation, r.would_block))
+    }
+
+    /// Runtime toggle for the cascade reasoning-blend (V1
+    /// `nimcp_brain_set_reason_in_content` RPC parity). Dormant until a
+    /// reasoning subsystem supplies a conclusion vector.
+    pub fn set_reason_in_content(&mut self, on: bool) {
+        self.lang_reason_in_content = on;
+    }
+
+    /// Current `reason_in_content` toggle.
+    #[must_use]
+    pub fn reason_in_content(&self) -> bool {
+        self.lang_reason_in_content
     }
 
     // -------------------------------------------------------------------------
@@ -1855,6 +1888,7 @@ mod tests {
                 default_stage: 4,
                 min_produce_words: 1,
                 recurrent_max_iters: 1,
+                reason_in_content: false,
             }),
             ..Default::default()
         }
@@ -1941,5 +1975,21 @@ mod tests {
         assert!(brain.language().is_none());
         assert!(brain.language_respond("hi").is_err());
         assert!(brain.classify_toxicity("hi").is_err());
+    }
+
+    #[tokio::test]
+    async fn reason_in_content_toggle_round_trips() {
+        // Default OFF (V1 parity), runtime-togglable.
+        let mut brain = Brain::new(language_config(31)).unwrap();
+        assert!(!brain.reason_in_content());
+        brain.set_reason_in_content(true);
+        assert!(brain.reason_in_content());
+        brain.set_reason_in_content(false);
+        assert!(!brain.reason_in_content());
+        // Initialized from config when set there.
+        let mut cfg = language_config(32);
+        cfg.language.as_mut().unwrap().reason_in_content = true;
+        let brain2 = Brain::new(cfg).unwrap();
+        assert!(brain2.reason_in_content());
     }
 }

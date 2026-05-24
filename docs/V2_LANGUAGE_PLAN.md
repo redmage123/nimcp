@@ -74,6 +74,34 @@ the last phase.
 | **T1–T3** | toxicity stack (pattern classifier + ML head + counterclaim) | L0 (independent of L1–L6) |
 | **L7+L8** | 15-stage cascade + SNN Broca/Wernicke wiring + brain integration (must-run toxicity gate above the cascade branch) + pybind | all |
 
+## Sync log
+
+### 2026-05-24 — V1 Tier-1 Steps D + E (cascade content-intent blending)
+
+V1 commits `655630deb` (Step D), `1525e5be6` (Step E), `b5cd45463` (Step E
+RPC follow-up) extended `cascade_stage_content` to blend four new sources
+into the content intent. Synced to V2:
+
+- **Discourse continuity (5c, w=0.15)** — *ported natively*. V2 has the
+  discourse ring, so `Discourse::recent_turn_vector(back)` + a prior-turn
+  (back = 2) blend in the cascade content build. This replaced the earlier
+  ad-hoc "running context vector" blend with V1's actual mechanism.
+- **Working memory (5b, w=0.25 × salience, 0.2 floor)**, **imagination
+  (5d, w=0.2 × vividness)**, **reasoning (5e, w=0.3 × confidence, gated by
+  `reason_in_content`)** — *structure ported, dormant*. V2 has no working-
+  memory / imagination / reasoning subsystems, so these enter through a
+  `ContentSources` hook the brain fills once those subsystems exist. The
+  weights + the per-element `isfinite`/truncation guard + the
+  `reason_in_content` opt-in (runtime-togglable via
+  `Brain::set_reason_in_content`, V1 RPC parity) are all in place; the
+  brain currently supplies no sources, so only discourse continuity is
+  active — exactly mirroring V1, where reasoning ships default-OFF.
+
+Not synced: the V1 RPC/daemon/client wiring (`b5cd45463`'s pybind +
+`brain_daemon.py` + `brain_client.py`) — V2's pybind/daemon language
+surface is itself a later deliverable; the brain-level setter/getter is
+the V2 equivalent for now.
+
 ## Acceptance per phase
 
 Each phase ships with crate tests green, no new clippy denials, and a

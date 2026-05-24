@@ -153,12 +153,25 @@ pub fn pos_bias_weight(stage: u32) -> f32 {
     }
 }
 
-/// Cascade content-intent combine weights (V1 content stage): the
-/// comprehended prompt dominates; prior discourse context contributes
-/// less. (The drive / goal / listener / episodic weights map to brain
-/// subsystems V2 doesn't have yet — they enter as optional modulation.)
+/// Cascade content-intent combine weights (V1 `cascade_stage_content`).
+/// The comprehended prompt dominates; cognitive/discourse sources add
+/// smaller, salience/confidence-scaled contributions. The drive / goal /
+/// listener / episodic weights map to brain subsystems V2 doesn't have
+/// yet and are omitted until those land.
 pub const CASCADE_W_PROMPT: f32 = 1.0;
-pub const CASCADE_W_CONTEXT: f32 = 0.25;
+/// Discourse continuity — the *prior* turn (back = 2) keeps replies
+/// coherent across exchanges (V1 Tier-1 Step E, 5c). V2 has the discourse
+/// ring so this blend is native.
+pub const CASCADE_W_DISCOURSE_CONTINUITY: f32 = 0.15;
+/// Working-memory content — each active WM item × salience (V1 Step D).
+pub const CASCADE_W_WORKING_MEMORY: f32 = 0.25;
+/// Imagination — active imagined-scenario vector × vividness (V1 Step E, 5d).
+pub const CASCADE_W_IMAGINATION: f32 = 0.2;
+/// Reasoning conclusion — vectorized chain × confidence, gated default-OFF
+/// by `reason_in_content` (V1 Step E, 5e).
+pub const CASCADE_W_REASONING: f32 = 0.3;
+/// Salience floor: WM items below this don't smear the intent (V1 Step D).
+pub const CASCADE_WM_SALIENCE_FLOOR: f32 = 0.2;
 
 /// Speech-repair perturbation fraction — each recurrent retry adds this
 /// much Gaussian-ish noise to the content intent (V1 `REPAIR_NOISE_FRAC`).

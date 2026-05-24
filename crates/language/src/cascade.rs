@@ -24,9 +24,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::GroundedLanguage;
 use crate::{
-    CASCADE_REPAIR_NOISE_FRAC, CASCADE_W_CONTEXT, CASCADE_W_PROMPT, XorShift64, cosine_similarity,
-    normalize_vector,
+    CASCADE_REPAIR_NOISE_FRAC, CASCADE_W_DISCOURSE_CONTINUITY, CASCADE_W_IMAGINATION,
+    CASCADE_W_PROMPT, CASCADE_W_REASONING, CASCADE_W_WORKING_MEMORY, CASCADE_WM_SALIENCE_FLOOR,
+    XorShift64, cosine_similarity, normalize_vector,
 };
+
+/// Add `scale · src` into `dst` element-wise, with V1's per-element
+/// `isfinite` guard and min-length (truncation) semantics — a stray NaN /
+/// Inf or a length mismatch never smears the intent.
+fn blend(dst: &mut [f32], src: &[f32], scale: f32) {
+    for (d, &s) in dst.iter_mut().zip(src.iter()) {
+        if s.is_finite() {
+            *d += scale * s;
+        }
+    }
+}
 
 /// Cascade configuration.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -38,6 +50,11 @@ pub struct CascadeConfig {
     /// Recurrent settling iterations (`1` = single pass; `>1` enables the
     /// speech-repair perturbation retry).
     pub recurrent_max_iters: usize,
+    /// Opt-in: blend the reasoning-conclusion source into content intent
+    /// (V1 `reason_in_content`, Tier-1 Step E 5e). Default OFF — zero cost
+    /// / zero behavior change until a reasoning source is supplied AND this
+    /// is enabled.
+    pub reason_in_content: bool,
 }
 
 impl Default for CascadeConfig {
@@ -46,8 +63,32 @@ impl Default for CascadeConfig {
             stage: 4,
             min_produce_words: 1,
             recurrent_max_iters: 1,
+            reason_in_content: false,
         }
     }
+}
+
+/// Cognitive/contextual sources blended into the content intent (V1
+/// `cascade_stage_content` Steps D + E). The language crate stays free of
+/// brain-subsystem dependencies: the caller (`nimcp-brain`, once it has
+/// working memory / imagination / reasoning) supplies these vectors; the
+/// discourse-continuity source is read natively from the engine's own ring.
+///
+/// All fields default to empty/`None` → the content build reduces to the
+/// prompt + native discourse continuity, i.e. the dormant case.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ContentSources<'a> {
+    /// Active working-memory items as `(feature_vector, salience)`. Items
+    /// below [`crate::CASCADE_WM_SALIENCE_FLOOR`] are skipped; the rest are
+    /// blended at `w_wm · salience` (V1 Step D).
+    pub working_memory: &'a [(&'a [f32], f32)],
+    /// Active imagined-scenario `(vector, vividness)`, blended at
+    /// `w_imag · vividness` (V1 Step E 5d).
+    pub imagination: Option<(&'a [f32], f32)>,
+    /// Reasoning `(conclusion_vector, confidence)`, blended at
+    /// `w_reason · confidence` — only when `CascadeConfig::reason_in_content`
+    /// is set (V1 Step E 5e).
+    pub reasoning: Option<(&'a [f32], f32)>,
 }
 
 /// Cascade output.
@@ -70,23 +111,53 @@ pub struct Response {
 }
 
 impl GroundedLanguage {
-    /// Run the cascade on `input`, producing a [`Response`].
+    /// Run the cascade on `input` with no external cognitive sources
+    /// (working memory / imagination / reasoning empty). Discourse
+    /// continuity is still applied natively.
     pub fn respond(&mut self, input: &str, cfg: &CascadeConfig) -> Response {
-        // Prior discourse context BEFORE this prompt folds in.
-        let ctx_before: Vec<f32> = self.discourse.context_vector().to_vec();
+        self.respond_with_sources(input, cfg, &ContentSources::default())
+    }
 
-        // 1. Comprehend the prompt (advances discourse).
+    /// Run the cascade on `input`, blending the supplied cognitive
+    /// [`ContentSources`] into the content intent (V1 `cascade_stage_content`
+    /// Steps D + E). The caller supplies working-memory / imagination /
+    /// reasoning vectors; discourse continuity is read from the engine.
+    pub fn respond_with_sources(
+        &mut self,
+        input: &str,
+        cfg: &CascadeConfig,
+        sources: &ContentSources<'_>,
+    ) -> Response {
+        // 1. Comprehend the prompt (advances discourse → newest = back 1,
+        //    so the prior exchange is back 2).
         let comp = self.comprehend(input);
 
-        // 2. Content: blend prompt comprehension + prior context.
+        // 2. Content: prompt + discourse continuity + cognitive sources.
         let dim = self.lexicon.semantic_dim;
         let mut intent = vec![0.0_f32; dim];
-        for (s, &p) in intent.iter_mut().zip(comp.semantic_vector.iter()) {
-            *s += CASCADE_W_PROMPT * p;
+        blend(&mut intent, &comp.semantic_vector, CASCADE_W_PROMPT);
+
+        // 5c. Discourse continuity — the PRIOR turn (back = 2). No-ops on
+        // the first turn. Read into a local to drop the borrow before the
+        // mutable produce passes.
+        if let Some(prior) = self.discourse.recent_turn_vector(2) {
+            let prior = prior.to_vec();
+            blend(&mut intent, &prior, CASCADE_W_DISCOURSE_CONTINUITY);
         }
-        if ctx_before.len() == dim {
-            for (s, &c) in intent.iter_mut().zip(ctx_before.iter()) {
-                *s += CASCADE_W_CONTEXT * c;
+        // 5b. Working memory — each salient item × salience.
+        for (vec, salience) in sources.working_memory {
+            if *salience >= CASCADE_WM_SALIENCE_FLOOR {
+                blend(&mut intent, vec, CASCADE_W_WORKING_MEMORY * *salience);
+            }
+        }
+        // 5d. Imagination — active scenario × vividness.
+        if let Some((vec, vividness)) = sources.imagination {
+            blend(&mut intent, vec, CASCADE_W_IMAGINATION * vividness);
+        }
+        // 5e. Reasoning — conclusion × confidence, gated default-OFF.
+        if cfg.reason_in_content {
+            if let Some((vec, confidence)) = sources.reasoning {
+                blend(&mut intent, vec, CASCADE_W_REASONING * confidence);
             }
         }
         normalize_vector(&mut intent);
@@ -181,7 +252,7 @@ mod tests {
     #[test]
     fn stage0_response_is_one_word() {
         let mut gl = engine();
-        let cfg = CascadeConfig { stage: 0, min_produce_words: 1, recurrent_max_iters: 1 };
+        let cfg = CascadeConfig { stage: 0, min_produce_words: 1, recurrent_max_iters: 1, reason_in_content: false };
         let r = gl.respond("dog cat", &cfg);
         assert_eq!(r.words.len(), 1, "stage-0 floor → one word");
     }
@@ -198,7 +269,7 @@ mod tests {
     #[test]
     fn recurrent_keeps_best_and_counts_iters() {
         let mut gl = engine();
-        let cfg = CascadeConfig { stage: 4, min_produce_words: 1, recurrent_max_iters: 5 };
+        let cfg = CascadeConfig { stage: 4, min_produce_words: 1, recurrent_max_iters: 5, reason_in_content: false };
         let r = gl.respond("dog", &cfg);
         assert!(r.iterations >= 1 && r.iterations <= 5);
         // Best self_match retained → confidence equals it when positive.
@@ -220,10 +291,91 @@ mod tests {
     fn deterministic() {
         let mut a = engine();
         let mut b = engine();
-        let cfg = CascadeConfig { stage: 3, min_produce_words: 2, recurrent_max_iters: 4 };
+        let cfg = CascadeConfig { stage: 3, min_produce_words: 2, recurrent_max_iters: 4, reason_in_content: false };
         let ra = a.respond("dog cat food", &cfg);
         let rb = b.respond("dog cat food", &cfg);
         assert_eq!(ra.words, rb.words);
         assert_eq!(ra.self_match, rb.self_match);
+    }
+
+    // --- Tier-1 Steps D + E: cognitive/discourse content sources ---
+
+    #[test]
+    fn discourse_continuity_uses_prior_turn() {
+        let mut gl = engine();
+        // First exchange establishes a prior turn.
+        gl.respond("cat", &CascadeConfig::default());
+        // Second turn: recent_turn_vector(2) is now the "cat" turn.
+        let prior = gl.discourse.recent_turn_vector(1).map(<[f32]>::to_vec);
+        assert!(prior.is_some());
+        // The cascade must not panic and must still respond.
+        let r = gl.respond("dog", &CascadeConfig::default());
+        assert!(!r.text.is_empty());
+        // After this turn, back=2 is the "cat" turn (continuity source).
+        assert!(gl.discourse.recent_turn_vector(2).is_some());
+    }
+
+    #[test]
+    fn working_memory_source_biases_production() {
+        let mut gl = engine();
+        // WM holds a strong "food" vector; prompt is empty-ish ("the").
+        let food = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let wm: [(&[f32], f32); 1] = [(&food, 1.0)];
+        let sources = ContentSources { working_memory: &wm, ..Default::default() };
+        let cfg = CascadeConfig::default();
+        let r = gl.respond_with_sources("the", &cfg, &sources);
+        // With "the" unknown, WM is the dominant content source → "food".
+        assert_eq!(r.words.first().map(String::as_str), Some("food"));
+    }
+
+    #[test]
+    fn wm_below_salience_floor_is_ignored() {
+        let mut gl = engine();
+        let food = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        // Salience 0.1 < floor 0.2 → contributes nothing.
+        let wm: [(&[f32], f32); 1] = [(&food, 0.1)];
+        let sources = ContentSources { working_memory: &wm, ..Default::default() };
+        let plain = gl.respond("the", &CascadeConfig::default());
+        let mut gl2 = engine();
+        let gated = gl2.respond_with_sources("the", &CascadeConfig::default(), &sources);
+        // Sub-floor WM doesn't change the (empty/diversity) outcome.
+        assert_eq!(plain.words, gated.words);
+    }
+
+    #[test]
+    fn reasoning_source_gated_by_flag() {
+        let reason = [0.0_f32, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; // points at "cat"
+        let sources = ContentSources {
+            reasoning: Some((&reason, 1.0)),
+            ..Default::default()
+        };
+        // OFF: reasoning ignored.
+        let mut gl_off = engine();
+        let off = gl_off.respond_with_sources(
+            "the",
+            &CascadeConfig { reason_in_content: false, ..Default::default() },
+            &sources,
+        );
+        // ON: reasoning drives intent toward "cat".
+        let mut gl_on = engine();
+        let on = gl_on.respond_with_sources(
+            "the",
+            &CascadeConfig { reason_in_content: true, ..Default::default() },
+            &sources,
+        );
+        assert_eq!(on.words.first().map(String::as_str), Some("cat"));
+        assert_ne!(off.words, on.words, "reason_in_content must gate the blend");
+    }
+
+    #[test]
+    fn blend_skips_non_finite() {
+        let mut gl = engine();
+        let bad = [f32::NAN, f32::INFINITY, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        let wm: [(&[f32], f32); 1] = [(&bad, 1.0)];
+        let sources = ContentSources { working_memory: &wm, ..Default::default() };
+        // Must not produce NaN/Inf in the response path.
+        let r = gl.respond_with_sources("dog", &CascadeConfig::default(), &sources);
+        assert!(r.confidence.is_finite());
+        assert!(r.self_match.is_finite());
     }
 }
