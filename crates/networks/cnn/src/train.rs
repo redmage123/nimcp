@@ -336,6 +336,74 @@ pub fn train_step_mse(
     target: &Array2<f32>,
     lr: f32,
 ) -> (f32, f32) {
+    let (loss, grads, grad_norm) = backward_grads(net, input, target);
+    // SGD step — `param -= lr * grad`. The gradient already absorbed
+    // the batch-mean denominator inside `mse_loss`.
+    sgd_step(net, &grads, lr);
+    (loss, grad_norm)
+}
+
+/// Phase 11-substrate — substrate-aware train step. Identical to
+/// [`train_step_mse`] when `substrate_cfg` is disabled. When enabled:
+///
+/// - `lr_eff = lr × dend.plasticity_mod` (cadence-refreshed effects).
+/// - Asymmetric LTP/LTD gating: positive gradient components scaled by
+///   `ltp_capacity`, negative by `ltd_capacity`.
+/// - Substrate ATP/ion/membrane debited by `n_plasticity = 1` after the
+///   step (a learning event carries a metabolic cost).
+///
+/// The forward used to compute gradients here is the *un-modulated*
+/// forward — substrate output-gain is an inference-path effect, not a
+/// training-target distortion. Modulation enters training only through
+/// the LR + LTP/LTD gates, matching the LNN adapter.
+pub fn train_step_mse_modulated(
+    net: &mut CnnNetwork,
+    input: &Array4<f32>,
+    target: &Array2<f32>,
+    lr: f32,
+) -> (f32, f32) {
+    if !net.substrate_cfg.enabled {
+        return train_step_mse(net, input, target, lr);
+    }
+    // Refresh cached effects on the configured cadence.
+    let should_recompute = net.substrate_effects.is_none()
+        || net.substrate_tick_counter >= net.substrate_cfg.update_period;
+    if should_recompute {
+        net.recompute_substrate_effects();
+        net.substrate_tick_counter = 0;
+    } else {
+        net.substrate_tick_counter = net.substrate_tick_counter.saturating_add(1);
+    }
+
+    let (loss, grads, grad_norm) = backward_grads(net, input, target);
+
+    let lr_eff = crate::substrate_adapter::effective_lr(
+        lr,
+        net.substrate_effects.as_ref(),
+        net.substrate_cfg.plasticity_mod_on,
+    );
+    let (ltp, ltd) = crate::substrate_adapter::ltp_ltd_gates(
+        net.substrate_effects.as_ref(),
+        net.substrate_cfg.ltp_ltd_asymmetry_on,
+    );
+    sgd_step_gated(net, &grads, lr_eff, ltp, ltd);
+
+    // Debit a single plasticity event.
+    if let Some(ref mut s) = net.substrate_state {
+        nimcp_substrate::debit_activity(s, &net.substrate_cfg.dynamics, 0, 1);
+    }
+
+    (loss, grad_norm)
+}
+
+/// Forward + backward against an MSE target. Returns
+/// `(loss, gradients, grad_norm)` without applying any update — shared
+/// by [`train_step_mse`] and [`train_step_mse_modulated`].
+fn backward_grads(
+    net: &CnnNetwork,
+    input: &Array4<f32>,
+    target: &Array2<f32>,
+) -> (f32, CnnGradients, f32) {
     let (output, cache) = forward_with_cache(net, input);
     let (loss, grad_out) = mse_loss(&output, target);
 
@@ -423,11 +491,7 @@ pub fn train_step_mse(
     }
     let grad_norm = sq_sum.sqrt();
 
-    // SGD step — `param -= lr * grad`. The gradient already absorbed
-    // the batch-mean denominator inside `mse_loss`.
-    sgd_step(net, &grads, lr);
-
-    (loss, grad_norm)
+    (loss, grads, grad_norm)
 }
 
 /// Apply `param -= lr * grad` to every trainable layer.
@@ -464,11 +528,54 @@ pub fn sgd_step(net: &mut CnnNetwork, grads: &CnnGradients, lr: f32) {
     }
 }
 
+/// Like [`sgd_step`] but applies asymmetric LTP/LTD gating: each
+/// gradient component is scaled by `ltp` when it would *decrease* the
+/// weight (potentiation under `param -= lr*grad` means `grad < 0`) and
+/// by `ltd` when it would *increase* it. `(ltp, ltd) = (1.0, 1.0)` makes
+/// this bit-identical to [`sgd_step`].
+pub fn sgd_step_gated(net: &mut CnnNetwork, grads: &CnnGradients, lr: f32, ltp: f32, ltd: f32) {
+    let gate = |g: f32| -> f32 {
+        // `param -= lr*g`: g < 0 raises the weight (LTP), g > 0 lowers it (LTD).
+        if g < 0.0 { g * ltp } else { g * ltd }
+    };
+    for (idx, layer) in net.layers.iter_mut().enumerate() {
+        match layer {
+            CnnLayer::Conv(c) => {
+                if let (Some(gw), Some(gb)) =
+                    (grads.conv_weight[idx].as_ref(), grads.conv_bias[idx].as_ref())
+                {
+                    for (w, g) in c.weight.iter_mut().zip(gw.iter()) {
+                        *w -= lr * gate(*g);
+                    }
+                    for (b, g) in c.bias.iter_mut().zip(gb.iter()) {
+                        *b -= lr * gate(*g);
+                    }
+                }
+            }
+            CnnLayer::Linear(l) => {
+                if let (Some(gw), Some(gb)) = (
+                    grads.linear_weight[idx].as_ref(),
+                    grads.linear_bias[idx].as_ref(),
+                ) {
+                    for (w, g) in l.weight.iter_mut().zip(gw.iter()) {
+                        *w -= lr * gate(*g);
+                    }
+                    for (b, g) in l.bias.iter_mut().zip(gb.iter()) {
+                        *b -= lr * gate(*g);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 // Suppress unused-import warning when tests only build the lib.
 #[allow(dead_code)]
 fn _force_array3_use(_: &Array3<f32>) {}
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::network::{CnnConfig, CnnLayerSpec};
@@ -486,6 +593,8 @@ mod tests {
                 CnnLayerSpec::Linear { out_features: 1 },
             ],
             rng_seed: 0xCFE,
+            substrate: Default::default(),
+            thalamic: None,
         };
         let mut net = CnnNetwork::new(cfg).unwrap();
 
@@ -537,6 +646,8 @@ mod tests {
                 CnnLayerSpec::Linear { out_features: 1 },
             ],
             rng_seed: 0xC0,
+            substrate: Default::default(),
+            thalamic: None,
         };
         let mut net = CnnNetwork::new(cfg).unwrap();
 

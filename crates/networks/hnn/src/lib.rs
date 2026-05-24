@@ -29,7 +29,10 @@
 pub mod integrator;
 pub mod mlp;
 pub mod network;
+pub mod substrate_adapter;
 
 pub use integrator::symplectic_euler_step;
 pub use mlp::{HamiltonianMlp, MlpActivation};
-pub use network::{HnnConfig, HnnError, HnnNetwork};
+pub use network::{
+    HnnConfig, HnnError, HnnNetwork, HnnSubstrateCfg, HnnThalamicCfg,
+};

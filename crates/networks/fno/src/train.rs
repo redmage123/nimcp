@@ -287,6 +287,68 @@ pub fn train_step_mse(
     target: &Array3<f32>,
     lr: f32,
 ) -> (f32, f32) {
+    let (loss, grads, grad_norm) = backward_grads(net, input, target);
+    sgd_step(net, &grads, lr);
+    (loss, grad_norm)
+}
+
+/// Phase 11-substrate — substrate-aware train step. Identical to
+/// [`train_step_mse`] when `substrate_cfg` is disabled. When enabled:
+///
+/// - `lr_eff = lr × dend.plasticity_mod` (cadence-refreshed effects).
+/// - Asymmetric LTP/LTD gating on each gradient component.
+/// - A single plasticity event is debited from the substrate after the
+///   step.
+///
+/// The forward used to compute gradients is the *un-modulated* forward —
+/// substrate output-gain is an inference effect, not a training-target
+/// distortion. Modulation enters training only through LR + LTP/LTD.
+pub fn train_step_mse_modulated(
+    net: &mut FnoNetwork,
+    input: &Array3<f32>,
+    target: &Array3<f32>,
+    lr: f32,
+) -> (f32, f32) {
+    if !net.substrate_cfg.enabled {
+        return train_step_mse(net, input, target, lr);
+    }
+    let should_recompute = net.substrate_effects.is_none()
+        || net.substrate_tick_counter >= net.substrate_cfg.update_period;
+    if should_recompute {
+        net.recompute_substrate_effects();
+        net.substrate_tick_counter = 0;
+    } else {
+        net.substrate_tick_counter = net.substrate_tick_counter.saturating_add(1);
+    }
+
+    let (loss, grads, grad_norm) = backward_grads(net, input, target);
+
+    let lr_eff = crate::substrate_adapter::effective_lr(
+        lr,
+        net.substrate_effects.as_ref(),
+        net.substrate_cfg.plasticity_mod_on,
+    );
+    let (ltp, ltd) = crate::substrate_adapter::ltp_ltd_gates(
+        net.substrate_effects.as_ref(),
+        net.substrate_cfg.ltp_ltd_asymmetry_on,
+    );
+    sgd_step_gated(net, &grads, lr_eff, ltp, ltd);
+
+    if let Some(ref mut s) = net.substrate_state {
+        nimcp_substrate::debit_activity(s, &net.substrate_cfg.dynamics, 0, 1);
+    }
+
+    (loss, grad_norm)
+}
+
+/// Forward + backward against an MSE target. Returns
+/// `(loss, gradients, grad_norm)` without applying any update — shared
+/// by [`train_step_mse`] and [`train_step_mse_modulated`].
+fn backward_grads(
+    net: &FnoNetwork,
+    input: &Array3<f32>,
+    target: &Array3<f32>,
+) -> (f32, FnoGradients, f32) {
     // Forward — cache the output of every layer for backward.
     let h0 = net.input_proj.forward(input);
     let mut block_outs: Vec<Array3<f32>> = Vec::with_capacity(net.blocks.len());
@@ -343,8 +405,7 @@ pub fn train_step_mse(
     }
     let grad_norm = sq.sqrt();
 
-    sgd_step(net, &grads, lr);
-    (loss, grad_norm)
+    (loss, grads, grad_norm)
 }
 
 pub fn sgd_step(net: &mut FnoNetwork, grads: &FnoGradients, lr: f32) {
@@ -376,7 +437,44 @@ pub fn sgd_step(net: &mut FnoNetwork, grads: &FnoGradients, lr: f32) {
     }
 }
 
+/// Like [`sgd_step`] but applies asymmetric LTP/LTD gating: a gradient
+/// component is scaled by `ltp` when it would *raise* the weight (`g < 0`
+/// under `param -= lr*g`) and by `ltd` when it would *lower* it.
+/// `(ltp, ltd) = (1.0, 1.0)` is bit-identical to [`sgd_step`].
+pub fn sgd_step_gated(net: &mut FnoNetwork, grads: &FnoGradients, lr: f32, ltp: f32, ltd: f32) {
+    let gate = |g: f32| -> f32 {
+        if g < 0.0 { g * ltp } else { g * ltd }
+    };
+    for (w, g) in net.input_proj.weight.iter_mut().zip(grads.input_proj_w.iter()) {
+        *w -= lr * gate(*g);
+    }
+    for (b, g) in net.input_proj.bias.iter_mut().zip(grads.input_proj_b.iter()) {
+        *b -= lr * gate(*g);
+    }
+    for (w, g) in net.output_proj.weight.iter_mut().zip(grads.output_proj_w.iter()) {
+        *w -= lr * gate(*g);
+    }
+    for (b, g) in net.output_proj.bias.iter_mut().zip(grads.output_proj_b.iter()) {
+        *b -= lr * gate(*g);
+    }
+    for (block, bg) in net.blocks.iter_mut().zip(grads.blocks.iter()) {
+        for (w, g) in block.spectral.weight_re.iter_mut().zip(bg.spec_w_re.iter()) {
+            *w -= lr * gate(*g);
+        }
+        for (w, g) in block.spectral.weight_im.iter_mut().zip(bg.spec_w_im.iter()) {
+            *w -= lr * gate(*g);
+        }
+        for (w, g) in block.linear_mix.weight.iter_mut().zip(bg.mix_w.iter()) {
+            *w -= lr * gate(*g);
+        }
+        for (b, g) in block.linear_mix.bias.iter_mut().zip(bg.mix_b.iter()) {
+            *b -= lr * gate(*g);
+        }
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
     use crate::network::FnoConfig;
@@ -456,6 +554,8 @@ mod tests {
             n_blocks: 2,
             modes: 4,
             rng_seed: 0xF11,
+            substrate: Default::default(),
+            thalamic: None,
         };
         let mut net = FnoNetwork::new(cfg).unwrap();
         let length = 16;

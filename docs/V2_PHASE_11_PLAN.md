@@ -97,11 +97,33 @@ defining property; if it doesn't hold, the integrator is broken.
 | `nimcp-hnn`   | (same as cnn)                                                |
 | `nimcp-brain` | adds optional dep on each new network crate                  |
 
+## Follow-up phases (status)
+
+- **11a-train / 11b-train — DONE.** CNN + FNO backward passes + vanilla
+  SGD, finite-difference-validated. (HNN training still deferred — needs
+  Hamiltonian-loss + symplectic-aware backward, its own phase.)
+- **11-substrate — DONE.** CNN / FNO / HNN each ship a
+  `substrate_adapter` mirroring the LNN: per-network `*SubstrateCfg` +
+  `*ThalamicCfg` on the config, runtime chemistry state + cadence-cached
+  `(axon, dend)` effects + a `ThalamicChannel` on the network, and
+  `forward_modulated` / `step_modulated` (+ `train_step_mse_modulated`
+  for CNN/FNO). All default-disabled and bit-identical on the disable
+  path. The brain opens its shared thalamic router for any of
+  {snn, lnn, cnn, fno, hnn} that declares a channel and forwards their
+  submits through `tick_thalamic`. Substrate maps: CNN/FNO use
+  `integration_efficiency` (output gain) + `plasticity_mod` +
+  asymmetric LTP/LTD (training); HNN (autonomous) uses
+  `membrane_capacitance_mod` → effective `dt`, with full-health proven
+  to preserve energy conservation.
+
 ## Out of scope (carry-overs)
 
 - GPU forward kernels (per-network 11x-gpu phases)
-- Training loops + backward passes (per-network 11x-train phases)
-- Substrate + thalamic adapters (11-substrate bundled phase)
+- HNN training loop (Hamiltonian-loss + symplectic-aware backward)
+- Brain-level *modulated* predict/step methods (the brain drives the
+  plain forward path for every network — matching the LNN, whose
+  `forward_step_modulated` is likewise network-only; modulation is
+  opt-in for direct callers and engaged by the per-network config)
 - Multi-batch forward (V2 inference is single-sample today; batch
   is a separate axis to add across all networks at once)
 

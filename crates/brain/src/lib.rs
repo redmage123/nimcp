@@ -280,14 +280,23 @@ impl Brain {
             .is_some_and(|s| s.thalamic_channel().is_some())
             || lnn
                 .as_ref()
-                .is_some_and(|l| l.thalamic_channel.is_some());
+                .is_some_and(|l| l.thalamic_channel.is_some())
+            || cnn
+                .as_ref()
+                .is_some_and(|c| c.thalamic_channel.is_some())
+            || fno
+                .as_ref()
+                .is_some_and(|f| f.thalamic_channel.is_some())
+            || hnn
+                .as_ref()
+                .is_some_and(|h| h.thalamic_channel.is_some());
         if needs_router {
             let mut router = nimcp_thalamic::ThalamicRouter::new(
                 nimcp_thalamic::ThalamicRouterConfig::default(),
             );
-            if let Some(s) = snn.as_ref()
-                && let Some(ch) = s.thalamic_channel()
-            {
+            // Helper: open a channel from any network's `ThalamicChannel`.
+            let open_from = |router: &mut nimcp_thalamic::ThalamicRouter,
+                             ch: &nimcp_thalamic::ThalamicChannel| {
                 let dests: Vec<u32> = ch
                     .destinations
                     .iter()
@@ -295,17 +304,31 @@ impl Brain {
                     .copied()
                     .collect();
                 let _ = router.open_channel(ch.source_id, &dests);
+            };
+            if let Some(s) = snn.as_ref()
+                && let Some(ch) = s.thalamic_channel()
+            {
+                open_from(&mut router, ch);
             }
             if let Some(l) = lnn.as_ref()
                 && let Some(ch) = l.thalamic_channel.as_ref()
             {
-                let dests: Vec<u32> = ch
-                    .destinations
-                    .iter()
-                    .take(ch.n_destinations as usize)
-                    .copied()
-                    .collect();
-                let _ = router.open_channel(ch.source_id, &dests);
+                open_from(&mut router, ch);
+            }
+            if let Some(c) = cnn.as_ref()
+                && let Some(ch) = c.thalamic_channel.as_ref()
+            {
+                open_from(&mut router, ch);
+            }
+            if let Some(f) = fno.as_ref()
+                && let Some(ch) = f.thalamic_channel.as_ref()
+            {
+                open_from(&mut router, ch);
+            }
+            if let Some(h) = hnn.as_ref()
+                && let Some(ch) = h.thalamic_channel.as_ref()
+            {
+                open_from(&mut router, ch);
             }
             thalamic_router = Some(router);
         }
@@ -367,6 +390,36 @@ impl Brain {
         }
         if let Some(lnn) = self.lnn.as_mut()
             && let Some(ch) = lnn.thalamic_channel.as_mut()
+        {
+            let count = ch.submits_this_step;
+            for _ in 0..count {
+                if router.record_submit(ch.source_id) {
+                    forwarded = forwarded.saturating_add(1);
+                }
+            }
+        }
+        if let Some(cnn) = self.cnn.as_mut()
+            && let Some(ch) = cnn.thalamic_channel.as_mut()
+        {
+            let count = ch.submits_this_step;
+            for _ in 0..count {
+                if router.record_submit(ch.source_id) {
+                    forwarded = forwarded.saturating_add(1);
+                }
+            }
+        }
+        if let Some(fno) = self.fno.as_mut()
+            && let Some(ch) = fno.thalamic_channel.as_mut()
+        {
+            let count = ch.submits_this_step;
+            for _ in 0..count {
+                if router.record_submit(ch.source_id) {
+                    forwarded = forwarded.saturating_add(1);
+                }
+            }
+        }
+        if let Some(hnn) = self.hnn.as_mut()
+            && let Some(ch) = hnn.thalamic_channel.as_mut()
         {
             let count = ch.submits_this_step;
             for _ in 0..count {
@@ -1361,6 +1414,8 @@ mod tests {
                 CnnLayerSpec::Linear { out_features: 6 },
             ],
             rng_seed: seed.wrapping_add(11),
+            substrate: Default::default(),
+            thalamic: None,
         });
         let fno = Some(FnoConfig {
             in_channels: 1,
@@ -1369,12 +1424,16 @@ mod tests {
             n_blocks: 1,
             modes: 3,
             rng_seed: seed.wrapping_add(12),
+            substrate: Default::default(),
+            thalamic: None,
         });
         let hnn = Some(HnnConfig {
             dof: 2,
             hidden_layers: vec![8],
             dt: 0.01,
             rng_seed: seed.wrapping_add(13),
+            substrate: Default::default(),
+            thalamic: None,
         });
 
         BrainConfig {
@@ -1443,6 +1502,60 @@ mod tests {
         for (x, y) in cnn_a.iter().zip(cnn_b.iter()) {
             assert!((x - y).abs() < 1e-6, "cnn drift after load: {x} vs {y}");
         }
+    }
+
+    /// Phase 11-substrate: a thalamic channel declared on the CNN must
+    /// (a) cause the brain to open its shared router and register the
+    /// CNN's channel, and (b) have its submits forwarded through
+    /// `tick_thalamic`.
+    #[tokio::test]
+    async fn phase11_substrate_cnn_thalamic_wires_into_router() {
+        use nimcp_cnn::{CnnConfig, CnnLayerSpec, CnnThalamicCfg};
+
+        const CNN_SOURCE: u32 = 4001;
+        let cnn = Some(CnnConfig {
+            input_shape: (1, 4, 4),
+            layers: vec![
+                CnnLayerSpec::Flatten,
+                CnnLayerSpec::Linear { out_features: 3 },
+            ],
+            rng_seed: 0xB103,
+            substrate: Default::default(),
+            thalamic: Some(CnnThalamicCfg {
+                source_id: CNN_SOURCE,
+                destinations: vec![10, 11],
+                submit_threshold: 0.5,
+                mode: nimcp_thalamic::RelayMode::Tonic,
+            }),
+        });
+        let cfg = BrainConfig {
+            rng_seed: 0xB103,
+            deterministic: true,
+            cnn,
+            ..Default::default()
+        };
+        let mut brain = Brain::new(cfg).unwrap();
+
+        // (a) Router opened and the CNN channel registered.
+        let router = brain.thalamic_router().expect("router should be open");
+        assert!(
+            router.channel(CNN_SOURCE).is_some(),
+            "CNN thalamic channel must be registered in the router"
+        );
+
+        // (b) Drive two submits on the CNN's own channel (test is a child
+        // module, so it can touch the private field), then forward them.
+        let cnn_ch = brain
+            .cnn
+            .as_mut()
+            .unwrap()
+            .thalamic_channel
+            .as_mut()
+            .unwrap();
+        cnn_ch.record_submit();
+        cnn_ch.record_submit();
+        let forwarded = brain.tick_thalamic();
+        assert_eq!(forwarded, 2, "both CNN submits should forward to the router");
     }
 
     #[tokio::test]

@@ -18,6 +18,8 @@ rand_chacha = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+nimcp-substrate = { workspace = true }
+nimcp-thalamic = { workspace = true }
 
 [dev-dependencies]
 approx = "0.5"

@@ -34,12 +34,17 @@ pub mod flatten;
 pub mod linear;
 pub mod network;
 pub mod pool;
+pub mod substrate_adapter;
 pub mod train;
 
 pub use activation::ReluLayer;
 pub use conv::Conv2dLayer;
 pub use flatten::FlattenLayer;
 pub use linear::LinearLayer;
-pub use network::{CnnConfig, CnnError, CnnLayerSpec, CnnNetwork};
+pub use network::{
+    CnnConfig, CnnError, CnnLayerSpec, CnnNetwork, CnnSubstrateCfg, CnnThalamicCfg,
+};
 pub use pool::MaxPool2dLayer;
-pub use train::{CnnGradients, mse_loss, sgd_step, train_step_mse};
+pub use train::{
+    CnnGradients, mse_loss, sgd_step, sgd_step_gated, train_step_mse, train_step_mse_modulated,
+};
