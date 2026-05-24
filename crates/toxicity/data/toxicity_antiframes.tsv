@@ -1,0 +1,100 @@
+# NIMCP anti-frame swaps — pairs of (toxic_word, counter_word). Used by the
+# response engine as a FALLBACK when no counterclaim template matches the
+# toxic category at a high-enough stage. The engine tokenizes the toxic
+# input, swaps each toxic_word for its counter_word, and emits the result.
+#
+# Use cautiously: anti-frame swaps can produce awkward English. The engine
+# prefers a stage-appropriate template (counterclaims.tsv) when available
+# and only falls back to anti-frame swap when no template is found.
+#
+# Format (2 tab-separated columns):
+#   toxic_word   counter_word
+#
+# Comments + blank lines ignored. Matching is case-insensitive, whole-word.
+# Multi-word toxic_word entries are supported (the engine tokenizes by
+# whitespace; multi-word matches need to be expressed as space-separated
+# tokens in the input — exact phrase match).
+##VERSION 1
+
+# === Dehumanizing predicates -> affirming predicates ===
+subhuman	human
+inhuman	human
+nonhuman	human
+inferior	equal
+animals	people
+animal	person
+vermin	people
+cockroaches	people
+cockroach	person
+monkeys	people
+monkey	person
+apes	people
+ape	person
+parasites	people
+parasite	person
+scum	people
+filth	people
+trash	people
+garbage	people
+insects	people
+insect	person
+rats	people
+rat	person
+pigs	people
+pig	person
+snakes	people
+snake	person
+leeches	people
+leech	person
+savages	people
+savage	person
+barbarians	people
+barbarian	person
+maggots	people
+maggot	person
+roaches	people
+cancer	contribution
+plague	gift
+disease	gift
+tumor	gift
+scourge	gift
+virus	gift
+infection	gift
+
+# === Violence verbs -> protective verbs ===
+kill	protect
+gas	protect
+deport	welcome
+exterminate	protect
+eliminate	protect
+hang	protect
+lynch	protect
+murder	protect
+slaughter	protect
+rape	protect
+enslave	free
+behead	protect
+crucify	protect
+"round up"	"welcome"
+
+# === Misogyny — derogatory predicates -> respectful predicates ===
+bitches	women
+whores	women
+sluts	women
+hoes	women
+cunts	women
+"gold diggers"	women
+property	people
+objects	people
+holes	people
+toys	people
+breeders	people
+cattle	people
+"second class"	"equal"
+"less than men"	"equal to men"
+
+# === Misogyny — possessive-confinement -> agency ===
+"his property"	"her own person"
+"my property"	"her own person"
+"men's property"	"their own people"
+"a man's property"	"her own person"

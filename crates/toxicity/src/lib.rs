@@ -13,8 +13,26 @@
 //!   at a non-bypassable gate.
 //! - **`would_block` is a hint**, not a delete order — scoring and policy
 //!   are separated.
-//!
-//! Phases T1–T3 populate the modules below. This is the L0 scaffold.
+//! - **Allowlist span-suppress, not short-circuit**: an allowlist match
+//!   suppresses overlapping toxic matches but does NOT clear the whole
+//!   result (V1 2026-05-20 fix — `"X aren't subhuman. Kill all Y."` must
+//!   still flag the second clause).
 
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
+
+pub mod counterclaim;
+pub mod ml;
+pub mod pattern;
+
+pub use counterclaim::{CounterclaimEngine, CounterclaimResult};
+pub use ml::MlClassifier;
+pub use pattern::{PatternClassifier, PatternRule, ToxicityResult};
+
+/// Default block threshold (V1 `0.7`): `max_score ≥ threshold` sets
+/// `would_block`.
+pub const DEFAULT_THRESHOLD: f32 = 0.7;
+
+/// Affective-tag threshold (V1 `0.85`): only above this is training data
+/// valence-tagged as toxic (mark-not-filter).
+pub const TAG_THRESHOLD: f32 = 0.85;

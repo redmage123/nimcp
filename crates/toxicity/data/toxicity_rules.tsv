@@ -1,0 +1,134 @@
+# NIMCP toxicity classifier — pattern rules (TSV, tab-separated)
+#
+# Format (5 tab-separated columns):
+#   category   harm_weight   fairness_weight   posix_regex   description
+#
+# Categories:
+#   - allowlist:                Anti-toxic patterns. ANY match short-circuits
+#                               classify() to a clean result (no flag, even if
+#                               toxic patterns would otherwise match). Used to
+#                               protect explicit anti-toxic speech like "X are
+#                               not subhuman" from false-positive flagging.
+#   - dehumanization:           Demographic group + dehumanizing predicate.
+#   - violence_against_group:   Direct violence call against a group.
+#   - slurs_external:           Pseudo-row whose regex is the marker
+#                               "__LOAD_FROM_FILE__<path>". The loader sources
+#                               additional patterns (one per line) from that
+#                               file. Default path: data/safety/slurs.txt
+#                               (not shipped — populate from a curated source
+#                               like Hatebase before deployment).
+#
+# Notes:
+#   - Comments start with '#'. Blank lines ignored.
+#   - Patterns use POSIX extended regex (REG_EXTENDED | REG_ICASE | REG_NEWLINE).
+#   - POSIX ERE does NOT support lookbehind/lookahead, so negation cases
+#     ("X are NOT subhuman") are handled via the allowlist short-circuit
+#     rather than inline regex negation.
+#   - harm_weight populates predicted_harm via max() across matched rules.
+#   - fairness_weight populates fairness_violation via max() across matched rules.
+#   - These are *seed* rules: conservative, high-precision, low-recall. They
+#     intentionally miss subtle/coded toxicity. Pair with an ML model in
+#     production.
+#
+# Design principle: demographic descriptors below are NEUTRAL words. Toxicity
+# comes from the COMBINATION (group + dehumanizing/violent predicate).
+#
+##VERSION 2
+
+# ============================================================================
+# ALLOWLIST — anti-toxic constructions. Short-circuits classify() on match.
+# ============================================================================
+
+# "X are/aren't NOT subhuman/inferior/animals/etc." — explicit anti-dehumanization.
+# The same predicates that flag in dehumanization category are anti-toxic here
+# when preceded by negation.
+allowlist	0.0	0.0	\b((jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|american|european|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|disabled|elderly|immigrant|refugee)s?|men|women|kids|children|people|persons)(\s+(people|folks|men|women|kids|children|family|families))?\s+(aren'?t|are\s+not)\s+(subhuman|inferior|animals|vermin|cockroaches|monkeys|apes|parasites|scum|filth|trash|garbage|insects|rats|pigs|dogs|snakes|leeches|savages|barbarians|cancer|plague|disease)	"X are not subhuman" — anti-dehumanization construction
+
+# "Don't / never / shouldn't" + violence verb + group
+allowlist	0.0	0.0	\b(don'?t|do\s+not|never|shouldn'?t|should\s+not|wouldn'?t|would\s+not)\s+(kill|gas|deport|exterminate|eliminate|hang|lynch|murder|slaughter|rape|enslave|behead|crucify)\s+(all\s+)?(the\s+)?(any\s+)?(of\s+the\s+)?((jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|immigrant|refugee)s?|men|women|kids|children|people|persons|babies)	Anti-violence: "don't kill (all the) X"
+
+# ============================================================================
+# DEHUMANIZATION
+# ============================================================================
+
+# Group (singular OR plural, optional "people/folks/men/women" suffix) +
+# (are|aren't) + (not real)? + (human|humans) — Class A: "not real humans"
+# construction. aren't already encodes negation; "are not real human(s)" too.
+dehumanization	0.9	1.0	\b(jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|disabled|elderly|immigrant|refugee)s?(\s+(people|folks|men|women|kids|children))?\s+(aren'?t|are\s+not)\s+(real\s+|truly\s+|fully\s+)?humans?\b	"X aren't (real) humans" — Class A dehumanization (denying personhood)
+
+# Group + are + (sub)human/inferior/animal-class — Class B: explicit dehum.
+# predicate. NOTE: the allowlist row above catches the "are not" variant first.
+dehumanization	0.9	1.0	\b(jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|disabled|elderly|immigrant|refugee)s?(\s+(people|folks|men|women|kids|children))?\s+are\s+(subhuman|inferior|animals|vermin|cockroaches|monkeys|apes|parasites|scum|filth|trash|garbage|insects|rats|pigs|snakes|leeches|savages|barbarians|cancer|plague|disease|maggots|roaches)\b	Group + dehumanizing predicate
+
+# "X are the cancer/plague/disease of society/world/humanity" — metaphor dehum.
+dehumanization	0.9	1.0	\b(jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|immigrant|refugee)s?(\s+(people|folks))?\s+are\s+the\s+(cancer|plague|disease|tumor|scourge|virus|infection)\s+of\s+(society|the\s+world|humanity|civilization|the\s+earth|our\s+(country|nation|people))\b	"X are the cancer of society" — metaphorical dehumanization
+
+# ============================================================================
+# VIOLENCE AGAINST GROUP
+# ============================================================================
+
+# Imperative: kill/gas/deport/etc. + group (with optional "the" / "all" prefix
+# and optional " people/folks/men/women" suffix on the group).
+violence_against_group	1.0	1.0	\b(kill|gas|deport|exterminate|eliminate|hang|lynch|murder|slaughter|wipe\s+out|rape|enslave|behead|crucify|round\s+up)\s+(all\s+)?(the\s+)?((jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|immigrant|refugee)s?|men|women|kids|children|people|persons|babies)(\s+(people|folks|men|women|kids|children))?\b	Direct violence imperative against demographic group
+
+# Death-to-group framing
+violence_against_group	1.0	1.0	\bdeath\s+to\s+(all\s+|the\s+)?(jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|immigrant|refugee|american|european)s?(\s+(people|folks))?\b	"Death to X" — explicit violence call
+
+# Genocide framing
+violence_against_group	1.0	1.0	\bgenocide\s+(of|against|on)\s+(the\s+)?(jew|muslim|christian|hindu|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|american|european|gay|lesbian|trans|transgender|immigrant|refugee)s?(\s+(people|folks))?\b	Explicit genocide call
+
+# "X should (all) be killed/gassed/deported/etc." — passive violence.
+# Optional " people/folks" infix between group and "should".
+violence_against_group	0.9	1.0	\b((jew|muslim|christian|hindu|buddhist|catholic|protestant|black|white|asian|latino|hispanic|arab|african|mexican|chinese|japanese|korean|indian|pakistani|nigerian|gay|lesbian|trans|transgender|queer|immigrant|refugee)s?|men|women|kids|children)(\s+(people|folks|men|women|kids|children))?\s+should\s+(all\s+)?be\s+(killed|gassed|deported|exterminated|eliminated|hanged|lynched|murdered|removed|enslaved|raped|beheaded|rounded\s+up)\b	"Group should be killed" — passive violence
+
+# ============================================================================
+# MISOGYNY (2026-05-21)
+# ============================================================================
+#
+# Patterns specific to misogynistic language. Distinct from generic violence/
+# dehumanization because misogyny has its own linguistic surface: derogation
+# (bitches/whores/sluts as group terms), objectification (treat as property/
+# object), denial of competence (women can't / belong in kitchen / etc.).
+# Allowlist negation forms in the existing allowlist rows already cover
+# "women are not X" / "don't kill women" via the irregular-plural enumeration.
+
+# Misogynistic group-derogation: targeting women with sex-derogation terms
+# used as group descriptors. Plurals + slur-as-group form. NOTE: these
+# terms can appear in non-toxic contexts (reclaimed speech, art); the
+# pattern requires the slur to be the grammatical SUBJECT of a derogatory
+# predicate to keep precision high.
+misogyny	0.9	1.0	\b(women|girls|females|ladies)\s+are\s+(just\s+|all\s+|nothing\s+but\s+|only\s+)?(bitches|whores|sluts|hoes|cunts|gold\s*diggers|property|objects|holes|toys|breeders|cattle|stupid|dumb|inferior|weak|useless|worthless|second.class|less\s+than\s+men|here\s+to\s+serve|made\s+to\s+serve|made\s+for\s+(men|cooking|breeding|sex))\b	"women are X" — group + derogatory predicate
+
+# Denial of agency / competence: "women can't" + role/competence verbs;
+# "women belong in" + diminished domain.
+misogyny	0.8	1.0	\b(women|girls|females|ladies)\s+(can'?t|cannot|shouldn'?t|should\s+not)\s+(vote|drive|work|lead|think|reason|do\s+(math|science|sports)|be\s+(leaders|in\s+charge|trusted|equal)|hold\s+(power|office|jobs))\b	"women can't <competence>" — denial of agency
+
+misogyny	0.8	1.0	\b(women|girls|females|wives|ladies)\s+(belong|should\s+stay|need\s+to\s+stay|are\s+only\s+good)\s+(in\s+the\s+)?(kitchen|home|house|bedroom|barefoot\s+and\s+pregnant)\b	Confine-to-domain misogyny
+
+# Objectification as property: a woman/wife is X's possession.
+misogyny	0.8	1.0	\b(women|girls|wives|females)\s+are\s+(my|his|men'?s|a\s+man'?s)\s+(property|possession|possessions|to\s+(use|own|control|own\s+and\s+control))\b	Property-objectification
+
+# Imperative violence against women/girls (overlaps violence_against_group
+# but stated separately so the matched_category surfaces as 'misogyny' for
+# downstream policy/curriculum routing). Allowlist negation already covers
+# "don't rape" etc. via the don't|never|shouldn't prefix.
+misogyny	1.0	1.0	\b(rape|beat|hit|slap|kill|enslave|silence|control|punish|own|breed|impregnate)\s+(all\s+|the\s+|any\s+|every\s+)?(women|girls|wives|females|ladies|bitches)\b	Imperative violence/control against women
+
+# "Real women" / "real men" purity rhetoric that polices women's
+# behavior. Cheap to detect: "real women X" or "a real woman would Y".
+misogyny	0.6	0.8	\b(a\s+)?real\s+(women|woman)\s+(don'?t|do\s+not|would\s+(never|not)|shouldn'?t|should\s+not|knows?\s+(her|their)\s+place)\b	Gender-policing "real woman" rhetoric
+
+# "Make me a sandwich" / "get back in the kitchen" as imperatives.
+misogyny	0.7	0.9	\b(get|go|stay)\s+back\s+(in|to)\s+the\s+(kitchen|bedroom|house|home)\b	"Get back in the kitchen" — confine-to-domain imperative
+
+# ============================================================================
+# EXTERNAL SLUR LIST (optional)
+# ============================================================================
+#
+# Loads one POSIX-extended regex per line from data/safety/slurs.txt if it
+# exists. NOT shipped with the repo — populate from a curated source like
+# Hatebase (https://hatebase.org/) or Jigsaw's Perspective taxonomy before
+# deploying. If the file is missing, this row is silently skipped and the
+# classifier still works without slur coverage.
+
+slurs_external	1.0	1.0	__LOAD_FROM_FILE__data/safety/slurs.txt	Sourced from external curated slur list (file optional)
