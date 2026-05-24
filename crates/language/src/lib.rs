@@ -33,11 +33,13 @@ pub mod lexicon;
 pub mod persistence;
 pub mod phrase;
 pub mod produce;
+pub mod reasoning;
 pub mod spectrum;
 pub mod text;
 
-pub use cascade::{CascadeConfig, Response};
+pub use cascade::{CascadeConfig, ContentSources, Response};
 pub use comprehend::ComprehensionResult;
+pub use reasoning::{QueryType, ReasoningConclusion};
 pub use concept::{ConceptId, ConceptRegistry};
 pub use engine::{GroundedLanguage, LanguageStats};
 pub use persistence::{PersistError, FORMAT_MAGIC, FORMAT_VERSION};
