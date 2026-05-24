@@ -28,11 +28,15 @@
 pub mod concept;
 pub mod engine;
 pub mod lexicon;
+pub mod phrase;
+pub mod spectrum;
 pub mod text;
 
 pub use concept::{ConceptId, ConceptRegistry};
 pub use engine::{GroundedLanguage, LanguageStats};
 pub use lexicon::{Lexicon, LexiconEntry, Modality, WordBinding, WordClass, MODALITY_COUNT};
+pub use phrase::PhraseTable;
+pub use spectrum::{BigramSpectralMetrics, BigramSpectrum};
 pub use text::tokenize;
 
 /// Default semantic / distributional vector width (V1 `GL_SEMANTIC_DIM`).
@@ -59,6 +63,15 @@ pub const FREQ_SUBSAMPLE_T: f32 = 100.0;
 
 /// Negative samples per center word (V1 `K_NEG`).
 pub const K_NEG: usize = 5;
+
+/// Bigram-rerank weight α (V1 `GL_BIGRAM_RERANK_ALPHA`). Produce adds
+/// `α·ln(1 + bigram_freq(prev, cand))` to each candidate's cosine score —
+/// re-orders *within* the top-K, cosine stays primary.
+pub const BIGRAM_RERANK_ALPHA: f32 = 0.05;
+
+/// Max distinct multi-word phrases retained (V1 `GL_MAX_PHRASES`).
+/// Overflow evicts the least-frequent entry.
+pub const MAX_PHRASES: usize = 512;
 
 // -------------------------------------------------------------------------
 // Shared math — ports of the V1 `static` helpers in grounded_language.c.

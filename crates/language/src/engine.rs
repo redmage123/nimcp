@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::concept::ConceptRegistry;
 use crate::lexicon::Lexicon;
+use crate::phrase::PhraseTable;
+use crate::spectrum::BigramSpectrum;
 use crate::text::tokenize;
 use crate::{CONTEXT_WINDOW, FREQ_SUBSAMPLE_T, K_NEG, SEMANTIC_DIM, XorShift64, normalize_vector};
 
@@ -33,6 +35,12 @@ pub struct LanguageStats {
 pub struct GroundedLanguage {
     pub lexicon: Lexicon,
     pub concepts: ConceptRegistry,
+    /// Bigram/trigram frequency table (always on; feeds produce rerank).
+    pub phrases: PhraseTable,
+    /// Optional bigram FFT spectrum diagnostic (opt-in; allocates a
+    /// `vocab_cap²` matrix, so off by default).
+    #[serde(default)]
+    pub spectrum: Option<BigramSpectrum>,
     rng: XorShift64,
     pub stats: LanguageStats,
 }
@@ -44,9 +52,16 @@ impl GroundedLanguage {
         Self {
             lexicon: Lexicon::new(semantic_dim),
             concepts: ConceptRegistry::new(),
+            phrases: PhraseTable::default(),
+            spectrum: None,
             rng: XorShift64::new(rng_seed),
             stats: LanguageStats::default(),
         }
+    }
+
+    /// Enable the bigram FFT spectrum diagnostic with the given vocab cap.
+    pub fn enable_bigram_spectrum(&mut self, vocab_cap: usize) {
+        self.spectrum = Some(BigramSpectrum::new(vocab_cap));
     }
 
     /// New engine with the default [`SEMANTIC_DIM`].
@@ -85,6 +100,14 @@ impl GroundedLanguage {
         // Record words (bump frequency) and capture their entry indices.
         let indices: Vec<usize> = tokens.iter().map(|t| self.lexicon.record_word(t)).collect();
         let word_count = indices.len();
+
+        // N-gram tracking (phrase table always; spectrum if enabled).
+        self.phrases.track(&indices);
+        if let Some(spec) = self.spectrum.as_mut() {
+            for w in indices.windows(2) {
+                spec.record(w[0], w[1]);
+            }
+        }
         let dim = self.lexicon.semantic_dim;
         let lr_base = self.lexicon.hebbian_lr * 0.1;
         let neg_lr = self.lexicon.hebbian_lr * 0.1 * 0.25;
@@ -206,6 +229,35 @@ mod tests {
         assert_eq!(gl.lexicon.vocab_count(), 4);
         assert!(gl.stats.learn_calls == 1);
         assert!(gl.stats.tokens_seen == 4);
+    }
+
+    #[test]
+    fn learning_tracks_phrases() {
+        let mut gl = GroundedLanguage::new(16, 5);
+        for _ in 0..3 {
+            gl.learn_from_text("the dog runs");
+        }
+        let the = gl.lexicon.find("the").unwrap();
+        let dog = gl.lexicon.find("dog").unwrap();
+        let runs = gl.lexicon.find("runs").unwrap();
+        assert_eq!(gl.phrases.bigram_freq(the, dog), 3);
+        assert_eq!(gl.phrases.trigram_freq(the, dog, runs), 3);
+        // Seen bigram gets a positive rerank bias; unseen does not.
+        assert!(gl.phrases.bigram_bias(the, dog) > 0.0);
+        assert_eq!(gl.phrases.bigram_bias(dog, the), 0.0);
+    }
+
+    #[test]
+    fn optional_spectrum_records_when_enabled() {
+        let mut gl = GroundedLanguage::new(16, 9);
+        assert!(gl.spectrum.is_none());
+        gl.enable_bigram_spectrum(32);
+        for _ in 0..5 {
+            gl.learn_from_text("the dog runs fast");
+        }
+        let spec = gl.spectrum.as_ref().unwrap();
+        // 3 bigrams per sentence × 5 = 15 events.
+        assert_eq!(spec.total_events(), 15);
     }
 
     #[test]
