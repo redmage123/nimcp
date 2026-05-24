@@ -1,0 +1,214 @@
+//! NIMCP V2 — grounded language engine.
+//!
+//! A fresh Rust implementation of V1's `grounded_language` system (the
+//! ~13 KLOC `grounded_language.c` core), shaped to V2 idioms: composed
+//! modules instead of one ~80-field god-struct, `serde` checkpointing,
+//! and a deterministic seeded RNG so tests are reproducible.
+//!
+//! # What lives here (built bottom-up; see `docs/V2_LANGUAGE_PLAN.md`)
+//!
+//! - [`concept`] — cross-modal concept registry (union-find over text /
+//!   visual / audio fingerprints).
+//! - [`lexicon`] — word↔concept lexicon with Hebbian bindings and
+//!   per-word distributional context vectors.
+//!
+//! Later phases add distributional learning (SGNS), n-gram tables,
+//! comprehend / produce, and persistence.
+//!
+//! # Design invariants
+//!
+//! - Deterministic: same seed → identical learning across runs/platforms.
+//! - No `void*` / borrowed-pointer-rewire-at-init — V1's opaque
+//!   attachment pointers become real Rust types when wired in `nimcp-brain`.
+//! - One canonical persistence format (V1 had two divergent serializers).
+
+#![forbid(unsafe_code)]
+#![allow(missing_docs)]
+
+pub mod concept;
+pub mod lexicon;
+
+pub use concept::{ConceptId, ConceptRegistry};
+pub use lexicon::{Lexicon, LexiconEntry, Modality, WordBinding, WordClass, MODALITY_COUNT};
+
+/// Default semantic / distributional vector width (V1 `GL_SEMANTIC_DIM`).
+pub const SEMANTIC_DIM: usize = 128;
+
+/// Default Hebbian learning rate (V1 `GL_HEBBIAN_LR_DEFAULT`).
+pub const HEBBIAN_LR_DEFAULT: f32 = 0.1;
+
+/// Bindings below this strength are inert / pruned (V1 `GL_ASSOC_PRUNE_THRESHOLD`).
+pub const ASSOC_PRUNE_THRESHOLD: f32 = 0.01;
+
+/// One-shot fast-map binding strength (V1 `GL_FAST_MAP_THRESHOLD`).
+pub const FAST_MAP_STRENGTH: f32 = 0.8;
+
+// -------------------------------------------------------------------------
+// Shared math — ports of the V1 `static` helpers in grounded_language.c.
+// -------------------------------------------------------------------------
+
+/// Cosine similarity with the V1 epsilon guard (`1e-8`). Returns `0.0`
+/// when either vector has (near-)zero norm or the lengths differ.
+#[must_use]
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        return 0.0;
+    }
+    let mut dot = 0.0_f32;
+    let mut na = 0.0_f32;
+    let mut nb = 0.0_f32;
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    let denom = na.sqrt() * nb.sqrt();
+    if denom < 1e-8 {
+        0.0
+    } else {
+        dot / denom
+    }
+}
+
+/// L2-normalize in place. No-op when the norm is below `1e-8` (avoids
+/// dividing a numerically-zero vector — matches V1 `normalize_vector`).
+pub fn normalize_vector(v: &mut [f32]) {
+    let mut n = 0.0_f32;
+    for &x in v.iter() {
+        n += x * x;
+    }
+    let norm = n.sqrt();
+    if norm < 1e-8 {
+        return;
+    }
+    let inv = 1.0 / norm;
+    for x in v.iter_mut() {
+        *x *= inv;
+    }
+}
+
+/// Deterministic `xorshift64` PRNG — the V1 lexicon RNG. Kept as a small
+/// explicit type (rather than `rand`) so persisted `rng_state` round-trips
+/// bit-for-bit and learning is reproducible from a seed.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct XorShift64 {
+    state: u64,
+}
+
+impl XorShift64 {
+    /// Seed the generator. A zero seed is remapped (xorshift can't leave 0).
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
+        Self {
+            state: if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed },
+        }
+    }
+
+    /// Next raw 64-bit value (xorshift64, shifts 13/7/17 — the V1 variant).
+    pub fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        x
+    }
+
+    /// Next `f32` in `[0, 1)`.
+    pub fn next_f32(&mut self) -> f32 {
+        // Top 24 bits → [0,1) with 2^-24 resolution.
+        #[allow(clippy::cast_precision_loss)]
+        let v = (self.next_u64() >> 40) as f32;
+        v / (1u32 << 24) as f32
+    }
+
+    /// Next `f32` in `[-half_range, half_range)`.
+    pub fn next_centered(&mut self, half_range: f32) -> f32 {
+        (self.next_f32() * 2.0 - 1.0) * half_range
+    }
+}
+
+/// FNV-1a 32-bit hash over the lowercased bytes of `s` — the V1
+/// `hash_word`. Exposed for fingerprinting / persistence parity.
+#[must_use]
+pub fn fnv1a_lower(s: &str) -> u32 {
+    let mut h = 0x811c_9dc5_u32;
+    for b in s.bytes() {
+        let lb = b.to_ascii_lowercase();
+        h ^= u32::from(lb);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+#[cfg(test)]
+#[allow(clippy::float_cmp)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cosine_identical_is_one() {
+        let a = [1.0, 2.0, 3.0];
+        assert!((cosine_similarity(&a, &a) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cosine_orthogonal_is_zero() {
+        assert_eq!(cosine_similarity(&[1.0, 0.0], &[0.0, 1.0]), 0.0);
+    }
+
+    #[test]
+    fn cosine_zero_vector_is_zero() {
+        assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
+
+    #[test]
+    fn cosine_length_mismatch_is_zero() {
+        assert_eq!(cosine_similarity(&[1.0], &[1.0, 2.0]), 0.0);
+    }
+
+    #[test]
+    fn normalize_makes_unit_norm() {
+        let mut v = [3.0, 4.0];
+        normalize_vector(&mut v);
+        let n = (v[0] * v[0] + v[1] * v[1]).sqrt();
+        assert!((n - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn normalize_zero_is_noop() {
+        let mut v = [0.0, 0.0];
+        normalize_vector(&mut v);
+        assert_eq!(v, [0.0, 0.0]);
+    }
+
+    #[test]
+    fn xorshift_is_deterministic() {
+        let mut a = XorShift64::new(42);
+        let mut b = XorShift64::new(42);
+        for _ in 0..100 {
+            assert_eq!(a.next_u64(), b.next_u64());
+        }
+    }
+
+    #[test]
+    fn xorshift_f32_in_unit_range() {
+        let mut r = XorShift64::new(7);
+        for _ in 0..1000 {
+            let v = r.next_f32();
+            assert!((0.0..1.0).contains(&v), "out of range: {v}");
+        }
+    }
+
+    #[test]
+    fn xorshift_zero_seed_remapped() {
+        let mut r = XorShift64::new(0);
+        assert_ne!(r.next_u64(), 0);
+    }
+
+    #[test]
+    fn fnv1a_is_case_insensitive() {
+        assert_eq!(fnv1a_lower("Hello"), fnv1a_lower("hello"));
+        assert_ne!(fnv1a_lower("hello"), fnv1a_lower("world"));
+    }
+}

@@ -23,6 +23,8 @@ members = [
     "crates/geometry",
     "crates/quantum",
     "crates/checkpoint",
+    "crates/language",
+    "crates/toxicity",
     "crates/brain",
     "crates/daemon",
     "pybind",
@@ -69,6 +71,7 @@ ndarray = { version = "0.16", features = ["serde"] }
 # FFT + complex numbers (used by nimcp-fno spectral convolution)
 rustfft = "6"
 num-complex = { version = "0.4", features = ["serde"] }
+regex = "1"
 
 # Testing
 proptest = "1"
@@ -107,6 +110,8 @@ nimcp-fractal = { path = "crates/fractal" }
 nimcp-geometry = { path = "crates/geometry" }
 nimcp-quantum = { path = "crates/quantum" }
 nimcp-checkpoint = { path = "crates/checkpoint" }
+nimcp-language = { path = "crates/language" }
+nimcp-toxicity = { path = "crates/toxicity" }
 nimcp-brain = { path = "crates/brain" }
 nimcp-daemon = { path = "crates/daemon" }
 
