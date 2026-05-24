@@ -12,8 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::concept::ConceptRegistry;
-use crate::lexicon::Lexicon;
+use crate::concept::{ConceptId, ConceptRegistry};
+use crate::lexicon::{Lexicon, Modality};
 use crate::phrase::PhraseTable;
 use crate::spectrum::BigramSpectrum;
 use crate::text::tokenize;
@@ -28,6 +28,64 @@ pub struct LanguageStats {
     pub tokens_seen: u64,
     /// Number of distributional context-vector updates applied.
     pub context_updates: u64,
+    /// Number of `comprehend` calls (per-call counter — V1's discourse
+    /// head only advances on non-zero semantic vectors, so this is the
+    /// reliable comprehension count).
+    pub total_comprehensions: u64,
+    /// Number of `ground` calls.
+    pub groundings: u64,
+}
+
+/// Discourse state — a ring of recent comprehended turn vectors and the
+/// running recency-weighted context vector (V1 `gl_discourse_state_t` +
+/// `push_turn`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Discourse {
+    /// Recent turn semantic vectors, oldest-first, capped at
+    /// [`crate::DISCOURSE_CAPACITY`].
+    turns: Vec<Vec<f32>>,
+    /// Running context vector — recency-weighted blend of `turns`.
+    context_vector: Vec<f32>,
+}
+
+impl Discourse {
+    /// Push a comprehended turn vector and rebuild the recency-weighted
+    /// context (`Σ DISCOURSE_RECENCY^d · turn[most_recent − d]`, then
+    /// normalized). No-op on an all-zero vector (V1 gates the head on a
+    /// non-zero semantic vec).
+    pub(crate) fn push_turn(&mut self, vec: &[f32]) {
+        if vec.iter().all(|&x| x == 0.0) {
+            return;
+        }
+        self.turns.push(vec.to_vec());
+        if self.turns.len() > crate::DISCOURSE_CAPACITY {
+            self.turns.remove(0);
+        }
+        let dim = vec.len();
+        let mut ctx = vec![0.0_f32; dim];
+        // Most recent turn is last; depth 0 = last.
+        for (depth, turn) in self.turns.iter().rev().enumerate() {
+            let w = crate::DISCOURSE_RECENCY.powi(depth as i32);
+            for (c, &t) in ctx.iter_mut().zip(turn.iter()) {
+                *c += w * t;
+            }
+        }
+        normalize_vector(&mut ctx);
+        self.context_vector = ctx;
+    }
+
+    /// Current recency-weighted context vector (empty until the first
+    /// non-zero turn).
+    #[must_use]
+    pub fn context_vector(&self) -> &[f32] {
+        &self.context_vector
+    }
+
+    /// Number of turns currently retained.
+    #[must_use]
+    pub fn depth(&self) -> usize {
+        self.turns.len()
+    }
 }
 
 /// The grounded-language engine.
@@ -41,6 +99,13 @@ pub struct GroundedLanguage {
     /// `vocab_cap²` matrix, so off by default).
     #[serde(default)]
     pub spectrum: Option<BigramSpectrum>,
+    /// Grounded sensory feature vectors, indexed by raw [`ConceptId`].
+    /// `Vec` (not a map) so it serializes through JSON and stays dense.
+    #[serde(default)]
+    concept_features: Vec<Vec<f32>>,
+    /// Multi-turn discourse state (recency-weighted context vector).
+    #[serde(default)]
+    pub discourse: Discourse,
     rng: XorShift64,
     pub stats: LanguageStats,
 }
@@ -54,9 +119,47 @@ impl GroundedLanguage {
             concepts: ConceptRegistry::new(),
             phrases: PhraseTable::default(),
             spectrum: None,
+            concept_features: Vec::new(),
+            discourse: Discourse::default(),
             rng: XorShift64::new(rng_seed),
             stats: LanguageStats::default(),
         }
+    }
+
+    /// Ground a word in sensory `features`: intern a text concept, store
+    /// its feature vector, and fast-map the word→concept binding. Returns
+    /// the (canonical) concept id. This is the engine-level grounding
+    /// entry point used by comprehend's concept-feature term.
+    pub fn ground(&mut self, word: &str, features: &[f32], modality: Modality) -> ConceptId {
+        let cid = self.concepts.intern_text(word);
+        self.set_concept_features(cid, features);
+        self.lexicon.fast_map(word, cid, features, modality);
+        self.stats.groundings += 1;
+        cid
+    }
+
+    /// Store/replace the grounded feature vector for a concept (truncated
+    /// or zero-padded to `semantic_dim`).
+    pub fn set_concept_features(&mut self, cid: ConceptId, features: &[f32]) {
+        let dim = self.lexicon.semantic_dim;
+        let idx = cid.0 as usize;
+        if idx >= self.concept_features.len() {
+            self.concept_features.resize(idx + 1, Vec::new());
+        }
+        let mut v = vec![0.0_f32; dim];
+        for (dst, &src) in v.iter_mut().zip(features.iter()) {
+            *dst = src;
+        }
+        self.concept_features[idx] = v;
+    }
+
+    /// Grounded feature vector for a concept, if any (non-empty).
+    #[must_use]
+    pub fn concept_features(&self, cid: ConceptId) -> Option<&[f32]> {
+        self.concept_features
+            .get(cid.0 as usize)
+            .filter(|v| !v.is_empty())
+            .map(Vec::as_slice)
     }
 
     /// Enable the bigram FFT spectrum diagnostic with the given vocab cap.

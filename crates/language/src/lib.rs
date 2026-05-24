@@ -25,6 +25,7 @@
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
+pub mod comprehend;
 pub mod concept;
 pub mod engine;
 pub mod lexicon;
@@ -32,6 +33,7 @@ pub mod phrase;
 pub mod spectrum;
 pub mod text;
 
+pub use comprehend::ComprehensionResult;
 pub use concept::{ConceptId, ConceptRegistry};
 pub use engine::{GroundedLanguage, LanguageStats};
 pub use lexicon::{Lexicon, LexiconEntry, Modality, WordBinding, WordClass, MODALITY_COUNT};
@@ -72,6 +74,22 @@ pub const BIGRAM_RERANK_ALPHA: f32 = 0.05;
 /// Max distinct multi-word phrases retained (V1 `GL_MAX_PHRASES`).
 /// Overflow evicts the least-frequent entry.
 pub const MAX_PHRASES: usize = 512;
+
+/// Negation scope: a cue (`not`, `no`, `never`, `n't`, …) negates this
+/// many following words (V1 `GL_NEGATION_WINDOW`).
+pub const NEGATION_WINDOW: usize = 3;
+
+/// Discourse recency decay base — turn `d` steps back contributes
+/// `0.6^d` to the running context vector (V1 `push_turn`).
+pub const DISCOURSE_RECENCY: f32 = 0.6;
+
+/// Discourse ring capacity (recent comprehended turns retained).
+pub const DISCOURSE_CAPACITY: usize = 8;
+
+/// Comprehension weights (V1): grounded concept features dominate,
+/// distributional context next, NLP embedding least.
+pub const W_CONCEPT_FEATURES: f32 = 0.6;
+pub const W_DISTRIBUTIONAL: f32 = 0.3;
 
 // -------------------------------------------------------------------------
 // Shared math — ports of the V1 `static` helpers in grounded_language.c.
