@@ -23,6 +23,7 @@ members = [
     "crates/geometry",
     "crates/quantum",
     "crates/checkpoint",
+    "crates/cognition",
     "crates/language",
     "crates/toxicity",
     "crates/brain",
@@ -112,6 +113,7 @@ nimcp-quantum = { path = "crates/quantum" }
 nimcp-checkpoint = { path = "crates/checkpoint" }
 nimcp-language = { path = "crates/language" }
 nimcp-toxicity = { path = "crates/toxicity" }
+nimcp-cognition = { path = "crates/cognition" }
 nimcp-brain = { path = "crates/brain" }
 nimcp-daemon = { path = "crates/daemon" }
 
