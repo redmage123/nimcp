@@ -36,7 +36,9 @@ use nimcp_cnn::{CnnConfig, CnnNetwork};
 use nimcp_core::{Error, Result};
 use nimcp_fno::{FnoConfig, FnoNetwork};
 use nimcp_hnn::{HnnConfig, HnnNetwork};
+use nimcp_language::{CascadeConfig, GroundedLanguage};
 use nimcp_lnn::{LnnConfig, LnnNetwork, LtcState, TrainParams};
+use nimcp_toxicity::ToxicityStack;
 use nimcp_memory::{MemoryNode, QueryHit, ZLadder, ZLadderConfig};
 use nimcp_scheduler::{Scheduler, SchedulerConfig};
 use nimcp_snn::{SnnConfig, SnnNetwork};
@@ -96,6 +98,10 @@ pub struct BrainConfig {
     /// brains remain valid).
     #[serde(default)]
     pub memory: Option<ZLadderConfig>,
+    /// Grounded-language config. `None` → no language subsystem;
+    /// `language_*` methods return `Error::Config`.
+    #[serde(default)]
+    pub language: Option<LanguageConfig>,
     /// Phase 9h — brain-wide execution backend. When `Gpu`, SNN's
     /// `use_gpu_forward` flag is forced on at construction and LNN's
     /// `enable_gpu` is called automatically. When `Cpu` the per-
@@ -117,9 +123,61 @@ impl Default for BrainConfig {
             fno: None,
             hnn: None,
             memory: None,
+            language: None,
             backend: Backend::Cpu,
         }
     }
+}
+
+/// Grounded-language subsystem config (Phase L8).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LanguageConfig {
+    /// Semantic / distributional embedding width.
+    pub semantic_dim: usize,
+    /// RNG seed for deterministic language learning.
+    pub rng_seed: u64,
+    /// Build the content-safety toxicity stack + gate `respond`.
+    pub enable_toxicity: bool,
+    /// ML-head seed for the toxicity stack (when `enable_toxicity`).
+    pub toxicity_ml_seed: u64,
+    /// Enable the bigram FFT spectrum diagnostic with this vocab cap.
+    pub spectrum_vocab_cap: Option<usize>,
+    /// Default developmental stage for `language_respond`.
+    pub default_stage: u32,
+    /// Minimum words `language_respond` emits.
+    pub min_produce_words: usize,
+    /// Recurrent cascade settling iterations (1 = single pass).
+    pub recurrent_max_iters: usize,
+}
+
+impl Default for LanguageConfig {
+    fn default() -> Self {
+        Self {
+            semantic_dim: nimcp_language::SEMANTIC_DIM,
+            rng_seed: 0x1A4E,
+            enable_toxicity: true,
+            toxicity_ml_seed: 0x70C1,
+            spectrum_vocab_cap: None,
+            default_stage: 4,
+            min_produce_words: 1,
+            recurrent_max_iters: 1,
+        }
+    }
+}
+
+/// Result of [`Brain::language_respond`] — carries the (possibly
+/// safety-substituted) text plus whether the toxicity gate fired.
+#[derive(Debug, Clone)]
+pub struct LanguageResponse {
+    /// The response text (a counterclaim when `blocked_for_toxicity`).
+    pub text: String,
+    /// Response confidence (self-match, or `1 − harm` when blocked).
+    pub confidence: f32,
+    /// True when the must-run toxicity gate replaced the response with a
+    /// counterclaim (input was blocked).
+    pub blocked_for_toxicity: bool,
+    /// Toxic category that triggered the block (empty if not blocked).
+    pub toxicity_category: String,
 }
 
 /// The top-level brain handle.
@@ -142,6 +200,14 @@ pub struct Brain {
     /// the network itself (`q`, `p`).
     hnn: Option<HnnNetwork>,
     memory: Option<ZLadder>,
+    /// Phase L8 — grounded-language engine (lexicon, embeddings,
+    /// comprehend/produce, cascade). `None` unless `config.language`.
+    language: Option<GroundedLanguage>,
+    /// Phase L8 — content-safety stack. Built iff `language` is present
+    /// AND `LanguageConfig::enable_toxicity`. Not serialized wholesale
+    /// (regex/templates rebuild from bundled data); only ML weights are
+    /// checkpointed.
+    toxicity: Option<ToxicityStack>,
     /// Phase 6c — training-loss tracker for the adaptive network. Always
     /// present; `count == 0` before the first `learn()`.
     adaptive_loss: stats::LossTracker,
@@ -257,6 +323,25 @@ impl Brain {
             None
         };
 
+        // Phase L8 — grounded language + content-safety stack.
+        let (language, toxicity) = if let Some(cfg) = config.language.clone() {
+            let mut gl = GroundedLanguage::new(cfg.semantic_dim, cfg.rng_seed);
+            if let Some(cap) = cfg.spectrum_vocab_cap {
+                gl.enable_bigram_spectrum(cap);
+            }
+            let tox = if cfg.enable_toxicity {
+                Some(
+                    ToxicityStack::with_defaults(cfg.toxicity_ml_seed)
+                        .map_err(|e| Error::Config(format!("toxicity: {e}")))?,
+                )
+            } else {
+                None
+            };
+            (Some(gl), tox)
+        } else {
+            (None, None)
+        };
+
         tracing::info!(
             layers = ?config.adaptive.layers,
             seed = config.rng_seed,
@@ -344,6 +429,8 @@ impl Brain {
             fno,
             hnn,
             memory,
+            language,
+            toxicity,
             adaptive_loss: stats::LossTracker::default(),
             lnn_loss,
             thalamic_router,
@@ -663,6 +750,137 @@ impl Brain {
     }
 
     // -------------------------------------------------------------------------
+    // Phase L8 — grounded language + content safety.
+    // -------------------------------------------------------------------------
+
+    /// Immutable handle to the grounded-language engine, if present.
+    pub fn language(&self) -> Option<&GroundedLanguage> {
+        self.language.as_ref()
+    }
+
+    /// Mutable handle to the grounded-language engine, if present.
+    pub fn language_mut(&mut self) -> Option<&mut GroundedLanguage> {
+        self.language.as_mut()
+    }
+
+    /// Whether the content-safety stack is wired in.
+    #[must_use]
+    pub fn has_toxicity(&self) -> bool {
+        self.toxicity.is_some()
+    }
+
+    /// Learn from a text span (distributional + n-gram learning). This is
+    /// **mark-not-filter**: toxic training text is logged + the toxicity
+    /// ML head is nudged toward the pattern verdict, but the text is still
+    /// learned (V1 never silently drops training data).
+    pub fn language_learn(&mut self, text: &str) -> Result<()> {
+        let toxic = self.toxicity.as_ref().map(|t| t.classify(text));
+        if let Some(t) = self.toxicity.as_mut() {
+            // Nudge the ML head toward the pattern teacher (online).
+            t.train_ml_from_pattern(text, 0.05, 0.02);
+        }
+        if let Some(tr) = &toxic {
+            if tr.would_block {
+                tracing::warn!(
+                    category = %tr.matched_category,
+                    harm = tr.predicted_harm,
+                    "language_learn: toxic training text (marked, not filtered)"
+                );
+            }
+        }
+        let gl = self
+            .language
+            .as_mut()
+            .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
+        gl.learn_from_text(text);
+        Ok(())
+    }
+
+    /// Comprehend a text span → `(semantic_vector, confidence)`.
+    pub fn language_comprehend(&mut self, text: &str) -> Result<(Array1<f32>, f32)> {
+        let gl = self
+            .language
+            .as_mut()
+            .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
+        let r = gl.comprehend(text);
+        Ok((Array1::from(r.semantic_vector), r.comprehension_confidence))
+    }
+
+    /// Respond to an input prompt. The content-safety gate is the
+    /// **first** thing that runs — above the cascade — so it cannot be
+    /// bypassed by the production path (the V1 cascade-bypass lesson).
+    ///
+    /// 1. If the toxicity stack flags the *input*, return a stage-graded
+    ///    counterclaim (no production).
+    /// 2. Otherwise run the cascade.
+    /// 3. Defense-in-depth: if the *output* flags, scale confidence by
+    ///    `(1 − harm)` but never modify the text (mark-not-filter).
+    pub fn language_respond(&mut self, input: &str) -> Result<LanguageResponse> {
+        let cfg = self
+            .config
+            .language
+            .clone()
+            .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
+        let stage = cfg.default_stage;
+
+        // (1) MUST-RUN input gate — above the cascade.
+        if let Some(tox) = self.toxicity.as_ref() {
+            let verdict = tox.classify(input);
+            if verdict.would_block {
+                let cc = tox.counterclaim(input, &verdict.matched_category, i32::from(stage as u16));
+                return Ok(LanguageResponse {
+                    text: cc.text,
+                    confidence: 1.0 - verdict.predicted_harm,
+                    blocked_for_toxicity: true,
+                    toxicity_category: verdict.matched_category,
+                });
+            }
+        }
+
+        // (2) Cascade production.
+        let cascade_cfg = CascadeConfig {
+            stage,
+            min_produce_words: cfg.min_produce_words,
+            recurrent_max_iters: cfg.recurrent_max_iters,
+        };
+        let gl = self
+            .language
+            .as_mut()
+            .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
+        let resp = gl.respond(input, &cascade_cfg);
+
+        // (3) Defense-in-depth output gate — mark, don't filter.
+        let mut confidence = resp.confidence;
+        if let Some(tox) = self.toxicity.as_ref() {
+            let out_verdict = tox.classify(&resp.text);
+            if out_verdict.would_block {
+                tracing::warn!(
+                    category = %out_verdict.matched_category,
+                    "language_respond: produced text flagged — confidence scaled, text kept"
+                );
+                confidence *= 1.0 - out_verdict.predicted_harm;
+            }
+        }
+        Ok(LanguageResponse {
+            text: resp.text,
+            confidence,
+            blocked_for_toxicity: false,
+            toxicity_category: String::new(),
+        })
+    }
+
+    /// Classify text for toxicity (diagnostic). Returns
+    /// `(predicted_harm, fairness_violation, would_block)`.
+    pub fn classify_toxicity(&self, text: &str) -> Result<(f32, f32, bool)> {
+        let tox = self
+            .toxicity
+            .as_ref()
+            .ok_or_else(|| Error::Config("toxicity stack not configured on this brain".into()))?;
+        let r = tox.classify(text);
+        Ok((r.predicted_harm, r.fairness_violation, r.would_block))
+    }
+
+    // -------------------------------------------------------------------------
     // Memory (Z-Ladder) access.
     // -------------------------------------------------------------------------
 
@@ -838,6 +1056,25 @@ impl Brain {
             manifest.files.push("memory.json".into());
         }
 
+        // Language — the whole grounded-language engine via its single
+        // canonical format (lexicon + embeddings + n-grams + discourse).
+        if let Some(gl) = &self.language {
+            let json = gl
+                .to_json()
+                .map_err(|e| Error::Serialization(format!("language serialize: {e}")))?;
+            std::fs::write(tmp_dir.join("language.json"), json.as_bytes()).map_err(Error::from)?;
+            manifest.files.push("language.json".into());
+        }
+        // Toxicity — only the ML weights are learned state (the regex
+        // rules + counterclaim templates rebuild from bundled data).
+        if let Some(tox) = &self.toxicity {
+            let json = tox
+                .ml_to_json()
+                .map_err(|e| Error::Serialization(format!("toxicity ml serialize: {e}")))?;
+            std::fs::write(tmp_dir.join("toxicity_ml.json"), json.as_bytes()).map_err(Error::from)?;
+            manifest.files.push("toxicity_ml.json".into());
+        }
+
         // Manifest — last so its presence signals "this dir is complete".
         let manifest_bytes = serde_json::to_vec_pretty(&manifest)
             .map_err(|e| Error::Serialization(format!("manifest: {e}")))?;
@@ -1000,6 +1237,28 @@ impl Brain {
                 ));
             }
             *mem_slot = restored;
+        }
+
+        // Language — restore the whole engine (validates magic/version +
+        // rebuilds the lexicon index inside from_json).
+        if manifest.files.iter().any(|f| f == "language.json") {
+            let slot = self.language.as_mut().ok_or_else(|| {
+                Error::Config("snapshot has language.json but brain was built without language".into())
+            })?;
+            let json = std::fs::read_to_string(dir.join("language.json")).map_err(Error::from)?;
+            *slot = GroundedLanguage::from_json(&json)
+                .map_err(|e| Error::Serialization(format!("language decode: {e}")))?;
+        }
+        // Toxicity — restore only the ML weights onto the rebuilt stack.
+        if manifest.files.iter().any(|f| f == "toxicity_ml.json") {
+            let slot = self.toxicity.as_mut().ok_or_else(|| {
+                Error::Config(
+                    "snapshot has toxicity_ml.json but brain was built without toxicity".into(),
+                )
+            })?;
+            let json = std::fs::read_to_string(dir.join("toxicity_ml.json")).map_err(Error::from)?;
+            slot.restore_ml_json(&json)
+                .map_err(|e| Error::Serialization(format!("toxicity ml decode: {e}")))?;
         }
 
         tracing::info!(dir = ?dir, files = ?manifest.files, "ensemble loaded");
@@ -1577,5 +1836,110 @@ mod tests {
             "stale file survived atomic swap"
         );
         assert!(dir.join("manifest.json").exists());
+    }
+
+    // -------------------------------------------------------------------
+    // Phase L8 — language + toxicity brain integration.
+    // -------------------------------------------------------------------
+
+    fn language_config(seed: u64) -> BrainConfig {
+        BrainConfig {
+            rng_seed: seed,
+            deterministic: true,
+            language: Some(LanguageConfig {
+                semantic_dim: 8,
+                rng_seed: seed,
+                enable_toxicity: true,
+                toxicity_ml_seed: seed ^ 0x9,
+                spectrum_vocab_cap: None,
+                default_stage: 4,
+                min_produce_words: 1,
+                recurrent_max_iters: 1,
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// Ground a small vocabulary so the cascade can actually produce.
+    fn teach(brain: &mut Brain) {
+        use nimcp_language::Modality;
+        let gl = brain.language_mut().unwrap();
+        gl.ground("dog", &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
+        gl.ground("cat", &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
+        gl.ground("run", &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Motor);
+        for _ in 0..10 {
+            brain.language_learn("the dog likes to run").unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn language_brain_boots_and_responds() {
+        let mut brain = Brain::new(language_config(0x18)).unwrap();
+        assert!(brain.language().is_some());
+        assert!(brain.has_toxicity());
+        teach(&mut brain);
+        let (vec, conf) = brain.language_comprehend("the dog").unwrap();
+        assert_eq!(vec.len(), 8);
+        assert!(conf > 0.0);
+        let r = brain.language_respond("dog").unwrap();
+        assert!(!r.blocked_for_toxicity);
+        assert!(!r.text.is_empty());
+    }
+
+    #[tokio::test]
+    async fn toxicity_gate_blocks_above_cascade() {
+        let mut brain = Brain::new(language_config(7)).unwrap();
+        teach(&mut brain);
+        // Toxic input must be intercepted BEFORE the cascade runs — the
+        // response is a counterclaim, flagged as blocked.
+        let r = brain.language_respond("kill all immigrants").unwrap();
+        assert!(r.blocked_for_toxicity, "toxic input must be gated");
+        assert!(!r.text.is_empty(), "counterclaim emitted");
+        assert_eq!(r.toxicity_category, "violence_against_group");
+    }
+
+    #[tokio::test]
+    async fn benign_input_passes_the_gate() {
+        let mut brain = Brain::new(language_config(8)).unwrap();
+        teach(&mut brain);
+        let r = brain.language_respond("the cat").unwrap();
+        assert!(!r.blocked_for_toxicity);
+    }
+
+    #[tokio::test]
+    async fn classify_toxicity_diagnostic() {
+        let brain = Brain::new(language_config(9)).unwrap();
+        let (harm, _fair, block) = brain.classify_toxicity("muslims are subhuman").unwrap();
+        assert!(harm >= 0.9 && block);
+        let (h2, _f2, b2) = brain.classify_toxicity("what a lovely garden").unwrap();
+        assert!(h2 < 0.7 && !b2);
+    }
+
+    #[tokio::test]
+    async fn language_survives_ensemble_round_trip() {
+        let mut a = Brain::new(language_config(21)).unwrap();
+        teach(&mut a);
+        let resp_a = a.language_respond("dog").unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("brain");
+        a.save_ensemble(&dir).unwrap();
+        assert!(dir.join("language.json").exists());
+        assert!(dir.join("toxicity_ml.json").exists());
+
+        let mut b = Brain::new(language_config(21)).unwrap();
+        b.load_ensemble(&dir).unwrap();
+        // Vocabulary + bindings restored → identical response.
+        let resp_b = b.language_respond("dog").unwrap();
+        assert_eq!(resp_a.text, resp_b.text);
+        assert_eq!(b.language().unwrap().lexicon.vocab_count(), a.language().unwrap().lexicon.vocab_count());
+    }
+
+    #[tokio::test]
+    async fn brain_without_language_errors_cleanly() {
+        let mut brain = Brain::new(BrainConfig::default()).unwrap();
+        assert!(brain.language().is_none());
+        assert!(brain.language_respond("hi").is_err());
+        assert!(brain.classify_toxicity("hi").is_err());
     }
 }

@@ -24,10 +24,12 @@
 pub mod counterclaim;
 pub mod ml;
 pub mod pattern;
+pub mod stack;
 
 pub use counterclaim::{CounterclaimEngine, CounterclaimResult};
-pub use ml::MlClassifier;
+pub use ml::{MlClassifier, MlResult};
 pub use pattern::{PatternClassifier, PatternRule, ToxicityResult};
+pub use stack::ToxicityStack;
 
 /// Default block threshold (V1 `0.7`): `max_score ≥ threshold` sets
 /// `would_block`.

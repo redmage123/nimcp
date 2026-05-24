@@ -34,6 +34,8 @@ nimcp-memory = { workspace = true }
 nimcp-substrate = { workspace = true }
 nimcp-thalamic = { workspace = true }
 nimcp-checkpoint = { workspace = true }
+nimcp-language = { workspace = true }
+nimcp-toxicity = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
