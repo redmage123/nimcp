@@ -30,6 +30,7 @@ pub mod concept;
 pub mod engine;
 pub mod lexicon;
 pub mod phrase;
+pub mod produce;
 pub mod spectrum;
 pub mod text;
 
@@ -38,8 +39,24 @@ pub use concept::{ConceptId, ConceptRegistry};
 pub use engine::{GroundedLanguage, LanguageStats};
 pub use lexicon::{Lexicon, LexiconEntry, Modality, WordBinding, WordClass, MODALITY_COUNT};
 pub use phrase::PhraseTable;
+pub use produce::ProductionResult;
 pub use spectrum::{BigramSpectralMetrics, BigramSpectrum};
 pub use text::tokenize;
+
+/// Part-of-speech expected after `prev` in a simple SVO skeleton (V1
+/// `gl_pos_expected_next`). `None` when there's no expectation.
+#[must_use]
+pub fn pos_expected_next(prev: Option<lexicon::WordClass>) -> Option<lexicon::WordClass> {
+    use lexicon::WordClass::{Adjective, Adverb, Noun, Verb};
+    match prev {
+        None => Some(Noun),           // sentence start → subject noun
+        Some(Adjective) => Some(Noun),
+        Some(Noun) => Some(Verb),
+        Some(Verb) => Some(Noun),
+        Some(Adverb) => Some(Verb),
+        _ => None,
+    }
+}
 
 /// Default semantic / distributional vector width (V1 `GL_SEMANTIC_DIM`).
 pub const SEMANTIC_DIM: usize = 128;
@@ -90,6 +107,47 @@ pub const DISCOURSE_CAPACITY: usize = 8;
 /// distributional context next, NLP embedding least.
 pub const W_CONCEPT_FEATURES: f32 = 0.6;
 pub const W_DISTRIBUTIONAL: f32 = 0.3;
+
+/// Produce candidate-pool size (V1 `GL_PRODUCE_TOPK`).
+pub const PRODUCE_TOPK: usize = 32;
+
+/// Produce scoring blend: `0.4·cos(intent, ctx) + 0.6·max_b strength·
+/// cos(intent, concept_features)` (V1 `score_word_against_vector`).
+pub const W_PRODUCE_CTX: f32 = 0.4;
+pub const W_PRODUCE_BINDING: f32 = 0.6;
+
+/// If the best candidate scores below this, produce shuffles the pool
+/// (deterministically, seeded from the intent) to avoid stuck-on-one-word
+/// collapse (V1 `GL_DIVERSITY_MIN_TOPSCORE`).
+pub const DIVERSITY_MIN_TOPSCORE: f32 = 0.05;
+
+/// Developmental confidence floor by stage — the **sole** production
+/// length authority (V1 `gl_produce_confidence_floor`). Stage 0 emits one
+/// word; later stages allow longer, lower-confidence continuations; stage
+/// 4+ imposes no floor. Gated on raw cosine, never the bias-inflated score.
+#[must_use]
+pub fn produce_confidence_floor(stage: u32) -> f32 {
+    match stage {
+        0 => 1.0,
+        1 => 0.30,
+        2 => 0.15,
+        3 => 0.05,
+        _ => 0.0,
+    }
+}
+
+/// Stage-scaled POS-transition bias weight (V1 Tier-1 Step C). Off at
+/// stages 0–1 so early production isn't shoehorned into a grammar it
+/// hasn't learned; ramps in at stage 2+.
+#[must_use]
+pub fn pos_bias_weight(stage: u32) -> f32 {
+    match stage {
+        0 | 1 => 0.0,
+        2 => 0.08,
+        3 => 0.12,
+        _ => 0.15,
+    }
+}
 
 // -------------------------------------------------------------------------
 // Shared math — ports of the V1 `static` helpers in grounded_language.c.

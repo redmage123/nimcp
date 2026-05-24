@@ -140,6 +140,22 @@ impl ConceptRegistry {
         ConceptId(root)
     }
 
+    /// Resolve to the union-find root *without* path compression — an
+    /// immutable read for hot lookups (e.g. produce scoring). Out-of-range
+    /// ids resolve to themselves.
+    #[must_use]
+    pub fn find_root(&self, id: ConceptId) -> ConceptId {
+        let n = self.parent.len() as u32;
+        if id.0 >= n {
+            return id;
+        }
+        let mut root = id.0;
+        while self.parent[root as usize] != root {
+            root = self.parent[root as usize];
+        }
+        ConceptId(root)
+    }
+
     /// Union two concepts so they share one canonical id. The numerically
     /// smaller root becomes the parent (stable, deterministic). Returns
     /// the resulting canonical id, or `None` if either id is out of range.
