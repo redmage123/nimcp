@@ -26,10 +26,14 @@
 #![allow(missing_docs)]
 
 pub mod concept;
+pub mod engine;
 pub mod lexicon;
+pub mod text;
 
 pub use concept::{ConceptId, ConceptRegistry};
+pub use engine::{GroundedLanguage, LanguageStats};
 pub use lexicon::{Lexicon, LexiconEntry, Modality, WordBinding, WordClass, MODALITY_COUNT};
+pub use text::tokenize;
 
 /// Default semantic / distributional vector width (V1 `GL_SEMANTIC_DIM`).
 pub const SEMANTIC_DIM: usize = 128;
@@ -42,6 +46,19 @@ pub const ASSOC_PRUNE_THRESHOLD: f32 = 0.01;
 
 /// One-shot fast-map binding strength (V1 `GL_FAST_MAP_THRESHOLD`).
 pub const FAST_MAP_STRENGTH: f32 = 0.8;
+
+/// Distributional context window half-width (V1 `GL_CONTEXT_WINDOW`).
+pub const CONTEXT_WINDOW: usize = 7;
+
+/// Frequency-subsampling threshold T (V1 `FREQ_SUBSAMPLE_T`). Words seen
+/// more than T times are down-weighted by `sqrt(T / freq)` so that common
+/// function words don't dominate the distributional update — the
+/// word2vec subsampling that, with negative sampling, prevents the
+/// embedding collapse V1 hit repeatedly.
+pub const FREQ_SUBSAMPLE_T: f32 = 100.0;
+
+/// Negative samples per center word (V1 `K_NEG`).
+pub const K_NEG: usize = 5;
 
 // -------------------------------------------------------------------------
 // Shared math — ports of the V1 `static` helpers in grounded_language.c.
