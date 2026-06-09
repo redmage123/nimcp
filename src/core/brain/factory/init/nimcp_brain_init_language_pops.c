@@ -20,7 +20,14 @@
 #define LOG_MODULE "BRAIN_INIT_LANG_POPS"
 
 /* Pop sizes — 64K/64K/32K language + 40K sensorymotor = 200K total
- * (brain 2.0M → 2.2M, ~17 GB VRAM on 32 GB RTX 5090, ~3.2 s/step). */
+ * (brain 2.0M → 2.2M, ~17 GB VRAM on 32 GB RTX 5090, ~3.2 s/step).
+ * NOTE (2026-06-09): Broca stays 64000 — the resume guard below restores pops
+ * at their checkpoint size, so a constant bump would only apply on a (training-
+ * destroying) --fresh cold init. The collision fix instead caps
+ * SNN_LANG_MAX_WORD_POPS to 64000/8 = 8000 so disjoint 8-neuron ensembles
+ * (lang_ensemble_neuron) fit the EXISTING Broca with no neuron overlap. Growing
+ * to 262144 (32768 pops × 8) for full vocab coverage needs a checkpoint
+ * migration — deferred. */
 #define LANG_BROCA_POP_NEURONS        64000u
 #define LANG_WERNICKE_POP_NEURONS     64000u
 #define LANG_ARCUATE_POP_NEURONS      32000u

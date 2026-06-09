@@ -657,13 +657,17 @@ int snn_language_bridge_register_word(snn_language_bridge_t* bridge,
 static uint32_t lang_ensemble_neuron(uint32_t pop_idx, uint32_t j, uint32_t n_neurons)
 {
     if (n_neurons == 0) return 0;
-    uint64_t z = (uint64_t)pop_idx * 0x9E3779B97F4A7C15ULL + 0xD1B54A32D192ED03ULL;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    z =  z ^ (z >> 31);
-    uint32_t base   = (uint32_t)(z % n_neurons);
-    uint32_t stride = (uint32_t)((z >> 17) % n_neurons) | 1u;  /* odd → coprime-ish ring walk */
-    return (uint32_t)(((uint64_t)base + (uint64_t)j * stride) % n_neurons);
+    /* DISJOINT contiguous allocation (2026-06-09 collision fix). The previous
+     * splitmix64-hashed base+stride placement scattered each pop's 8 neurons
+     * pseudo-randomly across n_neurons, so with MAX_WORD_POPS(32768)×8 = 262144
+     * neuron-claims landing in a 64000-neuron Broca, every neuron was claimed by
+     * ~4 different word pops — distinct words shared neurons and were
+     * indistinguishable at decode (the generation scramble). Contiguous blocks
+     * [pop_idx*8 .. pop_idx*8+8) are provably disjoint as long as the population
+     * is sized n_neurons >= MAX_POPS * NEURONS_PER_POP (Broca = 32768*8 = 262144;
+     * Wernicke 64000 >= 4096*8). The modulo is a safety wrap only — under correct
+     * sizing it never triggers. */
+    return (uint32_t)(((uint64_t)pop_idx * SNN_LANG_NEURONS_PER_POP + j) % n_neurons);
 }
 
 int snn_language_bridge_decode_spikes(snn_language_bridge_t* bridge,

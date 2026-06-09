@@ -623,6 +623,48 @@ def _assert_training_flags(brain, logger):
         logger.error("[train-flags] failed to assert training flags: %s", e)
 
 
+def _activate_snn_language_generator(brain, logger):
+    """Activate the SNN as the language generator (2026-06-09). The concept→word
+    projection topology is runtime-built (reopen Broca CSR → wire every lexicon
+    binding → refinalize) and does NOT survive checkpoint/restart, so it must be
+    rebuilt on every boot AFTER the lexicon is loaded. Then warm-start the synapse
+    weights supra-threshold and route produce through the SNN.
+
+    Sequence (each call no-ops safely on an old .so / empty lexicon):
+      1. build_lang_projection(w_init)  — wire concept→word synapses for every
+         lexicon binding (the missing coverage half; Broca had 0 concept input,
+         so decode returned 0 and the SNN never generated).
+      2. warmstart_lang_projection(k)   — set those weights k*strength (supra-thr).
+      3. set_produce_via_snn(True)      — produce sources candidates from SNN spikes.
+
+    Ongoing concept→word training from the curriculum-shaped lexicon runs in-C
+    every 500 steps when NIMCP_TRAIN_SNN_PROJECTION=1 (learn_pair EMA toward the
+    lexicon bindings — this is how the SNN LEARNS to speak from the curriculum).
+
+    Gate OFF with NIMCP_SNN_LANG_GENERATOR=0 for debugging.
+    """
+    if os.environ.get("NIMCP_SNN_LANG_GENERATOR", "1") == "0":
+        logger.info("[snn-lang-gen] NIMCP_SNN_LANG_GENERATOR=0 — SNN generator OFF")
+        return
+    try:
+        wired = brain.build_lang_projection(0.5)
+        logger.info("[snn-lang-gen] build_lang_projection: %s concept→word pairs wired",
+                    wired)
+        if wired and int(wired) > 0:
+            updated = brain.warmstart_lang_projection(2.0)
+            logger.info("[snn-lang-gen] warmstart: %s projection synapses set", updated)
+            brain.set_produce_via_snn(True)
+            logger.info("[snn-lang-gen] produce_via_snn ENABLED — the SNN is now "
+                        "the language generator")
+        else:
+            logger.warning("[snn-lang-gen] 0 pairs wired (lexicon not loaded yet / "
+                           "empty?) — produce_via_snn left OFF")
+    except AttributeError as e:
+        logger.error("[snn-lang-gen] activation method missing (stale nimcp.so?): %s", e)
+    except Exception as e:
+        logger.error("[snn-lang-gen] activation failed: %s", e)
+
+
 def _activate_cb_default(brain, logger):
     """Activate conductance-based PSCs (CB) on the SNN. Runs unconditionally
     after brain init so production daemons always boot with CB on — this is
@@ -5858,6 +5900,13 @@ def main():
     # ever took effect on the pod. See _apply_runtime_lang_config for path
     # resolution.
     _apply_runtime_lang_config(brain, logger)
+
+    # Activate the SNN as the language generator: rebuild the concept→word
+    # projection topology (runtime-only, does not survive restart), warm-start
+    # its weights, and route produce through the SNN. Runs AFTER the lexicon is
+    # loaded so collect_warmstart_bindings has data. See _activate_snn_language_
+    # generator; gate off with NIMCP_SNN_LANG_GENERATOR=0.
+    _activate_snn_language_generator(brain, logger)
 
     # Optional base-lexicon bootstrap. Runs only when:
     #   1. --bootstrap-lexicon PATH was supplied, AND

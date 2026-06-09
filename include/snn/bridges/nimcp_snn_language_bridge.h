@@ -42,7 +42,9 @@ extern "C" {
 // Constants
 //=============================================================================
 
-#define SNN_LANG_MAX_CONCEPT_POPS     4096
+/* Raised 4096→8000 (2026-06-09) to fill Wernicke (64000/8) with DISJOINT concept
+ * ensembles and cut concept-level (concept_id % CONCEPT_POPS) collisions. */
+#define SNN_LANG_MAX_CONCEPT_POPS     8000
 /* Vocab cap for the SNN language bridge. Bumped 16384 → 32768 once the
  * canonical literary corpus + active-learning grounding pushed produced
  * vocab past the 8K-12K band. Each bridge instance allocates O(cap)
@@ -50,7 +52,14 @@ extern "C" {
  * every doubling adds ~12-16MB per bridge — trivial at single-bridge
  * scale. Keep aligned with grounded_language's form_hash modulus —
  * mismatches reproduce the silent-capacity-drop bug logged 2026-04-27. */
-#define SNN_LANG_MAX_WORD_POPS        32768
+/* Capped 32768→8000 (2026-06-09 collision fix) = Broca(64000)/NEURONS_PER_POP(8)
+ * so every word pop gets a DISJOINT contiguous 8-neuron ensemble with NO overlap.
+ * At 32768, 32768×8=262144 ensemble-neuron claims overlapped ~4× in 64000 Broca
+ * neurons — distinct words shared neurons and were indistinguishable at decode
+ * (the generation scramble). 8000 clean slots; ~4 lexicon words may share a slot
+ * (resolved by projection weight competition) until Broca grows via checkpoint
+ * migration. */
+#define SNN_LANG_MAX_WORD_POPS        8000
 #define SNN_LANG_MAX_ATTACHED_POPS    8
 #define SNN_LANG_NEURONS_PER_POP      8
 /* Max per-synapse weight for the concept→word projection. Higher than the 2.0
