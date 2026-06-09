@@ -972,6 +972,79 @@ int snn_language_bridge_wire_concept_word(snn_language_bridge_t* bridge,
     return added;
 }
 
+/* Build the concept→word projection TOPOLOGY for ALL registered lexicon
+ * bindings — the missing "coverage half" (2026-06-09). wire_concept_word and
+ * learn_pair/warmstart can only operate on synapses that already exist, and
+ * nothing previously created them: the Broca incoming CSR is finalized at init,
+ * and the lexicon bindings only exist post-load, so there was never a window to
+ * wire them. Result: Broca had zero concept input, decode returned 0, the SNN
+ * never generated. This orchestrates the fix:
+ *   1. snn_csr_reopen(Broca CSR)  — un-finalize so add_entry is allowed; the
+ *      reopen frees the GPU device mirror so the next step re-uploads topology.
+ *   2. wire_concept_word for every (concept_id → word_pop) lexicon binding —
+ *      the 8×8 Wernicke-ensemble → Broca-ensemble cross-product per pair.
+ *   3. snn_csr_finalize — rebuild row_ptr so the running SNN can use it.
+ * learn_pair/warmstart then set the weights supra-threshold.
+ *
+ * CONCURRENCY: mutates live CSR topology. MUST run with SNN stepping paused —
+ * the daemon RPC path holds the global lock (serialized with learn_vector), so
+ * no snn_network_step runs concurrently. Do NOT call from the step hot path.
+ * Returns #pairs wired (>0), 0 if no bindings, or -1 on error. */
+int snn_language_bridge_build_projection(snn_language_bridge_t* bridge,
+                                         struct snn_network_s* net,
+                                         float w_init)
+{
+    if (!bridge || bridge->magic != SNN_LANG_MAGIC || !net ||
+        bridge->gen_wernicke_pop_id < 0 || bridge->gen_broca_pop_id < 0 ||
+        !bridge->grounded_lang) {
+        return -1;
+    }
+    const int wid = bridge->gen_wernicke_pop_id;
+    const int bid = bridge->gen_broca_pop_id;
+    snn_population_t* broca = snn_network_get_population(net, (uint32_t)bid);
+    if (!broca || !broca->incoming_csr) return -1;
+    snn_csr_storage_t* csr = broca->incoming_csr;
+
+    /* Reopen if finalized so wire_concept_word's snn_csr_add_entry is allowed. */
+    const bool was_finalized = csr->finalized;
+    if (was_finalized && snn_csr_reopen(csr) != 0) {
+        LOG_ERROR("[snn_lang_bridge] build_projection: snn_csr_reopen failed");
+        return -1;
+    }
+
+    const uint32_t cap = SNN_LANG_MAX_WORD_POPS;
+    gl_warmstart_binding_t* binds =
+        (gl_warmstart_binding_t*)nimcp_calloc(cap, sizeof(*binds));
+    if (!binds) {
+        if (was_finalized) (void)snn_csr_finalize(csr);
+        return -1;
+    }
+    const uint32_t nb =
+        grounded_language_collect_warmstart_bindings(bridge->grounded_lang, binds, cap);
+
+    int wired = 0;
+    for (uint32_t i = 0; i < nb; i++) {
+        const uint32_t word_pop = binds[i].form_hash % SNN_LANG_MAX_WORD_POPS;
+        if (snn_language_bridge_wire_concept_word(bridge, net, wid, bid,
+                                                  binds[i].concept_id, word_pop,
+                                                  w_init) > 0) {
+            wired++;
+        }
+    }
+    nimcp_free(binds);
+
+    /* Re-finalize so the running SNN sees the new topology (next step re-uploads
+     * the freed GPU mirror). */
+    if (snn_csr_finalize(csr) != 0) {
+        LOG_ERROR("[snn_lang_bridge] build_projection: snn_csr_finalize failed");
+        return -1;
+    }
+    LOG_INFO("[snn_lang_bridge] build_projection: wired %d/%u concept→word pairs "
+             "(wernicke=%d->broca=%d, w_init=%.2f)",
+             wired, nb, wid, bid, (double)w_init);
+    return wired;
+}
+
 /* Phase-2 produce-time SNN generation step (2026-06-03). THE generator: seed the
  * intent's concepts into the Wernicke concept ensembles (external_current), step
  * the whole SNN n_steps times so the concept->word projection drives Broca, then

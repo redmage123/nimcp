@@ -22097,6 +22097,30 @@ __/core/brain/factory/init/nimcp_brain_init_region_kg_bridges.c.s:
 	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/brain/factory/init/nimcp_brain_init_region_kg_bridges.c.s
 .PHONY : __/core/brain/factory/init/nimcp_brain_init_region_kg_bridges.c.s
 
+__/core/brain/factory/init/nimcp_brain_init_safety_verify.o: __/core/brain/factory/init/nimcp_brain_init_safety_verify.c.o
+.PHONY : __/core/brain/factory/init/nimcp_brain_init_safety_verify.o
+
+# target to build an object file
+__/core/brain/factory/init/nimcp_brain_init_safety_verify.c.o:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/brain/factory/init/nimcp_brain_init_safety_verify.c.o
+.PHONY : __/core/brain/factory/init/nimcp_brain_init_safety_verify.c.o
+
+__/core/brain/factory/init/nimcp_brain_init_safety_verify.i: __/core/brain/factory/init/nimcp_brain_init_safety_verify.c.i
+.PHONY : __/core/brain/factory/init/nimcp_brain_init_safety_verify.i
+
+# target to preprocess a source file
+__/core/brain/factory/init/nimcp_brain_init_safety_verify.c.i:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/brain/factory/init/nimcp_brain_init_safety_verify.c.i
+.PHONY : __/core/brain/factory/init/nimcp_brain_init_safety_verify.c.i
+
+__/core/brain/factory/init/nimcp_brain_init_safety_verify.s: __/core/brain/factory/init/nimcp_brain_init_safety_verify.c.s
+.PHONY : __/core/brain/factory/init/nimcp_brain_init_safety_verify.s
+
+# target to generate assembly for a file
+__/core/brain/factory/init/nimcp_brain_init_safety_verify.c.s:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/brain/factory/init/nimcp_brain_init_safety_verify.c.s
+.PHONY : __/core/brain/factory/init/nimcp_brain_init_safety_verify.c.s
+
 __/core/brain/factory/init/nimcp_brain_init_security.o: __/core/brain/factory/init/nimcp_brain_init_security.c.o
 .PHONY : __/core/brain/factory/init/nimcp_brain_init_security.o
 
@@ -40457,6 +40481,30 @@ __/language/nimcp_grounded_language_persistence.c.s:
 	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/language/nimcp_grounded_language_persistence.c.s
 .PHONY : __/language/nimcp_grounded_language_persistence.c.s
 
+__/language/nimcp_grounded_language_tf.o: __/language/nimcp_grounded_language_tf.c.o
+.PHONY : __/language/nimcp_grounded_language_tf.o
+
+# target to build an object file
+__/language/nimcp_grounded_language_tf.c.o:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/language/nimcp_grounded_language_tf.c.o
+.PHONY : __/language/nimcp_grounded_language_tf.c.o
+
+__/language/nimcp_grounded_language_tf.i: __/language/nimcp_grounded_language_tf.c.i
+.PHONY : __/language/nimcp_grounded_language_tf.i
+
+# target to preprocess a source file
+__/language/nimcp_grounded_language_tf.c.i:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/language/nimcp_grounded_language_tf.c.i
+.PHONY : __/language/nimcp_grounded_language_tf.c.i
+
+__/language/nimcp_grounded_language_tf.s: __/language/nimcp_grounded_language_tf.c.s
+.PHONY : __/language/nimcp_grounded_language_tf.s
+
+# target to generate assembly for a file
+__/language/nimcp_grounded_language_tf.c.s:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/language/nimcp_grounded_language_tf.c.s
+.PHONY : __/language/nimcp_grounded_language_tf.c.s
+
 __/language/nimcp_language_bio_async.o: __/language/nimcp_language_bio_async.c.o
 .PHONY : __/language/nimcp_language_bio_async.o
 
@@ -50609,6 +50657,78 @@ __/security/nimcp_toctou_guard.c.s:
 	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toctou_guard.c.s
 .PHONY : __/security/nimcp_toctou_guard.c.s
 
+__/security/nimcp_toxicity.o: __/security/nimcp_toxicity.c.o
+.PHONY : __/security/nimcp_toxicity.o
+
+# target to build an object file
+__/security/nimcp_toxicity.c.o:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity.c.o
+.PHONY : __/security/nimcp_toxicity.c.o
+
+__/security/nimcp_toxicity.i: __/security/nimcp_toxicity.c.i
+.PHONY : __/security/nimcp_toxicity.i
+
+# target to preprocess a source file
+__/security/nimcp_toxicity.c.i:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity.c.i
+.PHONY : __/security/nimcp_toxicity.c.i
+
+__/security/nimcp_toxicity.s: __/security/nimcp_toxicity.c.s
+.PHONY : __/security/nimcp_toxicity.s
+
+# target to generate assembly for a file
+__/security/nimcp_toxicity.c.s:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity.c.s
+.PHONY : __/security/nimcp_toxicity.c.s
+
+__/security/nimcp_toxicity_ml.o: __/security/nimcp_toxicity_ml.c.o
+.PHONY : __/security/nimcp_toxicity_ml.o
+
+# target to build an object file
+__/security/nimcp_toxicity_ml.c.o:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity_ml.c.o
+.PHONY : __/security/nimcp_toxicity_ml.c.o
+
+__/security/nimcp_toxicity_ml.i: __/security/nimcp_toxicity_ml.c.i
+.PHONY : __/security/nimcp_toxicity_ml.i
+
+# target to preprocess a source file
+__/security/nimcp_toxicity_ml.c.i:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity_ml.c.i
+.PHONY : __/security/nimcp_toxicity_ml.c.i
+
+__/security/nimcp_toxicity_ml.s: __/security/nimcp_toxicity_ml.c.s
+.PHONY : __/security/nimcp_toxicity_ml.s
+
+# target to generate assembly for a file
+__/security/nimcp_toxicity_ml.c.s:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity_ml.c.s
+.PHONY : __/security/nimcp_toxicity_ml.c.s
+
+__/security/nimcp_toxicity_response.o: __/security/nimcp_toxicity_response.c.o
+.PHONY : __/security/nimcp_toxicity_response.o
+
+# target to build an object file
+__/security/nimcp_toxicity_response.c.o:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity_response.c.o
+.PHONY : __/security/nimcp_toxicity_response.c.o
+
+__/security/nimcp_toxicity_response.i: __/security/nimcp_toxicity_response.c.i
+.PHONY : __/security/nimcp_toxicity_response.i
+
+# target to preprocess a source file
+__/security/nimcp_toxicity_response.c.i:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity_response.c.i
+.PHONY : __/security/nimcp_toxicity_response.c.i
+
+__/security/nimcp_toxicity_response.s: __/security/nimcp_toxicity_response.c.s
+.PHONY : __/security/nimcp_toxicity_response.s
+
+# target to generate assembly for a file
+__/security/nimcp_toxicity_response.c.s:
+	cd /home/bbrelin/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_toxicity_response.c.s
+.PHONY : __/security/nimcp_toxicity_response.c.s
+
 __/security/nimcp_tripwires.o: __/security/nimcp_tripwires.c.o
 .PHONY : __/security/nimcp_tripwires.o
 
@@ -60226,6 +60346,9 @@ help:
 	@echo "... __/core/brain/factory/init/nimcp_brain_init_region_kg_bridges.o"
 	@echo "... __/core/brain/factory/init/nimcp_brain_init_region_kg_bridges.i"
 	@echo "... __/core/brain/factory/init/nimcp_brain_init_region_kg_bridges.s"
+	@echo "... __/core/brain/factory/init/nimcp_brain_init_safety_verify.o"
+	@echo "... __/core/brain/factory/init/nimcp_brain_init_safety_verify.i"
+	@echo "... __/core/brain/factory/init/nimcp_brain_init_safety_verify.s"
 	@echo "... __/core/brain/factory/init/nimcp_brain_init_security.o"
 	@echo "... __/core/brain/factory/init/nimcp_brain_init_security.i"
 	@echo "... __/core/brain/factory/init/nimcp_brain_init_security.s"
@@ -62521,6 +62644,9 @@ help:
 	@echo "... __/language/nimcp_grounded_language_persistence.o"
 	@echo "... __/language/nimcp_grounded_language_persistence.i"
 	@echo "... __/language/nimcp_grounded_language_persistence.s"
+	@echo "... __/language/nimcp_grounded_language_tf.o"
+	@echo "... __/language/nimcp_grounded_language_tf.i"
+	@echo "... __/language/nimcp_grounded_language_tf.s"
 	@echo "... __/language/nimcp_language_bio_async.o"
 	@echo "... __/language/nimcp_language_bio_async.i"
 	@echo "... __/language/nimcp_language_bio_async.s"
@@ -63790,6 +63916,15 @@ help:
 	@echo "... __/security/nimcp_toctou_guard.o"
 	@echo "... __/security/nimcp_toctou_guard.i"
 	@echo "... __/security/nimcp_toctou_guard.s"
+	@echo "... __/security/nimcp_toxicity.o"
+	@echo "... __/security/nimcp_toxicity.i"
+	@echo "... __/security/nimcp_toxicity.s"
+	@echo "... __/security/nimcp_toxicity_ml.o"
+	@echo "... __/security/nimcp_toxicity_ml.i"
+	@echo "... __/security/nimcp_toxicity_ml.s"
+	@echo "... __/security/nimcp_toxicity_response.o"
+	@echo "... __/security/nimcp_toxicity_response.i"
+	@echo "... __/security/nimcp_toxicity_response.s"
 	@echo "... __/security/nimcp_tripwires.o"
 	@echo "... __/security/nimcp_tripwires.i"
 	@echo "... __/security/nimcp_tripwires.s"

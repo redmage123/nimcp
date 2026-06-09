@@ -792,6 +792,20 @@ int snn_language_bridge_wire_concept_word(
     uint64_t concept_id, uint32_t word_pop,
     float w_init);
 
+/** Build the concept→word projection TOPOLOGY for ALL registered lexicon
+ *  bindings (2026-06-09) — the missing "coverage half". Reopens the finalized
+ *  Broca incoming CSR (snn_csr_reopen frees the stale GPU mirror), wires every
+ *  (concept_id → word_pop) lexicon binding via wire_concept_word, then
+ *  re-finalizes. learn_pair/warmstart then set weights supra-threshold. This is
+ *  what gives Broca its concept input so the SNN can GENERATE; without it decode
+ *  returns 0 and produce falls to the lexicon. CONCURRENCY: mutates live CSR
+ *  topology — MUST run with SNN stepping paused (daemon RPC path holds the global
+ *  lock). Returns #pairs wired (>0), 0 if no bindings, or -1 on error. */
+int snn_language_bridge_build_projection(
+    snn_language_bridge_t* bridge,
+    struct snn_network_s* net,
+    float w_init);
+
 /** Phase-2 produce-time SNN generation step (2026-06-03): seed `concept_ids` into
  *  Wernicke, step the whole SNN n_steps, copy Broca spikes into the decode cache
  *  (then decode_spikes_cached reads intent-driven activity). Clears injection on

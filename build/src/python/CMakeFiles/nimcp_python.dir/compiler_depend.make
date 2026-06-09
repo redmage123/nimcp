@@ -342,15 +342,35 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_python.c.o: /hom
   /usr/include/asm-generic/posix_types.h \
   /usr/include/asm-generic/types.h \
   /usr/include/assert.h \
+  /usr/include/builtin_types.h \
+  /usr/include/channel_descriptor.h \
   /usr/include/complex.h \
+  /usr/include/crt/host_config.h \
+  /usr/include/crt/host_defines.h \
   /usr/include/ctype.h \
+  /usr/include/cuComplex.h \
+  /usr/include/cublas_api.h \
+  /usr/include/cublas_v2.h \
+  /usr/include/cuda_bf16.h \
+  /usr/include/cuda_bf16.hpp \
+  /usr/include/cuda_device_runtime_api.h \
+  /usr/include/cuda_fp16.h \
+  /usr/include/cuda_fp16.hpp \
+  /usr/include/cuda_runtime.h \
+  /usr/include/cuda_runtime_api.h \
+  /usr/include/cufft.h \
+  /usr/include/cusparse.h \
+  /usr/include/device_types.h \
   /usr/include/dirent.h \
   /usr/include/dlfcn.h \
+  /usr/include/driver_functions.h \
+  /usr/include/driver_types.h \
   /usr/include/endian.h \
   /usr/include/errno.h \
   /usr/include/features-time64.h \
   /usr/include/features.h \
   /usr/include/inttypes.h \
+  /usr/include/library_types.h \
   /usr/include/limits.h \
   /usr/include/linux/close_range.h \
   /usr/include/linux/errno.h \
@@ -361,6 +381,9 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_python.c.o: /hom
   /usr/include/linux/types.h \
   /usr/include/lz4.h \
   /usr/include/math.h \
+  /usr/include/nv/detail/__preprocessor \
+  /usr/include/nv/detail/__target_macros \
+  /usr/include/nv/target \
   /usr/include/pthread.h \
   /usr/include/python3.12/Python.h \
   /usr/include/python3.12/abstract.h \
@@ -480,8 +503,13 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_python.c.o: /hom
   /usr/include/stdlib.h \
   /usr/include/string.h \
   /usr/include/strings.h \
+  /usr/include/surface_types.h \
+  /usr/include/texture_types.h \
   /usr/include/time.h \
   /usr/include/unistd.h \
+  /usr/include/vector_functions.h \
+  /usr/include/vector_functions.hpp \
+  /usr/include/vector_types.h \
   /usr/include/wchar.h \
   /usr/include/x86_64-linux-gnu/asm/bitsperlong.h \
   /usr/include/x86_64-linux-gnu/asm/errno.h \
@@ -628,35 +656,7 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_python.c.o: /hom
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdbool.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h \
-  /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h \
-  /usr/local/cuda/targets/x86_64-linux/include/builtin_types.h \
-  /usr/local/cuda/targets/x86_64-linux/include/channel_descriptor.h \
-  /usr/local/cuda/targets/x86_64-linux/include/crt/host_config.h \
-  /usr/local/cuda/targets/x86_64-linux/include/crt/host_defines.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cuComplex.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cublas_api.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cublas_v2.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_bf16.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_bf16.hpp \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_device_runtime_api.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_fp16.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_fp16.hpp \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_runtime.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cuda_runtime_api.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cufft.h \
-  /usr/local/cuda/targets/x86_64-linux/include/cusparse.h \
-  /usr/local/cuda/targets/x86_64-linux/include/device_types.h \
-  /usr/local/cuda/targets/x86_64-linux/include/driver_functions.h \
-  /usr/local/cuda/targets/x86_64-linux/include/driver_types.h \
-  /usr/local/cuda/targets/x86_64-linux/include/library_types.h \
-  /usr/local/cuda/targets/x86_64-linux/include/nv/detail/__preprocessor \
-  /usr/local/cuda/targets/x86_64-linux/include/nv/detail/__target_macros \
-  /usr/local/cuda/targets/x86_64-linux/include/nv/target \
-  /usr/local/cuda/targets/x86_64-linux/include/surface_types.h \
-  /usr/local/cuda/targets/x86_64-linux/include/texture_types.h \
-  /usr/local/cuda/targets/x86_64-linux/include/vector_functions.h \
-  /usr/local/cuda/targets/x86_64-linux/include/vector_functions.hpp \
-  /usr/local/cuda/targets/x86_64-linux/include/vector_types.h
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h
 
 src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py.c.o: /home/bbrelin/nimcp/src/bindings/python/nimcp_signal_filter_py.c \
   /home/bbrelin/.local/lib/python3.12/site-packages/numpy/_core/include/numpy/__multiarray_api.h \
@@ -1003,40 +1003,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/src/bindings/python/nimcp_signal_filter_py.c:
 
-/usr/local/cuda/targets/x86_64-linux/include/vector_types.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/vector_functions.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/nv/detail/__target_macros:
-
-/usr/local/cuda/targets/x86_64-linux/include/driver_types.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/driver_functions.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/device_types.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cusparse.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_runtime_api.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_fp16.hpp:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_fp16.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_device_runtime_api.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_bf16.hpp:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_bf16.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cublas_v2.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/crt/host_defines.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/channel_descriptor.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/builtin_types.h:
-
 /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h:
@@ -1046,8 +1012,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/lib/gcc/x86_64-linux-gnu/13/include/limits.h:
 
 /usr/include/x86_64-linux-gnu/sys/time.h:
-
-/usr/include/x86_64-linux-gnu/sys/cdefs.h:
 
 /usr/include/x86_64-linux-gnu/gnu/stubs.h:
 
@@ -1078,8 +1042,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
 
@@ -1141,11 +1103,41 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/x86_64-linux-gnu/bits/stat.h:
 
+/usr/include/x86_64-linux-gnu/bits/ss_flags.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigstack.h:
+
+/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
+
+/usr/include/x86_64-linux-gnu/bits/siginfo-arch.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
+
+/usr/include/x86_64-linux-gnu/bits/select2.h:
+
+/usr/include/x86_64-linux-gnu/bits/select.h:
+
+/usr/include/x86_64-linux-gnu/bits/select-decl.h:
+
+/usr/include/x86_64-linux-gnu/bits/setjmp.h:
+
+/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
+
+/usr/include/x86_64-linux-gnu/bits/posix_opt.h:
+
+/usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathdef.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
+
 /home/bbrelin/nimcp/include/plasticity/dendritic/nimcp_dendritic.h:
 
 /home/bbrelin/nimcp/include/plasticity/attention/nimcp_attention.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cuda_runtime.h:
 
 /home/bbrelin/nimcp/include/plasticity/adaptive/nimcp_adaptive.h:
 
@@ -1178,6 +1170,10 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/middleware/encoding/nimcp_rate_coding.h:
 
 /usr/include/python3.12/pythonrun.h:
+
+/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h:
+
+/home/bbrelin/nimcp/include/middleware/buffering/nimcp_temporal_accumulator.h:
 
 /home/bbrelin/nimcp/include/middleware/training/nimcp_training_callbacks.h:
 
@@ -1219,10 +1215,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_parietal.h:
 
-/usr/local/cuda/targets/x86_64-linux/include/nv/target:
-
-/home/bbrelin/nimcp/include/lnn/nimcp_lnn_wiring.h:
-
 /home/bbrelin/nimcp/include/gpu/sparse/nimcp_sparse_gpu.h:
 
 /home/bbrelin/nimcp/include/gpu/execution/nimcp_gpu_detect.h:
@@ -1233,9 +1225,11 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/gpu/backend/nimcp_kernel_backend.h:
 
-/usr/local/cuda/targets/x86_64-linux/include/library_types.h:
-
 /usr/include/x86_64-linux-gnu/asm/bitsperlong.h:
+
+/usr/include/x86_64-linux-gnu/bits/siginfo-consts.h:
+
+/home/bbrelin/nimcp/include/glial/myelin_sheath/nimcp_myelin_math.h:
 
 /home/bbrelin/nimcp/include/snn/nimcp_snn_types.h:
 
@@ -1275,6 +1269,10 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/dragonfly/nimcp_dragonfly_tsdn.h:
 
+/usr/include/x86_64-linux-gnu/bits/sigaction.h:
+
+/home/bbrelin/nimcp/include/dragonfly/nimcp_dragonfly_prediction.h:
+
 /home/bbrelin/nimcp/include/core/topology/nimcp_fractal_topology.h:
 
 /home/bbrelin/nimcp/include/gpu/nimcp_execution_mode.h:
@@ -1294,8 +1292,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/core/neuron_types/nimcp_neural_logic.h:
 
 /home/bbrelin/nimcp/include/core/neuralnet/nimcp_sparse_synapse.h:
-
-/usr/include/x86_64-linux-gnu/bits/select-decl.h:
 
 /home/bbrelin/nimcp/include/core/neural_substrate/nimcp_neural_substrate.h:
 
@@ -1345,11 +1341,17 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_globus_pallidus.h:
 
-/usr/include/x86_64-linux-gnu/bits/sigstack.h:
+/home/bbrelin/nimcp/include/lnn/nimcp_lnn_wiring.h:
+
+/usr/include/cuComplex.h:
 
 /usr/include/python3.12/cpython/pythread.h:
 
 /usr/include/x86_64-linux-gnu/bits/libc-header-start.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
+
+/home/bbrelin/nimcp/include/cognitive/memory/nimcp_semantic_memory.h:
 
 /home/bbrelin/nimcp/include/utils/tensor/nimcp_tensor.h:
 
@@ -1377,15 +1379,11 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/x86_64-linux-gnu/bits/cpu-set.h:
 
-/home/bbrelin/nimcp/include/cognitive/nimcp_working_memory.h:
-
 /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
 
 /home/bbrelin/nimcp/include/core/brain_regions/nimcp_brain_regions.h:
 
 /home/bbrelin/nimcp/include/core/brain/internal/nimcp_brain_internal_cerebellum.h:
-
-/home/bbrelin/nimcp/include/glial/myelin_sheath/nimcp_myelin_sheath.h:
 
 /home/bbrelin/nimcp/include/utils/platform/nimcp_platform_thread.h:
 
@@ -1429,8 +1427,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/core/directives/nimcp_reciprocity_eval.h:
 
-/usr/local/cuda/targets/x86_64-linux/include/vector_functions.hpp:
-
 /home/bbrelin/nimcp/include/cognitive/nimcp_autobiographical_memory.h:
 
 /home/bbrelin/nimcp/include/core/brain/nimcp_brain_kg_helpers.h:
@@ -1443,6 +1439,10 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/core/directives/nimcp_harm_classifier.h:
 
+/usr/include/x86_64-linux-gnu/bits/sigthread.h:
+
+/home/bbrelin/nimcp/include/cognitive/memory/nimcp_wm_transfer.h:
+
 /home/bbrelin/nimcp/include/utils/ternary/nimcp_ternary_storage.h:
 
 /usr/include/x86_64-linux-gnu/sys/select.h:
@@ -1454,8 +1454,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/plasticity/adaptive/nimcp_backprop_kernel.h:
 
 /home/bbrelin/nimcp/include/middleware/training/nimcp_training_plasticity_bridge.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cublas_api.h:
 
 /home/bbrelin/nimcp/include/cognitive/curiosity/nimcp_curiosity.h:
 
@@ -1497,6 +1495,12 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/async/nimcp_biological_timescales.h:
 
+/home/bbrelin/.local/lib/python3.12/site-packages/numpy/_core/include/numpy/ndarrayobject.h:
+
+/usr/include/x86_64-linux-gnu/bits/siginfo-consts-arch.h:
+
+/home/bbrelin/nimcp/include/plasticity/stp/nimcp_stp.h:
+
 /home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_superior_colliculus.h:
 
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_intuitive_reasoning.h:
@@ -1506,8 +1510,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/asm-generic/int-ll64.h:
 
 /usr/include/python3.12/cpython/pyfpe.h:
-
-/usr/include/x86_64-linux-gnu/bits/posix_opt.h:
 
 /home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_basal_ganglia.h:
 
@@ -1521,9 +1523,13 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/utils/thread/nimcp_thread.h:
 
-/usr/local/cuda/targets/x86_64-linux/include/nv/detail/__preprocessor:
-
 /home/bbrelin/nimcp/include/api/nimcp_api_internal.h:
+
+/usr/include/x86_64-linux-gnu/bits/signum-generic.h:
+
+/home/bbrelin/nimcp/include/plasticity/nimcp_plasticity_coordinator.h:
+
+/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_financial_bridge.h:
 
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_financial_market.h:
 
@@ -1548,8 +1554,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/core/brain/internal/nimcp_brain_internal_hippocampus.h:
 
 /home/bbrelin/nimcp/include/async/nimcp_future.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/cufft.h:
 
 /usr/include/python3.12/cpython/object.h:
 
@@ -1580,10 +1584,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/python3.12/cpython/methodobject.h:
 
 /home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_subthalamic.h:
-
-/home/bbrelin/nimcp/include/middleware/buffering/nimcp_temporal_accumulator.h:
-
-/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h:
 
 /home/bbrelin/nimcp/include/core/brain/learning/nimcp_brain_experience.h:
 
@@ -1621,19 +1621,13 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/cognitive/inner_dialogue/nimcp_inner_dialogue.h:
 
-/home/bbrelin/nimcp/include/plasticity/nimcp_plasticity_coordinator.h:
+/usr/include/x86_64-linux-gnu/bits/sched.h:
 
-/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_financial_bridge.h:
+/usr/include/python3.12/fileutils.h:
 
-/usr/include/x86_64-linux-gnu/bits/signum-generic.h:
-
-/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_biology.h:
+/home/bbrelin/nimcp/include/cognitive/nimcp_theory_of_mind.h:
 
 /home/bbrelin/nimcp/include/core/neuron_models/nimcp_neuron_model.h:
-
-/home/bbrelin/nimcp/include/cognitive/memory/nimcp_wm_transfer.h:
-
-/usr/include/x86_64-linux-gnu/bits/sigthread.h:
 
 /usr/include/x86_64-linux-gnu/python3.12/pyconfig.h:
 
@@ -1685,31 +1679,17 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/python3.12/cpython/modsupport.h:
 
-/home/bbrelin/nimcp/include/cognitive/nimcp_grief_and_loss.h:
-
-/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_civil_engineering.h:
-
 /home/bbrelin/nimcp/include/gpu/tensor/nimcp_amp_autocast.h:
-
-/home/bbrelin/nimcp/include/middleware/training/nimcp_training_diagnosis.h:
 
 /home/bbrelin/nimcp/include/training/nimcp_cnn_training.h:
 
 /home/bbrelin/nimcp/include/middleware/normalization/nimcp_min_max_normalizer.h:
-
-/home/bbrelin/nimcp/include/utils/containers/nimcp_graph.h:
 
 /usr/include/x86_64-linux-gnu/bits/wordsize.h:
 
 /home/bbrelin/nimcp/include/edge/nimcp_mavlink_bridge.h:
 
 /home/bbrelin/nimcp/include/cognitive/training/nimcp_training_integration.h:
-
-/home/bbrelin/nimcp/include/middleware/brain_integration.h:
-
-/home/bbrelin/nimcp/include/core/neuralnet/nimcp_neuralnet.h:
-
-/home/bbrelin/nimcp/include/security/lgss/perception/nimcp_lgss_content_filter.h:
 
 /home/bbrelin/nimcp/include/snn/nimcp_snn_encoding.h:
 
@@ -1733,9 +1713,17 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_financial_neural_bridge.h:
 
+/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_biology.h:
+
+/usr/include/cublas_api.h:
+
 /home/bbrelin/nimcp/include/information/nimcp_shannon.h:
 
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_hypothesis_generation.h:
+
+/usr/include/x86_64-linux-gnu/sys/cdefs.h:
+
+/usr/include/nv/target:
 
 /home/bbrelin/nimcp/include/cognitive/immune/nimcp_brain_immune.h:
 
@@ -1744,10 +1732,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_financial_investment.h:
 
 /home/bbrelin/nimcp/include/utils/math/nimcp_complex_math.h:
-
-/home/bbrelin/nimcp/include/middleware/training/nimcp_loss_functions.h:
-
-/usr/include/complex.h:
 
 /usr/include/python3.12/pytypedefs.h:
 
@@ -1767,9 +1751,11 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/training/nimcp_cortex_cnn.h:
 
-/home/bbrelin/nimcp/include/cognitive/memory/nimcp_semantic_memory.h:
+/usr/include/x86_64-linux-gnu/bits/types.h:
 
-/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
+/usr/include/x86_64-linux-gnu/bits/signal_ext.h:
+
+/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_spatial_reasoning.h:
 
 /home/bbrelin/nimcp/include/core/brain/learning/nimcp_brain_learning.h:
 
@@ -1793,8 +1779,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/python3.12/bytearrayobject.h:
 
-/usr/local/cuda/targets/x86_64-linux/include/cuComplex.h:
-
 /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
 
 /usr/include/python3.12/rangeobject.h:
@@ -1806,6 +1790,14 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/python3.12/structseq.h:
 
 /home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_bg_hierarchical_rl.h:
+
+/home/bbrelin/nimcp/include/middleware/brain_integration.h:
+
+/home/bbrelin/nimcp/include/core/neuralnet/nimcp_neuralnet.h:
+
+/home/bbrelin/nimcp/include/security/lgss/perception/nimcp_lgss_content_filter.h:
+
+/usr/include/cuda_runtime_api.h:
 
 /home/bbrelin/nimcp/include/core/brain/nimcp_brain.h:
 
@@ -1825,6 +1817,8 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/cognitive/knowledge/nimcp_knowledge.h:
 
+/usr/include/cuda_bf16.h:
+
 /usr/include/python3.12/listobject.h:
 
 /usr/include/x86_64-linux-gnu/bits/getopt_posix.h:
@@ -1832,6 +1826,8 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/cognitive/epistemic/nimcp_epistemic_filter.h:
 
 /home/bbrelin/nimcp/include/core/brain/nimcp_brain_state.h:
+
+/usr/include/nv/detail/__preprocessor:
 
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_intuition_integrations.h:
 
@@ -1844,8 +1840,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/core/brain/regions/cerebellum/nimcp_cerebellum_adapter.h:
 
 /home/bbrelin/nimcp/include/plasticity/predictive/nimcp_predictive_coding.h:
-
-/home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_basal_ganglia_enhanced.h:
 
 /home/bbrelin/nimcp/include/information/nimcp_cross_modal.h:
 
@@ -1882,6 +1876,8 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/security/lgss/perception/nimcp_lgss_input_validator.h:
 
 /home/bbrelin/nimcp/include/security/nimcp_bbb_helpers.h:
+
+/usr/include/cusparse.h:
 
 /home/bbrelin/nimcp/include/security/nimcp_blood_brain_barrier.h:
 
@@ -1931,6 +1927,10 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /home/bbrelin/nimcp/include/utils/memory/nimcp_cow_manager.h:
 
+/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
+
+/home/bbrelin/nimcp/include/utils/memory/nimcp_memory.h:
+
 /usr/include/python3.12/pymacconfig.h:
 
 /home/bbrelin/nimcp/include/security/nimcp_security_math.h:
@@ -1954,8 +1954,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/cognitive/parietal/nimcp_counterfactual.h:
 
 /usr/include/python3.12/cpython/longintrepr.h:
-
-/usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
 
 /home/bbrelin/nimcp/include/optimization/quantum_annealing/nimcp_quantum_annealing.h:
 
@@ -1989,6 +1987,58 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/assert.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h:
+
+/usr/include/builtin_types.h:
+
+/home/bbrelin/nimcp/include/cognitive/nimcp_grief_and_loss.h:
+
+/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_civil_engineering.h:
+
+/usr/include/channel_descriptor.h:
+
+/usr/include/python3.12/pyport.h:
+
+/usr/include/crt/host_config.h:
+
+/usr/include/crt/host_defines.h:
+
+/home/bbrelin/nimcp/include/middleware/training/nimcp_loss_functions.h:
+
+/usr/include/complex.h:
+
+/usr/include/cublas_v2.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
+
+/usr/include/x86_64-linux-gnu/bits/endian.h:
+
+/usr/include/vector_functions.h:
+
+/home/bbrelin/nimcp/include/utils/containers/nimcp_graph.h:
+
+/usr/include/cuda_device_runtime_api.h:
+
+/home/bbrelin/nimcp/include/middleware/training/nimcp_training_diagnosis.h:
+
+/usr/include/cuda_fp16.h:
+
+/usr/include/cuda_fp16.hpp:
+
+/home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_basal_ganglia_enhanced.h:
+
+/usr/include/cufft.h:
+
+/home/bbrelin/nimcp/include/cognitive/nimcp_working_memory.h:
+
+/usr/include/device_types.h:
+
+/usr/include/cuda_runtime.h:
+
+/usr/include/sched.h:
+
+/usr/include/driver_types.h:
+
 /usr/include/endian.h:
 
 /usr/include/python3.12/cpython/listobject.h:
@@ -2000,6 +2050,10 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/errno.h:
 
 /usr/include/features.h:
+
+/home/bbrelin/nimcp/include/glial/myelin_sheath/nimcp_myelin_sheath.h:
+
+/usr/include/library_types.h:
 
 /usr/include/limits.h:
 
@@ -2017,11 +2071,11 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/lz4.h:
 
+/usr/include/nv/detail/__target_macros:
+
 /usr/include/pthread.h:
 
 /usr/include/python3.12/bltinmodule.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/surface_types.h:
 
 /home/bbrelin/nimcp/include/core/brain/nimcp_brain_kg.h:
 
@@ -2038,6 +2092,8 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /home/bbrelin/nimcp/include/cognitive/introspection/nimcp_connectivity_health.h:
 
 /usr/include/python3.12/bytesobject.h:
+
+/usr/include/vector_types.h:
 
 /home/bbrelin/nimcp/include/gpu/tensor/nimcp_tensor_fp16.h:
 
@@ -2117,9 +2173,17 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/python3.12/cpython/pythonrun.h:
 
+/usr/include/driver_functions.h:
+
 /usr/include/x86_64-linux-gnu/bits/floatn-common.h:
 
+/usr/include/cuda_bf16.hpp:
+
 /usr/include/python3.12/cpython/sysmodule.h:
+
+/usr/include/x86_64-linux-gnu/bits/sigstksz.h:
+
+/usr/include/python3.12/cpython/traceback.h:
 
 /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
 
@@ -2187,21 +2251,15 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/python3.12/pylifecycle.h:
 
-/usr/local/cuda/targets/x86_64-linux/include/texture_types.h:
-
 /usr/include/python3.12/pymacro.h:
 
 /usr/include/python3.12/pymath.h:
 
 /usr/include/x86_64-linux-gnu/bits/errno.h:
 
-/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
-
 /usr/include/python3.12/pymem.h:
 
 /usr/include/python3.12/pystate.h:
-
-/usr/include/python3.12/pyport.h:
 
 /home/bbrelin/nimcp/include/core/brain/subcortical/nimcp_bg_cerebellar_coord.h:
 
@@ -2219,8 +2277,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/python3.12/typeslots.h:
 
-/usr/include/x86_64-linux-gnu/bits/select.h:
-
 /usr/include/python3.12/warnings.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h:
@@ -2229,9 +2285,13 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 
 /usr/include/setjmp.h:
 
-/usr/include/sched.h:
-
 /usr/include/string.h:
+
+/usr/include/surface_types.h:
+
+/usr/include/texture_types.h:
+
+/usr/include/vector_functions.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
 
@@ -2248,10 +2308,6 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/x86_64-linux-gnu/bits/cmathcalls.h:
 
 /usr/include/x86_64-linux-gnu/bits/dirent.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
-
-/usr/include/x86_64-linux-gnu/bits/endian.h:
 
 /home/bbrelin/nimcp/include/middleware/buffering/nimcp_circular_buffer.h:
 
@@ -2272,59 +2328,3 @@ src/python/CMakeFiles/nimcp_python.dir/__/bindings/python/nimcp_signal_filter_py
 /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h:
 
 /usr/include/x86_64-linux-gnu/bits/long-double.h:
-
-/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
-
-/usr/local/cuda/targets/x86_64-linux/include/crt/host_config.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathdef.h:
-
-/usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
-
-/usr/include/x86_64-linux-gnu/bits/setjmp.h:
-
-/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
-
-/home/bbrelin/nimcp/include/utils/memory/nimcp_memory.h:
-
-/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
-
-/usr/include/python3.12/fileutils.h:
-
-/home/bbrelin/nimcp/include/cognitive/nimcp_theory_of_mind.h:
-
-/usr/include/x86_64-linux-gnu/bits/sched.h:
-
-/usr/include/x86_64-linux-gnu/bits/select2.h:
-
-/home/bbrelin/nimcp/include/dragonfly/nimcp_dragonfly_prediction.h:
-
-/usr/include/x86_64-linux-gnu/bits/sigaction.h:
-
-/usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
-
-/usr/include/x86_64-linux-gnu/bits/siginfo-arch.h:
-
-/home/bbrelin/.local/lib/python3.12/site-packages/numpy/_core/include/numpy/ndarrayobject.h:
-
-/home/bbrelin/nimcp/include/plasticity/stp/nimcp_stp.h:
-
-/usr/include/x86_64-linux-gnu/bits/siginfo-consts-arch.h:
-
-/home/bbrelin/nimcp/include/glial/myelin_sheath/nimcp_myelin_math.h:
-
-/usr/include/x86_64-linux-gnu/bits/siginfo-consts.h:
-
-/usr/include/x86_64-linux-gnu/bits/types.h:
-
-/home/bbrelin/nimcp/include/cognitive/parietal/nimcp_spatial_reasoning.h:
-
-/usr/include/x86_64-linux-gnu/bits/signal_ext.h:
-
-/usr/include/python3.12/cpython/traceback.h:
-
-/usr/include/x86_64-linux-gnu/bits/sigstksz.h:
-
-/usr/include/x86_64-linux-gnu/bits/ss_flags.h:

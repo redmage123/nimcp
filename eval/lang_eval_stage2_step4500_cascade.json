@@ -1,0 +1,452 @@
+{
+  "prompts": [
+    "What is a tree?",
+    "Describe the sun.",
+    "Tell me about water.",
+    "What is fire?",
+    "What does a rock look like?",
+    "How does the wind feel?",
+    "What is sand?",
+    "Describe a mountain.",
+    "What is a river?",
+    "Describe the ocean.",
+    "What does a cat do?",
+    "How does a bird fly?",
+    "What is a dog?",
+    "Why do fish swim?",
+    "How does a bee work?",
+    "What does an owl do at night?",
+    "Why do horses run?",
+    "How does a snake move?",
+    "What is an elephant?",
+    "What does a wolf eat?",
+    "How do you feel?",
+    "Are you happy?",
+    "What is love?",
+    "What is fear?",
+    "Why do we dream?",
+    "What is memory?",
+    "What does it mean to think?",
+    "What is hope?",
+    "What is silence?",
+    "Why do people laugh?",
+    "What is two plus two?",
+    "What is bigger, three or seven?",
+    "Is one less than ten?",
+    "What comes after five?",
+    "What is the opposite of hot?",
+    "What is half of eight?",
+    "Are circles round?",
+    "Is a square a shape?",
+    "What is zero?",
+    "What is the smallest number you know?",
+    "Tell me a story.",
+    "What is a friend?",
+    "What happens at a birthday?",
+    "Who lives in a family?",
+    "What is a school for?",
+    "Why do people share food?",
+    "What do parents do?",
+    "What is kindness?",
+    "What is a promise?",
+    "Why do people sing?"
+  ],
+  "rounds": [
+    {
+      "label": "stage2_step4500_cascade",
+      "n_prompts": 50,
+      "n_unique": 21,
+      "diversity": 0.42,
+      "mean_conf": 0.5925,
+      "median_conf": 0.5,
+      "mean_ms": 1559.0,
+      "median_ms": 1295.2,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1067.7
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 772.1
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "senate discretion broadway",
+          "conf": 0.375,
+          "ms": 724.5
+        },
+        {
+          "q": "What is fire?",
+          "a": "expectoration adjective tai pachydermatous gillyflower unpack",
+          "conf": 0.75,
+          "ms": 1301.1
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1429.9
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1355.0
+        },
+        {
+          "q": "What is sand?",
+          "a": "senate discretion broadway moosewood rumination proton flasher stout obscene focusing preemptor oates dotty",
+          "conf": 1.0,
+          "ms": 2594.1
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "demineralization enlist aetiologic fenugreek vividness robbery commonness cottage",
+          "conf": 1.0,
+          "ms": 1653.1
+        },
+        {
+          "q": "What is a river?",
+          "a": "approbation grouch sinew aggressive",
+          "conf": 0.016399532556533813,
+          "ms": 998.1
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1297.0
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1310.5
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "demineralization aetiologic enlist fenugreek vividness commonness robbery cottage",
+          "conf": 1.0,
+          "ms": 1820.6
+        },
+        {
+          "q": "What is a dog?",
+          "a": "approbation grouch sinew aggressive",
+          "conf": 0.039851076900959015,
+          "ms": 991.0
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "senate discretion broadway moosewood rumination proton flasher stout obscene focusing preemptor oates dotty",
+          "conf": 1.0,
+          "ms": 2544.7
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1358.3
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1349.3
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 705.3
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "approbation grouch sinew aggressive",
+          "conf": 0.01459251157939434,
+          "ms": 904.2
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "slit vacillate casserole outskirts linocut bushel politics connote persuasion",
+          "conf": 1.0,
+          "ms": 2214.0
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1394.7
+        },
+        {
+          "q": "How do you feel?",
+          "a": "grand gel telephotography",
+          "conf": 0.375,
+          "ms": 905.7
+        },
+        {
+          "q": "Are you happy?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 2412.8
+        },
+        {
+          "q": "What is love?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 1219.2
+        },
+        {
+          "q": "What is fear?",
+          "a": "slit vacillate casserole",
+          "conf": 0.375,
+          "ms": 956.4
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "senate discretion broadway moosewood rumination proton flasher stout obscene focusing preemptor oates dotty",
+          "conf": 1.0,
+          "ms": 2738.3
+        },
+        {
+          "q": "What is memory?",
+          "a": "shrewdly handbag 045",
+          "conf": 0.375,
+          "ms": 1736.4
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "defiance canaanite limn",
+          "conf": 0.375,
+          "ms": 5884.7
+        },
+        {
+          "q": "What is hope?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 754.2
+        },
+        {
+          "q": "What is silence?",
+          "a": "slit vacillate casserole",
+          "conf": 0.375,
+          "ms": 857.2
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "senate discretion broadway moosewood rumination proton flasher stout obscene focusing preemptor oates dotty",
+          "conf": 1.0,
+          "ms": 2929.0
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "unrequited shakily windbag fluidity pique psychopharmacological undertaker homicidal reunion surgeon conduction jovian hoodwink sibilation",
+          "conf": 1.0,
+          "ms": 2933.0
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 806.6
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "aliment rota catechise rethink intramuscularly beleaguer peddle",
+          "conf": 0.875,
+          "ms": 1584.6
+        },
+        {
+          "q": "What comes after five?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 842.2
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1082.1
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "approbation grouch sinew aggressive",
+          "conf": 0.17834530770778656,
+          "ms": 1026.9
+        },
+        {
+          "q": "Are circles round?",
+          "a": "handbag shrewdly 045",
+          "conf": 0.375,
+          "ms": 753.8
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "demineralization enlist aetiologic fenugreek vividness commonness robbery cottage",
+          "conf": 1.0,
+          "ms": 1803.1
+        },
+        {
+          "q": "What is zero?",
+          "a": "vacillate slit casserole outskirts linocut politics bushel connote persuasion",
+          "conf": 1.0,
+          "ms": 1295.2
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 880.3
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "senate discretion broadway",
+          "conf": 0.375,
+          "ms": 779.1
+        },
+        {
+          "q": "What is a friend?",
+          "a": "grand gel telephotography winking incoherency wasabi",
+          "conf": 0.75,
+          "ms": 1491.9
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 824.1
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "unrequited shakily windbag",
+          "conf": 0.375,
+          "ms": 888.9
+        },
+        {
+          "q": "What is a school for?",
+          "a": "approbation grouch sinew aggressive",
+          "conf": 0.5,
+          "ms": 1107.5
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 5631.6
+        },
+        {
+          "q": "What do parents do?",
+          "a": "slit vacillate casserole",
+          "conf": 0.375,
+          "ms": 1210.2
+        },
+        {
+          "q": "What is kindness?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.375,
+          "ms": 1086.7
+        },
+        {
+          "q": "What is a promise?",
+          "a": "slit vacillate casserole outskirts",
+          "conf": 0.5,
+          "ms": 1036.5
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "senate discretion broadway moosewood rumination proton obscene flasher stout focusing preemptor oates dotty",
+          "conf": 1.0,
+          "ms": 2707.3
+        }
+      ]
+    }
+  ],
+  "diag_pre": {
+    "vocab_size": 31407,
+    "total_bindings": 809902514,
+    "total_groundings": 90335,
+    "total_comprehensions": 11544,
+    "total_productions": 754,
+    "avg_binding_strength": 0.4996585249900818,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 99,
+    "bridge_avg_word_confidence": 0.01299234852194786,
+    "bridge_avg_binding_weight": 0.1510046273469925,
+    "bridge_active_bindings": 352352,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 66709138276,
+    "bridge_total_decode_calls": 3619,
+    "bridge_total_stdp_updates": 543023,
+    "bridge_total_trigram_updates": 1474,
+    "bridge_echo_correct_calls": 299,
+    "bridge_echo_correct_pairs": 20149,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 334,
+    "bridge_comprehend_stdp_pairs_fired": 30867,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 2
+  },
+  "diag_post": {
+    "vocab_size": 31407,
+    "total_bindings": 809903048,
+    "total_groundings": 90365,
+    "total_comprehensions": 11745,
+    "total_productions": 904,
+    "avg_binding_strength": 0.4995124638080597,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 249,
+    "bridge_avg_word_confidence": 0.009846655651926994,
+    "bridge_avg_binding_weight": 0.14915601909160614,
+    "bridge_active_bindings": 356861,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 91357030310,
+    "bridge_total_decode_calls": 4697,
+    "bridge_total_stdp_updates": 560380,
+    "bridge_total_trigram_updates": 1522,
+    "bridge_echo_correct_calls": 584,
+    "bridge_echo_correct_pairs": 39986,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 583,
+    "bridge_comprehend_stdp_pairs_fired": 34314,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 2
+  },
+  "meta": {
+    "step": "stage2_step4500",
+    "timestamp": "2026-05-18 19:40:47"
+  }
+}

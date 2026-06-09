@@ -20,9 +20,6 @@ BUILD_NETWORKING_IMMUNE_TESTS:BOOL=OFF
 //Build NLP immune tests (requires API fixes)
 BUILD_NLP_IMMUNE_TESTS:BOOL=OFF
 
-//No help, variable specified on the command line.
-BUILD_TESTING:UNINITIALIZED=ON
-
 //Path to a program.
 CARGO_EXECUTABLE:FILEPATH=/home/bbrelin/.cargo/bin/cargo
 
@@ -266,127 +263,124 @@ CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 //Path to a program.
 CPPCHECK_EXE:FILEPATH=/usr/bin/cppcheck
 
-CUDAToolkit_BIN_DIR:PATH=/usr/local/cuda/bin
+CUDAToolkit_BIN_DIR:PATH=/usr/bin
 
 //Path to a file.
-CUDAToolkit_CUPTI_INCLUDE_DIR:PATH=/usr/local/cuda/targets/x86_64-linux/include
+CUDAToolkit_CUPTI_INCLUDE_DIR:PATH=/usr/include
 
 //Path to a program.
-CUDAToolkit_NVCC_EXECUTABLE:FILEPATH=/usr/local/cuda/bin/nvcc
-
-//No help, variable specified on the command line.
-CUDAToolkit_ROOT:UNINITIALIZED=/usr/local/cuda
+CUDAToolkit_NVCC_EXECUTABLE:FILEPATH=/usr/bin/nvcc
 
 //Path to a library.
 CUDAToolkit_rt_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/librt.a
 
 //Path to a library.
-CUDA_CUDART:FILEPATH=/usr/local/cuda/lib64/libcudart.so
+CUDA_CUDART:FILEPATH=/usr/lib/x86_64-linux-gnu/libcudart.so
 
 //Path to a library.
-CUDA_OpenCL_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libOpenCL.so
+CUDA_OpenCL_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libOpenCL.so
 
 //Path to a library.
-CUDA_cuFile_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufile.so
+CUDA_cuFile_LIBRARY:FILEPATH=CUDA_cuFile_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_cuFile_rdma_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufile_rdma.so
+CUDA_cuFile_rdma_LIBRARY:FILEPATH=CUDA_cuFile_rdma_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_cuFile_rdma_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufile_rdma_static.a
+CUDA_cuFile_rdma_static_LIBRARY:FILEPATH=CUDA_cuFile_rdma_static_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_cuFile_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufile_static.a
+CUDA_cuFile_static_LIBRARY:FILEPATH=CUDA_cuFile_static_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_cublasLt_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcublasLt.so
+CUDA_cublasLt_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcublasLt.so
 
 //Path to a library.
-CUDA_cublasLt_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcublasLt_static.a
+CUDA_cublasLt_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcublasLt_static.a
 
 //Path to a library.
-CUDA_cublas_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcublas.so
+CUDA_cublas_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcublas.so
 
 //Path to a library.
-CUDA_cublas_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcublas_static.a
+CUDA_cublas_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcublas_static.a
 
 //Path to a library.
-CUDA_cuda_driver_LIBRARY:FILEPATH=/usr/local/cuda/targets/x86_64-linux/lib/stubs/libcuda.so
+CUDA_cuda_driver_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcuda.so
 
 //Path to a library.
-CUDA_cudart_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcudart.so
+CUDA_cudart_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcudart.so
 
 //Path to a library.
-CUDA_cudart_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcudart_static.a
+CUDA_cudart_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcudart_static.a
 
 //Path to a library.
 CUDA_cudla_LIBRARY:FILEPATH=CUDA_cudla_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_cufft_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufft.so
+CUDA_cufft_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcufft.so
 
 //Path to a library.
-CUDA_cufft_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufft_static.a
+CUDA_cufft_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcufft_static.a
 
 //Path to a library.
-CUDA_cufft_static_nocallback_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufft_static_nocallback.a
+CUDA_cufft_static_nocallback_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcufft_static_nocallback.a
 
 //Path to a library.
-CUDA_cufftw_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufftw.so
+CUDA_cufftw_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcufftw.so
 
 //Path to a library.
-CUDA_cufftw_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcufftw_static.a
+CUDA_cufftw_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcufftw_static.a
 
 //Path to a library.
-CUDA_culibos_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libculibos.a
+CUDA_culibos_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libculibos.a
 
 //Path to a library.
-CUDA_cupti_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcupti.so
+CUDA_cupti_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcupti.so
 
 //Path to a library.
-CUDA_cupti_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcupti_static.a
+CUDA_cupti_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcupti_static.a
 
 //Path to a library.
-CUDA_curand_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcurand.so
+CUDA_curand_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcurand.so
 
 //Path to a library.
-CUDA_curand_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcurand_static.a
+CUDA_curand_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcurand_static.a
 
 //Path to a library.
-CUDA_cusolver_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcusolver.so
+CUDA_cusolver_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcusolver.so
 
 //Path to a library.
-CUDA_cusolver_lapack_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcusolver_lapack_static.a
+CUDA_cusolver_lapack_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcusolver_lapack_static.a
 
 //Path to a library.
-CUDA_cusolver_metis_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcusolver_metis_static.a
+CUDA_cusolver_metis_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcusolver_metis_static.a
 
 //Path to a library.
-CUDA_cusolver_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcusolver_static.a
+CUDA_cusolver_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcusolver_static.a
 
 //Path to a library.
-CUDA_cusparse_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcusparse.so
+CUDA_cusparse_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcusparse.so
 
 //Path to a library.
-CUDA_cusparse_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libcusparse_static.a
+CUDA_cusparse_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcusparse_static.a
 
 //Path to a library.
-CUDA_nppc_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppc.so
+CUDA_nppc_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppc.so
 
 //Path to a library.
-CUDA_nppc_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppc_static.a
+CUDA_nppc_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppc_static.a
 
 //Path to a library.
-CUDA_nppial_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppial.so
+CUDA_nppial_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppial.so
 
 //Path to a library.
-CUDA_nppial_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppial_static.a
+CUDA_nppial_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppial_static.a
 
 //Path to a library.
-CUDA_nppicc_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppicc.so
+CUDA_nppicc_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppicc.so
 
 //Path to a library.
-CUDA_nppicc_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppicc_static.a
+CUDA_nppicc_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppicc_static.a
 
 //Path to a library.
 CUDA_nppicom_LIBRARY:FILEPATH=CUDA_nppicom_LIBRARY-NOTFOUND
@@ -395,61 +389,61 @@ CUDA_nppicom_LIBRARY:FILEPATH=CUDA_nppicom_LIBRARY-NOTFOUND
 CUDA_nppicom_static_LIBRARY:FILEPATH=CUDA_nppicom_static_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_nppidei_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppidei.so
+CUDA_nppidei_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppidei.so
 
 //Path to a library.
-CUDA_nppidei_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppidei_static.a
+CUDA_nppidei_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppidei_static.a
 
 //Path to a library.
-CUDA_nppif_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppif.so
+CUDA_nppif_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppif.so
 
 //Path to a library.
-CUDA_nppif_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppif_static.a
+CUDA_nppif_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppif_static.a
 
 //Path to a library.
-CUDA_nppig_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppig.so
+CUDA_nppig_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppig.so
 
 //Path to a library.
-CUDA_nppig_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppig_static.a
+CUDA_nppig_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppig_static.a
 
 //Path to a library.
-CUDA_nppim_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppim.so
+CUDA_nppim_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppim.so
 
 //Path to a library.
-CUDA_nppim_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppim_static.a
+CUDA_nppim_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppim_static.a
 
 //Path to a library.
-CUDA_nppist_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppist.so
+CUDA_nppist_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppist.so
 
 //Path to a library.
-CUDA_nppist_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppist_static.a
+CUDA_nppist_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppist_static.a
 
 //Path to a library.
-CUDA_nppisu_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppisu.so
+CUDA_nppisu_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppisu.so
 
 //Path to a library.
-CUDA_nppisu_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppisu_static.a
+CUDA_nppisu_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppisu_static.a
 
 //Path to a library.
-CUDA_nppitc_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppitc.so
+CUDA_nppitc_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppitc.so
 
 //Path to a library.
-CUDA_nppitc_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnppitc_static.a
+CUDA_nppitc_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnppitc_static.a
 
 //Path to a library.
-CUDA_npps_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnpps.so
+CUDA_npps_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnpps.so
 
 //Path to a library.
-CUDA_npps_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnpps_static.a
+CUDA_npps_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnpps_static.a
 
 //Path to a library.
-CUDA_nvJitLink_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvJitLink.so
+CUDA_nvJitLink_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvJitLink.so
 
 //Path to a library.
-CUDA_nvJitLink_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvJitLink_static.a
+CUDA_nvJitLink_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvJitLink_static.a
 
 //Path to a library.
-CUDA_nvToolsExt_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvToolsExt.so
+CUDA_nvToolsExt_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvToolsExt.so
 
 //Path to a library.
 CUDA_nvgraph_LIBRARY:FILEPATH=CUDA_nvgraph_LIBRARY-NOTFOUND
@@ -458,40 +452,40 @@ CUDA_nvgraph_LIBRARY:FILEPATH=CUDA_nvgraph_LIBRARY-NOTFOUND
 CUDA_nvgraph_static_LIBRARY:FILEPATH=CUDA_nvgraph_static_LIBRARY-NOTFOUND
 
 //Path to a library.
-CUDA_nvjpeg_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvjpeg.so
+CUDA_nvjpeg_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvjpeg.so
 
 //Path to a library.
-CUDA_nvjpeg_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvjpeg_static.a
+CUDA_nvjpeg_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvjpeg_static.a
 
 //Path to a library.
-CUDA_nvml_LIBRARY:FILEPATH=/usr/local/cuda/targets/x86_64-linux/lib/stubs/libnvidia-ml.so
+CUDA_nvml_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvidia-ml.so
 
 //Path to a library.
-CUDA_nvperf_host_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvperf_host.so
+CUDA_nvperf_host_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvperf_host.so
 
 //Path to a library.
-CUDA_nvperf_host_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvperf_host_static.a
+CUDA_nvperf_host_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvperf_host_static.a
 
 //Path to a library.
-CUDA_nvperf_target_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvperf_target.so
+CUDA_nvperf_target_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvperf_target.so
 
 //Path to a library.
-CUDA_nvptxcompiler_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvptxcompiler_static.a
+CUDA_nvptxcompiler_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvptxcompiler_static.a
 
 //Path to a library.
-CUDA_nvrtc_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvrtc.so
+CUDA_nvrtc_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvrtc.so
 
 //Path to a library.
-CUDA_nvrtc_builtins_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvrtc-builtins.so
+CUDA_nvrtc_builtins_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvrtc-builtins.so
 
 //Path to a library.
-CUDA_nvrtc_builtins_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvrtc-builtins_static.a
+CUDA_nvrtc_builtins_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvrtc-builtins_static.a
 
 //Path to a library.
-CUDA_nvrtc_static_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libnvrtc_static.a
+CUDA_nvrtc_static_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libnvrtc_static.a
 
 //Path to a library.
-CUDA_pcsamplingutil_LIBRARY:FILEPATH=/usr/local/cuda/lib64/libpcsamplingutil.so
+CUDA_pcsamplingutil_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libpcsamplingutil.so
 
 //The directory containing a CMake configuration file for CURL.
 CURL_DIR:PATH=CURL_DIR-NOTFOUND
@@ -787,8 +781,6 @@ CMAKE_C_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 CMAKE_C_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_DLLTOOL
 CMAKE_DLLTOOL-ADVANCED:INTERNAL=1
-//Whether to issue deprecation errors for macros and functions.
-CMAKE_ERROR_DEPRECATED:INTERNAL=FALSE
 //Executable file format
 CMAKE_EXECUTABLE_FORMAT:INTERNAL=ELF
 //ADVANCED property for variable: CMAKE_EXE_LINKER_FLAGS
@@ -876,20 +868,12 @@ CMAKE_STATIC_LINKER_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_STRIP
 CMAKE_STRIP-ADVANCED:INTERNAL=1
-//Suppress errors that are meant for the author of the CMakeLists.txt
-// files.
-CMAKE_SUPPRESS_DEVELOPER_ERRORS:INTERNAL=TRUE
-//Suppress Warnings that are meant for the author of the CMakeLists.txt
-// files.
-CMAKE_SUPPRESS_DEVELOPER_WARNINGS:INTERNAL=TRUE
 //ADVANCED property for variable: CMAKE_TAPI
 CMAKE_TAPI-ADVANCED:INTERNAL=1
 //uname command
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
-//Whether to issue warnings for deprecated functionality.
-CMAKE_WARN_DEPRECATED:INTERNAL=FALSE
 //Test COMPILER_SUPPORTS_AVX2
 COMPILER_SUPPORTS_AVX2:INTERNAL=1
 //ADVANCED property for variable: CUDAToolkit_BIN_DIR
@@ -1078,7 +1062,7 @@ FFTW3F_fftw3f_VERSION:INTERNAL=
 //Details about finding GTest
 FIND_PACKAGE_MESSAGE_DETAILS_GTest:INTERNAL=[/home/bbrelin/.local/lib/cmake/GTest/GTestConfig.cmake][c ][v1.14.0()]
 //Details about finding Java
-FIND_PACKAGE_MESSAGE_DETAILS_Java:INTERNAL=[/usr/bin/java][/usr/bin/javac][/usr/bin/jar][/usr/bin/javadoc][cfound components: Development Runtime ][v21.0.10()]
+FIND_PACKAGE_MESSAGE_DETAILS_Java:INTERNAL=[/usr/bin/java][/usr/bin/javac][/usr/bin/jar][/usr/bin/javadoc][cfound components: Development Runtime ][v21.0.11()]
 //Details about finding PkgConfig
 FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/usr/bin/pkg-config][v1.8.1()]
 //Details about finding Python3
@@ -1257,9 +1241,7 @@ __pkg_config_checked_PC_CURL:INTERNAL=1
 __pkg_config_checked_SODIUM:INTERNAL=1
 __pkg_config_checked__OPENSSL:INTERNAL=1
 //CUDAToolkit internal list of implicit link directories
-_cmake_CUDAToolkit_implicit_link_directories:INTERNAL=/usr/local/cuda/targets/x86_64-linux/lib/stubs;/usr/local/cuda/targets/x86_64-linux/lib
-//CUDAToolkit internal list of include directories
-_cmake_CUDAToolkit_include_directories:INTERNAL=/usr/local/cuda/targets/x86_64-linux/include
+_cmake_CUDAToolkit_implicit_link_directories:INTERNAL=/usr/lib/x86_64-linux-gnu/stubs;/usr/lib/x86_64-linux-gnu
 //ADVANCED property for variable: pkgcfg_lib_CHECK_LIB_check_pic
 pkgcfg_lib_CHECK_LIB_check_pic-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: pkgcfg_lib_CHECK_LIB_m

@@ -58,7 +58,7 @@ for d in scripts data; do [ -e "$WORK/$d" ] || ln -s "$REPO/$d" "$WORK/$d"; done
 
 # 2. Launch the throwaway fresh brain: CPU-only, projection ON, fresh cold-init.
 rm -f "$SOCK"
-NIMCP_LANG_PROJECTION=1 CUDA_VISIBLE_DEVICES="" NIMCP_DISABLE_LEARN_LANGUAGE=1 \
+NIMCP_LANG_PROJECTION=1 NIMCP_TRAIN_SNN_PROJECTION=1 CUDA_VISIBLE_DEVICES="" NIMCP_DISABLE_LEARN_LANGUAGE=1 \
   python3 -u "$REPO/scripts/brain_daemon.py" --socket "$SOCK" --fresh \
     --init-mode full --snn-neuron-count "$SNN_N" \
     --checkpoint-dir "$WORK/checkpoints/athena" >"$LOG" 2>&1 &
@@ -67,13 +67,13 @@ echo "throwaway PID=$PID  log=$LOG"
 
 # 3. Wait for projection wiring / ready / crash.
 for i in $(seq 1 120); do
-  grep -qiE "projection wired|projection wiring returned|Segmentation|SIGSEGV|core dumped" "$LOG" 2>/dev/null && break
+  grep -qiE "PROJ-DIAG.*returned|projection wired|projection wiring returned|Segmentation|SIGSEGV|core dumped" "$LOG" 2>/dev/null && break
   kill -0 "$PID" 2>/dev/null || { echo "NO-GO: daemon exited during init (OOM/crash?)"; tail -20 "$LOG"; exit 1; }
   sleep 5
 done
 
-echo "--- projection / exclusion / crash lines ---"
-grep -iE "concept.{0,3}word projection wired|projection wiring returned|excluded from global|Segmentation|SIGSEGV|core dumped" "$LOG" | tail -6
+echo "--- PROJ-DIAG (env + synapse count) / projection / crash lines ---"
+grep -iE "PROJ-DIAG|concept.{0,3}word projection wired|projection wiring returned|excluded from global|Segmentation|SIGSEGV|core dumped" "$LOG" | tail -8
 
 # 4. Wait for socket-ready, then RPCs: warm-start + a couple status snapshots.
 for i in $(seq 1 60); do

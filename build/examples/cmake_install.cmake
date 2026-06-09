@@ -62,7 +62,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/event_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/event_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/event_demo")
@@ -90,7 +90,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/brain_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/brain_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/brain_demo")
@@ -118,7 +118,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/ethics_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/ethics_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/ethics_demo")
@@ -146,7 +146,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/infant_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/infant_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/infant_demo")
@@ -174,7 +174,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/integrated_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/integrated_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/integrated_demo")
@@ -202,7 +202,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/brain_probe_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/brain_probe_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/brain_probe_demo")
@@ -230,7 +230,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/izhikevich_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/izhikevich_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/izhikevich_demo")
@@ -258,7 +258,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/nlp_integration_test")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/nlp_integration_test"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/nlp_integration_test")
@@ -286,7 +286,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/fractal_network_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/fractal_network_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/fractal_network_demo")
@@ -314,7 +314,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/examples/nlp_integration_demo")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/examples/nlp_integration_demo"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/examples/nlp_integration_demo")

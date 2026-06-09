@@ -142,17 +142,25 @@ def snapshot_lang_status(b: BrainProxy, label: str) -> dict:
     print(f"  avg_comprehension_conf   : {stats.get('avg_comprehension_confidence', 'n/a')}")
     print(f"  avg_binding_strength     : {stats.get('avg_binding_strength', 'n/a')}")
     pdw = "n/a"
-    # pdw is surfaced through diagnostics; not in lang_status' tunables block
-    # historically, but tf.config or diagnostics may carry it.
+    fpen = "n/a"
+    # pdw + frequency penalty are surfaced through diagnostics, nested under
+    # the "grounded_language" sub-dict (NOT at result top level — that nesting
+    # is why this readout historically showed n/a).
     try:
         d = b._send({"cmd": "get_grounded_language_diagnostics"})
-        pdw = d.get("result", {}).get("produce_distributional_weight", "n/a")
+        gld = d.get("result", d).get("grounded_language", {})
+        pdw = gld.get("produce_distributional_weight", "n/a")
+        fpen = gld.get("produce_frequency_penalty", "n/a")
     except Exception:
         pass
     if isinstance(pdw, float):
         print(f"  produce_distributional_w : {pdw:.4f}  <-- collapse fix knob")
     else:
         print(f"  produce_distributional_w : {pdw}  <-- collapse fix knob")
+    if isinstance(fpen, float):
+        print(f"  produce_frequency_penalty: {fpen:.4f}  <-- filler-contamination knob")
+    else:
+        print(f"  produce_frequency_penalty: {fpen}  <-- filler-contamination knob")
     # TF block (added 2026-05-29 for TF-6 telemetry surface).
     if tf:
         cfg = tf.get("config", {})

@@ -1768,6 +1768,16 @@ nimcp_status_t nimcp_brain_get_metacog_gates_produce(nimcp_brain_t brain, bool* 
 nimcp_status_t nimcp_brain_warmstart_lang_projection(nimcp_brain_t brain, float k,
                                                      int* out_updated);
 
+/** Build the SNN concept→word projection TOPOLOGY across all lexicon bindings
+ *  (2026-06-09) — the missing "coverage half". Reopens the finalized Broca CSR,
+ *  wires every concept↔word ensemble pair, re-finalizes. Without it Broca has no
+ *  concept input and the SNN generates nothing. Run AFTER the lexicon is loaded;
+ *  MUST run with SNN stepping paused (daemon serializes RPCs with learn_vector).
+ *  w_init seeds the new synapse weights; warmstart/learn_pair then tune them.
+ *  out_wired receives the #pairs wired. */
+nimcp_status_t nimcp_brain_build_lang_projection(nimcp_brain_t brain, float w_init,
+                                                 int* out_wired);
+
 /** Phase-2 produce-time SNN generation step (2026-06-03): seed the intent's
  *  concepts into Wernicke, step the SNN n_steps, leave Broca's spikes in the
  *  decode cache for produce_via_snn to read. The step that makes the SNN

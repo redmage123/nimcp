@@ -5045,6 +5045,22 @@ nimcp_status_t nimcp_brain_warmstart_lang_projection(nimcp_brain_t brain, float 
     return (updated >= 0) ? NIMCP_OK : NIMCP_ERROR;
 }
 
+/* Build the concept→word projection TOPOLOGY across all lexicon bindings (the
+ * missing coverage half). connect_network stores the wernicke/broca pop ids on
+ * the bridge, so build_projection resolves them itself. MUST run with stepping
+ * paused — the daemon serializes RPCs with learn_vector under the global lock. */
+nimcp_status_t nimcp_brain_build_lang_projection(nimcp_brain_t brain, float w_init,
+                                                 int* out_wired) {
+    brain_t b = NULL;
+    nimcp_status_t s = _gl_diag_validate(brain, &b);
+    if (s != NIMCP_OK) return s;
+    if (!b->snn_lang_bridge || !b->snn_network) return NIMCP_ERROR;
+    int wired = snn_language_bridge_build_projection(
+        b->snn_lang_bridge, b->snn_network, w_init);
+    if (out_wired) *out_wired = wired;
+    return (wired >= 0) ? NIMCP_OK : NIMCP_ERROR;
+}
+
 nimcp_status_t nimcp_brain_snn_language_generate_step(nimcp_brain_t brain,
                                                       const float* intent,
                                                       uint32_t dim,

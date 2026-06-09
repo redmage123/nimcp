@@ -1136,7 +1136,7 @@ class BrainService:
         'train_batch_text',
         'save', 'sleep_run_cycle', 'retrofit_synapse_metadata',
         'ground_word', 'set_grounding_emotion', 'learn_language_pair',
-        'warmstart_lang_projection',
+        'warmstart_lang_projection', 'build_lang_projection',
     })
 
     def handle_readonly(self, req):
@@ -1564,6 +1564,21 @@ class BrainService:
         except Exception as e:
             return {"error": f"warmstart_lang_projection: {e}"}
         return {"updated": int(updated)}
+
+    def _cmd_build_lang_projection(self, req):
+        """Build the SNN concept->word projection TOPOLOGY across all lexicon
+        bindings — the missing coverage half. Reopens the Broca CSR, wires every
+        concept<->word ensemble pair, re-finalizes, so the SNN can generate.
+        Mutates live CSR topology → WRITE command (serialized under the global
+        lock so no snn_network_step runs during the reopen/wire/refinalize)."""
+        try:
+            w_init = float(req.get("w_init", 0.5))
+            wired = self.brain.build_lang_projection(w_init)
+        except AttributeError:
+            return {"error": "build_lang_projection not available — rebuild nimcp.so"}
+        except Exception as e:
+            return {"error": f"build_lang_projection: {e}"}
+        return {"wired": int(wired)}
 
     def _cmd_get_grounded_language_diagnostics(self, _req):
         try:

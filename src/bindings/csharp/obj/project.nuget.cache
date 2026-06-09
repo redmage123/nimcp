@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "4h1sCwYtJtcpOyDTkgPGrYLV798pml+hZGJRQ1tKE0gIO1koWFSpPvqPaRAjKEALM+1EvU1VOMjknq4Qqea5+Q==",
+  "dgSpecHash": "47hDQTs+KPJGGhy7YsxlUdh/4USTHJVRl1nYkQ8nqhmlTTWXqMCu/FTyJs9OCpKy4lxG2Z9n9XtbMOzc3cgCqQ==",
   "success": true,
   "projectFilePath": "/home/bbrelin/nimcp/src/bindings/csharp/NIMCP.csproj",
   "expectedPackageFiles": [],

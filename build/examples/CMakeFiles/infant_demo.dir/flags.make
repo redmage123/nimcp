@@ -4,7 +4,7 @@
 # compile C with /usr/bin/cc
 C_DEFINES = -DNIMCP_ENABLE_CUDA
 
-C_INCLUDES = -I/home/bbrelin/nimcp/src -I/home/bbrelin/nimcp/include -isystem /usr/include/python3.12 -isystem /usr/local/cuda/targets/x86_64-linux/include
+C_INCLUDES = -I/home/bbrelin/nimcp/src -I/home/bbrelin/nimcp/include -isystem /usr/include/python3.12
 
 C_FLAGS = -O3 -DNDEBUG -std=gnu11 -mavx2 -mfma
 

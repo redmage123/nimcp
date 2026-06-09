@@ -62,7 +62,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
      NOT IS_SYMLINK "$ENV{DESTDIR}/python3/dist-packages/nimcp.so")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}/python3/dist-packages/nimcp.so"
-         OLD_RPATH "/home/bbrelin/nimcp/build/lib:/usr/local/cuda/lib64:"
+         OLD_RPATH "/home/bbrelin/nimcp/build/lib:"
          NEW_RPATH "")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/python3/dist-packages/nimcp.so")
