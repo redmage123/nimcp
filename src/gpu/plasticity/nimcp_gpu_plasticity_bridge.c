@@ -197,6 +197,19 @@ uint32_t gpu_plasticity_stdp_apply(
         uint32_t n_pre = pre_pop->n_neurons;
         uint32_t n_post = post_pop->n_neurons;
 
+        /* Skip pop pairs too large to densify. This path builds a dense
+         * [n_post x n_pre] weight matrix (see below) — for the 64K-neuron
+         * language ensembles (broca/wernicke) that is 64000x64000x4 = 16.4 GB,
+         * which OOMs the GPU every step and thrashes the whole device. Those
+         * pops are sparse 8-neuron ensembles (SNN_LANG_NEURONS_PER_POP) trained
+         * by the concept->word projection-EMA path (snn_language_bridge_learn_pair),
+         * not by generic adjacent-pair Hebbian STDP, so skipping them here loses
+         * nothing. Cap at 16M elements (64 MB dense matrix); real STDP pops are
+         * a few thousand neurons and stay far under. */
+        if ((size_t)n_pre * (size_t)n_post > (size_t)16u * 1024u * 1024u) {
+            continue;
+        }
+
         /* Allocate host buffers */
         float* h_pre_spikes = nimcp_calloc(n_pre, sizeof(float));
         float* h_post_spikes = nimcp_calloc(n_post, sizeof(float));
