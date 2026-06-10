@@ -847,6 +847,25 @@ int snn_language_bridge_generate_and_decode(
     snn_lang_word_result_t* results,
     uint32_t max_results, uint32_t* num_results);
 
+/** Diagnostic: concept→word projection ROUND-TRIP selectivity.
+ *
+ * For each of the first `n_probe` lexicon bindings (collect order), seed ONLY
+ * that binding's concept into Wernicke, step the SNN `n_steps` times at
+ * `inject`, then record the decode RANK of the binding's OWN word pop
+ * (0 = top-1, -1 = not in the decode top-32). This isolates projection
+ * selectivity from the separately-buggy intent→concept seed pipeline: if the
+ * expected words rank near 0 the projection routes correctly and the gibberish
+ * comes from the seed; if buried, the projection itself needs convergence.
+ * inject/n_steps are passed through so the saturation sweet-spot can be swept.
+ *
+ * Writes up to `max_out` ranks into out_ranks and the count into *out_n.
+ * Returns 0 on success, -1 on error. MUST run with stepping paused (steps the
+ * live SNN) — the daemon serializes this under the global lock. */
+int snn_language_bridge_probe_selectivity(
+    snn_language_bridge_t* bridge,
+    uint32_t n_probe, uint32_t n_steps, float inject,
+    int* out_ranks, uint32_t max_out, uint32_t* out_n);
+
 /** Slice 4: Decode + competitive lateral inhibition over top-K candidates.
  *
  * Pulls the standard top-K from snn_language_bridge_decode_spikes (cosine

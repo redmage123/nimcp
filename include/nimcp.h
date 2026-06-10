@@ -1778,6 +1778,15 @@ nimcp_status_t nimcp_brain_warmstart_lang_projection(nimcp_brain_t brain, float 
 nimcp_status_t nimcp_brain_build_lang_projection(nimcp_brain_t brain, float w_init,
                                                  int* out_wired);
 
+/** Diagnostic: concept→word projection round-trip selectivity. Seeds each of the
+ *  first n_probe lexicon bindings' concept alone, steps the SNN n_steps at
+ *  inject, and writes the decode rank of each binding's own word pop (0=top-1,
+ *  -1=missing) into out_ranks (up to max_out); *out_n receives the count. */
+nimcp_status_t nimcp_brain_snn_probe_selectivity(nimcp_brain_t brain,
+                                                 uint32_t n_probe, uint32_t n_steps,
+                                                 float inject, int* out_ranks,
+                                                 uint32_t max_out, uint32_t* out_n);
+
 /** Phase-2 produce-time SNN generation step (2026-06-03): seed the intent's
  *  concepts into Wernicke, step the SNN n_steps, leave Broca's spikes in the
  *  decode cache for produce_via_snn to read. The step that makes the SNN

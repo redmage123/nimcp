@@ -3636,6 +3636,37 @@ static PyObject* Brain_build_lang_projection(BrainObject* self, PyObject* args) 
     return PyLong_FromLong((long)wired);
 }
 
+/* snn_probe_selectivity(n_probe=64, n_steps=8, inject=100.0) -> list[int] of
+ * decode ranks (0=top-1, -1=missing). Diagnostic: isolates concept→word
+ * projection selectivity from the intent→concept seed pipeline. */
+static PyObject* Brain_snn_probe_selectivity(BrainObject* self, PyObject* args) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    unsigned int n_probe = 64, n_steps = 8;
+    float inject = 100.0f;
+    if (!PyArg_ParseTuple(args, "|IIf", &n_probe, &n_steps, &inject)) return NULL;
+    if (n_probe == 0) n_probe = 64;
+    if (n_probe > 4096) n_probe = 4096;
+    int* ranks = (int*)malloc((size_t)n_probe * sizeof(int));
+    if (!ranks) { PyErr_NoMemory(); return NULL; }
+    uint32_t n_out = 0;
+    if (nimcp_brain_snn_probe_selectivity(self->brain, n_probe, n_steps, inject,
+                                          ranks, n_probe, &n_out) != NIMCP_OK) {
+        free(ranks);
+        PyErr_SetString(PyExc_RuntimeError,
+            "snn_probe_selectivity failed (no bridge/projection/network?)");
+        return NULL;
+    }
+    PyObject* list = PyList_New((Py_ssize_t)n_out);
+    if (!list) { free(ranks); return NULL; }
+    for (uint32_t i = 0; i < n_out; i++) {
+        PyList_SET_ITEM(list, (Py_ssize_t)i, PyLong_FromLong((long)ranks[i]));
+    }
+    free(ranks);
+    return list;
+}
+
 /* Echo-correct: comprehend(parent_text) → strengthen target_word bindings.
  * Returns count of bindings strengthened. Non-zero lr_scale gates the
  * caller's per-call magnitude. */
@@ -13108,6 +13139,8 @@ static PyMethodDef Brain_methods[] = {
      "Phase-2: warm-start the SNN concept→word projection from the lexicon — warmstart_lang_projection(k: float = 1.0) -> int (#synapses set). Sets each projection synapse weight to k*binding_strength. Returns 0 when the projection wasn't built (NIMCP_LANG_PROJECTION off) or the lexicon is empty. Call after the lexicon is populated."},
     {"build_lang_projection", (PyCFunction)Brain_build_lang_projection, METH_VARARGS,
      "Build the SNN concept→word projection TOPOLOGY across all lexicon bindings — build_lang_projection(w_init: float = 0.5) -> int (#pairs wired). The missing coverage half: reopens the Broca CSR, wires every concept↔word ensemble pair, re-finalizes, so the SNN can actually generate. Run after the lexicon is loaded; serialized under the daemon lock. Follow with warmstart_lang_projection(k) to set weights supra-threshold."},
+    {"snn_probe_selectivity", (PyCFunction)Brain_snn_probe_selectivity, METH_VARARGS,
+     "Diagnostic: concept→word projection round-trip selectivity — snn_probe_selectivity(n_probe=64, n_steps=8, inject=100.0) -> list[int] of decode ranks (0=top-1 hit, -1=not in decode top-32). Seeds each of the first n_probe lexicon bindings' concept ALONE into Wernicke, steps the SNN, and reports where that binding's own word pop lands in the Broca decode. Isolates projection selectivity from the buggy intent→concept seed pipeline. WRITE (steps the live SNN; serialize under the daemon lock)."},
     {"set_metacog_gates_produce", (PyCFunction)Brain_set_metacog_gates_produce, METH_VARARGS,
      "Metacognitive produce-floor modulation — set_metacog_gates_produce(enabled: bool) -> None. Default OFF. When ON, the cascade shifts the produce confidence floor from world-model surprise (FEP prediction-error trajectory), so the brain is more conservative (more 'I don't know') when its predictive model is surprised and more willing when it converged. The correct integration for modulatory cognitive modules (emotion/introspection/world-model) which carry no semantic content vector. Read back via get_grounded_language_diagnostics()['metacog_gates_produce']."},
     {"set_produce_via_snn", (PyCFunction)Brain_set_produce_via_snn, METH_VARARGS,

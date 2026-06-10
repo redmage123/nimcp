@@ -5061,6 +5061,24 @@ nimcp_status_t nimcp_brain_build_lang_projection(nimcp_brain_t brain, float w_in
     return (wired >= 0) ? NIMCP_OK : NIMCP_ERROR;
 }
 
+/* Diagnostic: concept→word projection round-trip selectivity probe. Seeds each
+ * of the first n_probe lexicon bindings' concept alone, steps the SNN, and
+ * reports the decode rank of that binding's own word pop into out_ranks. */
+nimcp_status_t nimcp_brain_snn_probe_selectivity(nimcp_brain_t brain,
+                                                 uint32_t n_probe, uint32_t n_steps,
+                                                 float inject, int* out_ranks,
+                                                 uint32_t max_out, uint32_t* out_n) {
+    brain_t b = NULL;
+    nimcp_status_t s = _gl_diag_validate(brain, &b);
+    if (s != NIMCP_OK) return s;
+    if (!b->snn_lang_bridge || !b->snn_network || !out_ranks || !out_n) {
+        return NIMCP_ERROR;
+    }
+    int rc = snn_language_bridge_probe_selectivity(
+        b->snn_lang_bridge, n_probe, n_steps, inject, out_ranks, max_out, out_n);
+    return (rc == 0) ? NIMCP_OK : NIMCP_ERROR;
+}
+
 nimcp_status_t nimcp_brain_snn_language_generate_step(nimcp_brain_t brain,
                                                       const float* intent,
                                                       uint32_t dim,

@@ -1183,6 +1183,51 @@ int snn_language_bridge_generate_and_decode(snn_language_bridge_t* bridge,
                                                     results, max_results, num_results);
 }
 
+/* Diagnostic: concept→word projection round-trip selectivity. See header. */
+int snn_language_bridge_probe_selectivity(snn_language_bridge_t* bridge,
+                                          uint32_t n_probe, uint32_t n_steps,
+                                          float inject, int* out_ranks,
+                                          uint32_t max_out, uint32_t* out_n)
+{
+    if (out_n) *out_n = 0;
+    if (!bridge || bridge->magic != SNN_LANG_MAGIC || !bridge->gen_net ||
+        bridge->gen_wernicke_pop_id < 0 || bridge->gen_broca_pop_id < 0 ||
+        !bridge->grounded_lang || !out_ranks || !out_n || max_out == 0) {
+        return -1;
+    }
+    if (n_steps == 0) n_steps = 8;
+    if (!(inject > 0.0f)) inject = 100.0f;
+
+    const uint32_t cap = SNN_LANG_MAX_WORD_POPS;
+    gl_warmstart_binding_t* binds =
+        (gl_warmstart_binding_t*)nimcp_calloc(cap, sizeof(*binds));
+    if (!binds) return -1;
+    const uint32_t nb =
+        grounded_language_collect_warmstart_bindings(bridge->grounded_lang, binds, cap);
+    if (n_probe > nb) n_probe = nb;
+    if (n_probe > max_out) n_probe = max_out;
+
+    enum { PROBE_TOPK = 32 };
+    snn_lang_word_result_t res[PROBE_TOPK];
+    uint32_t out = 0;
+    for (uint32_t i = 0; i < n_probe; i++) {
+        const uint32_t expect_pop = binds[i].form_hash % SNN_LANG_MAX_WORD_POPS;
+        uint64_t cid = binds[i].concept_id;
+        uint32_t nres = 0;
+        int rank = -1;
+        if (snn_language_bridge_generate_and_decode(bridge, &cid, 1, n_steps, inject,
+                                                    res, PROBE_TOPK, &nres) == 0) {
+            for (uint32_t r = 0; r < nres; r++) {
+                if (res[r].word_pop == expect_pop) { rank = (int)r; break; }
+            }
+        }
+        out_ranks[out++] = rank;
+    }
+    nimcp_free(binds);
+    *out_n = out;
+    return 0;
+}
+
 #if 0  /* Old decode_spikes body — retained only for reference; Slice B will
         * rewrite this on top of concept_registry. */
 int snn_language_bridge_decode_spikes_LEGACY_OFF(snn_language_bridge_t* bridge,

@@ -651,8 +651,9 @@ def _activate_snn_language_generator(brain, logger):
         logger.info("[snn-lang-gen] build_lang_projection: %s concept→word pairs wired",
                     wired)
         if wired and int(wired) > 0:
-            updated = brain.warmstart_lang_projection(2.0)
-            logger.info("[snn-lang-gen] warmstart: %s projection synapses set", updated)
+            updated = brain.warmstart_lang_projection(50.0)
+            logger.info("[snn-lang-gen] warmstart(k=50.0=SNN_LANG_PROJ_W_MAX): %s "
+                        "projection synapses set supra-threshold", updated)
             brain.set_produce_via_snn(True)
             logger.info("[snn-lang-gen] produce_via_snn ENABLED — the SNN is now "
                         "the language generator")
@@ -1179,6 +1180,8 @@ class BrainService:
         'save', 'sleep_run_cycle', 'retrofit_synapse_metadata',
         'ground_word', 'set_grounding_emotion', 'learn_language_pair',
         'warmstart_lang_projection', 'build_lang_projection',
+        'set_produce_via_snn', 'activate_snn_generator',
+        'snn_probe_selectivity',
     })
 
     def handle_readonly(self, req):
@@ -1621,6 +1624,78 @@ class BrainService:
         except Exception as e:
             return {"error": f"build_lang_projection: {e}"}
         return {"wired": int(wired)}
+
+    def _cmd_set_produce_via_snn(self, req):
+        """Route grounded-language produce through the SNN generator (or back to
+        the lexicon). WRITE command — flips gl->produce_via_snn live so we can
+        toggle/test the SNN-as-generator path without a daemon restart. The
+        projection must already be built+warmstarted supra-threshold (see
+        build_lang_projection / warmstart_lang_projection) or the SNN decode
+        returns 0 and produce silently falls back to the lexicon."""
+        enabled = bool(req.get("enabled", True))
+        try:
+            self.brain.set_produce_via_snn(enabled)
+        except AttributeError:
+            return {"error": "set_produce_via_snn not available — rebuild nimcp.so"}
+        except Exception as e:
+            return {"error": f"set_produce_via_snn: {e}"}
+        return {"produce_via_snn": enabled}
+
+    def _cmd_activate_snn_generator(self, req):
+        """One-shot: (re)build the concept->word projection, warm-start it
+        supra-threshold, and route produce through the SNN. Mirrors the boot
+        hook _activate_snn_language_generator but callable live (no restart).
+        WRITE command. Use after the lexicon is loaded so the projection has
+        coverage. k defaults to 50.0 = SNN_LANG_PROJ_W_MAX so confident
+        bindings (strength~0.8) land supra-threshold and Broca actually fires."""
+        w_init = float(req.get("w_init", 0.5))
+        k = float(req.get("k", 50.0))
+        out = {}
+        try:
+            out["wired"] = int(self.brain.build_lang_projection(w_init))
+            if out["wired"] > 0:
+                out["updated"] = int(self.brain.warmstart_lang_projection(k))
+                self.brain.set_produce_via_snn(True)
+                out["produce_via_snn"] = True
+            else:
+                out["produce_via_snn"] = False
+                out["note"] = "0 pairs wired — lexicon empty? produce_via_snn left OFF"
+        except AttributeError as e:
+            return {"error": f"activate_snn_generator: missing method (stale .so?): {e}"}
+        except Exception as e:
+            return {"error": f"activate_snn_generator: {e}"}
+        return out
+
+    def _cmd_snn_probe_selectivity(self, req):
+        """Diagnostic: concept->word projection round-trip selectivity. Seeds each
+        of the first n_probe lexicon bindings' concept ALONE, steps the SNN, and
+        reports where that binding's own word pop lands in the Broca decode.
+        Isolates projection selectivity from the intent->concept seed pipeline.
+        WRITE command (steps the live SNN). Returns a rank histogram."""
+        n_probe = int(req.get("n_probe", 64))
+        n_steps = int(req.get("n_steps", 8))
+        inject = float(req.get("inject", 100.0))
+        try:
+            ranks = self.brain.snn_probe_selectivity(n_probe, n_steps, inject)
+        except AttributeError:
+            return {"error": "snn_probe_selectivity not available — rebuild nimcp.so"}
+        except Exception as e:
+            return {"error": f"snn_probe_selectivity: {e}"}
+        n = len(ranks)
+        top1 = sum(1 for r in ranks if r == 0)
+        top5 = sum(1 for r in ranks if 0 <= r < 5)
+        top32 = sum(1 for r in ranks if r >= 0)
+        miss = sum(1 for r in ranks if r < 0)
+        hits = [r for r in ranks if r >= 0]
+        mean_rank = (sum(hits) / len(hits)) if hits else None
+        return {
+            "n_probed": n, "n_steps": n_steps, "inject": inject,
+            "top1": top1, "top5": top5, "in_top32": top32, "missing": miss,
+            "top1_frac": (top1 / n) if n else 0.0,
+            "in_top32_frac": (top32 / n) if n else 0.0,
+            "mean_rank_when_hit": mean_rank,
+            "ranks_head": ranks[:32],
+        }
 
     def _cmd_get_grounded_language_diagnostics(self, _req):
         try:
