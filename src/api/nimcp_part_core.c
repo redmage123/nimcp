@@ -5079,6 +5079,28 @@ nimcp_status_t nimcp_brain_snn_probe_selectivity(nimcp_brain_t brain,
     return (rc == 0) ? NIMCP_OK : NIMCP_ERROR;
 }
 
+/* SNN produce-path generation dynamics (n_steps/inject). Selectivity-sweep
+ * optimum 16/40. n_steps=0 / inject<=0 keep the current value. */
+nimcp_status_t nimcp_brain_set_snn_gen_params(nimcp_brain_t brain,
+                                              uint32_t n_steps, float inject) {
+    brain_t b = NULL;
+    nimcp_status_t s = _gl_diag_validate(brain, &b);
+    if (s != NIMCP_OK) return s;
+    if (!b->grounded_lang) return NIMCP_ERROR;
+    grounded_language_set_snn_gen_params(b->grounded_lang, n_steps, inject);
+    return NIMCP_OK;
+}
+
+nimcp_status_t nimcp_brain_get_snn_gen_params(nimcp_brain_t brain,
+                                              uint32_t* n_steps, float* inject) {
+    brain_t b = NULL;
+    nimcp_status_t s = _gl_diag_validate(brain, &b);
+    if (s != NIMCP_OK) return s;
+    if (!b->grounded_lang) return NIMCP_ERROR;
+    grounded_language_get_snn_gen_params(b->grounded_lang, n_steps, inject);
+    return NIMCP_OK;
+}
+
 nimcp_status_t nimcp_brain_snn_language_generate_step(nimcp_brain_t brain,
                                                       const float* intent,
                                                       uint32_t dim,

@@ -2157,6 +2157,15 @@ bool grounded_language_get_produce_clause_frame(const grounded_language_t* gl);
 void grounded_language_set_produce_via_snn(grounded_language_t* gl, bool enabled);
 bool grounded_language_get_produce_via_snn(const grounded_language_t* gl);
 
+/** SNN generation dynamics (2026-06-10): how many SNN steps to run and at what
+ *  Wernicke inject current when produce_via_snn sources candidates from Broca.
+ *  Selectivity-sweep optimum is n_steps=16/inject=40. n_steps=0 / inject<=0 are
+ *  ignored (keep current). */
+void grounded_language_set_snn_gen_params(grounded_language_t* gl,
+                                          uint32_t n_steps, float inject);
+void grounded_language_get_snn_gen_params(const grounded_language_t* gl,
+                                          uint32_t* n_steps, float* inject);
+
 /** Metacognitive produce-floor modulation (2026-06-02). The flag (config,
  *  default OFF) enables it; the cascade sets the adjust per-produce from
  *  world-model surprise / wellbeing distress / introspection confidence.

@@ -1181,7 +1181,7 @@ class BrainService:
         'ground_word', 'set_grounding_emotion', 'learn_language_pair',
         'warmstart_lang_projection', 'build_lang_projection',
         'set_produce_via_snn', 'activate_snn_generator',
-        'snn_probe_selectivity',
+        'snn_probe_selectivity', 'set_snn_gen_params',
     })
 
     def handle_readonly(self, req):
@@ -1696,6 +1696,20 @@ class BrainService:
             "mean_rank_when_hit": mean_rank,
             "ranks_head": ranks[:32],
         }
+
+    def _cmd_set_snn_gen_params(self, req):
+        """Tune the produce_via_snn generation dynamics (n_steps/inject) live.
+        Selectivity-sweep optimum is 16/40. WRITE command (mutates gl state)."""
+        n_steps = int(req.get("n_steps", 16))
+        inject = float(req.get("inject", 40.0))
+        try:
+            self.brain.set_snn_gen_params(n_steps, inject)
+            cur = self.brain.get_snn_gen_params()
+        except AttributeError:
+            return {"error": "set_snn_gen_params not available — rebuild nimcp.so"}
+        except Exception as e:
+            return {"error": f"set_snn_gen_params: {e}"}
+        return {"n_steps": cur[0], "inject": cur[1]}
 
     def _cmd_get_grounded_language_diagnostics(self, _req):
         try:

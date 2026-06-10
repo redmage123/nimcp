@@ -3667,6 +3667,35 @@ static PyObject* Brain_snn_probe_selectivity(BrainObject* self, PyObject* args) 
     return list;
 }
 
+/* set_snn_gen_params(n_steps, inject) -> None. Tune the produce_via_snn
+ * generation dynamics live (selectivity optimum 16/40). */
+static PyObject* Brain_set_snn_gen_params(BrainObject* self, PyObject* args) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    unsigned int n_steps = 0;
+    float inject = 0.0f;
+    if (!PyArg_ParseTuple(args, "If", &n_steps, &inject)) return NULL;
+    if (nimcp_brain_set_snn_gen_params(self->brain, n_steps, inject) != NIMCP_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "set_snn_gen_params failed (no grounded language?)");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+/* get_snn_gen_params() -> (n_steps, inject). */
+static PyObject* Brain_get_snn_gen_params(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    uint32_t n_steps = 0; float inject = 0.0f;
+    if (nimcp_brain_get_snn_gen_params(self->brain, &n_steps, &inject) != NIMCP_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "get_snn_gen_params failed (no grounded language?)");
+        return NULL;
+    }
+    return Py_BuildValue("(If)", (unsigned int)n_steps, inject);
+}
+
 /* Echo-correct: comprehend(parent_text) → strengthen target_word bindings.
  * Returns count of bindings strengthened. Non-zero lr_scale gates the
  * caller's per-call magnitude. */
@@ -13141,6 +13170,10 @@ static PyMethodDef Brain_methods[] = {
      "Build the SNN concept→word projection TOPOLOGY across all lexicon bindings — build_lang_projection(w_init: float = 0.5) -> int (#pairs wired). The missing coverage half: reopens the Broca CSR, wires every concept↔word ensemble pair, re-finalizes, so the SNN can actually generate. Run after the lexicon is loaded; serialized under the daemon lock. Follow with warmstart_lang_projection(k) to set weights supra-threshold."},
     {"snn_probe_selectivity", (PyCFunction)Brain_snn_probe_selectivity, METH_VARARGS,
      "Diagnostic: concept→word projection round-trip selectivity — snn_probe_selectivity(n_probe=64, n_steps=8, inject=100.0) -> list[int] of decode ranks (0=top-1 hit, -1=not in decode top-32). Seeds each of the first n_probe lexicon bindings' concept ALONE into Wernicke, steps the SNN, and reports where that binding's own word pop lands in the Broca decode. Isolates projection selectivity from the buggy intent→concept seed pipeline. WRITE (steps the live SNN; serialize under the daemon lock)."},
+    {"set_snn_gen_params", (PyCFunction)Brain_set_snn_gen_params, METH_VARARGS,
+     "Tune produce_via_snn generation dynamics — set_snn_gen_params(n_steps: int, inject: float) -> None. Selectivity-sweep optimum is 16/40 (expected word in decode top-5 for 94% of bindings vs 27/64-in-top-32 at the old 8/100). n_steps=0/inject<=0 keep current."},
+    {"get_snn_gen_params", (PyCFunction)Brain_get_snn_gen_params, METH_NOARGS,
+     "get_snn_gen_params() -> (n_steps, inject) for the produce_via_snn generation path."},
     {"set_metacog_gates_produce", (PyCFunction)Brain_set_metacog_gates_produce, METH_VARARGS,
      "Metacognitive produce-floor modulation — set_metacog_gates_produce(enabled: bool) -> None. Default OFF. When ON, the cascade shifts the produce confidence floor from world-model surprise (FEP prediction-error trajectory), so the brain is more conservative (more 'I don't know') when its predictive model is surprised and more willing when it converged. The correct integration for modulatory cognitive modules (emotion/introspection/world-model) which carry no semantic content vector. Read back via get_grounded_language_diagnostics()['metacog_gates_produce']."},
     {"set_produce_via_snn", (PyCFunction)Brain_set_produce_via_snn, METH_VARARGS,

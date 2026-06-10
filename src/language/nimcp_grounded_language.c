@@ -1822,6 +1822,9 @@ grounded_language_t* grounded_language_create(uint32_t semantic_dim, void* seman
     /* Increment-1 (2026-06-02) — SNN-as-generator A/B switch, default OFF so
      * produce is byte-identical to the lexicon path until opted in. */
     gl->produce_via_snn = false;
+    /* SNN generation dynamics (2026-06-10) — selectivity-sweep optima. */
+    gl->snn_gen_n_steps = 16;      /* was hardcoded 8 → only 27/64 in decode top-32 */
+    gl->snn_gen_inject  = 40.0f;   /* inject=100 over-saturated Broca */
     /* Metacognitive produce-floor modulation (2026-06-02) — default OFF / 0. */
     gl->metacog_gates_produce = false;
     gl->metacog_floor_adjust  = 0.0f;
@@ -4313,6 +4316,20 @@ bool grounded_language_get_produce_via_snn(const grounded_language_t* gl) {
     return gl ? gl->produce_via_snn : false;
 }
 
+void grounded_language_set_snn_gen_params(grounded_language_t* gl,
+                                          uint32_t n_steps, float inject) {
+    if (!gl) return;
+    if (n_steps > 0) gl->snn_gen_n_steps = n_steps;
+    if (inject > 0.0f) gl->snn_gen_inject = inject;
+}
+
+void grounded_language_get_snn_gen_params(const grounded_language_t* gl,
+                                          uint32_t* n_steps, float* inject) {
+    if (!gl) return;
+    if (n_steps) *n_steps = gl->snn_gen_n_steps;
+    if (inject)  *inject  = gl->snn_gen_inject;
+}
+
 void grounded_language_set_metacog_gates_produce(grounded_language_t* gl, bool enabled) {
     if (gl) gl->metacog_gates_produce = enabled;
 }
@@ -5646,8 +5663,14 @@ static uint32_t gl_produce_candidates_via_snn(grounded_language_t* gl,
      * projection → either way the caller falls back to the lexicon producer. */
     snn_lang_word_result_t res[32];
     uint32_t nres = 0;
+    /* n_steps/inject from the selectivity sweep (snn_probe_selectivity): 16/40
+     * puts the expected word in the decode top-5 for 94% of bindings (mean rank
+     * 1.64) vs 27/64-in-top-32 at the old 8/100. Runtime-tunable so the operating
+     * point can be re-swept live without a rebuild. */
+    uint32_t gen_steps  = gl->snn_gen_n_steps ? gl->snn_gen_n_steps : 16u;
+    float    gen_inject = (gl->snn_gen_inject > 0.0f) ? gl->snn_gen_inject : 40.0f;
     if (snn_language_bridge_generate_and_decode(gl->snn_bridge, concept_ids, n_concepts,
-                                                8 /*n_steps*/, 100.0f /*inject*/,
+                                                gen_steps, gen_inject,
                                                 res, max_words, &nres) != 0) {
         return 0;
     }

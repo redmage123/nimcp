@@ -455,6 +455,18 @@ struct grounded_language {
      * (applied from JSON at daemon start; not LANC-persisted). */
     bool                 produce_via_snn;
 
+    /* SNN generation dynamics (2026-06-10). When produce_via_snn is on,
+     * gl_produce_candidates_via_snn seeds the intent's concepts into Wernicke
+     * and steps the SNN snn_gen_n_steps times at snn_gen_inject before decoding
+     * Broca. Selectivity sweep (snn_probe_selectivity) showed the expected word
+     * lands in the decode top-5 for 94% of bindings at n_steps=16/inject=40
+     * (mean rank 1.64, zero misses) vs 27/64 in top-32 at the old 8/100 — the
+     * Broca ensembles need ~16 steps for projection drive to dominate ambient
+     * noise, and inject=100 over-saturates. Runtime-tunable via
+     * grounded_language_set_snn_gen_params. */
+    uint32_t             snn_gen_n_steps;   /* default 16 */
+    float                snn_gen_inject;    /* default 40.0 */
+
     /* Metacognitive produce-floor modulation (2026-06-02). When
      * metacog_gates_produce is true, gl_produce_confidence_floor adds
      * metacog_floor_adjust (set per-produce by the cascade from world-model
