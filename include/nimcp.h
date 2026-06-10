@@ -1790,9 +1790,11 @@ nimcp_status_t nimcp_brain_snn_probe_selectivity(nimcp_brain_t brain,
 /** SNN produce-path generation dynamics (n_steps/inject) used by produce_via_snn.
  *  Selectivity-sweep optimum 16/40; n_steps=0 / inject<=0 keep current. */
 nimcp_status_t nimcp_brain_set_snn_gen_params(nimcp_brain_t brain,
-                                              uint32_t n_steps, float inject);
+                                              uint32_t n_steps, float inject,
+                                              uint32_t max_concepts);
 nimcp_status_t nimcp_brain_get_snn_gen_params(nimcp_brain_t brain,
-                                              uint32_t* n_steps, float* inject);
+                                              uint32_t* n_steps, float* inject,
+                                              uint32_t* max_concepts);
 
 /** Phase-2 produce-time SNN generation step (2026-06-03): seed the intent's
  *  concepts into Wernicke, step the SNN n_steps, leave Broca's spikes in the

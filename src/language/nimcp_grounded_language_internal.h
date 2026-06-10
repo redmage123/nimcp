@@ -466,6 +466,11 @@ struct grounded_language {
      * grounded_language_set_snn_gen_params. */
     uint32_t             snn_gen_n_steps;   /* default 16 */
     float                snn_gen_inject;    /* default 40.0 */
+    /* How many of the intent's top concepts to seed into Wernicke at once.
+     * Single-concept selectivity is excellent (probe: 79% top-5), but seeding
+     * all 8 floods Broca with 8 concepts' words → salad. Default 2 (focused).
+     * Clamped to the 8-slot seed array. */
+    uint32_t             snn_gen_max_concepts; /* default 2 */
 
     /* Metacognitive produce-floor modulation (2026-06-02). When
      * metacog_gates_produce is true, gl_produce_confidence_floor adds

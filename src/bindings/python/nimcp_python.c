@@ -3673,27 +3673,27 @@ static PyObject* Brain_set_snn_gen_params(BrainObject* self, PyObject* args) {
     if (!self->brain) {
         PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
     }
-    unsigned int n_steps = 0;
+    unsigned int n_steps = 0, max_concepts = 0;
     float inject = 0.0f;
-    if (!PyArg_ParseTuple(args, "If", &n_steps, &inject)) return NULL;
-    if (nimcp_brain_set_snn_gen_params(self->brain, n_steps, inject) != NIMCP_OK) {
+    if (!PyArg_ParseTuple(args, "If|I", &n_steps, &inject, &max_concepts)) return NULL;
+    if (nimcp_brain_set_snn_gen_params(self->brain, n_steps, inject, max_concepts) != NIMCP_OK) {
         PyErr_SetString(PyExc_RuntimeError, "set_snn_gen_params failed (no grounded language?)");
         return NULL;
     }
     Py_RETURN_NONE;
 }
 
-/* get_snn_gen_params() -> (n_steps, inject). */
+/* get_snn_gen_params() -> (n_steps, inject, max_concepts). */
 static PyObject* Brain_get_snn_gen_params(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
     if (!self->brain) {
         PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
     }
-    uint32_t n_steps = 0; float inject = 0.0f;
-    if (nimcp_brain_get_snn_gen_params(self->brain, &n_steps, &inject) != NIMCP_OK) {
+    uint32_t n_steps = 0, max_concepts = 0; float inject = 0.0f;
+    if (nimcp_brain_get_snn_gen_params(self->brain, &n_steps, &inject, &max_concepts) != NIMCP_OK) {
         PyErr_SetString(PyExc_RuntimeError, "get_snn_gen_params failed (no grounded language?)");
         return NULL;
     }
-    return Py_BuildValue("(If)", (unsigned int)n_steps, inject);
+    return Py_BuildValue("(IfI)", (unsigned int)n_steps, inject, (unsigned int)max_concepts);
 }
 
 /* Echo-correct: comprehend(parent_text) → strengthen target_word bindings.

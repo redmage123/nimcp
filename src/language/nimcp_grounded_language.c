@@ -1825,6 +1825,7 @@ grounded_language_t* grounded_language_create(uint32_t semantic_dim, void* seman
     /* SNN generation dynamics (2026-06-10) — selectivity-sweep optima. */
     gl->snn_gen_n_steps = 16;      /* was hardcoded 8 → only 27/64 in decode top-32 */
     gl->snn_gen_inject  = 40.0f;   /* inject=100 over-saturated Broca */
+    gl->snn_gen_max_concepts = 2;  /* was hardcoded 8 → 8-concept Broca flood */
     /* Metacognitive produce-floor modulation (2026-06-02) — default OFF / 0. */
     gl->metacog_gates_produce = false;
     gl->metacog_floor_adjust  = 0.0f;
@@ -4317,17 +4318,21 @@ bool grounded_language_get_produce_via_snn(const grounded_language_t* gl) {
 }
 
 void grounded_language_set_snn_gen_params(grounded_language_t* gl,
-                                          uint32_t n_steps, float inject) {
+                                          uint32_t n_steps, float inject,
+                                          uint32_t max_concepts) {
     if (!gl) return;
     if (n_steps > 0) gl->snn_gen_n_steps = n_steps;
     if (inject > 0.0f) gl->snn_gen_inject = inject;
+    if (max_concepts > 0) gl->snn_gen_max_concepts = (max_concepts > 8u) ? 8u : max_concepts;
 }
 
 void grounded_language_get_snn_gen_params(const grounded_language_t* gl,
-                                          uint32_t* n_steps, float* inject) {
+                                          uint32_t* n_steps, float* inject,
+                                          uint32_t* max_concepts) {
     if (!gl) return;
     if (n_steps) *n_steps = gl->snn_gen_n_steps;
     if (inject)  *inject  = gl->snn_gen_inject;
+    if (max_concepts) *max_concepts = gl->snn_gen_max_concepts;
 }
 
 void grounded_language_set_metacog_gates_produce(grounded_language_t* gl, bool enabled) {
@@ -5650,8 +5655,13 @@ static uint32_t gl_produce_candidates_via_snn(grounded_language_t* gl,
      * all of them drive the SNN's word production — the directive's convergence
      * point. */
     uint64_t concept_ids[8];
+    /* Seed only the strongest gl->snn_gen_max_concepts (default 2) — seeding all
+     * 8 floods Broca with 8 concepts' words and the decode degrades to salad,
+     * even though single-concept selectivity is excellent. Tunable live. */
+    uint32_t seed_n = gl->snn_gen_max_concepts ? gl->snn_gen_max_concepts : 2u;
+    if (seed_n > 8u) seed_n = 8u;
     uint32_t n_concepts = grounded_language_top_concepts_for_intent(
-        gl, intent, intent_dim, concept_ids, 8);
+        gl, intent, intent_dim, concept_ids, seed_n);
     if (n_concepts == 0) return 0;   /* no grounded concept → lexicon fallback */
 
     /* (2) Seed → step → decode via the bridge's stored network handles

@@ -1702,14 +1702,15 @@ class BrainService:
         Selectivity-sweep optimum is 16/40. WRITE command (mutates gl state)."""
         n_steps = int(req.get("n_steps", 16))
         inject = float(req.get("inject", 40.0))
+        max_concepts = int(req.get("max_concepts", 0))  # 0 = keep current
         try:
-            self.brain.set_snn_gen_params(n_steps, inject)
+            self.brain.set_snn_gen_params(n_steps, inject, max_concepts)
             cur = self.brain.get_snn_gen_params()
         except AttributeError:
             return {"error": "set_snn_gen_params not available — rebuild nimcp.so"}
         except Exception as e:
             return {"error": f"set_snn_gen_params: {e}"}
-        return {"n_steps": cur[0], "inject": cur[1]}
+        return {"n_steps": cur[0], "inject": cur[1], "max_concepts": cur[2]}
 
     def _cmd_get_grounded_language_diagnostics(self, _req):
         try:

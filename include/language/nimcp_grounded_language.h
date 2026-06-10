@@ -2162,9 +2162,11 @@ bool grounded_language_get_produce_via_snn(const grounded_language_t* gl);
  *  Selectivity-sweep optimum is n_steps=16/inject=40. n_steps=0 / inject<=0 are
  *  ignored (keep current). */
 void grounded_language_set_snn_gen_params(grounded_language_t* gl,
-                                          uint32_t n_steps, float inject);
+                                          uint32_t n_steps, float inject,
+                                          uint32_t max_concepts);
 void grounded_language_get_snn_gen_params(const grounded_language_t* gl,
-                                          uint32_t* n_steps, float* inject);
+                                          uint32_t* n_steps, float* inject,
+                                          uint32_t* max_concepts);
 
 /** Metacognitive produce-floor modulation (2026-06-02). The flag (config,
  *  default OFF) enables it; the cascade sets the adjust per-produce from
