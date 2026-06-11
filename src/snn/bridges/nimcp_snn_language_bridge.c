@@ -1104,9 +1104,38 @@ int snn_language_bridge_generate_step(snn_language_bridge_t* bridge,
      *     only the LAST step therefore loses most of the produced activity
      *     (validated: last-step snapshot yields decode=0). So accumulate the
      *     per-neuron spike COUNT over the whole window — that's the Broca
-     *     firing-rate signal decode_spikes_cached actually wants. */
+     *     firing-rate signal decode_spikes_cached actually wants.
+     *
+     * BASELINE-SUBTRACTED (DIFFERENTIAL) DECODE (2026-06-11): gen_net is the
+     * full live 2M-neuron SNN, so Broca carries heavy AMBIENT firing (~15k
+     * spikes/step brain-wide) unrelated to the seed. Raw spike-count decode is
+     * dominated by whichever Broca neurons happen to be ambient-hot, yielding
+     * the SAME prompt-independent exotic-word salad regardless of which concept
+     * is seeded (the seed's ~8-neuron projection is a drop in that ocean).
+     * Fix: run an UNSEEDED baseline window first, then the SEEDED signal window,
+     * and keep only the positive per-neuron delta (signal − baseline). That
+     * cancels the always-on ambient pops and leaves the projection-driven
+     * response. Falls back to raw signal counts if the baseline alloc fails. */
     enum { MAXC = 64 };
     if (n_concepts > MAXC) n_concepts = MAXC;
+
+    float* baseline = (float*)nimcp_calloc(broca_n, sizeof(float));
+
+    /* Baseline window: step the net with NO seed injection, accumulate ambient
+     * Broca spike counts. Skipped if alloc failed (raw-count fallback). */
+    if (baseline) {
+        for (uint32_t s = 0; s < n_steps; s++) {
+            (void)snn_network_step(net, 1.0f /* dt_ms */);
+            const float* spikes = (const float*)nimcp_tensor_data(broca->spike_output);
+            if (spikes) {
+                for (uint32_t n = 0; n < broca_n; n++) {
+                    if (spikes[n] > 0.5f) baseline[n] += 1.0f;
+                }
+            }
+        }
+    }
+
+    /* Signal window: re-inject the seed every step, accumulate Broca counts. */
     int any_spikes = 0;
     for (uint32_t s = 0; s < n_steps; s++) {
         for (uint32_t c = 0; c < n_concepts; c++) {
@@ -1133,6 +1162,16 @@ int snn_language_bridge_generate_step(snn_language_bridge_t* bridge,
             wern->external_current[nrn] = 0.0f;
         }
     }
+
+    /* Differential: keep only the seed-driven excess over ambient. */
+    if (baseline && bcache) {
+        for (uint32_t n = 0; n < broca_n; n++) {
+            float d = bcache[n] - baseline[n];
+            bcache[n] = (d > 0.0f) ? d : 0.0f;
+        }
+    }
+    if (baseline) nimcp_free(baseline);
+
     (void)any_spikes;  /* 0 spikes is a valid (cold) result, not an error */
     return (bcache != NULL) ? 0 : -1;
 }
