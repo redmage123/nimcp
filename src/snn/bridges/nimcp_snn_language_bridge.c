@@ -1168,6 +1168,89 @@ int snn_language_bridge_connect_network(snn_language_bridge_t* bridge,
  * ambient cache). Returns -1 if not connected or on error; 0 with *num_results
  * (possibly 0 — a cold/uncovered projection yields nothing and the caller falls
  * back to the lexicon producer). */
+/* ISOLATED Wernicke→Broca generation — Phase 1 of the autoregressive-SNN
+ * redesign (docs/claude/snn-language-generation-design.md).
+ *
+ * The full-net generate_step drowns the seed in ~15k spikes/step of ambient
+ * Broca firing, so a fixed set of high-ambient word pops ("thoriated",
+ * "urbanized", "anisotropy") wins the decode regardless of which concept is
+ * seeded. This computes Broca drive DIRECTLY from the warm-started concept→word
+ * projection instead of stepping the 2M-neuron net: for each Broca neuron, sum
+ * the weights of its incoming synapses that ORIGINATE IN A SEEDED concept's
+ * Wernicke ensemble. Synapses from unseeded Wernicke neurons or from any other
+ * source population (Arcuate, hierarchy taps) are ignored — so the readout is
+ * zero-ambient BY CONSTRUCTION and reflects pure concept→word association
+ * strength. It reads the very weights the boot-hook warmstart populates in
+ * Broca's incoming CSR, so no separate network is allocated. broca_spike_cache
+ * holds the per-neuron drive (a graded rate proxy) that decode_spikes_cached
+ * ranks. This is the clean room the autoregressive readout (Phase 2: WTA +
+ * efference feedback) and learned transitions (Phase 4) will build on.
+ *
+ * n_steps/inject are accepted for signature compatibility; the analytic readout
+ * needs no time-stepping, so they do not affect ranking. */
+static int snn_language_bridge_generate_step_isolated(
+    snn_language_bridge_t* bridge,
+    const uint64_t* concept_ids, uint32_t n_concepts,
+    uint32_t n_steps, float inject_current)
+{
+    (void)n_steps; (void)inject_current;
+    snn_network_t* net = bridge->gen_net;
+    snn_population_t* wern  =
+        snn_network_get_population(net, (uint32_t)bridge->gen_wernicke_pop_id);
+    snn_population_t* broca =
+        snn_network_get_population(net, (uint32_t)bridge->gen_broca_pop_id);
+    if (!wern || !broca || !broca->incoming_csr || !broca->incoming_csr->finalized) {
+        return -1;
+    }
+    const snn_csr_storage_t* csr = broca->incoming_csr;
+    const uint32_t broca_n = broca->n_neurons;
+    const uint32_t wern_n  = wern->n_neurons;
+    if (broca_n == 0 || wern_n == 0) return -1;
+
+    /* Ensure + zero the Broca drive cache (same lifecycle as generate_step). */
+    if (!bridge->broca_spike_cache || bridge->broca_spike_cache_cap < broca_n) {
+        if (bridge->broca_spike_cache) nimcp_free(bridge->broca_spike_cache);
+        bridge->broca_spike_cache = (float*)nimcp_calloc(broca_n, sizeof(float));
+        bridge->broca_spike_cache_cap = bridge->broca_spike_cache ? broca_n : 0u;
+    }
+    float* bcache = (bridge->broca_spike_cache &&
+                     bridge->broca_spike_cache_cap >= broca_n)
+                  ? bridge->broca_spike_cache : NULL;
+    if (!bcache) return -1;
+    memset(bcache, 0, (size_t)broca_n * sizeof(float));
+
+    /* Mark the seeded Wernicke ensemble neurons (the active concepts). */
+    uint8_t* seeded = (uint8_t*)nimcp_calloc(wern_n, sizeof(uint8_t));
+    if (!seeded) return -1;
+    enum { MAXC = 64 };
+    if (n_concepts > MAXC) n_concepts = MAXC;
+    for (uint32_t c = 0; c < n_concepts; c++) {
+        uint32_t cpop = (uint32_t)(concept_ids[c] % SNN_LANG_MAX_CONCEPT_POPS);
+        for (uint32_t j = 0; j < SNN_LANG_NEURONS_PER_POP; j++) {
+            seeded[lang_ensemble_neuron(cpop, j, wern_n)] = 1u;
+        }
+    }
+
+    /* Per Broca neuron: accumulate projection drive from SEEDED Wernicke
+     * neurons only. Everything else (unseeded Wernicke, Arcuate, hierarchy) is
+     * skipped → no ambient contribution. */
+    const uint32_t wsrc = (uint32_t)bridge->gen_wernicke_pop_id;
+    for (uint32_t n = 0; n < broca_n; n++) {
+        uint32_t cnt = 0;
+        const snn_csr_synapse_t* inc = snn_csr_get_incoming(csr, n, &cnt);
+        if (!inc || cnt == 0) continue;
+        float acc = 0.0f;
+        for (uint32_t e = 0; e < cnt; e++) {
+            if (inc[e].src_pop == wsrc && seeded[inc[e].src_neuron]) {
+                acc += inc[e].weight;
+            }
+        }
+        if (acc > 0.0f) bcache[n] = acc;
+    }
+    nimcp_free(seeded);
+    return 0;
+}
+
 int snn_language_bridge_generate_and_decode(snn_language_bridge_t* bridge,
                                             const uint64_t* concept_ids,
                                             uint32_t n_concepts,
@@ -1182,11 +1265,23 @@ int snn_language_bridge_generate_and_decode(snn_language_bridge_t* bridge,
         !concept_ids || n_concepts == 0 || !results || !num_results) {
         return -1;
     }
-    if (snn_language_bridge_generate_step(bridge, bridge->gen_net,
-            bridge->gen_wernicke_pop_id, bridge->gen_broca_pop_id,
-            concept_ids, n_concepts, n_steps, inject_current) != 0) {
-        return -1;
+    /* Phase 1: isolated projection readout (zero ambient) is the default.
+     * NIMCP_LANG_ISOLATED_GEN=0 falls back to the legacy full-net step for A/B. */
+    static int isolated = -1;
+    if (isolated < 0) {
+        const char* e = getenv("NIMCP_LANG_ISOLATED_GEN");
+        isolated = (e && e[0] == '0') ? 0 : 1;
     }
+    int rc;
+    if (isolated) {
+        rc = snn_language_bridge_generate_step_isolated(
+                 bridge, concept_ids, n_concepts, n_steps, inject_current);
+    } else {
+        rc = snn_language_bridge_generate_step(bridge, bridge->gen_net,
+                 bridge->gen_wernicke_pop_id, bridge->gen_broca_pop_id,
+                 concept_ids, n_concepts, n_steps, inject_current);
+    }
+    if (rc != 0) return -1;
     /* decode_spikes_cached ignores its concept_rates arg; pass a dummy. */
     float dummy[1] = { 0.0f };
     return snn_language_bridge_decode_spikes_cached(bridge, dummy, 1,
