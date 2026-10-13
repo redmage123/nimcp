@@ -195,9 +195,10 @@ nimcp_status_t nimcp_brain_learn_example(
     }
 
     // Call internal brain API
-    float success = brain_learn_example(brain->internal_brain, features, num_features, label, confidence);
+    float loss = brain_learn_example(brain->internal_brain, features, num_features, label, confidence);
 
-    if (!success) {
+    // brain_learn_example returns -1.0f on error, non-negative loss on success
+    if (loss < 0.0f) {
         set_error("Brain learning failed");
         return NIMCP_ERROR;
     }
@@ -252,6 +253,160 @@ nimcp_status_t nimcp_brain_predict(
     set_error("No error");
     return NIMCP_OK;
 }
+
+//=============================================================================
+// Batch API (v2.7.0)
+//=============================================================================
+
+nimcp_status_t nimcp_brain_predict_batch(
+    nimcp_brain_t brain,
+    const float** features,
+    uint32_t num_features,
+    uint32_t batch_size,
+    char** out_labels,
+    float* out_confidences)
+{
+    if (!brain) {
+        set_error("Brain handle is NULL");
+        return NIMCP_ERROR_NULL_ARG;
+    }
+
+    if (!features) {
+        set_error("Features array is NULL");
+        return NIMCP_ERROR_NULL_ARG;
+    }
+
+    if (!out_labels) {
+        set_error("Output labels array is NULL");
+        return NIMCP_ERROR_NULL_ARG;
+    }
+
+    if (!out_confidences) {
+        set_error("Output confidences array is NULL");
+        return NIMCP_ERROR_NULL_ARG;
+    }
+
+    if (batch_size == 0) {
+        set_error("Batch size is zero");
+        return NIMCP_ERROR_INVALID_ARG;
+    }
+
+    // Process each sample in batch
+    for (uint32_t i = 0; i < batch_size; i++) {
+        if (!features[i]) {
+            set_error("Features[%u] is NULL", i);
+            return NIMCP_ERROR_NULL_ARG;
+        }
+
+        if (!out_labels[i]) {
+            set_error("out_labels[%u] is NULL", i);
+            return NIMCP_ERROR_NULL_ARG;
+        }
+
+        // Predict this sample
+        brain_decision_t* decision = brain_decide(brain->internal_brain, features[i], num_features);
+
+        if (!decision) {
+            set_error("Brain prediction failed for sample %u", i);
+            return NIMCP_ERROR;
+        }
+
+        // Copy results
+        strncpy(out_labels[i], decision->label, 63);
+        out_labels[i][63] = '\0';
+        out_confidences[i] = decision->confidence;
+
+        // Free decision
+        nimcp_free(decision);
+    }
+
+    set_error("No error");
+    return NIMCP_OK;
+}
+
+float nimcp_brain_learn_batch(
+    nimcp_brain_t brain,
+    const float** features,
+    uint32_t num_features,
+    uint32_t batch_size,
+    const char** labels,
+    const float* confidences)
+{
+    if (!brain || !features || !labels) {
+        set_error("NULL argument in batch learning");
+        return -1.0f;
+    }
+
+    if (batch_size == 0) {
+        set_error("Batch size is zero");
+        return -1.0f;
+    }
+
+    float total_loss = 0.0f;
+    uint32_t successful_updates = 0;
+
+    // Process each sample in batch
+    for (uint32_t i = 0; i < batch_size; i++) {
+        if (!features[i] || !labels[i]) {
+            set_error("features[%u] or labels[%u] is NULL", i, i);
+            continue;
+        }
+
+        float confidence = confidences ? confidences[i] : 1.0f;
+
+        // Learn from this sample using brain_learn_example
+        float loss = brain_learn_example(brain->internal_brain, features[i], num_features, labels[i], confidence);
+
+        if (loss >= 0.0f) {
+            successful_updates++;
+            total_loss += loss;
+        }
+    }
+
+    if (successful_updates == 0) {
+        set_error("No successful learning updates in batch");
+        return -1.0f;
+    }
+
+    // Return average loss
+    float avg_loss = total_loss / successful_updates;
+
+    set_error("No error");
+    return avg_loss;
+}
+
+//=============================================================================
+// Async API (v2.7.0)
+//=============================================================================
+
+// Note: Async functions will be implemented after thread pool integration
+// For now, placeholders that use synchronous implementation
+
+nimcp_future_t nimcp_brain_predict_async(
+    nimcp_brain_t brain,
+    const float* features,
+    uint32_t num_features)
+{
+    // TODO: Implement async prediction using thread pool
+    // For now, return NULL (not implemented)
+    set_error("Async prediction not yet implemented");
+    return NULL;
+}
+
+nimcp_status_t nimcp_future_wait_predict(
+    nimcp_future_t future,
+    uint32_t timeout_ms,
+    char* out_label,
+    float* out_confidence)
+{
+    // TODO: Implement future wait
+    set_error("Async prediction not yet implemented");
+    return NIMCP_ERROR_NOT_IMPLEMENTED;
+}
+
+//=============================================================================
+// Brain Save/Load
+//=============================================================================
 
 nimcp_status_t nimcp_brain_save(nimcp_brain_t brain, const char* filepath) {
     if (!brain) {

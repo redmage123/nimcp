@@ -209,6 +209,30 @@ __/api/nimcp.c.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/api/nimcp.c.s
 .PHONY : __/api/nimcp.c.s
 
+__/cognitive/checkpointing/nimcp_checkpointing.o: __/cognitive/checkpointing/nimcp_checkpointing.c.o
+.PHONY : __/cognitive/checkpointing/nimcp_checkpointing.o
+
+# target to build an object file
+__/cognitive/checkpointing/nimcp_checkpointing.c.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/cognitive/checkpointing/nimcp_checkpointing.c.o
+.PHONY : __/cognitive/checkpointing/nimcp_checkpointing.c.o
+
+__/cognitive/checkpointing/nimcp_checkpointing.i: __/cognitive/checkpointing/nimcp_checkpointing.c.i
+.PHONY : __/cognitive/checkpointing/nimcp_checkpointing.i
+
+# target to preprocess a source file
+__/cognitive/checkpointing/nimcp_checkpointing.c.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/cognitive/checkpointing/nimcp_checkpointing.c.i
+.PHONY : __/cognitive/checkpointing/nimcp_checkpointing.c.i
+
+__/cognitive/checkpointing/nimcp_checkpointing.s: __/cognitive/checkpointing/nimcp_checkpointing.c.s
+.PHONY : __/cognitive/checkpointing/nimcp_checkpointing.s
+
+# target to generate assembly for a file
+__/cognitive/checkpointing/nimcp_checkpointing.c.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/cognitive/checkpointing/nimcp_checkpointing.c.s
+.PHONY : __/cognitive/checkpointing/nimcp_checkpointing.c.s
+
 __/cognitive/consolidation/nimcp_consolidation.o: __/cognitive/consolidation/nimcp_consolidation.c.o
 .PHONY : __/cognitive/consolidation/nimcp_consolidation.o
 
@@ -496,6 +520,30 @@ __/core/neuralnet/nimcp_neuralnet.s: __/core/neuralnet/nimcp_neuralnet.c.s
 __/core/neuralnet/nimcp_neuralnet.c.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/neuralnet/nimcp_neuralnet.c.s
 .PHONY : __/core/neuralnet/nimcp_neuralnet.c.s
+
+__/core/neuralnet/nimcp_neuralnet_simd.o: __/core/neuralnet/nimcp_neuralnet_simd.c.o
+.PHONY : __/core/neuralnet/nimcp_neuralnet_simd.o
+
+# target to build an object file
+__/core/neuralnet/nimcp_neuralnet_simd.c.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/neuralnet/nimcp_neuralnet_simd.c.o
+.PHONY : __/core/neuralnet/nimcp_neuralnet_simd.c.o
+
+__/core/neuralnet/nimcp_neuralnet_simd.i: __/core/neuralnet/nimcp_neuralnet_simd.c.i
+.PHONY : __/core/neuralnet/nimcp_neuralnet_simd.i
+
+# target to preprocess a source file
+__/core/neuralnet/nimcp_neuralnet_simd.c.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/neuralnet/nimcp_neuralnet_simd.c.i
+.PHONY : __/core/neuralnet/nimcp_neuralnet_simd.c.i
+
+__/core/neuralnet/nimcp_neuralnet_simd.s: __/core/neuralnet/nimcp_neuralnet_simd.c.s
+.PHONY : __/core/neuralnet/nimcp_neuralnet_simd.s
+
+# target to generate assembly for a file
+__/core/neuralnet/nimcp_neuralnet_simd.c.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/core/neuralnet/nimcp_neuralnet_simd.c.s
+.PHONY : __/core/neuralnet/nimcp_neuralnet_simd.c.s
 
 __/core/neuron_types/nimcp_neuron_types.o: __/core/neuron_types/nimcp_neuron_types.c.o
 .PHONY : __/core/neuron_types/nimcp_neuron_types.o
@@ -833,6 +881,30 @@ __/plasticity/adaptive/nimcp_adaptive.c.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/plasticity/adaptive/nimcp_adaptive.c.s
 .PHONY : __/plasticity/adaptive/nimcp_adaptive.c.s
 
+__/plasticity/adaptive/nimcp_weights.o: __/plasticity/adaptive/nimcp_weights.c.o
+.PHONY : __/plasticity/adaptive/nimcp_weights.o
+
+# target to build an object file
+__/plasticity/adaptive/nimcp_weights.c.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/plasticity/adaptive/nimcp_weights.c.o
+.PHONY : __/plasticity/adaptive/nimcp_weights.c.o
+
+__/plasticity/adaptive/nimcp_weights.i: __/plasticity/adaptive/nimcp_weights.c.i
+.PHONY : __/plasticity/adaptive/nimcp_weights.i
+
+# target to preprocess a source file
+__/plasticity/adaptive/nimcp_weights.c.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/plasticity/adaptive/nimcp_weights.c.i
+.PHONY : __/plasticity/adaptive/nimcp_weights.c.i
+
+__/plasticity/adaptive/nimcp_weights.s: __/plasticity/adaptive/nimcp_weights.c.s
+.PHONY : __/plasticity/adaptive/nimcp_weights.s
+
+# target to generate assembly for a file
+__/plasticity/adaptive/nimcp_weights.c.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/plasticity/adaptive/nimcp_weights.c.s
+.PHONY : __/plasticity/adaptive/nimcp_weights.c.s
+
 __/plasticity/attention/nimcp_attention.o: __/plasticity/attention/nimcp_attention.c.o
 .PHONY : __/plasticity/attention/nimcp_attention.o
 
@@ -1000,6 +1072,30 @@ __/security/nimcp_security.s: __/security/nimcp_security.c.s
 __/security/nimcp_security.c.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/security/nimcp_security.c.s
 .PHONY : __/security/nimcp_security.c.s
+
+__/utils/async/nimcp_async.o: __/utils/async/nimcp_async.c.o
+.PHONY : __/utils/async/nimcp_async.o
+
+# target to build an object file
+__/utils/async/nimcp_async.c.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/utils/async/nimcp_async.c.o
+.PHONY : __/utils/async/nimcp_async.c.o
+
+__/utils/async/nimcp_async.i: __/utils/async/nimcp_async.c.i
+.PHONY : __/utils/async/nimcp_async.i
+
+# target to preprocess a source file
+__/utils/async/nimcp_async.c.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/utils/async/nimcp_async.c.i
+.PHONY : __/utils/async/nimcp_async.c.i
+
+__/utils/async/nimcp_async.s: __/utils/async/nimcp_async.c.s
+.PHONY : __/utils/async/nimcp_async.s
+
+# target to generate assembly for a file
+__/utils/async/nimcp_async.c.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/lib/CMakeFiles/nimcp.dir/build.make src/lib/CMakeFiles/nimcp.dir/__/utils/async/nimcp_async.c.s
+.PHONY : __/utils/async/nimcp_async.c.s
 
 __/utils/cache/nimcp_cache.o: __/utils/cache/nimcp_cache.c.o
 .PHONY : __/utils/cache/nimcp_cache.o
@@ -1522,6 +1618,9 @@ help:
 	@echo "... __/api/nimcp.o"
 	@echo "... __/api/nimcp.i"
 	@echo "... __/api/nimcp.s"
+	@echo "... __/cognitive/checkpointing/nimcp_checkpointing.o"
+	@echo "... __/cognitive/checkpointing/nimcp_checkpointing.i"
+	@echo "... __/cognitive/checkpointing/nimcp_checkpointing.s"
 	@echo "... __/cognitive/consolidation/nimcp_consolidation.o"
 	@echo "... __/cognitive/consolidation/nimcp_consolidation.i"
 	@echo "... __/cognitive/consolidation/nimcp_consolidation.s"
@@ -1558,6 +1657,9 @@ help:
 	@echo "... __/core/neuralnet/nimcp_neuralnet.o"
 	@echo "... __/core/neuralnet/nimcp_neuralnet.i"
 	@echo "... __/core/neuralnet/nimcp_neuralnet.s"
+	@echo "... __/core/neuralnet/nimcp_neuralnet_simd.o"
+	@echo "... __/core/neuralnet/nimcp_neuralnet_simd.i"
+	@echo "... __/core/neuralnet/nimcp_neuralnet_simd.s"
 	@echo "... __/core/neuron_types/nimcp_neuron_types.o"
 	@echo "... __/core/neuron_types/nimcp_neuron_types.i"
 	@echo "... __/core/neuron_types/nimcp_neuron_types.s"
@@ -1600,6 +1702,9 @@ help:
 	@echo "... __/plasticity/adaptive/nimcp_adaptive.o"
 	@echo "... __/plasticity/adaptive/nimcp_adaptive.i"
 	@echo "... __/plasticity/adaptive/nimcp_adaptive.s"
+	@echo "... __/plasticity/adaptive/nimcp_weights.o"
+	@echo "... __/plasticity/adaptive/nimcp_weights.i"
+	@echo "... __/plasticity/adaptive/nimcp_weights.s"
 	@echo "... __/plasticity/attention/nimcp_attention.o"
 	@echo "... __/plasticity/attention/nimcp_attention.i"
 	@echo "... __/plasticity/attention/nimcp_attention.s"
@@ -1621,6 +1726,9 @@ help:
 	@echo "... __/security/nimcp_security.o"
 	@echo "... __/security/nimcp_security.i"
 	@echo "... __/security/nimcp_security.s"
+	@echo "... __/utils/async/nimcp_async.o"
+	@echo "... __/utils/async/nimcp_async.i"
+	@echo "... __/utils/async/nimcp_async.s"
 	@echo "... __/utils/cache/nimcp_cache.o"
 	@echo "... __/utils/cache/nimcp_cache.i"
 	@echo "... __/utils/cache/nimcp_cache.s"

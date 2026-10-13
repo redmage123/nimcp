@@ -251,10 +251,66 @@ src/tests/CMakeFiles/utility_tests.dir/test_audio_cortex.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/utility_tests.dir/test_audio_cortex.cpp.s"
 	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bbrelin/src/repos/nimcp/src/tests/test_audio_cortex.cpp -o CMakeFiles/utility_tests.dir/test_audio_cortex.cpp.s
 
+src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o: src/tests/CMakeFiles/utility_tests.dir/flags.make
+src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o: ../src/tests/test_weights_stats.cpp
+src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o: src/tests/CMakeFiles/utility_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o -MF CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o.d -o CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o -c /home/bbrelin/src/repos/nimcp/src/tests/test_weights_stats.cpp
+
+src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/utility_tests.dir/test_weights_stats.cpp.i"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bbrelin/src/repos/nimcp/src/tests/test_weights_stats.cpp > CMakeFiles/utility_tests.dir/test_weights_stats.cpp.i
+
+src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/utility_tests.dir/test_weights_stats.cpp.s"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bbrelin/src/repos/nimcp/src/tests/test_weights_stats.cpp -o CMakeFiles/utility_tests.dir/test_weights_stats.cpp.s
+
+src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o: src/tests/CMakeFiles/utility_tests.dir/flags.make
+src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o: ../src/tests/test_batch_api.cpp
+src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o: src/tests/CMakeFiles/utility_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o -MF CMakeFiles/utility_tests.dir/test_batch_api.cpp.o.d -o CMakeFiles/utility_tests.dir/test_batch_api.cpp.o -c /home/bbrelin/src/repos/nimcp/src/tests/test_batch_api.cpp
+
+src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/utility_tests.dir/test_batch_api.cpp.i"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bbrelin/src/repos/nimcp/src/tests/test_batch_api.cpp > CMakeFiles/utility_tests.dir/test_batch_api.cpp.i
+
+src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/utility_tests.dir/test_batch_api.cpp.s"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bbrelin/src/repos/nimcp/src/tests/test_batch_api.cpp -o CMakeFiles/utility_tests.dir/test_batch_api.cpp.s
+
+src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o: src/tests/CMakeFiles/utility_tests.dir/flags.make
+src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o: ../src/tests/test_simd.cpp
+src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o: src/tests/CMakeFiles/utility_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o -MF CMakeFiles/utility_tests.dir/test_simd.cpp.o.d -o CMakeFiles/utility_tests.dir/test_simd.cpp.o -c /home/bbrelin/src/repos/nimcp/src/tests/test_simd.cpp
+
+src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/utility_tests.dir/test_simd.cpp.i"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bbrelin/src/repos/nimcp/src/tests/test_simd.cpp > CMakeFiles/utility_tests.dir/test_simd.cpp.i
+
+src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/utility_tests.dir/test_simd.cpp.s"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bbrelin/src/repos/nimcp/src/tests/test_simd.cpp -o CMakeFiles/utility_tests.dir/test_simd.cpp.s
+
+src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o: src/tests/CMakeFiles/utility_tests.dir/flags.make
+src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o: ../src/tests/test_checkpointing.cpp
+src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o: src/tests/CMakeFiles/utility_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o -MF CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o.d -o CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o -c /home/bbrelin/src/repos/nimcp/src/tests/test_checkpointing.cpp
+
+src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/utility_tests.dir/test_checkpointing.cpp.i"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/bbrelin/src/repos/nimcp/src/tests/test_checkpointing.cpp > CMakeFiles/utility_tests.dir/test_checkpointing.cpp.i
+
+src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/utility_tests.dir/test_checkpointing.cpp.s"
+	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/bbrelin/src/repos/nimcp/src/tests/test_checkpointing.cpp -o CMakeFiles/utility_tests.dir/test_checkpointing.cpp.s
+
 src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o: src/tests/CMakeFiles/utility_tests.dir/flags.make
 src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o: ../src/python/nimcp_module.c
 src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o: src/tests/CMakeFiles/utility_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building C object src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building C object src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o"
 	cd /home/bbrelin/src/repos/nimcp/build/src/tests && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o -MF CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o.d -o CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o -c /home/bbrelin/src/repos/nimcp/src/python/nimcp_module.c
 
 src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.i: cmake_force
@@ -280,6 +336,10 @@ utility_tests_OBJECTS = \
 "CMakeFiles/utility_tests.dir/test_fft.cpp.o" \
 "CMakeFiles/utility_tests.dir/test_visual_cortex.cpp.o" \
 "CMakeFiles/utility_tests.dir/test_audio_cortex.cpp.o" \
+"CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o" \
+"CMakeFiles/utility_tests.dir/test_batch_api.cpp.o" \
+"CMakeFiles/utility_tests.dir/test_simd.cpp.o" \
+"CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o" \
 "CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o"
 
 # External object files for target utility_tests
@@ -298,6 +358,10 @@ src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_thread_util
 src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_fft.cpp.o
 src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_visual_cortex.cpp.o
 src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_audio_cortex.cpp.o
+src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o
+src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o
+src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o
+src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o
 src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/__/python/nimcp_module.c.o
 src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/build.make
 src/tests/utility_tests: ../bin/libnimcp.so.2.5.0
@@ -305,7 +369,7 @@ src/tests/utility_tests: /usr/lib/x86_64-linux-gnu/libpython3.10.so
 src/tests/utility_tests: /usr/lib/x86_64-linux-gnu/libgtest_main.a
 src/tests/utility_tests: /usr/lib/x86_64-linux-gnu/libgtest.a
 src/tests/utility_tests: src/tests/CMakeFiles/utility_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Linking CXX executable utility_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/bbrelin/src/repos/nimcp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Linking CXX executable utility_tests"
 	cd /home/bbrelin/src/repos/nimcp/build/src/tests && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/utility_tests.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

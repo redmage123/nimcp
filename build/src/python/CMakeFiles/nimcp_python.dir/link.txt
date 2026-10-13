@@ -1,1 +1,1 @@
-/usr/bin/cc -fPIC  -Wall -Wextra -Wpedantic -g -shared  -o ../../lib/python/nimcp.so CMakeFiles/nimcp_python.dir/nimcp_module.c.o  -lnimcp_core /usr/lib/x86_64-linux-gnu/libpython3.10.so 
+/usr/bin/cc -fPIC  -Wall -Wextra -Wpedantic -g -shared  -o ../../lib/python/nimcp.so CMakeFiles/nimcp_python.dir/nimcp_module.c.o  -Wl,-rpath,/home/bbrelin/src/repos/nimcp/bin: ../../../bin/libnimcp.so.2.5.0 /usr/lib/x86_64-linux-gnu/libpython3.10.so -llz4 -ljansson 

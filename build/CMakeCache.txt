@@ -22,7 +22,7 @@ CMAKE_AR:FILEPATH=/usr/bin/ar
 
 //Choose the type of build, options are: None Debug Release RelWithDebInfo
 // MinSizeRel ...
-CMAKE_BUILD_TYPE:STRING=
+CMAKE_BUILD_TYPE:STRING=Debug
 
 //Enable/Disable color output during build.
 CMAKE_COLOR_MAKEFILE:BOOL=ON
@@ -303,7 +303,7 @@ nimcp_LIB_DEPENDS:STATIC=general;Python3::Python;general;lz4;general;jansson;
 nimcp_SOURCE_DIR:STATIC=/home/bbrelin/src/repos/nimcp
 
 //Dependencies for the target
-nimcp_python_LIB_DEPENDS:STATIC=general;nimcp_core;general;Python3::Python;
+nimcp_python_LIB_DEPENDS:STATIC=general;nimcp;general;Python3::Python;
 
 
 ########################

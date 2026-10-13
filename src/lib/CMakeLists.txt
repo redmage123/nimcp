@@ -6,6 +6,7 @@ set(NIMCP_CORE_SOURCES
     # Core brain components
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet_simd.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuron_types/nimcp_neuron_types.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain_regions/nimcp_brain_regions.c
 
@@ -18,10 +19,12 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/consolidation/nimcp_consolidation.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/salience/nimcp_salience.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/logic/nimcp_symbolic_logic.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/checkpointing/nimcp_checkpointing.c
     ${CMAKE_CURRENT_SOURCE_DIR}/cognitive/nimcp_hierarchical.c
 
     # Plasticity mechanisms
     ${CMAKE_CURRENT_SOURCE_DIR}/../plasticity/adaptive/nimcp_adaptive.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../plasticity/adaptive/nimcp_weights.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../plasticity/bcm/nimcp_bcm.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../plasticity/neuromodulators/nimcp_neuromodulators.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../plasticity/attention/nimcp_attention.c
@@ -51,6 +54,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils/memory/nimcp_memory.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils/thread/nimcp_thread.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils/thread/nimcp_thread_pool.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../utils/async/nimcp_async.c
 
     # Utils - Logging
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils/logging/nimcp_logging.c
@@ -109,6 +113,19 @@ target_link_libraries(nimcp
         lz4
         jansson
 )
+
+# SIMD compiler flags (v2.7.0)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
+    # Enable AVX2 by default, AVX-512 if available
+    include(CheckCXXCompilerFlag)
+    if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(nimcp PRIVATE -mavx2 -mfma)
+        # Optionally enable AVX-512 (commented out by default as not all CPUs support it)
+        # target_compile_options(nimcp PRIVATE -mavx512f -mavx512bw)
+    elseif(MSVC)
+        target_compile_options(nimcp PRIVATE /arch:AVX2)
+    endif()
+endif()
 
 # Add testing API support
 target_compile_definitions(nimcp PRIVATE NIMCP_TESTING)

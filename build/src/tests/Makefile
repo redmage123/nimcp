@@ -424,6 +424,30 @@ test_audio_cortex.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_audio_cortex.cpp.s
 .PHONY : test_audio_cortex.cpp.s
 
+test_batch_api.o: test_batch_api.cpp.o
+.PHONY : test_batch_api.o
+
+# target to build an object file
+test_batch_api.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.o
+.PHONY : test_batch_api.cpp.o
+
+test_batch_api.i: test_batch_api.cpp.i
+.PHONY : test_batch_api.i
+
+# target to preprocess a source file
+test_batch_api.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.i
+.PHONY : test_batch_api.cpp.i
+
+test_batch_api.s: test_batch_api.cpp.s
+.PHONY : test_batch_api.s
+
+# target to generate assembly for a file
+test_batch_api.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_batch_api.cpp.s
+.PHONY : test_batch_api.cpp.s
+
 test_bcm.o: test_bcm.cpp.o
 .PHONY : test_bcm.o
 
@@ -543,6 +567,30 @@ test_btree.s: test_btree.cpp.s
 test_btree.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_btree.cpp.s
 .PHONY : test_btree.cpp.s
+
+test_checkpointing.o: test_checkpointing.cpp.o
+.PHONY : test_checkpointing.o
+
+# target to build an object file
+test_checkpointing.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.o
+.PHONY : test_checkpointing.cpp.o
+
+test_checkpointing.i: test_checkpointing.cpp.i
+.PHONY : test_checkpointing.i
+
+# target to preprocess a source file
+test_checkpointing.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.i
+.PHONY : test_checkpointing.cpp.i
+
+test_checkpointing.s: test_checkpointing.cpp.s
+.PHONY : test_checkpointing.s
+
+# target to generate assembly for a file
+test_checkpointing.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_checkpointing.cpp.s
+.PHONY : test_checkpointing.cpp.s
 
 test_comprehensive_brain_integration.o: test_comprehensive_brain_integration.cpp.o
 .PHONY : test_comprehensive_brain_integration.o
@@ -687,6 +735,30 @@ test_distributed_cognition.s: test_distributed_cognition.cpp.s
 test_distributed_cognition.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_distributed_cognition.cpp.s
 .PHONY : test_distributed_cognition.cpp.s
+
+test_e2e_v2_7.o: test_e2e_v2_7.cpp.o
+.PHONY : test_e2e_v2_7.o
+
+# target to build an object file
+test_e2e_v2_7.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_e2e_v2_7.cpp.o
+.PHONY : test_e2e_v2_7.cpp.o
+
+test_e2e_v2_7.i: test_e2e_v2_7.cpp.i
+.PHONY : test_e2e_v2_7.i
+
+# target to preprocess a source file
+test_e2e_v2_7.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_e2e_v2_7.cpp.i
+.PHONY : test_e2e_v2_7.cpp.i
+
+test_e2e_v2_7.s: test_e2e_v2_7.cpp.s
+.PHONY : test_e2e_v2_7.s
+
+# target to generate assembly for a file
+test_e2e_v2_7.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_e2e_v2_7.cpp.s
+.PHONY : test_e2e_v2_7.cpp.s
 
 test_ethics.o: test_ethics.cpp.o
 .PHONY : test_ethics.o
@@ -927,6 +999,30 @@ test_integration_networking.s: test_integration_networking.cpp.s
 test_integration_networking.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_integration_networking.cpp.s
 .PHONY : test_integration_networking.cpp.s
+
+test_integration_v2_7.o: test_integration_v2_7.cpp.o
+.PHONY : test_integration_v2_7.o
+
+# target to build an object file
+test_integration_v2_7.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_integration_v2_7.cpp.o
+.PHONY : test_integration_v2_7.cpp.o
+
+test_integration_v2_7.i: test_integration_v2_7.cpp.i
+.PHONY : test_integration_v2_7.i
+
+# target to preprocess a source file
+test_integration_v2_7.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_integration_v2_7.cpp.i
+.PHONY : test_integration_v2_7.cpp.i
+
+test_integration_v2_7.s: test_integration_v2_7.cpp.s
+.PHONY : test_integration_v2_7.s
+
+# target to generate assembly for a file
+test_integration_v2_7.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_integration_v2_7.cpp.s
+.PHONY : test_integration_v2_7.cpp.s
 
 test_introspection.o: test_introspection.cpp.o
 .PHONY : test_introspection.o
@@ -1288,6 +1384,30 @@ test_queue_utils.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_queue_utils.cpp.s
 .PHONY : test_queue_utils.cpp.s
 
+test_regression_v2_7.o: test_regression_v2_7.cpp.o
+.PHONY : test_regression_v2_7.o
+
+# target to build an object file
+test_regression_v2_7.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_regression_v2_7.cpp.o
+.PHONY : test_regression_v2_7.cpp.o
+
+test_regression_v2_7.i: test_regression_v2_7.cpp.i
+.PHONY : test_regression_v2_7.i
+
+# target to preprocess a source file
+test_regression_v2_7.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_regression_v2_7.cpp.i
+.PHONY : test_regression_v2_7.cpp.i
+
+test_regression_v2_7.s: test_regression_v2_7.cpp.s
+.PHONY : test_regression_v2_7.s
+
+# target to generate assembly for a file
+test_regression_v2_7.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_regression_v2_7.cpp.s
+.PHONY : test_regression_v2_7.cpp.s
+
 test_replication.o: test_replication.cpp.o
 .PHONY : test_replication.o
 
@@ -1359,6 +1479,30 @@ test_serialization.s: test_serialization.cpp.s
 test_serialization.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/io_tests.dir/build.make src/tests/CMakeFiles/io_tests.dir/test_serialization.cpp.s
 .PHONY : test_serialization.cpp.s
+
+test_simd.o: test_simd.cpp.o
+.PHONY : test_simd.o
+
+# target to build an object file
+test_simd.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.o
+.PHONY : test_simd.cpp.o
+
+test_simd.i: test_simd.cpp.i
+.PHONY : test_simd.i
+
+# target to preprocess a source file
+test_simd.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.i
+.PHONY : test_simd.cpp.i
+
+test_simd.s: test_simd.cpp.s
+.PHONY : test_simd.s
+
+# target to generate assembly for a file
+test_simd.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_simd.cpp.s
+.PHONY : test_simd.cpp.s
 
 test_stream.o: test_stream.cpp.o
 .PHONY : test_stream.o
@@ -1600,6 +1744,30 @@ test_visual_cortex_regression.cpp.s:
 	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/integration_tests.dir/build.make src/tests/CMakeFiles/integration_tests.dir/test_visual_cortex_regression.cpp.s
 .PHONY : test_visual_cortex_regression.cpp.s
 
+test_weights_stats.o: test_weights_stats.cpp.o
+.PHONY : test_weights_stats.o
+
+# target to build an object file
+test_weights_stats.cpp.o:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.o
+.PHONY : test_weights_stats.cpp.o
+
+test_weights_stats.i: test_weights_stats.cpp.i
+.PHONY : test_weights_stats.i
+
+# target to preprocess a source file
+test_weights_stats.cpp.i:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.i
+.PHONY : test_weights_stats.cpp.i
+
+test_weights_stats.s: test_weights_stats.cpp.s
+.PHONY : test_weights_stats.s
+
+# target to generate assembly for a file
+test_weights_stats.cpp.s:
+	cd /home/bbrelin/src/repos/nimcp/build && $(MAKE) $(MAKESILENT) -f src/tests/CMakeFiles/utility_tests.dir/build.make src/tests/CMakeFiles/utility_tests.dir/test_weights_stats.cpp.s
+.PHONY : test_weights_stats.cpp.s
+
 test_wellbeing.o: test_wellbeing.cpp.o
 .PHONY : test_wellbeing.o
 
@@ -1660,6 +1828,9 @@ help:
 	@echo "... test_audio_cortex.o"
 	@echo "... test_audio_cortex.i"
 	@echo "... test_audio_cortex.s"
+	@echo "... test_batch_api.o"
+	@echo "... test_batch_api.i"
+	@echo "... test_batch_api.s"
 	@echo "... test_bcm.o"
 	@echo "... test_bcm.i"
 	@echo "... test_bcm.s"
@@ -1675,6 +1846,9 @@ help:
 	@echo "... test_btree.o"
 	@echo "... test_btree.i"
 	@echo "... test_btree.s"
+	@echo "... test_checkpointing.o"
+	@echo "... test_checkpointing.i"
+	@echo "... test_checkpointing.s"
 	@echo "... test_comprehensive_brain_integration.o"
 	@echo "... test_comprehensive_brain_integration.i"
 	@echo "... test_comprehensive_brain_integration.s"
@@ -1693,6 +1867,9 @@ help:
 	@echo "... test_distributed_cognition.o"
 	@echo "... test_distributed_cognition.i"
 	@echo "... test_distributed_cognition.s"
+	@echo "... test_e2e_v2_7.o"
+	@echo "... test_e2e_v2_7.i"
+	@echo "... test_e2e_v2_7.s"
 	@echo "... test_ethics.o"
 	@echo "... test_ethics.i"
 	@echo "... test_ethics.s"
@@ -1723,6 +1900,9 @@ help:
 	@echo "... test_integration_networking.o"
 	@echo "... test_integration_networking.i"
 	@echo "... test_integration_networking.s"
+	@echo "... test_integration_v2_7.o"
+	@echo "... test_integration_v2_7.i"
+	@echo "... test_integration_v2_7.s"
 	@echo "... test_introspection.o"
 	@echo "... test_introspection.i"
 	@echo "... test_introspection.s"
@@ -1768,6 +1948,9 @@ help:
 	@echo "... test_queue_utils.o"
 	@echo "... test_queue_utils.i"
 	@echo "... test_queue_utils.s"
+	@echo "... test_regression_v2_7.o"
+	@echo "... test_regression_v2_7.i"
+	@echo "... test_regression_v2_7.s"
 	@echo "... test_replication.o"
 	@echo "... test_replication.i"
 	@echo "... test_replication.s"
@@ -1777,6 +1960,9 @@ help:
 	@echo "... test_serialization.o"
 	@echo "... test_serialization.i"
 	@echo "... test_serialization.s"
+	@echo "... test_simd.o"
+	@echo "... test_simd.i"
+	@echo "... test_simd.s"
 	@echo "... test_stream.o"
 	@echo "... test_stream.i"
 	@echo "... test_stream.s"
@@ -1807,6 +1993,9 @@ help:
 	@echo "... test_visual_cortex_regression.o"
 	@echo "... test_visual_cortex_regression.i"
 	@echo "... test_visual_cortex_regression.s"
+	@echo "... test_weights_stats.o"
+	@echo "... test_weights_stats.i"
+	@echo "... test_weights_stats.s"
 	@echo "... test_wellbeing.o"
 	@echo "... test_wellbeing.i"
 	@echo "... test_wellbeing.s"

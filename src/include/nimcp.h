@@ -31,9 +31,9 @@ extern "C" {
 //=============================================================================
 
 #define NIMCP_VERSION_MAJOR 2
-#define NIMCP_VERSION_MINOR 6
-#define NIMCP_VERSION_PATCH 1
-#define NIMCP_VERSION_STRING "2.6.1"
+#define NIMCP_VERSION_MINOR 7
+#define NIMCP_VERSION_PATCH 0
+#define NIMCP_VERSION_STRING "2.7.0"
 
 /**
  * @brief Get NIMCP version as string
@@ -101,11 +101,13 @@ typedef enum {
  */
 typedef enum {
     NIMCP_OK = 0,              /**< Success */
-    NIMCP_ERROR = -1,          /**< Generic error */
-    NIMCP_ERROR_NULL_ARG = -2, /**< NULL argument provided */
-    NIMCP_ERROR_INVALID = -3,  /**< Invalid argument value */
-    NIMCP_ERROR_MEMORY = -4,   /**< Memory allocation failed */
-    NIMCP_ERROR_IO = -5        /**< I/O operation failed */
+    NIMCP_ERROR = -1,               /**< Generic error */
+    NIMCP_ERROR_NULL_ARG = -2,      /**< NULL argument provided */
+    NIMCP_ERROR_INVALID = -3,       /**< Invalid argument value */
+    NIMCP_ERROR_INVALID_ARG = -3,   /**< Invalid argument (alias) */
+    NIMCP_ERROR_MEMORY = -4,        /**< Memory allocation failed */
+    NIMCP_ERROR_IO = -5,            /**< I/O operation failed */
+    NIMCP_ERROR_NOT_IMPLEMENTED = -6 /**< Feature not yet implemented */
 } nimcp_status_t;
 
 //=============================================================================
@@ -171,6 +173,104 @@ nimcp_status_t nimcp_brain_predict(
     uint32_t num_features,
     char* out_label,
     float* out_confidence
+);
+
+/**
+ * @brief Batch prediction (v2.7.0)
+ *
+ * Predict on multiple samples simultaneously for better throughput.
+ * Auto-parallelizes across available CPU cores.
+ *
+ * @param brain Brain handle
+ * @param features Array of feature pointers [batch_size]
+ * @param num_features Feature dimension (same for all samples)
+ * @param batch_size Number of samples
+ * @param out_labels Array of label buffers [batch_size][64] (pre-allocated)
+ * @param out_confidences Array of confidence scores [batch_size] (pre-allocated)
+ * @return NIMCP_OK on success, error code otherwise
+ */
+nimcp_status_t nimcp_brain_predict_batch(
+    nimcp_brain_t brain,
+    const float** features,
+    uint32_t num_features,
+    uint32_t batch_size,
+    char** out_labels,
+    float* out_confidences
+);
+
+/**
+ * @brief Async prediction (v2.7.0)
+ *
+ * Non-blocking prediction that returns immediately with a future handle.
+ * Result can be retrieved later with nimcp_future_wait().
+ *
+ * @param brain Brain handle
+ * @param features Input features array
+ * @param num_features Number of input features
+ * @return Future handle or NULL on error
+ */
+typedef struct nimcp_future_handle* nimcp_future_t;
+
+nimcp_future_t nimcp_brain_predict_async(
+    nimcp_brain_t brain,
+    const float* features,
+    uint32_t num_features
+);
+
+/**
+ * @brief Wait for async prediction result (v2.7.0)
+ *
+ * Blocks until prediction completes or timeout.
+ *
+ * @param future Future handle from nimcp_brain_predict_async()
+ * @param timeout_ms Timeout in milliseconds (0 = infinite)
+ * @param out_label Buffer to store predicted label (must be pre-allocated, min 64 bytes)
+ * @param out_confidence Pointer to store prediction confidence
+ * @return NIMCP_OK on success, NIMCP_ERROR_TIMEOUT on timeout
+ */
+nimcp_status_t nimcp_future_wait_predict(
+    nimcp_future_t future,
+    uint32_t timeout_ms,
+    char* out_label,
+    float* out_confidence
+);
+
+/**
+ * @brief Cancel async prediction (v2.7.0)
+ *
+ * @param future Future handle
+ * @return true if cancelled, false if already completed
+ */
+bool nimcp_future_cancel(nimcp_future_t future);
+
+/**
+ * @brief Destroy future handle (v2.7.0)
+ *
+ * @param future Future handle
+ * @param cancel_if_pending Cancel operation if still pending
+ */
+void nimcp_future_destroy(nimcp_future_t future, bool cancel_if_pending);
+
+/**
+ * @brief Batch learning (v2.7.0)
+ *
+ * Learn from multiple examples simultaneously.
+ *
+ * @param brain Brain handle
+ * @param features Array of feature pointers [batch_size]
+ * @param num_features Feature dimension
+ * @param batch_size Number of samples
+ * @param labels Array of label strings [batch_size]
+ * @param confidences Array of confidence weights [batch_size]
+ * @return Average loss over batch, or negative on error
+ */
+float nimcp_brain_learn_batch(
+    nimcp_brain_t brain,
+    const float** features,
+    uint32_t num_features,
+    uint32_t batch_size,
+    const char** labels,
+    const float* confidences
 );
 
 /**

@@ -20,7 +20,7 @@ target_include_directories(nimcp_python
 
 target_link_libraries(nimcp_python
     PUBLIC  # Changed from PRIVATE to PUBLIC
-        nimcp_core
+        nimcp
         Python3::Python
 )
 

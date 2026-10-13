@@ -386,7 +386,8 @@ static void merge_nodes(btree_t* tree, btree_node_t* parent, int index, btree_no
     destroy_node(right, NULL);
 }
 
-static void remove_from_node(btree_t* tree, btree_node_t* node, const char* key)
+// Unlocked helper for remove - structural_lock must be held by caller
+static int remove_from_node_unlocked(btree_t* tree, btree_node_t* node, const char* key)
 {
     int i = 0;
     while (i < node->n && tree->compare(tree->key_func(node->keys[i]), key) < 0) {
@@ -404,6 +405,7 @@ static void remove_from_node(btree_t* tree, btree_node_t* node, const char* key)
             }
             node->n--;
             atomic_fetch_sub(&tree->count, 1);
+            return BTREE_SUCCESS;
         } else {
             // Remove from internal node
             btree_node_t* pred = node->children[i];
@@ -413,24 +415,21 @@ static void remove_from_node(btree_t* tree, btree_node_t* node, const char* key)
                 // Use predecessor
                 void* pred_key = pred->keys[pred->n - 1];
                 node->keys[i] = pred_key;
-                remove_from_node(tree, pred, tree->key_func(pred_key));
+                return remove_from_node_unlocked(tree, pred, tree->key_func(pred_key));
             } else if (succ->n >= BTREE_ORDER) {
                 // Use successor
                 void* succ_key = succ->keys[0];
                 node->keys[i] = succ_key;
-                remove_from_node(tree, succ, tree->key_func(succ_key));
+                return remove_from_node_unlocked(tree, succ, tree->key_func(succ_key));
             } else {
                 // Merge nodes
                 merge_nodes(tree, node, i, pred, succ);
-                remove_from_node(tree, pred, key);
+                return remove_from_node_unlocked(tree, pred, key);
             }
         }
     } else if (!node->leaf) {
         // Recurse to appropriate child
         btree_node_t* child = node->children[i];
-        if (acquire_write_lock(&child->lock, LOCK_TIMEOUT_MS) != 0) {
-            return;
-        }
 
         if (child->n < BTREE_ORDER) {
             // Child needs more keys
@@ -483,9 +482,11 @@ static void remove_from_node(btree_t* tree, btree_node_t* node, const char* key)
             }
         }
 
-        remove_from_node(tree, child, key);
-        pthread_rwlock_unlock(&child->lock);
+        return remove_from_node_unlocked(tree, child, key);
     }
+
+    // Key not found
+    return BTREE_NOT_FOUND;
 }
 
 int btree_remove(btree_t* tree, const char* key)
@@ -493,25 +494,21 @@ int btree_remove(btree_t* tree, const char* key)
     if (!tree || !key)
         return BTREE_ERROR;
 
+    // Use structural_lock for entire removal operation
+    // Fine-grained node locking during removal causes deadlocks with rebalancing
     pthread_mutex_lock(&tree->structural_lock);
 
-    if (acquire_write_lock(&tree->root->lock, LOCK_TIMEOUT_MS) != 0) {
-        pthread_mutex_unlock(&tree->structural_lock);
-        return BTREE_LOCKED;
-    }
+    int result = remove_from_node_unlocked(tree, tree->root, key);
 
-    remove_from_node(tree, tree->root, key);
-
-    // Handle empty root
-    if (tree->root->n == 0 && !tree->root->leaf) {
+    // Handle empty root (only if removal succeeded)
+    if (result == BTREE_SUCCESS && tree->root->n == 0 && !tree->root->leaf) {
         btree_node_t* old_root = tree->root;
         tree->root = tree->root->children[0];
         destroy_node(old_root, NULL);
     }
 
-    pthread_rwlock_unlock(&tree->root->lock);
     pthread_mutex_unlock(&tree->structural_lock);
-    return BTREE_SUCCESS;
+    return result;
 }
 
 size_t btree_count(const btree_t* tree)
