@@ -1,0 +1,12 @@
+# AMD ROCm/HIP GPU configuration
+# Optimized for AMD GPUs with ROCm 5.0+
+{"type":"config","hardware":"ROCm","description":"AMD GPU acceleration via ROCm/HIP"}
+{"type":"hardware_requirement","min_rocm_version":"5.0","min_vram_gb":4,"recommended_vram_gb":8}
+{"type":"module_config","module":"Tensor_Engine","backend":"HIP","notes":"Use rocBLAS/MIOpen"}
+{"type":"module_config","module":"JEPA_Latent","backend":"HIP","notes":"Accelerated latent prediction"}
+{"type":"module_config","module":"Fractal_Cognitive","backend":"HIP","notes":"Parallel fractal computation"}
+{"type":"module_config","module":"Global_Workspace","backend":"HIP","notes":"GPU-accelerated broadcast"}
+{"type":"parameter_override","module":"Tensor_Engine","parameter":"batch_size","value":64,"notes":"Larger batches for GPU"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"parallel_updates","value":true,"notes":"Parallel plasticity updates"}
+{"type":"kernel_config","kernel":"attention_softmax","wavefront_size":64,"lds_kb":64}
+{"type":"kernel_config","kernel":"spike_propagation","wavefront_size":64,"lds_kb":32}

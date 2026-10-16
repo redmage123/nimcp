@@ -1,0 +1,575 @@
+/**
+ * @file nimcp_emotional_tagging.c
+ * @brief Emotional Tagging for Critical Failures - Implementation
+ *
+ * WHAT: Implements emotional tagging of failure events for priority learning
+ * WHY:  Critical failures need emotional salience for enhanced memory formation
+ * HOW:  Compute emotions from episode context, boost memory, prioritize by emotion
+ *
+ * BIOLOGICAL INSPIRATION:
+ * - Amygdala emotional tagging modulates hippocampal memory consolidation
+ * - High arousal → stronger memory formation (stress hormone effects)
+ * - Negative valence (threat) → prioritized learning for survival
+ * - Positive valence (relief) → reinforcement of successful strategies
+ *
+ * @author NIMCP Development Team
+ * @date 2025-01-20
+ * @version 2.7.0 Phase 10.8
+ */
+
+#include "cognitive/fault_tolerance/nimcp_emotional_tagging.h"
+#include "utils/memory/nimcp_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/thread/nimcp_thread.h"
+#include <string.h>
+#include <math.h>
+#include <pthread.h>
+
+//=============================================================================
+// Constants
+//=============================================================================
+
+/* Emotion computation thresholds */
+#define CRITICAL_ERROR_THRESHOLD 0.8f       /**< Data loss risk for critical errors */
+#define FAST_RECOVERY_THRESHOLD_US 1000     /**< Fast recovery time (1ms) */
+#define SLOW_RECOVERY_THRESHOLD_US 5000000  /**< Slow recovery time (5s) */
+#define HIGH_RETRY_THRESHOLD 5              /**< Many retries indicate frustration */
+#define CRITICAL_RETRY_THRESHOLD 10         /**< Very many retries */
+
+/* Memory boost parameters */
+#define BASE_MEMORY_BOOST 1.0f              /**< Baseline memory strength */
+#define MAX_MEMORY_BOOST 2.5f               /**< Maximum memory boost */
+#define HIGH_AROUSAL_BOOST 2.0f             /**< Boost for high arousal events */
+#define MODERATE_AROUSAL_BOOST 1.5f         /**< Boost for moderate arousal */
+
+/* Priority computation parameters */
+#define FEAR_PRIORITY_WEIGHT 0.2f           /**< Fear contribution to priority */
+
+/* Value clamping macros */
+#define CLAMP(x, min, max) ((x) < (min) ? (min) : ((x) > (max) ? (max) : (x)))
+#define CLAMP_01(x) CLAMP(x, 0.0f, 1.0f)
+#define CLAMP_VALENCE(x) CLAMP(x, -1.0f, 1.0f)
+
+//=============================================================================
+// Internal Structures
+//=============================================================================
+
+/**
+ * @brief Emotional tagger implementation
+ */
+struct nimcp_emotional_tagger {
+    /* Statistics */
+    nimcp_emotional_tagger_stats_t stats;
+
+    /* Thread safety */
+    nimcp_mutex_t mutex;
+};
+
+//=============================================================================
+// Helper Functions
+//=============================================================================
+
+/**
+ * @brief Check if error type is critical
+ *
+ * WHAT: Determines if error type represents a severe failure
+ * WHY:  Critical errors deserve higher emotional arousal
+ * HOW:  String comparison against known critical error types
+ *
+ * @param error_type Error type string
+ * @return true if critical, false otherwise
+ */
+static bool is_critical_error(const char* error_type) {
+    if (!error_type) {
+        return false;
+    }
+
+    /* WHAT: Critical error types that indicate severe failures */
+    const char* critical_errors[] = {
+        "SIGSEGV",
+        "SIGABRT",
+        "DATA_CORRUPTION",
+        "CATASTROPHIC",
+        "MEMORY_CORRUPTION",
+        "STACK_OVERFLOW",
+        NULL
+    };
+
+    for (int i = 0; critical_errors[i] != NULL; i++) {
+        if (strcmp(error_type, critical_errors[i]) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Compute emotional valence from episode
+ *
+ * WHAT: Calculates emotional valence (good/bad) from recovery outcome
+ * WHY:  Successful recovery is positive, failure is negative
+ * HOW:  Base valence from success, modulated by severity and speed
+ *
+ * ALGORITHM:
+ * - Success → positive valence (0.5 to 0.9)
+ * - Failure → negative valence (-0.5 to -0.9)
+ * - Modulate by data loss risk and recovery time
+ *
+ * @param episode Recovery episode
+ * @return Valence in [-1.0, 1.0]
+ */
+static float compute_valence(const nimcp_recovery_episode_t* episode) {
+    float valence;
+
+    if (episode->success) {
+        /* WHAT: Successful recovery → positive valence
+         * WHY:  Positive outcome deserves positive emotion
+         * HOW:  Base +0.7, reduced by slow recovery time */
+        valence = 0.7f;
+
+        /* Fast recovery → more positive */
+        if (episode->recovery_time_us < FAST_RECOVERY_THRESHOLD_US) {
+            valence += 0.2f;
+        }
+        /* Slow recovery → less positive */
+        else if (episode->recovery_time_us > SLOW_RECOVERY_THRESHOLD_US) {
+            valence -= 0.2f;
+        }
+    } else {
+        /* WHAT: Failed recovery → negative valence
+         * WHY:  Failure is bad, especially with data loss risk
+         * HOW:  Base -0.6, worsened by critical errors and data loss */
+        valence = -0.6f;
+
+        /* Critical error → more negative */
+        if (is_critical_error(episode->error_type)) {
+            valence -= 0.2f;
+        }
+
+        /* High data loss risk → more negative */
+        if (episode->data_loss_risk > CRITICAL_ERROR_THRESHOLD) {
+            valence -= 0.1f;
+        }
+    }
+
+    return CLAMP_VALENCE(valence);
+}
+
+/**
+ * @brief Compute emotional arousal from episode
+ *
+ * WHAT: Calculates arousal (importance/intensity) from episode severity
+ * WHY:  Important events need high arousal for attention and memory
+ * HOW:  Combine data loss risk, error criticality, retry count
+ *
+ * ALGORITHM:
+ * - Base arousal from data loss risk
+ * - Boost for critical errors
+ * - Boost for many retries
+ *
+ * @param episode Recovery episode
+ * @return Arousal in [0.0, 1.0]
+ */
+static float compute_arousal(const nimcp_recovery_episode_t* episode) {
+    /* WHAT: Base arousal from data loss risk
+     * WHY:  Data loss is always important
+     * HOW:  Direct mapping from risk to arousal */
+    float arousal = episode->data_loss_risk * 0.7f;
+
+    /* WHAT: Critical error → higher arousal
+     * WHY:  Severe failures need immediate attention */
+    if (is_critical_error(episode->error_type)) {
+        arousal += 0.25f;
+    }
+
+    /* WHAT: Many retries → moderate arousal boost
+     * WHY:  Repeated failures indicate persistent problem */
+    if (episode->retry_count >= CRITICAL_RETRY_THRESHOLD) {
+        arousal += 0.15f;
+    } else if (episode->retry_count >= HIGH_RETRY_THRESHOLD) {
+        arousal += 0.1f;
+    }
+
+    /* WHAT: Successful recovery adds arousal if fast
+     * WHY:  Quick resolution is noteworthy */
+    if (episode->success && episode->recovery_time_us < FAST_RECOVERY_THRESHOLD_US) {
+        arousal += 0.1f;
+    }
+
+    return CLAMP_01(arousal);
+}
+
+/**
+ * @brief Compute fear emotion from episode
+ *
+ * WHAT: Calculates fear level based on threat (data loss, critical errors)
+ * WHY:  Fear guides threat detection and avoidance learning
+ * HOW:  Combine data loss risk with error severity
+ *
+ * @param episode Recovery episode
+ * @return Fear level in [0.0, 1.0]
+ */
+static float compute_fear(const nimcp_recovery_episode_t* episode) {
+    /* WHAT: Fear primarily from data loss risk
+     * WHY:  Data loss is the primary threat
+     * HOW:  Direct mapping with critical error boost */
+    float fear = episode->data_loss_risk * 0.8f;
+
+    /* WHAT: Critical errors amplify fear
+     * WHY:  SIGSEGV, corruption are especially threatening */
+    if (is_critical_error(episode->error_type)) {
+        fear += 0.2f;
+    }
+
+    /* WHAT: Successful recovery reduces fear to zero
+     * WHY:  Threat averted, no fear needed */
+    if (episode->success) {
+        fear = 0.0f;
+    }
+
+    return CLAMP_01(fear);
+}
+
+/**
+ * @brief Compute relief emotion from episode
+ *
+ * WHAT: Calculates relief from successful recovery
+ * WHY:  Relief reinforces successful coping strategies
+ * HOW:  Combine success with recovery speed
+ *
+ * @param episode Recovery episode
+ * @return Relief level in [0.0, 1.0]
+ */
+static float compute_relief(const nimcp_recovery_episode_t* episode) {
+    /* WHAT: Relief only for successful recovery
+     * WHY:  Can't feel relief if recovery failed */
+    if (!episode->success) {
+        return 0.0f;
+    }
+
+    /* WHAT: Base relief from success
+     * WHY:  Any successful recovery provides some relief */
+    float relief = 0.6f;
+
+    /* WHAT: Fast recovery → higher relief
+     * WHY:  Quick resolution is more satisfying
+     * HOW:  Linear scale from recovery time */
+    if (episode->recovery_time_us < FAST_RECOVERY_THRESHOLD_US) {
+        relief += 0.3f;
+    } else if (episode->recovery_time_us < SLOW_RECOVERY_THRESHOLD_US) {
+        /* Moderate speed → moderate relief */
+        relief += 0.1f;
+    } else {
+        /* Slow recovery → reduced relief */
+        relief -= 0.2f;
+    }
+
+    /* WHAT: Higher data loss risk → more relief when recovered
+     * WHY:  Averting catastrophe is very relieving */
+    if (episode->data_loss_risk > CRITICAL_ERROR_THRESHOLD) {
+        relief += 0.15f;
+    }
+
+    return CLAMP_01(relief);
+}
+
+/**
+ * @brief Compute frustration emotion from episode
+ *
+ * WHAT: Calculates frustration from repeated failures
+ * WHY:  Frustration indicates need for strategy change
+ * HOW:  Scale with retry count and failure status
+ *
+ * @param episode Recovery episode
+ * @return Frustration level in [0.0, 1.0]
+ */
+static float compute_frustration(const nimcp_recovery_episode_t* episode) {
+    /* WHAT: Frustration from repeated failures
+     * WHY:  Many retries indicate inability to resolve problem
+     * HOW:  Exponential scale with retry count */
+
+    /* Successful recovery → no frustration */
+    if (episode->success && episode->retry_count < HIGH_RETRY_THRESHOLD) {
+        return 0.0f;
+    }
+
+    /* WHAT: Scale frustration with retries
+     * WHY:  More attempts → more frustration */
+    float frustration;
+    if (episode->retry_count >= CRITICAL_RETRY_THRESHOLD) {
+        frustration = 0.8f + (episode->retry_count - CRITICAL_RETRY_THRESHOLD) * 0.02f;
+    } else if (episode->retry_count >= HIGH_RETRY_THRESHOLD) {
+        frustration = 0.5f + (episode->retry_count - HIGH_RETRY_THRESHOLD) * 0.06f;
+    } else {
+        frustration = episode->retry_count * 0.1f;
+    }
+
+    /* WHAT: Failure amplifies frustration
+     * WHY:  Still failing after many retries is very frustrating */
+    if (!episode->success) {
+        frustration += 0.2f;
+    }
+
+    return CLAMP_01(frustration);
+}
+
+/**
+ * @brief Update statistics after computing tag
+ *
+ * WHAT: Updates running statistics with new emotional tag
+ * WHY:  Track emotional patterns over time
+ * HOW:  Running average for valence/arousal, counters for specific emotions
+ *
+ * @param tagger Tagger instance
+ * @param emotion Computed emotional tag
+ */
+static void update_statistics(
+    nimcp_emotional_tagger_t* tagger,
+    const nimcp_emotional_tag_t* emotion
+) {
+    /* WHAT: Update running averages
+     * WHY:  Track overall emotional tone
+     * HOW:  Incremental average formula */
+    uint64_t n = tagger->stats.total_tags;
+    tagger->stats.avg_valence = (tagger->stats.avg_valence * n + emotion->valence) / (n + 1);
+    tagger->stats.avg_arousal = (tagger->stats.avg_arousal * n + emotion->arousal) / (n + 1);
+
+    /* WHAT: Count high-intensity specific emotions
+     * WHY:  Track frequency of extreme emotional events */
+    if (emotion->fear > 0.7f) {
+        tagger->stats.high_fear_count++;
+    }
+    if (emotion->relief > 0.7f) {
+        tagger->stats.high_relief_count++;
+    }
+    if (emotion->frustration > 0.7f) {
+        tagger->stats.high_frustration_count++;
+    }
+
+    tagger->stats.total_tags++;
+}
+
+//=============================================================================
+// Public API Implementation
+//=============================================================================
+
+nimcp_emotional_tagger_t* nimcp_emotional_tagger_create(void) {
+    /* WHAT: Allocate tagger instance
+     * WHY:  Need storage for statistics and mutex
+     * HOW:  nimcp_calloc for zero-initialized memory */
+    nimcp_emotional_tagger_t* tagger = nimcp_calloc(1, sizeof(nimcp_emotional_tagger_t));
+    if (!tagger) {
+        LOG_ERROR("Failed to allocate emotional tagger");
+        return NULL;
+    }
+
+    /* WHAT: Initialize mutex for thread safety
+     * WHY:  Statistics may be updated from multiple threads
+     * HOW:  nimcp_mutex_init with default attributes */
+    if (nimcp_mutex_init(&tagger->mutex, NULL) != NIMCP_SUCCESS) {
+        LOG_ERROR("Failed to initialize tagger mutex");
+        nimcp_free(tagger);
+        return NULL;
+    }
+
+    LOG_INFO("Emotional tagger created");
+    return tagger;
+}
+
+void nimcp_emotional_tagger_destroy(nimcp_emotional_tagger_t* tagger) {
+    /* Guard: NULL check */
+    if (!tagger) {
+        return;
+    }
+
+    /* WHAT: Destroy mutex
+     * WHY:  Clean up resources
+     * HOW:  nimcp_mutex_destroy */
+    nimcp_mutex_destroy(&tagger->mutex);
+
+    /* WHAT: Free tagger memory */
+    nimcp_free(tagger);
+
+    LOG_INFO("Emotional tagger destroyed");
+}
+
+bool nimcp_emotional_tagger_reset(nimcp_emotional_tagger_t* tagger) {
+    /* Guard: NULL check */
+    if (!tagger) {
+        LOG_ERROR("Cannot reset NULL tagger");
+        return false;
+    }
+
+    /* WHAT: Clear all statistics
+     * WHY:  Start fresh tracking
+     * HOW:  Zero out stats structure (thread-safe) */
+    nimcp_mutex_lock(&tagger->mutex);
+    memset(&tagger->stats, 0, sizeof(nimcp_emotional_tagger_stats_t));
+    nimcp_mutex_unlock(&tagger->mutex);
+
+    LOG_INFO("Emotional tagger statistics reset");
+    return true;
+}
+
+bool nimcp_emotional_tagger_compute_tag(
+    nimcp_emotional_tagger_t* tagger,
+    const nimcp_recovery_episode_t* episode,
+    nimcp_emotional_tag_t* output
+) {
+    /* =========================================================================
+     * GUARD: Validate all parameters
+     * ========================================================================= */
+
+    if (!tagger) {
+        LOG_ERROR("NULL tagger in compute_tag");
+        return false;
+    }
+
+    if (!episode) {
+        LOG_ERROR("NULL episode in compute_tag");
+        return false;
+    }
+
+    if (!output) {
+        LOG_ERROR("NULL output in compute_tag");
+        return false;
+    }
+
+    /* =========================================================================
+     * COMPUTATION: Calculate emotional dimensions
+     * ========================================================================= */
+
+    /* WHAT: Compute core emotional dimensions
+     * WHY:  Valence and arousal form the base of emotional space
+     * HOW:  Call helper functions that analyze episode context */
+    output->valence = compute_valence(episode);
+    output->arousal = compute_arousal(episode);
+
+    /* WHAT: Compute specific emotions
+     * WHY:  Discrete emotions provide richer information than dimensions alone
+     * HOW:  Fear from threat, relief from success, frustration from retries */
+    output->fear = compute_fear(episode);
+    output->relief = compute_relief(episode);
+    output->frustration = compute_frustration(episode);
+
+    /* =========================================================================
+     * STATISTICS: Update running statistics
+     * ========================================================================= */
+
+    nimcp_mutex_lock(&tagger->mutex);
+    update_statistics(tagger, output);
+    nimcp_mutex_unlock(&tagger->mutex);
+
+    /* WHAT: Log high-intensity emotions for debugging
+     * WHY:  Track emotionally salient events */
+    if (output->arousal > 0.8f || fabsf(output->valence) > 0.8f) {
+        LOG_INFO("High-intensity emotion: valence=%.2f, arousal=%.2f, "
+                 "fear=%.2f, relief=%.2f, frustration=%.2f",
+                 output->valence, output->arousal, output->fear,
+                 output->relief, output->frustration);
+    }
+
+    return true;
+}
+
+float nimcp_emotional_memory_boost(const nimcp_emotional_tag_t* emotion) {
+    /* Guard: NULL check */
+    if (!emotion) {
+        return BASE_MEMORY_BOOST;
+    }
+
+    /* WHAT: Compute memory boost from emotional intensity
+     * WHY:  Emotionally arousing events form stronger memories (biological fact)
+     * HOW:  Combine arousal and valence magnitude */
+
+    /* WHAT: Base boost from arousal
+     * WHY:  Arousal is primary driver of memory consolidation
+     * HOW:  Linear mapping from arousal to boost range */
+    float boost = BASE_MEMORY_BOOST;
+
+    if (emotion->arousal > 0.8f) {
+        /* Very high arousal → maximum boost */
+        boost = HIGH_AROUSAL_BOOST;
+
+        /* WHAT: Extreme valence amplifies boost
+         * WHY:  Very good or very bad events most memorable */
+        if (fabsf(emotion->valence) > 0.8f) {
+            boost += 0.3f;
+        }
+    } else if (emotion->arousal > 0.5f) {
+        /* Moderate arousal → moderate boost */
+        boost = MODERATE_AROUSAL_BOOST;
+
+        /* Significant valence adds to boost */
+        if (fabsf(emotion->valence) > 0.6f) {
+            boost += 0.2f;
+        }
+    } else {
+        /* Low arousal → minimal boost */
+        boost = BASE_MEMORY_BOOST + emotion->arousal * 0.3f;
+    }
+
+    /* WHAT: Specific emotions can boost memory
+     * WHY:  Fear and relief are evolutionary important
+     * HOW:  Add small boost for high fear or relief */
+    if (emotion->fear > 0.8f) {
+        boost += 0.2f; /* Fear enhances memory for threats */
+    }
+    if (emotion->relief > 0.8f) {
+        boost += 0.15f; /* Relief reinforces successful strategies */
+    }
+
+    /* WHAT: Clamp to valid range
+     * WHY:  Prevent unrealistic memory boosts */
+    return CLAMP(boost, BASE_MEMORY_BOOST, MAX_MEMORY_BOOST);
+}
+
+float nimcp_emotional_priority(const nimcp_emotional_tag_t* emotion) {
+    /* Guard: NULL check */
+    if (!emotion) {
+        return 0.0f;
+    }
+
+    /* WHAT: Compute priority from emotional salience
+     * WHY:  High-emotion events need prioritized processing
+     * HOW:  Base priority from arousal, boost from fear */
+
+    /* WHAT: Base priority is arousal level
+     * WHY:  Arousal gates attention and working memory access
+     * HOW:  Direct mapping */
+    float priority = emotion->arousal;
+
+    /* WHAT: Fear increases priority
+     * WHY:  Threat detection must be prioritized for survival
+     * HOW:  Add weighted fear component */
+    priority += emotion->fear * FEAR_PRIORITY_WEIGHT;
+
+    /* WHAT: Clamp to valid range */
+    return CLAMP_01(priority);
+}
+
+bool nimcp_emotional_tagger_get_stats(
+    const nimcp_emotional_tagger_t* tagger,
+    nimcp_emotional_tagger_stats_t* stats
+) {
+    /* Guard: NULL checks */
+    if (!tagger) {
+        LOG_ERROR("NULL tagger in get_stats");
+        return false;
+    }
+
+    if (!stats) {
+        LOG_ERROR("NULL stats output in get_stats");
+        return false;
+    }
+
+    /* WHAT: Thread-safe copy of statistics
+     * WHY:  Statistics may be updated concurrently
+     * HOW:  Mutex-protected memcpy */
+    nimcp_mutex_lock((nimcp_mutex_t*)&tagger->mutex);
+    memcpy(stats, &tagger->stats, sizeof(nimcp_emotional_tagger_stats_t));
+    nimcp_mutex_unlock((nimcp_mutex_t*)&tagger->mutex);
+
+    return true;
+}

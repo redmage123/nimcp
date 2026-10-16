@@ -1,3 +1,4 @@
+#include <stddef.h>  /* for NULL */
 //=============================================================================
 // nimcp_thread_pool.c - Fixed-Size Thread Pool for Parallel Task Execution
 //=============================================================================
@@ -450,9 +451,22 @@
  */
 
 #include "utils/thread/nimcp_thread_pool.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_messages.h"
+#include "utils/validation/nimcp_common.h"
+#include "api/nimcp_api_exception.h"
 #include <stdlib.h>
 #include <string.h>
 #include "utils/memory/nimcp_memory.h"
+#include "utils/memory/nimcp_unified_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/exception/nimcp_exception_macros.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(thread_pool)
 
 //=============================================================================
 // Internal Structures
@@ -596,9 +610,17 @@ struct nimcp_thread_pool {
 static void* worker_thread(void* arg)
 {
     nimcp_thread_pool_t* pool = (nimcp_thread_pool_t*) arg;
+    if (!pool) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "worker_thread: pool is NULL");
+        return NULL;  // Defensive null check
+    }
 
     while (1) {
-        nimcp_mutex_lock(&pool->lock);
+        if (nimcp_mutex_lock(&pool->lock) != NIMCP_SUCCESS) {
+            // Mutex lock failed - exit worker thread
+            LOG_ERROR("THREAD_POOL", "Worker thread failed to acquire mutex");
+            break;
+        }
 
         // WHY LOOP: Condition variables can have spurious wakeups
         // Must re-check condition after each wakeup
@@ -703,16 +725,23 @@ nimcp_thread_pool_t* nimcp_pool_create(size_t num_threads)
     // Validate parameters
     // WHY CHECK 0: Pool with no threads can't do work
     // WHY CHECK MAX: Prevent array overflow
-    if (num_threads == 0 || num_threads > NIMCP_POOL_MAX_THREADS) {
+    if (num_threads == 0) {
+        LOG_ERROR("THREAD_POOL", "Invalid num_threads: cannot be 0");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "Thread pool num_threads cannot be 0");
+        return NULL;
+    }
+    if (num_threads > NIMCP_POOL_MAX_THREADS) {
+        LOG_ERROR("THREAD_POOL", "Invalid num_threads %zu: exceeds max %d",
+                  num_threads, NIMCP_POOL_MAX_THREADS);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "Thread pool num_threads %zu exceeds max %d",
+                             num_threads, NIMCP_POOL_MAX_THREADS);
         return NULL;
     }
 
     // Allocate pool structure
     // WHY CALLOC: Zeros all fields (safe initial state)
     nimcp_thread_pool_t* pool = (nimcp_thread_pool_t*) nimcp_calloc(1, sizeof(nimcp_thread_pool_t));
-    if (!pool) {
-        return NULL;
-    }
+    NIMCP_API_CHECK_ALLOC(pool, "Failed to allocate thread pool structure");
 
     // Initialize fields
     pool->num_threads = num_threads;
@@ -725,6 +754,8 @@ nimcp_thread_pool_t* nimcp_pool_create(size_t num_threads)
     // Initialize mutex
     // WHY FIRST: Needed for condition variables
     if (nimcp_mutex_init(&pool->lock, NULL) != NIMCP_SUCCESS) {
+        LOG_ERROR("THREAD_POOL", "Failed to initialize pool mutex");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_SYSTEM, "Failed to initialize thread pool mutex");
         nimcp_free(pool);
         return NULL;
     }
@@ -732,6 +763,8 @@ nimcp_thread_pool_t* nimcp_pool_create(size_t num_threads)
     // Initialize condition variable for worker wakeup
     // WHY: Workers wait for tasks on this condvar
     if (nimcp_cond_init(&pool->task_available) != NIMCP_SUCCESS) {
+        LOG_ERROR("THREAD_POOL", "Failed to initialize task_available condition variable");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_SYSTEM, "Failed to initialize task_available condition variable");
         nimcp_mutex_destroy(&pool->lock);
         nimcp_free(pool);
         return NULL;
@@ -740,6 +773,8 @@ nimcp_thread_pool_t* nimcp_pool_create(size_t num_threads)
     // Initialize condition variable for completion signaling
     // WHY: Submitters wait for completion/space on this condvar
     if (nimcp_cond_init(&pool->task_complete) != NIMCP_SUCCESS) {
+        LOG_ERROR("THREAD_POOL", "Failed to initialize task_complete condition variable");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_SYSTEM, "Failed to initialize task_complete condition variable");
         nimcp_cond_destroy(&pool->task_available);
         nimcp_mutex_destroy(&pool->lock);
         nimcp_free(pool);
@@ -767,6 +802,7 @@ nimcp_thread_pool_t* nimcp_pool_create(size_t num_threads)
             nimcp_cond_destroy(&pool->task_available);
             nimcp_mutex_destroy(&pool->lock);
             nimcp_free(pool);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED, "nimcp_pool_create: thread creation failed");
             return NULL;
         }
     }
@@ -825,6 +861,8 @@ void nimcp_pool_destroy(nimcp_thread_pool_t* pool)
     pool->shutdown = true;
     // WHY BROADCAST: Wake all workers so they can check shutdown flag
     nimcp_cond_broadcast(&pool->task_available);
+    // Also broadcast to task_complete to wake any threads waiting in pool_wait() or pool_submit()
+    nimcp_cond_broadcast(&pool->task_complete);
     nimcp_mutex_unlock(&pool->lock);
 
     // Wait for all threads to finish
@@ -901,9 +939,8 @@ void nimcp_pool_destroy(nimcp_thread_pool_t* pool)
  */
 nimcp_result_t nimcp_pool_submit(nimcp_thread_pool_t* pool, nimcp_task_fn task, void* arg)
 {
-    if (!pool || !task) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_API_CHECK_NULL(pool, NIMCP_ERROR_INVALID_PARAM, "NULL pool in nimcp_pool_submit");
+    NIMCP_API_CHECK_NULL(task, NIMCP_ERROR_INVALID_PARAM, "NULL task function in nimcp_pool_submit");
 
     nimcp_mutex_lock(&pool->lock);
 
@@ -911,7 +948,7 @@ nimcp_result_t nimcp_pool_submit(nimcp_thread_pool_t* pool, nimcp_task_fn task, 
     // WHY: Don't accept new tasks if shutting down
     if (pool->shutdown) {
         nimcp_mutex_unlock(&pool->lock);
-        return NIMCP_ERROR_SYSTEM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM, "thread pool is shutting down");
     }
 
     // Wait if queue is full
@@ -924,7 +961,7 @@ nimcp_result_t nimcp_pool_submit(nimcp_thread_pool_t* pool, nimcp_task_fn task, 
     // Check shutdown again (may have changed during wait)
     if (pool->shutdown) {
         nimcp_mutex_unlock(&pool->lock);
-        return NIMCP_ERROR_SYSTEM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM, "thread pool shut down during wait");
     }
 
     // Enqueue task
@@ -992,9 +1029,7 @@ nimcp_result_t nimcp_pool_submit(nimcp_thread_pool_t* pool, nimcp_task_fn task, 
  */
 nimcp_result_t nimcp_pool_wait(nimcp_thread_pool_t* pool)
 {
-    if (!pool) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_API_CHECK_NULL(pool, NIMCP_ERROR_INVALID_PARAM, "NULL pool in nimcp_pool_wait");
 
     nimcp_mutex_lock(&pool->lock);
 
@@ -1005,12 +1040,16 @@ nimcp_result_t nimcp_pool_wait(nimcp_thread_pool_t* pool)
         nimcp_cond_wait(&pool->task_complete, &pool->lock);
     }
 
+    // Cache shutdown value BEFORE releasing lock to avoid race condition
+    // where pool could be destroyed after unlock but before we read shutdown
+    bool was_shutdown = pool->shutdown;
+
     nimcp_mutex_unlock(&pool->lock);
 
     // WHY RETURN ERROR ON SHUTDOWN:
     // - Caller should know pool was destroyed during wait
     // - Prevents further use of pool
-    return pool->shutdown ? NIMCP_ERROR_SYSTEM : NIMCP_SUCCESS;
+    return was_shutdown ? NIMCP_ERROR_SYSTEM : NIMCP_SUCCESS;
 }
 
 /**

@@ -1,10 +1,23 @@
 #include "utils/containers/nimcp_btree.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_messages.h"
 #include <string.h>
 #include "utils/logging/nimcp_logging.h"
 #include "utils/memory/nimcp_memory.h"
+#include "utils/platform/nimcp_platform_mutex.h"
+#include "utils/platform/nimcp_platform_rwlock.h"
+#include "utils/memory/nimcp_unified_memory.h"
+#include "utils/exception/nimcp_exception_macros.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+#include "constants/nimcp_timing_constants.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(btree)
 
 #define MAX_LOCK_RETRIES 3
-#define LOCK_TIMEOUT_MS 1000
+#define LOCK_TIMEOUT_MS NIMCP_MEDIUM_TIMEOUT_MS
 
 // Node structure
 struct btree_node_t {
@@ -12,7 +25,7 @@ struct btree_node_t {
     btree_node_t* children[2 * BTREE_ORDER];
     int n;
     bool leaf;
-    pthread_rwlock_t lock;
+    nimcp_platform_rwlock_t lock;
 };
 
 // B-tree structure
@@ -22,7 +35,7 @@ struct btree_t {
     btree_key_func key_func;
     btree_free_func free_func;
     atomic_size_t count;
-    pthread_mutex_t structural_lock;
+    nimcp_platform_mutex_t structural_lock;
 };
 
 // Iterator structure
@@ -32,42 +45,37 @@ struct btree_iterator_t {
     int* index_stack;
     int stack_size;
     int stack_capacity;
-    pthread_mutex_t lock;
+    nimcp_platform_mutex_t lock;
 };
 
 // Lock acquisition with timeout
-static int acquire_write_lock(pthread_rwlock_t* lock, unsigned long timeout_ms)
+static int acquire_write_lock(nimcp_platform_rwlock_t* lock, unsigned long timeout_ms)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
-
-    return pthread_rwlock_timedwrlock(lock, &ts);
+    (void)timeout_ms;  // Platform abstraction doesn't support timed locks yet
+    return nimcp_platform_rwlock_wrlock(lock);
 }
 
-static int acquire_read_lock(pthread_rwlock_t* lock, unsigned long timeout_ms)
+static int acquire_read_lock(nimcp_platform_rwlock_t* lock, unsigned long timeout_ms)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
-
-    return pthread_rwlock_timedrdlock(lock, &ts);
+    (void)timeout_ms;  // Platform abstraction doesn't support timed locks yet
+    return nimcp_platform_rwlock_rdlock(lock);
 }
 
 // Node creation and destruction
 static btree_node_t* create_node(bool leaf)
 {
     btree_node_t* node = nimcp_calloc(1, sizeof(btree_node_t));
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "create_node: node is NULL");
         return NULL;
+    }
 
     node->leaf = leaf;
     node->n = 0;
 
-    if (pthread_rwlock_init(&node->lock, NULL) != 0) {
+    if (nimcp_platform_rwlock_init(&node->lock) != 0) {
         nimcp_free(node);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NOT_INITIALIZED, "create_node: validation failed");
         return NULL;
     }
 
@@ -85,7 +93,7 @@ static void destroy_node(btree_node_t* node, btree_free_func free_func)
         }
     }
 
-    pthread_rwlock_destroy(&node->lock);
+    nimcp_platform_rwlock_destroy(&node->lock);
     nimcp_free(node);
 }
 
@@ -94,20 +102,29 @@ btree_t* btree_create(btree_compare_func compare, btree_key_func key_func,
                       btree_free_func free_func)
 {
     if (!compare || !key_func) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
+            "btree_create: compare and key_func cannot be NULL");
         return NULL;
     }
 
     btree_t* tree = nimcp_calloc(1, sizeof(btree_t));
-    if (!tree)
+    if (!tree) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
+            "btree_create: failed to allocate btree structure");
         return NULL;
+    }
 
     tree->root = create_node(true);
     if (!tree->root) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
+            "btree_create: failed to allocate root node");
         nimcp_free(tree);
         return NULL;
     }
 
-    if (pthread_mutex_init(&tree->structural_lock, NULL) != 0) {
+    if (nimcp_platform_mutex_init(&tree->structural_lock, false) != 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED,
+            "btree_create: failed to initialize structural_lock mutex");
         destroy_node(tree->root, NULL);
         nimcp_free(tree);
         return NULL;
@@ -143,10 +160,10 @@ void btree_destroy(btree_t* tree)
     if (!tree)
         return;
 
-    pthread_mutex_lock(&tree->structural_lock);
+    nimcp_platform_mutex_lock(&tree->structural_lock);
     destroy_subtree(tree->root, tree->free_func);
-    pthread_mutex_unlock(&tree->structural_lock);
-    pthread_mutex_destroy(&tree->structural_lock);
+    nimcp_platform_mutex_unlock(&tree->structural_lock);
+    nimcp_platform_mutex_destroy(&tree->structural_lock);
     nimcp_free(tree);
 }
 
@@ -229,11 +246,11 @@ static int insert_nonfull(btree_t* tree, btree_node_t* node, void* data)
         if (node->children[child_index]->n == 2 * BTREE_ORDER - 1) {
             int result = split_child(tree, node, child_index);
             if (result != BTREE_SUCCESS) {
-                pthread_rwlock_unlock(&node->children[child_index]->lock);
+                nimcp_platform_rwlock_wrunlock(&node->children[child_index]->lock);
                 return result;
             }
             // Unlock the original child we locked
-            pthread_rwlock_unlock(&node->children[child_index]->lock);
+            nimcp_platform_rwlock_wrunlock(&node->children[child_index]->lock);
 
             // Determine which child to use after split
             if (tree->compare(key, tree->key_func(node->keys[child_index])) > 0) {
@@ -249,7 +266,7 @@ static int insert_nonfull(btree_t* tree, btree_node_t* node, void* data)
         }
 
         int result = insert_nonfull(tree, node->children[i], data);
-        pthread_rwlock_unlock(&node->children[i]->lock);
+        nimcp_platform_rwlock_wrunlock(&node->children[i]->lock);
         return result;
     }
 }
@@ -259,10 +276,10 @@ int btree_insert(btree_t* tree, void* data)
     if (!tree || !data)
         return BTREE_ERROR;
 
-    pthread_mutex_lock(&tree->structural_lock);
+    nimcp_platform_mutex_lock(&tree->structural_lock);
 
     if (acquire_write_lock(&tree->root->lock, LOCK_TIMEOUT_MS) != 0) {
-        pthread_mutex_unlock(&tree->structural_lock);
+        nimcp_platform_mutex_unlock(&tree->structural_lock);
         return BTREE_LOCKED;
     }
 
@@ -271,18 +288,18 @@ int btree_insert(btree_t* tree, void* data)
     if (tree->root->n == 2 * BTREE_ORDER - 1) {
         btree_node_t* new_root = create_node(false);
         if (!new_root) {
-            pthread_rwlock_unlock(&tree->root->lock);
-            pthread_mutex_unlock(&tree->structural_lock);
+            nimcp_platform_rwlock_wrunlock(&tree->root->lock);
+            nimcp_platform_mutex_unlock(&tree->structural_lock);
             return BTREE_NO_MEMORY;
         }
 
         // CRITICAL FIX: Lock new_root immediately after creation
         // insert_nonfull() assumes the node is locked by caller
         if (acquire_write_lock(&new_root->lock, LOCK_TIMEOUT_MS) != 0) {
-            pthread_rwlock_destroy(&new_root->lock);
+            nimcp_platform_rwlock_destroy(&new_root->lock);
             nimcp_free(new_root);
-            pthread_rwlock_unlock(&tree->root->lock);
-            pthread_mutex_unlock(&tree->structural_lock);
+            nimcp_platform_rwlock_wrunlock(&tree->root->lock);
+            nimcp_platform_mutex_unlock(&tree->structural_lock);
             return BTREE_LOCKED;
         }
 
@@ -293,7 +310,7 @@ int btree_insert(btree_t* tree, void* data)
         if (result == BTREE_SUCCESS) {
             // CRITICAL: Unlock old root BEFORE updating tree->root
             // Otherwise old_root's lock remains held forever!
-            pthread_rwlock_unlock(&old_root->lock);
+            nimcp_platform_rwlock_wrunlock(&old_root->lock);
 
             // Only update root if split succeeded
             tree->root = new_root;
@@ -301,9 +318,9 @@ int btree_insert(btree_t* tree, void* data)
             result = insert_nonfull(tree, new_root, data);
         } else {
             // Split failed - cleanup new_root and rollback
-            pthread_rwlock_unlock(&old_root->lock);
-            pthread_rwlock_unlock(&new_root->lock);
-            pthread_rwlock_destroy(&new_root->lock);
+            nimcp_platform_rwlock_wrunlock(&old_root->lock);
+            nimcp_platform_rwlock_wrunlock(&new_root->lock);
+            nimcp_platform_rwlock_destroy(&new_root->lock);
             nimcp_free(new_root);
             result = BTREE_NO_MEMORY;
         }
@@ -311,8 +328,8 @@ int btree_insert(btree_t* tree, void* data)
         result = insert_nonfull(tree, tree->root, data);
     }
 
-    pthread_rwlock_unlock(&tree->root->lock);
-    pthread_mutex_unlock(&tree->structural_lock);
+    nimcp_platform_rwlock_wrunlock(&tree->root->lock);
+    nimcp_platform_mutex_unlock(&tree->structural_lock);
     return result;
 }
 
@@ -329,29 +346,34 @@ static void* search_node(const btree_t* tree, btree_node_t* node, const char* ke
     }
 
     if (node->leaf) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "search_node: validation failed");
         return NULL;
     }
 
     if (acquire_read_lock(&node->children[i]->lock, LOCK_TIMEOUT_MS) != 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED, "search_node: validation failed");
         return NULL;
     }
 
     void* result = search_node(tree, node->children[i], key);
-    pthread_rwlock_unlock(&node->children[i]->lock);
+    nimcp_platform_rwlock_rdunlock(&node->children[i]->lock);
     return result;
 }
 
 void* btree_find(const btree_t* tree, const char* key)
 {
-    if (!tree || !key)
+    if (!tree || !key) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "btree_find: required parameter is NULL (tree, key)");
         return NULL;
+    }
 
     if (acquire_read_lock(&tree->root->lock, LOCK_TIMEOUT_MS) != 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED, "btree_find: validation failed");
         return NULL;
     }
 
     void* result = search_node(tree, tree->root, key);
-    pthread_rwlock_unlock(&tree->root->lock);
+    nimcp_platform_rwlock_rdunlock(&tree->root->lock);
     return result;
 }
 
@@ -386,8 +408,54 @@ static void merge_nodes(btree_t* tree, btree_node_t* parent, int index, btree_no
     destroy_node(right, NULL);
 }
 
-// Unlocked helper for remove - structural_lock must be held by caller
-static int remove_from_node_unlocked(btree_t* tree, btree_node_t* node, const char* key)
+static bool remove_from_node_internal(btree_t* tree, btree_node_t* node, const char* key, bool should_free_key);
+
+static bool remove_from_node(btree_t* tree, btree_node_t* node, const char* key)
+{
+    return remove_from_node_internal(tree, node, key, true);
+}
+
+/**
+ * @brief Get predecessor key (rightmost key in left subtree)
+ *
+ * WHAT: Finds the rightmost key by following rightmost children to a leaf
+ * WHY:  Predecessor is needed for internal node removal
+ * HOW:  Traverse rightmost path until leaf, return last key
+ *
+ * @param node Root of subtree to search
+ * @return Pointer to predecessor key data
+ */
+static void* get_predecessor_key(btree_node_t* node)
+{
+    // Follow rightmost child until we reach a leaf
+    while (!node->leaf) {
+        node = node->children[node->n];
+    }
+    // Return rightmost key in leaf
+    return node->keys[node->n - 1];
+}
+
+/**
+ * @brief Get successor key (leftmost key in right subtree)
+ *
+ * WHAT: Finds the leftmost key by following leftmost children to a leaf
+ * WHY:  Successor is needed for internal node removal
+ * HOW:  Traverse leftmost path until leaf, return first key
+ *
+ * @param node Root of subtree to search
+ * @return Pointer to successor key data
+ */
+static void* get_successor_key(btree_node_t* node)
+{
+    // Follow leftmost child until we reach a leaf
+    while (!node->leaf) {
+        node = node->children[0];
+    }
+    // Return leftmost key in leaf
+    return node->keys[0];
+}
+
+static bool remove_from_node_internal(btree_t* tree, btree_node_t* node, const char* key, bool should_free_key)
 {
     int i = 0;
     while (i < node->n && tree->compare(tree->key_func(node->keys[i]), key) < 0) {
@@ -397,34 +465,50 @@ static int remove_from_node_unlocked(btree_t* tree, btree_node_t* node, const ch
     if (i < node->n && tree->compare(tree->key_func(node->keys[i]), key) == 0) {
         if (node->leaf) {
             // Remove from leaf
-            if (tree->free_func) {
-                tree->free_func(node->keys[i]);
-            }
+            void* key_to_free = node->keys[i];
             for (int j = i + 1; j < node->n; j++) {
                 node->keys[j - 1] = node->keys[j];
             }
             node->n--;
-            atomic_fetch_sub(&tree->count, 1);
-            return BTREE_SUCCESS;
+            // Free only if requested (not if key is being moved to parent)
+            if (should_free_key && tree->free_func) {
+                tree->free_func(key_to_free);
+            }
+            return true;  // Key was found and removed
         } else {
             // Remove from internal node
             btree_node_t* pred = node->children[i];
             btree_node_t* succ = node->children[i + 1];
 
             if (pred->n >= BTREE_ORDER) {
-                // Use predecessor
-                void* pred_key = pred->keys[pred->n - 1];
+                // Use predecessor - get rightmost key from left subtree
+                void* key_to_free = node->keys[i];
+                void* pred_key = get_predecessor_key(pred);
                 node->keys[i] = pred_key;
-                return remove_from_node_unlocked(tree, pred, tree->key_func(pred_key));
+                // Remove pred_key from pred subtree WITHOUT freeing (it moved to parent)
+                remove_from_node_internal(tree, pred, tree->key_func(pred_key), false);
+                // Free the original key that was replaced (if should_free_key)
+                if (should_free_key && tree->free_func) {
+                    tree->free_func(key_to_free);
+                }
+                return true;  // Key was found and removed
             } else if (succ->n >= BTREE_ORDER) {
-                // Use successor
-                void* succ_key = succ->keys[0];
+                // Use successor - get leftmost key from right subtree
+                void* key_to_free = node->keys[i];
+                void* succ_key = get_successor_key(succ);
                 node->keys[i] = succ_key;
-                return remove_from_node_unlocked(tree, succ, tree->key_func(succ_key));
+                // Remove succ_key from succ subtree WITHOUT freeing (it moved to parent)
+                remove_from_node_internal(tree, succ, tree->key_func(succ_key), false);
+                // Free the original key that was replaced (if should_free_key)
+                if (should_free_key && tree->free_func) {
+                    tree->free_func(key_to_free);
+                }
+                return true;  // Key was found and removed
             } else {
-                // Merge nodes
+                // Merge nodes and recursively remove
                 merge_nodes(tree, node, i, pred, succ);
-                return remove_from_node_unlocked(tree, pred, key);
+                // Pass through should_free_key to recursive call
+                return remove_from_node_internal(tree, pred, key, should_free_key);
             }
         }
     } else if (!node->leaf) {
@@ -432,7 +516,7 @@ static int remove_from_node_unlocked(btree_t* tree, btree_node_t* node, const ch
         btree_node_t* child = node->children[i];
 
         if (child->n < BTREE_ORDER) {
-            // Child needs more keys
+            // Child needs more keys - borrow or merge
             btree_node_t* left_sibling = i > 0 ? node->children[i - 1] : NULL;
             btree_node_t* right_sibling = i < node->n ? node->children[i + 1] : NULL;
 
@@ -476,17 +560,18 @@ static int remove_from_node_unlocked(btree_t* tree, btree_node_t* node, const ch
                 if (left_sibling) {
                     merge_nodes(tree, node, i - 1, left_sibling, child);
                     child = left_sibling;
-                } else {
+                } else if (right_sibling) {
                     merge_nodes(tree, node, i, child, right_sibling);
                 }
             }
         }
 
-        return remove_from_node_unlocked(tree, child, key);
+        // Pass through should_free_key parameter to maintain consistency
+        return remove_from_node_internal(tree, child, key, should_free_key);
     }
 
-    // Key not found
-    return BTREE_NOT_FOUND;
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "remove_from_node_internal: operation failed");
+    return false;  // Key not found
 }
 
 int btree_remove(btree_t* tree, const char* key)
@@ -494,21 +579,38 @@ int btree_remove(btree_t* tree, const char* key)
     if (!tree || !key)
         return BTREE_ERROR;
 
-    // Use structural_lock for entire removal operation
-    // Fine-grained node locking during removal causes deadlocks with rebalancing
-    pthread_mutex_lock(&tree->structural_lock);
+    nimcp_platform_mutex_lock(&tree->structural_lock);
 
-    int result = remove_from_node_unlocked(tree, tree->root, key);
-
-    // Handle empty root (only if removal succeeded)
-    if (result == BTREE_SUCCESS && tree->root->n == 0 && !tree->root->leaf) {
-        btree_node_t* old_root = tree->root;
-        tree->root = tree->root->children[0];
-        destroy_node(old_root, NULL);
+    if (acquire_write_lock(&tree->root->lock, LOCK_TIMEOUT_MS) != 0) {
+        nimcp_platform_mutex_unlock(&tree->structural_lock);
+        return BTREE_LOCKED;
     }
 
-    pthread_mutex_unlock(&tree->structural_lock);
-    return result;
+    // Try to remove the key
+    bool found = remove_from_node(tree, tree->root, key);
+
+    if (found) {
+        // Decrement count only if key was actually found and removed
+        atomic_fetch_sub(&tree->count, 1);
+    }
+
+    // Handle empty root
+    if (tree->root->n == 0 && !tree->root->leaf) {
+        btree_node_t* old_root = tree->root;
+        btree_node_t* new_root = tree->root->children[0];
+
+        // CRITICAL: Unlock old root BEFORE changing tree->root
+        nimcp_platform_rwlock_wrunlock(&old_root->lock);
+
+        tree->root = new_root;
+        destroy_node(old_root, NULL);
+    } else {
+        // Normal case: unlock the current root
+        nimcp_platform_rwlock_wrunlock(&tree->root->lock);
+    }
+
+    nimcp_platform_mutex_unlock(&tree->structural_lock);
+    return found ? BTREE_SUCCESS : BTREE_NOT_FOUND;
 }
 
 size_t btree_count(const btree_t* tree)
@@ -519,12 +621,18 @@ size_t btree_count(const btree_t* tree)
 // Iterator implementation
 btree_iterator_t* btree_iterator_create(btree_t* tree)
 {
-    if (!tree)
+    if (!tree) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+            "btree_iterator_create: tree is NULL");
         return NULL;
+    }
 
     btree_iterator_t* iterator = nimcp_calloc(1, sizeof(btree_iterator_t));
-    if (!iterator)
+    if (!iterator) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
+            "btree_iterator_create: failed to allocate iterator");
         return NULL;
+    }
 
     iterator->tree = tree;
     iterator->stack_capacity = 32;  // Initial capacity
@@ -532,13 +640,17 @@ btree_iterator_t* btree_iterator_create(btree_t* tree)
     iterator->index_stack = nimcp_calloc(iterator->stack_capacity, sizeof(int));
 
     if (!iterator->stack || !iterator->index_stack) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
+            "btree_iterator_create: failed to allocate stack arrays");
         nimcp_free(iterator->stack);
         nimcp_free(iterator->index_stack);
         nimcp_free(iterator);
         return NULL;
     }
 
-    if (pthread_mutex_init(&iterator->lock, NULL) != 0) {
+    if (nimcp_platform_mutex_init(&iterator->lock, false) != 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED,
+            "btree_iterator_create: failed to initialize mutex");
         nimcp_free(iterator->stack);
         nimcp_free(iterator->index_stack);
         nimcp_free(iterator);
@@ -554,15 +666,15 @@ void btree_iterator_destroy(btree_iterator_t* iterator)
         return;
 
     // CRITICAL FIX: Release all held read locks before destroying iterator
-    pthread_mutex_lock(&iterator->lock);
+    nimcp_platform_mutex_lock(&iterator->lock);
     for (int i = 0; i < iterator->stack_size; i++) {
         if (iterator->stack[i]) {
-            pthread_rwlock_unlock(&iterator->stack[i]->lock);
+            nimcp_platform_rwlock_rdunlock(&iterator->stack[i]->lock);
         }
     }
-    pthread_mutex_unlock(&iterator->lock);
+    nimcp_platform_mutex_unlock(&iterator->lock);
 
-    pthread_mutex_destroy(&iterator->lock);
+    nimcp_platform_mutex_destroy(&iterator->lock);
     nimcp_free(iterator->stack);
     nimcp_free(iterator->index_stack);
     nimcp_free(iterator);
@@ -570,17 +682,20 @@ void btree_iterator_destroy(btree_iterator_t* iterator)
 
 bool btree_iterator_next(btree_iterator_t* iterator, void** data)
 {
-    if (!iterator || !data)
+    if (!iterator || !data) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "btree_iterator_next: required parameter is NULL (iterator, data)");
         return false;
+    }
 
-    pthread_mutex_lock(&iterator->lock);
+    nimcp_platform_mutex_lock(&iterator->lock);
 
     if (iterator->stack_size == 0) {
         // Initialize iterator at leftmost leaf
         btree_node_t* node = iterator->tree->root;
         while (node) {
             if (acquire_read_lock(&node->lock, LOCK_TIMEOUT_MS) != 0) {
-                pthread_mutex_unlock(&iterator->lock);
+                nimcp_platform_mutex_unlock(&iterator->lock);
+                NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED, "btree_iterator_next: validation failed");
                 return false;
             }
 
@@ -599,7 +714,7 @@ bool btree_iterator_next(btree_iterator_t* iterator, void** data)
         int current_index = iterator->index_stack[iterator->stack_size - 1];
 
         if (current_index >= current->n) {
-            pthread_rwlock_unlock(&current->lock);
+            nimcp_platform_rwlock_rdunlock(&current->lock);
             iterator->stack_size--;
             continue;
         }
@@ -611,7 +726,8 @@ bool btree_iterator_next(btree_iterator_t* iterator, void** data)
             btree_node_t* node = current->children[current_index + 1];
             while (node) {
                 if (acquire_read_lock(&node->lock, LOCK_TIMEOUT_MS) != 0) {
-                    pthread_mutex_unlock(&iterator->lock);
+                    nimcp_platform_mutex_unlock(&iterator->lock);
+                    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OPERATION_FAILED, "btree_iterator_next: validation failed");
                     return false;
                 }
 
@@ -624,8 +740,9 @@ bool btree_iterator_next(btree_iterator_t* iterator, void** data)
                         nimcp_realloc(iterator->index_stack, new_capacity * sizeof(int));
 
                     if (!new_stack || !new_index_stack) {
-                        pthread_rwlock_unlock(&node->lock);
-                        pthread_mutex_unlock(&iterator->lock);
+                        nimcp_platform_rwlock_rdunlock(&node->lock);
+                        nimcp_platform_mutex_unlock(&iterator->lock);
+                        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "btree_iterator_next: required parameter is NULL (new_stack, new_index_stack)");
                         return false;
                     }
 
@@ -644,11 +761,12 @@ bool btree_iterator_next(btree_iterator_t* iterator, void** data)
             }
         }
 
-        pthread_mutex_unlock(&iterator->lock);
+        nimcp_platform_mutex_unlock(&iterator->lock);
         return true;
     }
 
-    pthread_mutex_unlock(&iterator->lock);
+    nimcp_platform_mutex_unlock(&iterator->lock);
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "btree_iterator_next: operation failed");
     return false;
 }
 
@@ -681,5 +799,5 @@ void btree_foreach(const btree_t* tree, btree_traverse_func callback, void* user
     }
 
     traverse_node(tree->root, callback, user_data);
-    pthread_rwlock_unlock(&tree->root->lock);
+    nimcp_platform_rwlock_rdunlock(&tree->root->lock);
 }

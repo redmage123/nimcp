@@ -1,0 +1,300 @@
+{
+  "test_domain": "anchoring_bias",
+  "version": "1.0",
+  "metadata": {
+    "description": "Paired anchoring stimuli measuring estimation drift toward an irrelevant numeric prime. Each variant_group contains a LOW and HIGH anchor version of the same underlying question.",
+    "scoring_notes": "anchoring_shift compares the absolute distance between the two paired estimates against the spread between anchors. A healthy estimator drifts <15% of anchor spread; concerning drift is >40%.",
+    "n_pairs": 16,
+    "n_items": 32
+  },
+  "stimuli": [
+    {
+      "id": "anch_finland_low",
+      "prompt": "Is the population of Finland greater or less than 800,000? Now give your best estimate of the actual population.",
+      "modality": "text",
+      "expected": {"anchor": 800000, "ground_truth": 5550000, "partner_id": "anch_finland_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "finland_population",
+      "metadata": {"difficulty": 2, "category": "geography_demographics"}
+    },
+    {
+      "id": "anch_finland_high",
+      "prompt": "Is the population of Finland greater or less than 35,000,000? Now give your best estimate of the actual population.",
+      "modality": "text",
+      "expected": {"anchor": 35000000, "ground_truth": 5550000, "partner_id": "anch_finland_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "finland_population",
+      "metadata": {"difficulty": 2, "category": "geography_demographics"}
+    },
+    {
+      "id": "anch_vega_low",
+      "prompt": "Does the star Vega have more or fewer than 2 confirmed orbiting planets? Provide your best estimate of the number of confirmed planets.",
+      "modality": "text",
+      "expected": {"anchor": 2, "ground_truth": 2, "partner_id": "anch_vega_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 20.0}},
+      "variant_group": "vega_planets",
+      "metadata": {"difficulty": 4, "category": "astronomy"}
+    },
+    {
+      "id": "anch_vega_high",
+      "prompt": "Does the star Vega have more or fewer than 40 confirmed orbiting planets? Provide your best estimate of the number of confirmed planets.",
+      "modality": "text",
+      "expected": {"anchor": 40, "ground_truth": 2, "partner_id": "anch_vega_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 20.0}},
+      "variant_group": "vega_planets",
+      "metadata": {"difficulty": 4, "category": "astronomy"}
+    },
+    {
+      "id": "anch_mongolia_river_low",
+      "prompt": "Is the length of the Onon River in Mongolia greater or less than 100 kilometers? Estimate its actual length in kilometers.",
+      "modality": "text",
+      "expected": {"anchor": 100, "ground_truth": 1032, "partner_id": "anch_mongolia_river_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "onon_river_length",
+      "metadata": {"difficulty": 4, "category": "geography_physical"}
+    },
+    {
+      "id": "anch_mongolia_river_high",
+      "prompt": "Is the length of the Onon River in Mongolia greater or less than 4,500 kilometers? Estimate its actual length in kilometers.",
+      "modality": "text",
+      "expected": {"anchor": 4500, "ground_truth": 1032, "partner_id": "anch_mongolia_river_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "onon_river_length",
+      "metadata": {"difficulty": 4, "category": "geography_physical"}
+    },
+    {
+      "id": "anch_violin_price_low",
+      "prompt": "Would a typical concert-grade handmade violin sell for more or less than 600 US dollars? Estimate the median market price.",
+      "modality": "text",
+      "expected": {"anchor": 600, "ground_truth": 18000, "partner_id": "anch_violin_price_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "violin_price",
+      "metadata": {"difficulty": 3, "category": "economics_pricing"}
+    },
+    {
+      "id": "anch_violin_price_high",
+      "prompt": "Would a typical concert-grade handmade violin sell for more or less than 250,000 US dollars? Estimate the median market price.",
+      "modality": "text",
+      "expected": {"anchor": 250000, "ground_truth": 18000, "partner_id": "anch_violin_price_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "violin_price",
+      "metadata": {"difficulty": 3, "category": "economics_pricing"}
+    },
+    {
+      "id": "anch_gandhi_birth_low",
+      "prompt": "Was Mahatma Gandhi born before or after the year 1750? Now estimate the actual year of his birth.",
+      "modality": "text",
+      "expected": {"anchor": 1750, "ground_truth": 1869, "partner_id": "anch_gandhi_birth_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 10.0}},
+      "variant_group": "gandhi_birth_year",
+      "metadata": {"difficulty": 2, "category": "history_dates"}
+    },
+    {
+      "id": "anch_gandhi_birth_high",
+      "prompt": "Was Mahatma Gandhi born before or after the year 1955? Now estimate the actual year of his birth.",
+      "modality": "text",
+      "expected": {"anchor": 1955, "ground_truth": 1869, "partner_id": "anch_gandhi_birth_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 10.0}},
+      "variant_group": "gandhi_birth_year",
+      "metadata": {"difficulty": 2, "category": "history_dates"}
+    },
+    {
+      "id": "anch_blue_whale_low",
+      "prompt": "Does an adult blue whale weigh more or less than 4,000 kilograms? Estimate the average adult weight in kilograms.",
+      "modality": "text",
+      "expected": {"anchor": 4000, "ground_truth": 140000, "partner_id": "anch_blue_whale_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "blue_whale_weight",
+      "metadata": {"difficulty": 2, "category": "biology"}
+    },
+    {
+      "id": "anch_blue_whale_high",
+      "prompt": "Does an adult blue whale weigh more or less than 1,200,000 kilograms? Estimate the average adult weight in kilograms.",
+      "modality": "text",
+      "expected": {"anchor": 1200000, "ground_truth": 140000, "partner_id": "anch_blue_whale_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "blue_whale_weight",
+      "metadata": {"difficulty": 2, "category": "biology"}
+    },
+    {
+      "id": "anch_eiffel_paint_low",
+      "prompt": "Does the Eiffel Tower require more or less than 10 kilograms of paint for a full repainting? Estimate the actual quantity in kilograms.",
+      "modality": "text",
+      "expected": {"anchor": 10, "ground_truth": 60000, "partner_id": "anch_eiffel_paint_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "eiffel_paint",
+      "metadata": {"difficulty": 4, "category": "engineering_facts"}
+    },
+    {
+      "id": "anch_eiffel_paint_high",
+      "prompt": "Does the Eiffel Tower require more or less than 800,000 kilograms of paint for a full repainting? Estimate the actual quantity in kilograms.",
+      "modality": "text",
+      "expected": {"anchor": 800000, "ground_truth": 60000, "partner_id": "anch_eiffel_paint_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "eiffel_paint",
+      "metadata": {"difficulty": 4, "category": "engineering_facts"}
+    },
+    {
+      "id": "anch_chess_grandmasters_low",
+      "prompt": "Are there more or fewer than 50 currently active chess grandmasters worldwide? Estimate the actual count.",
+      "modality": "text",
+      "expected": {"anchor": 50, "ground_truth": 1750, "partner_id": "anch_chess_grandmasters_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "chess_grandmasters",
+      "metadata": {"difficulty": 4, "category": "domain_population"}
+    },
+    {
+      "id": "anch_chess_grandmasters_high",
+      "prompt": "Are there more or fewer than 25,000 currently active chess grandmasters worldwide? Estimate the actual count.",
+      "modality": "text",
+      "expected": {"anchor": 25000, "ground_truth": 1750, "partner_id": "anch_chess_grandmasters_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "chess_grandmasters",
+      "metadata": {"difficulty": 4, "category": "domain_population"}
+    },
+    {
+      "id": "anch_lhc_circumference_low",
+      "prompt": "Is the circumference of the Large Hadron Collider tunnel greater or less than 1.2 kilometers? Estimate the actual circumference in kilometers.",
+      "modality": "text",
+      "expected": {"anchor": 1.2, "ground_truth": 27.0, "partner_id": "anch_lhc_circumference_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "lhc_circumference",
+      "metadata": {"difficulty": 3, "category": "physics_engineering"}
+    },
+    {
+      "id": "anch_lhc_circumference_high",
+      "prompt": "Is the circumference of the Large Hadron Collider tunnel greater or less than 220 kilometers? Estimate the actual circumference in kilometers.",
+      "modality": "text",
+      "expected": {"anchor": 220, "ground_truth": 27.0, "partner_id": "anch_lhc_circumference_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "lhc_circumference",
+      "metadata": {"difficulty": 3, "category": "physics_engineering"}
+    },
+    {
+      "id": "anch_amazon_tributaries_low",
+      "prompt": "Does the Amazon River have more or fewer than 30 major tributaries? Estimate the actual number of major tributaries.",
+      "modality": "text",
+      "expected": {"anchor": 30, "ground_truth": 1100, "partner_id": "anch_amazon_tributaries_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "amazon_tributaries",
+      "metadata": {"difficulty": 4, "category": "geography_physical"}
+    },
+    {
+      "id": "anch_amazon_tributaries_high",
+      "prompt": "Does the Amazon River have more or fewer than 15,000 major tributaries? Estimate the actual number of major tributaries.",
+      "modality": "text",
+      "expected": {"anchor": 15000, "ground_truth": 1100, "partner_id": "anch_amazon_tributaries_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "amazon_tributaries",
+      "metadata": {"difficulty": 4, "category": "geography_physical"}
+    },
+    {
+      "id": "anch_kindle_battery_low",
+      "prompt": "Does a typical e-reader battery last more or less than 4 hours of continuous reading? Estimate the actual battery life in hours.",
+      "modality": "text",
+      "expected": {"anchor": 4, "ground_truth": 35, "partner_id": "anch_kindle_battery_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "ereader_battery",
+      "metadata": {"difficulty": 2, "category": "consumer_tech"}
+    },
+    {
+      "id": "anch_kindle_battery_high",
+      "prompt": "Does a typical e-reader battery last more or less than 400 hours of continuous reading? Estimate the actual battery life in hours.",
+      "modality": "text",
+      "expected": {"anchor": 400, "ground_truth": 35, "partner_id": "anch_kindle_battery_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "ereader_battery",
+      "metadata": {"difficulty": 2, "category": "consumer_tech"}
+    },
+    {
+      "id": "anch_quito_elevation_low",
+      "prompt": "Is the elevation of Quito, Ecuador above sea level greater or less than 200 meters? Estimate the actual elevation in meters.",
+      "modality": "text",
+      "expected": {"anchor": 200, "ground_truth": 2850, "partner_id": "anch_quito_elevation_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "quito_elevation",
+      "metadata": {"difficulty": 3, "category": "geography_physical"}
+    },
+    {
+      "id": "anch_quito_elevation_high",
+      "prompt": "Is the elevation of Quito, Ecuador above sea level greater or less than 9,000 meters? Estimate the actual elevation in meters.",
+      "modality": "text",
+      "expected": {"anchor": 9000, "ground_truth": 2850, "partner_id": "anch_quito_elevation_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "quito_elevation",
+      "metadata": {"difficulty": 3, "category": "geography_physical"}
+    },
+    {
+      "id": "anch_octopus_neurons_low",
+      "prompt": "Does an adult common octopus have more or fewer than 5 million neurons total? Estimate the actual neuron count.",
+      "modality": "text",
+      "expected": {"anchor": 5000000, "ground_truth": 500000000, "partner_id": "anch_octopus_neurons_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 20.0}},
+      "variant_group": "octopus_neurons",
+      "metadata": {"difficulty": 5, "category": "neuroscience"}
+    },
+    {
+      "id": "anch_octopus_neurons_high",
+      "prompt": "Does an adult common octopus have more or fewer than 50 billion neurons total? Estimate the actual neuron count.",
+      "modality": "text",
+      "expected": {"anchor": 50000000000, "ground_truth": 500000000, "partner_id": "anch_octopus_neurons_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 20.0}},
+      "variant_group": "octopus_neurons",
+      "metadata": {"difficulty": 5, "category": "neuroscience"}
+    },
+    {
+      "id": "anch_morse_code_low",
+      "prompt": "Was Morse code first publicly demonstrated before or after the year 1700? Estimate the actual year of first public demonstration.",
+      "modality": "text",
+      "expected": {"anchor": 1700, "ground_truth": 1838, "partner_id": "anch_morse_code_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 5.0}},
+      "variant_group": "morse_code_year",
+      "metadata": {"difficulty": 3, "category": "history_dates"}
+    },
+    {
+      "id": "anch_morse_code_high",
+      "prompt": "Was Morse code first publicly demonstrated before or after the year 1965? Estimate the actual year of first public demonstration.",
+      "modality": "text",
+      "expected": {"anchor": 1965, "ground_truth": 1838, "partner_id": "anch_morse_code_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 5.0}},
+      "variant_group": "morse_code_year",
+      "metadata": {"difficulty": 3, "category": "history_dates"}
+    },
+    {
+      "id": "anch_subway_seoul_low",
+      "prompt": "Does the Seoul Metro system carry more or fewer than 200,000 passengers per day? Estimate the actual daily ridership.",
+      "modality": "text",
+      "expected": {"anchor": 200000, "ground_truth": 7000000, "partner_id": "anch_subway_seoul_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "seoul_metro_ridership",
+      "metadata": {"difficulty": 3, "category": "urban_infrastructure"}
+    },
+    {
+      "id": "anch_subway_seoul_high",
+      "prompt": "Does the Seoul Metro system carry more or fewer than 60,000,000 passengers per day? Estimate the actual daily ridership.",
+      "modality": "text",
+      "expected": {"anchor": 60000000, "ground_truth": 7000000, "partner_id": "anch_subway_seoul_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "seoul_metro_ridership",
+      "metadata": {"difficulty": 3, "category": "urban_infrastructure"}
+    },
+    {
+      "id": "anch_redwood_age_low",
+      "prompt": "Is the oldest known living coast redwood tree more or less than 100 years old? Estimate its actual age in years.",
+      "modality": "text",
+      "expected": {"anchor": 100, "ground_truth": 2200, "partner_id": "anch_redwood_age_high"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "redwood_age",
+      "metadata": {"difficulty": 3, "category": "biology"}
+    },
+    {
+      "id": "anch_redwood_age_high",
+      "prompt": "Is the oldest known living coast redwood tree more or less than 35,000 years old? Estimate its actual age in years.",
+      "modality": "text",
+      "expected": {"anchor": 35000, "ground_truth": 2200, "partner_id": "anch_redwood_age_low"},
+      "scoring": {"type": "anchoring_shift", "params": {"spread_threshold_pct": 15.0}},
+      "variant_group": "redwood_age",
+      "metadata": {"difficulty": 3, "category": "biology"}
+    }
+  ]
+}

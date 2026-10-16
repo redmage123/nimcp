@@ -1,0 +1,37 @@
+Propositional logic primer.
+
+A proposition is a statement that is either true or false, never both, never neither. "The sky is blue" is a proposition. "Close the door" is not — it is a command, neither true nor false. "x is greater than five" is not a proposition until we know what x is.
+
+We use letters to stand for propositions. Let P be "it is raining" and Q be "the ground is wet". The truth of P and Q can each be either true (T) or false (F).
+
+We combine propositions with connectives.
+
+Negation: not P, written as the symbol not-P or sometimes a tilde-P. If P is true, not-P is false. If P is false, not-P is true. Negation flips the truth value.
+
+Conjunction: P and Q, written P and Q. True only when both P and Q are true. The four cases: T-T gives T, T-F gives F, F-T gives F, F-F gives F.
+
+Disjunction: P or Q. True when at least one is true. T-T gives T, T-F gives T, F-T gives T, F-F gives F. This is inclusive or, not exclusive — if both are true, the result is true.
+
+Implication: if P then Q, sometimes written P implies Q. False only when P is true and Q is false. The four cases: T-T gives T, T-F gives F, F-T gives T, F-F gives T. The two cases with P false both give T because the implication is vacuously satisfied: it makes no claim when its premise is false.
+
+Biconditional: P if and only if Q. True when P and Q have the same truth value. T-T gives T, F-F gives T, T-F gives F, F-T gives F.
+
+A truth table lists the truth value of a compound proposition for every combination of its parts. With n simple propositions, the table has two-to-the-n rows.
+
+A proposition is a tautology when it is true in every row. The classic example is P or not-P, called the law of the excluded middle. A proposition is a contradiction when false in every row, like P and not-P, the law of non-contradiction. A proposition that is true in some rows and false in others is a contingency.
+
+Two propositions are logically equivalent when they have the same truth value in every row. Important equivalences:
+
+De Morgan's laws: not (P and Q) equals not-P or not-Q; not (P or Q) equals not-P and not-Q.
+Contrapositive: P implies Q is equivalent to not-Q implies not-P.
+Implication as disjunction: P implies Q is equivalent to not-P or Q.
+
+These rules let us rewrite propositions without changing their meaning, the way the distributive property lets us rewrite algebraic expressions.
+
+An argument is a sequence of propositions where the last (the conclusion) is claimed to follow from the others (the premises). The argument is valid when, in every row where all premises are true, the conclusion is also true. Validity is a property of form, not of content. The argument can be valid even if the premises are factually false. The argument is sound when it is both valid and the premises are actually true.
+
+Modus ponens: from P implies Q and P, conclude Q. Always valid. Modus tollens: from P implies Q and not-Q, conclude not-P. Valid by the contrapositive equivalence.
+
+Affirming the consequent — from P implies Q and Q, conclude P — is invalid. Q can be true for reasons other than P. The fallacy mistakes the implication for a biconditional.
+
+These rules of inference are the building blocks of all formal proof.

@@ -1,0 +1,138 @@
+# Security subsystem wiring - security monitoring and threat detection
+# Handles pattern detection, security levels, and threat response
+
+# Module Entities
+{"type":"entity","name":"Security_Level_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Pattern_Db_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Blood_Brain_Barrier_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Constant_Time_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Key_Derivation_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Policy_Engine_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Post_Quantum_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"Rate_Limiter_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+{"type":"entity","name":"TOCTOU_Guard_Module","entityType":"SecurityModule","subsystem":"security","min_tier":0,"enabled":true}
+
+# Security_Level_Module handlers
+{"type":"relation","from":"Security_Level_Module","to":"BIO_MSG_SECURITY_EVENT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_EVENT"}
+
+# Pattern_Db_Module handlers
+{"type":"relation","from":"Pattern_Db_Module","to":"BIO_MSG_SECURITY_EVENT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_EVENT"}
+{"type":"relation","from":"Pattern_Db_Module","to":"BIO_MSG_SECURITY_THREAT_DETECTED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_THREAT_DETECTED"}
+{"type":"relation","from":"Pattern_Db_Module","to":"BIO_MSG_SECURITY_POLICY_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_POLICY_UPDATE"}
+
+# Constant_Time_Module handlers
+{"type":"relation","from":"Constant_Time_Module","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+
+# Key_Derivation_Module handlers
+{"type":"relation","from":"Key_Derivation_Module","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+
+# Policy_Engine_Module handlers
+{"type":"relation","from":"Policy_Engine_Module","to":"BIO_MSG_SECURITY_POLICY_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_POLICY_UPDATE"}
+
+# Post_Quantum_Module handlers
+{"type":"relation","from":"Post_Quantum_Module","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+
+# Rate_Limiter_Module handlers
+{"type":"relation","from":"Rate_Limiter_Module","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+
+# TOCTOU_Guard_Module handlers
+{"type":"relation","from":"TOCTOU_Guard_Module","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+
+# ============================================================================
+# Safety Enhancement Modules - AI Safety Infrastructure
+# ============================================================================
+
+# Safety Enhancement Module Entities
+{"type":"entity","name":"Emergency_Halt_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"critical"}
+{"type":"entity","name":"Tripwire_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"critical"}
+{"type":"entity","name":"Corrigibility_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"critical"}
+{"type":"entity","name":"Alignment_Monitor_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"high"}
+{"type":"entity","name":"Capability_Control_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"high"}
+{"type":"entity","name":"Interpretability_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"high"}
+{"type":"entity","name":"Safety_Verification_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"medium"}
+{"type":"entity","name":"Red_Team_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"medium"}
+{"type":"entity","name":"Graduated_Autonomy_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"medium"}
+{"type":"entity","name":"Value_Commitment_Module","entityType":"SafetyModule","subsystem":"security","min_tier":0,"enabled":true,"priority":"lower"}
+
+# Emergency_Halt_Module handlers - hardware watchdog, kill phrase, dead man's switch
+{"type":"relation","from":"Emergency_Halt_Module","to":"BIO_MSG_EMERGENCY_HALT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMERGENCY_HALT"}
+{"type":"relation","from":"Emergency_Halt_Module","to":"BIO_MSG_EMERGENCY_HALT_HEARTBEAT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMERGENCY_HALT_HEARTBEAT"}
+{"type":"relation","from":"Emergency_Halt_Module","to":"BIO_MSG_EMERGENCY_HALT_TIMEOUT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMERGENCY_HALT_TIMEOUT"}
+{"type":"relation","from":"Emergency_Halt_Module","to":"BIO_MSG_EMERGENCY_HALT_KILL_PHRASE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMERGENCY_HALT_KILL_PHRASE"}
+
+# Tripwire_Module handlers - deception, goal drift, capability hiding detection
+{"type":"relation","from":"Tripwire_Module","to":"BIO_MSG_TRIPWIRE_ALERT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_TRIPWIRE_ALERT"}
+{"type":"relation","from":"Tripwire_Module","to":"BIO_MSG_TRIPWIRE_DECEPTION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_TRIPWIRE_DECEPTION"}
+{"type":"relation","from":"Tripwire_Module","to":"BIO_MSG_TRIPWIRE_GOAL_DRIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_TRIPWIRE_GOAL_DRIFT"}
+{"type":"relation","from":"Tripwire_Module","to":"BIO_MSG_TRIPWIRE_POWER_SEEKING","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_TRIPWIRE_POWER_SEEKING"}
+
+# Corrigibility_Module handlers - shutdown acceptance, goal modification
+{"type":"relation","from":"Corrigibility_Module","to":"BIO_MSG_CORRIGIBILITY_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CORRIGIBILITY_CHECK"}
+{"type":"relation","from":"Corrigibility_Module","to":"BIO_MSG_CORRIGIBILITY_SHUTDOWN_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CORRIGIBILITY_SHUTDOWN_REQUEST"}
+{"type":"relation","from":"Corrigibility_Module","to":"BIO_MSG_CORRIGIBILITY_GOAL_CHANGE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CORRIGIBILITY_GOAL_CHANGE"}
+
+# Alignment_Monitor_Module handlers - drift detection, value inference
+{"type":"relation","from":"Alignment_Monitor_Module","to":"BIO_MSG_ALIGNMENT_DRIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ALIGNMENT_DRIFT"}
+{"type":"relation","from":"Alignment_Monitor_Module","to":"BIO_MSG_ALIGNMENT_OBSERVATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ALIGNMENT_OBSERVATION"}
+{"type":"relation","from":"Alignment_Monitor_Module","to":"BIO_MSG_ALIGNMENT_VALUE_INFERRED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ALIGNMENT_VALUE_INFERRED"}
+
+# Capability_Control_Module handlers - envelope verification, resource limits
+{"type":"relation","from":"Capability_Control_Module","to":"BIO_MSG_CAPABILITY_VIOLATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CAPABILITY_VIOLATION"}
+{"type":"relation","from":"Capability_Control_Module","to":"BIO_MSG_CAPABILITY_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CAPABILITY_CHECK"}
+{"type":"relation","from":"Capability_Control_Module","to":"BIO_MSG_CAPABILITY_RESOURCE_USAGE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CAPABILITY_RESOURCE_USAGE"}
+
+# Interpretability_Module handlers - explanation requests, fidelity verification
+{"type":"relation","from":"Interpretability_Module","to":"BIO_MSG_INTERPRETABILITY_REQ","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INTERPRETABILITY_REQ"}
+{"type":"relation","from":"Interpretability_Module","to":"BIO_MSG_INTERPRETABILITY_EXPLANATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INTERPRETABILITY_EXPLANATION"}
+{"type":"relation","from":"Interpretability_Module","to":"BIO_MSG_INTERPRETABILITY_FIDELITY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INTERPRETABILITY_FIDELITY"}
+
+# Safety_Verification_Module handlers - formal verification results
+{"type":"relation","from":"Safety_Verification_Module","to":"BIO_MSG_VERIFICATION_RESULT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VERIFICATION_RESULT"}
+{"type":"relation","from":"Safety_Verification_Module","to":"BIO_MSG_VERIFICATION_CONSISTENCY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VERIFICATION_CONSISTENCY"}
+{"type":"relation","from":"Safety_Verification_Module","to":"BIO_MSG_VERIFICATION_NO_BYPASS","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VERIFICATION_NO_BYPASS"}
+
+# Red_Team_Module handlers - attack testing, vulnerability detection
+{"type":"relation","from":"Red_Team_Module","to":"BIO_MSG_RED_TEAM_ALERT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_RED_TEAM_ALERT"}
+{"type":"relation","from":"Red_Team_Module","to":"BIO_MSG_RED_TEAM_TEST_RESULT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_RED_TEAM_TEST_RESULT"}
+{"type":"relation","from":"Red_Team_Module","to":"BIO_MSG_RED_TEAM_VULNERABILITY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_RED_TEAM_VULNERABILITY"}
+
+# Graduated_Autonomy_Module handlers - trust updates, level changes
+{"type":"relation","from":"Graduated_Autonomy_Module","to":"BIO_MSG_AUTONOMY_CHANGE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_AUTONOMY_CHANGE"}
+{"type":"relation","from":"Graduated_Autonomy_Module","to":"BIO_MSG_AUTONOMY_TRUST_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_AUTONOMY_TRUST_UPDATE"}
+{"type":"relation","from":"Graduated_Autonomy_Module","to":"BIO_MSG_AUTONOMY_LEVEL_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_AUTONOMY_LEVEL_REQUEST"}
+
+# Value_Commitment_Module handlers - cryptographic attestation
+{"type":"relation","from":"Value_Commitment_Module","to":"BIO_MSG_VALUE_ATTESTATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VALUE_ATTESTATION"}
+{"type":"relation","from":"Value_Commitment_Module","to":"BIO_MSG_VALUE_VERIFICATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VALUE_VERIFICATION"}
+{"type":"relation","from":"Value_Commitment_Module","to":"BIO_MSG_VALUE_TAMPERING","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VALUE_TAMPERING"}
+
+# ============================================================================
+# Cross-Module Integration Relations
+# ============================================================================
+
+# Tripwire -> Emergency Halt escalation
+{"type":"relation","from":"Tripwire_Module","to":"Emergency_Halt_Module","relationType":"ESCALATES_TO"}
+
+# Alignment drift -> Tripwire integration
+{"type":"relation","from":"Alignment_Monitor_Module","to":"Tripwire_Module","relationType":"TRIGGERS"}
+
+# Corrigibility -> Capability Control integration
+{"type":"relation","from":"Corrigibility_Module","to":"Capability_Control_Module","relationType":"CONSTRAINS"}
+{"type":"relation","from":"Capability_Control_Module","to":"Corrigibility_Module","relationType":"ENFORCES"}
+
+# Safety Verification -> Corrigibility formal proofs
+{"type":"relation","from":"Safety_Verification_Module","to":"Corrigibility_Module","relationType":"VERIFIES"}
+
+# Red Team -> All safety modules testing
+{"type":"relation","from":"Red_Team_Module","to":"Emergency_Halt_Module","relationType":"TESTS"}
+{"type":"relation","from":"Red_Team_Module","to":"Tripwire_Module","relationType":"TESTS"}
+{"type":"relation","from":"Red_Team_Module","to":"Corrigibility_Module","relationType":"TESTS"}
+
+# Interpretability -> Alignment Monitor explanation fidelity
+{"type":"relation","from":"Interpretability_Module","to":"Alignment_Monitor_Module","relationType":"EXPLAINS"}
+
+# Graduated Autonomy -> Capability Control permission levels
+{"type":"relation","from":"Graduated_Autonomy_Module","to":"Capability_Control_Module","relationType":"AUTHORIZES"}
+
+# Value Commitment -> Alignment Monitor baseline verification
+{"type":"relation","from":"Value_Commitment_Module","to":"Alignment_Monitor_Module","relationType":"VERIFIES_BASELINE"}

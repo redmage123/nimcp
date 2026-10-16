@@ -1,0 +1,12 @@
+# NVIDIA CUDA GPU configuration
+# Optimized for NVIDIA GPUs with CUDA compute capability 6.0+
+{"type":"config","hardware":"CUDA","description":"NVIDIA GPU acceleration via CUDA toolkit"}
+{"type":"hardware_requirement","min_compute_capability":"6.0","min_vram_gb":4,"recommended_vram_gb":8}
+{"type":"module_config","module":"Tensor_Engine","backend":"CUDA","notes":"Use cuBLAS/cuDNN"}
+{"type":"module_config","module":"JEPA_Latent","backend":"CUDA","notes":"Accelerated latent prediction"}
+{"type":"module_config","module":"Fractal_Cognitive","backend":"CUDA","notes":"Parallel fractal computation"}
+{"type":"module_config","module":"Global_Workspace","backend":"CUDA","notes":"GPU-accelerated broadcast"}
+{"type":"parameter_override","module":"Tensor_Engine","parameter":"batch_size","value":64,"notes":"Larger batches for GPU"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"parallel_updates","value":true,"notes":"Parallel plasticity updates"}
+{"type":"kernel_config","kernel":"attention_softmax","block_size":256,"shared_memory_kb":48}
+{"type":"kernel_config","kernel":"spike_propagation","block_size":128,"shared_memory_kb":32}

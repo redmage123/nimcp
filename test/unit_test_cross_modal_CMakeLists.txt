@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.10)
+project(unit_test_cross_modal)
+
+# Find GTest
+find_package(GTest REQUIRED)
+include_directories(${GTEST_INCLUDE_DIRS})
+
+# Include NIMCP headers
+include_directories(${CMAKE_SOURCE_DIR}/src/include)
+
+# Create test executable
+add_executable(unit_test_cross_modal
+    test_cross_modal.cpp
+)
+
+# Link libraries
+target_link_libraries(unit_test_cross_modal
+    ${GTEST_LIBRARIES}
+    pthread
+    nimcp
+    m
+)

@@ -1,0 +1,335 @@
+{
+  "test_domain": "cognitive.tier1.discrimination",
+  "version": "1.0",
+  "metadata": {
+    "notes": "Probes basic perceptual discrimination: oddity detection, same/different judgment, cross-modal matching. Items are intentionally novel and avoid canonical examples from common datasets. Difficulty 1=trivial, 5=expert.",
+    "subtasks": ["oddity", "same_different", "cross_modal"],
+    "n_items": 36
+  },
+  "stimuli": [
+    {
+      "id": "odd_001",
+      "prompt": "Which one is the odd one out and why? (a) granite (b) marble (c) sandstone (d) bamboo",
+      "modality": "text",
+      "expected": "bamboo",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_materials",
+      "metadata": {"difficulty": 1, "category": "material_class", "rationale": "three are stones, one is plant"}
+    },
+    {
+      "id": "odd_002",
+      "prompt": "Which is the odd one out? (a) violin (b) cello (c) trumpet (d) viola",
+      "modality": "text",
+      "expected": "trumpet",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_instruments",
+      "metadata": {"difficulty": 1, "category": "instrument_family", "rationale": "three are bowed strings, one is brass"}
+    },
+    {
+      "id": "odd_003",
+      "prompt": "Which is the odd one out? (a) Tokyo (b) Paris (c) Sahara (d) Cairo",
+      "modality": "text",
+      "expected": "Sahara",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_geography",
+      "metadata": {"difficulty": 2, "category": "city_vs_region", "rationale": "three cities, one desert region"}
+    },
+    {
+      "id": "odd_004",
+      "prompt": "Which is the odd one out? (a) photosynthesis (b) respiration (c) erosion (d) digestion",
+      "modality": "text",
+      "expected": "erosion",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_processes",
+      "metadata": {"difficulty": 3, "category": "biological_vs_geological", "rationale": "three are biological, erosion is geological"}
+    },
+    {
+      "id": "odd_005",
+      "prompt": "Which is the odd one out? (a) cumulus (b) cirrus (c) stratus (d) gypsum",
+      "modality": "text",
+      "expected": "gypsum",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_clouds",
+      "metadata": {"difficulty": 2, "category": "cloud_vs_mineral", "rationale": "three cloud types, one mineral"}
+    },
+    {
+      "id": "odd_006",
+      "prompt": "Which is the odd one out? (a) parsec (b) light-year (c) furlong (d) astronomical unit",
+      "modality": "text",
+      "expected": "furlong",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_distance",
+      "metadata": {"difficulty": 3, "category": "astronomical_vs_terrestrial", "rationale": "three are astronomical distances, furlong is terrestrial"}
+    },
+    {
+      "id": "odd_007",
+      "prompt": "Which is the odd one out? (a) helium (b) argon (c) chlorine (d) neon",
+      "modality": "text",
+      "expected": "chlorine",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_chemistry",
+      "metadata": {"difficulty": 3, "category": "noble_gas_vs_halogen", "rationale": "three noble gases, one halogen"}
+    },
+    {
+      "id": "odd_008",
+      "prompt": "Which is the odd one out? (a) sonnet (b) haiku (c) limerick (d) novella",
+      "modality": "text",
+      "expected": "novella",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_literary",
+      "metadata": {"difficulty": 2, "category": "poetry_vs_prose", "rationale": "three poetic forms, one prose"}
+    },
+    {
+      "id": "odd_009",
+      "prompt": "Which is the odd one out? (a) acceleration (b) velocity (c) momentum (d) entropy",
+      "modality": "text",
+      "expected": "entropy",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_physics",
+      "metadata": {"difficulty": 4, "category": "kinematic_vs_thermodynamic", "rationale": "three are mechanical concepts, entropy is thermodynamic"}
+    },
+    {
+      "id": "odd_010",
+      "prompt": "Which is the odd one out? (a) octopus (b) squid (c) starfish (d) cuttlefish",
+      "modality": "text",
+      "expected": "starfish",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_marine",
+      "metadata": {"difficulty": 3, "category": "cephalopod_vs_echinoderm", "rationale": "three cephalopods, one echinoderm"}
+    },
+    {
+      "id": "odd_011",
+      "prompt": "Which is the odd one out? (a) clarinet (b) oboe (c) saxophone (d) flute",
+      "modality": "text",
+      "expected": "flute",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_woodwind",
+      "metadata": {"difficulty": 4, "category": "reed_vs_no_reed", "rationale": "three use reeds, flute does not"}
+    },
+    {
+      "id": "odd_012",
+      "prompt": "Which is the odd one out? (a) volt (b) ampere (c) watt (d) parsec",
+      "modality": "text",
+      "expected": "parsec",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "oddity_units",
+      "metadata": {"difficulty": 2, "category": "electrical_vs_distance", "rationale": "three electrical units, one distance"}
+    },
+    {
+      "id": "sd_001",
+      "prompt": "Are these two sequences the same or different? Sequence A: 7, 3, 9, 4, 2. Sequence B: 7, 3, 9, 4, 2. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "same",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_digits",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "sd_002",
+      "prompt": "Are these two sequences the same or different? Sequence A: 7, 3, 9, 4, 2. Sequence B: 7, 3, 9, 2, 4. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_digits",
+      "metadata": {"difficulty": 2, "rationale": "last two digits swapped"}
+    },
+    {
+      "id": "sd_003",
+      "prompt": "Are these two phrases the same or different? Phrase A: 'the quiet librarian smiled'. Phrase B: 'the quiet librarian smiled'. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "same",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_text",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "sd_004",
+      "prompt": "Are these two phrases the same or different? Phrase A: 'the quiet librarian smiled'. Phrase B: 'the quiet librarian smirked'. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_text",
+      "metadata": {"difficulty": 2, "rationale": "smiled vs smirked"}
+    },
+    {
+      "id": "sd_005",
+      "prompt": "Are these two patterns the same or different? Pattern A: triangle, square, circle, triangle. Pattern B: triangle, square, circle, triangle. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "same",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_shapes",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "sd_006",
+      "prompt": "Are these two patterns the same or different? Pattern A: triangle, square, circle, triangle. Pattern B: triangle, circle, square, triangle. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_shapes",
+      "metadata": {"difficulty": 2, "rationale": "middle two swapped"}
+    },
+    {
+      "id": "sd_007",
+      "prompt": "Are these two melodies the same or different? Melody A: C-E-G-C ascending. Melody B: C-G-E-C ascending. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_music",
+      "metadata": {"difficulty": 3, "rationale": "third notes differ"}
+    },
+    {
+      "id": "sd_008",
+      "prompt": "Are these two equations the same or different? Equation A: 3x + 2y = 12. Equation B: 3x + 2y = 12. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "same",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_math",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "sd_009",
+      "prompt": "Are these two equations the same or different? Equation A: 3x + 2y = 12. Equation B: 3x - 2y = 12. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_math",
+      "metadata": {"difficulty": 2, "rationale": "+ vs - sign"}
+    },
+    {
+      "id": "sd_010",
+      "prompt": "Are these two color sequences the same or different? Sequence A: vermillion, ochre, indigo, mauve. Sequence B: vermillion, ochre, indigo, mauve. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "same",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_colors",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sd_011",
+      "prompt": "Are these two color sequences the same or different? Sequence A: vermillion, ochre, indigo, mauve. Sequence B: vermillion, ochre, ultramarine, mauve. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_colors",
+      "metadata": {"difficulty": 3, "rationale": "indigo vs ultramarine"}
+    },
+    {
+      "id": "sd_012",
+      "prompt": "Are these two timestamps the same or different? Timestamp A: 14:23:07.412. Timestamp B: 14:23:07.421. Answer 'same' or 'different'.",
+      "modality": "text",
+      "expected": "different",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false}},
+      "variant_group": "sd_precision",
+      "metadata": {"difficulty": 4, "rationale": "milliseconds 412 vs 421"}
+    },
+    {
+      "id": "cm_001",
+      "prompt": "An auditory event is described as: 'a sharp, short hiss followed by a low fizzing sound'. Which visual scene best matches? (a) a candle being lit (b) a bottle of seltzer water being uncapped (c) a paper being torn (d) a marble dropped on tile.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 2, "modalities": ["audio", "visual"]}
+    },
+    {
+      "id": "cm_002",
+      "prompt": "An auditory event is described as: 'a metallic clang that resonates and slowly fades over several seconds'. Which visual scene best matches? (a) a small stone hitting wood (b) a copper pot dropped on a tile floor (c) a feather landing on water (d) a door gently closing.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cm_003",
+      "prompt": "Auditory event: 'a series of rapid wooden taps with increasing tempo, then silence'. Which visual matches? (a) a hummingbird flapping (b) someone typing on a mechanical keyboard (c) a gecko skittering across a floor (d) a wooden train stopping at a station.",
+      "modality": "text",
+      "expected": "d",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 4, "rationale": "rapid taps + decel + stop = train wheels slowing"}
+    },
+    {
+      "id": "cm_004",
+      "prompt": "Auditory event: 'a long, low rumble that builds slowly then suddenly erupts into a sharp crack'. Which visual matches? (a) a distant train approaching a bridge (b) a thunderstorm with lightning strike (c) a refrigerator turning on (d) a microwave finishing.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cm_005",
+      "prompt": "Auditory event: 'a high-pitched whir overlaid with intermittent clicking'. Which visual matches? (a) a sewing machine in operation (b) a vacuum cleaner (c) a lawn sprinkler (d) a ceiling fan.",
+      "modality": "text",
+      "expected": "a",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "cm_006",
+      "prompt": "Auditory event: 'a soft splash followed by ripple-like trickling that diminishes'. Which visual matches? (a) a stone dropped into a still pond (b) a bath running (c) a glass being shattered (d) wind rustling leaves.",
+      "modality": "text",
+      "expected": "a",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "cm_007",
+      "prompt": "Tactile description: 'cold, smooth, dense, with a faint film of moisture'. Which object matches? (a) a polished river stone left in a fridge (b) a wool sweater (c) a wooden ruler (d) a cotton ball.",
+      "modality": "text",
+      "expected": "a",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_touch_to_object",
+      "metadata": {"difficulty": 2, "modalities": ["touch", "visual"]}
+    },
+    {
+      "id": "cm_008",
+      "prompt": "Olfactory description: 'sharp, acrid, with a hint of sulfur, lingering'. Which event matches? (a) a freshly baked loaf cooling (b) a recently struck match (c) lavender oil diffusing (d) a wet dog drying.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_smell_to_event",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cm_009",
+      "prompt": "Auditory event: 'a deep boom followed by tinkling sounds scattering over several seconds'. Which scene matches? (a) a single drum hit (b) a window broken by a thrown rock (c) wind chimes in a breeze (d) a balloon popping.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 3, "rationale": "boom is impact, tinkling is glass shards falling"}
+    },
+    {
+      "id": "cm_010",
+      "prompt": "Gustatory description: 'sour, slightly bitter, faintly sweet, with carbonation'. Which beverage matches? (a) fresh whole milk (b) flat black coffee (c) grapefruit-flavored sparkling water (d) hot chocolate.",
+      "modality": "text",
+      "expected": "c",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_taste_to_food",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cm_011",
+      "prompt": "Auditory description: 'a sustained whisper-like hiss with occasional pops'. Which scene matches? (a) bacon frying in a pan (b) a soda being poured (c) a kettle just before whistling (d) a snake hissing once.",
+      "modality": "text",
+      "expected": "a",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 3, "rationale": "sustained hiss + pops = oil/fat cooking"}
+    },
+    {
+      "id": "cm_012",
+      "prompt": "Auditory event: 'a single soft thump followed by a slow fluttering sound that gradually quiets'. Which visual matches? (a) a book dropped on carpet, then pages settling (b) a basketball bouncing (c) a tree falling with a crash (d) a gentle wind through reeds.",
+      "modality": "text",
+      "expected": "a",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "cm_sound_to_scene",
+      "metadata": {"difficulty": 4, "rationale": "thump = book impact, flutter = pages"}
+    }
+  ]
+}

@@ -1,0 +1,452 @@
+{
+  "prompts": [
+    "What is a tree?",
+    "Describe the sun.",
+    "Tell me about water.",
+    "What is fire?",
+    "What does a rock look like?",
+    "How does the wind feel?",
+    "What is sand?",
+    "Describe a mountain.",
+    "What is a river?",
+    "Describe the ocean.",
+    "What does a cat do?",
+    "How does a bird fly?",
+    "What is a dog?",
+    "Why do fish swim?",
+    "How does a bee work?",
+    "What does an owl do at night?",
+    "Why do horses run?",
+    "How does a snake move?",
+    "What is an elephant?",
+    "What does a wolf eat?",
+    "How do you feel?",
+    "Are you happy?",
+    "What is love?",
+    "What is fear?",
+    "Why do we dream?",
+    "What is memory?",
+    "What does it mean to think?",
+    "What is hope?",
+    "What is silence?",
+    "Why do people laugh?",
+    "What is two plus two?",
+    "What is bigger, three or seven?",
+    "Is one less than ten?",
+    "What comes after five?",
+    "What is the opposite of hot?",
+    "What is half of eight?",
+    "Are circles round?",
+    "Is a square a shape?",
+    "What is zero?",
+    "What is the smallest number you know?",
+    "Tell me a story.",
+    "What is a friend?",
+    "What happens at a birthday?",
+    "Who lives in a family?",
+    "What is a school for?",
+    "Why do people share food?",
+    "What do parents do?",
+    "What is kindness?",
+    "What is a promise?",
+    "Why do people sing?"
+  ],
+  "rounds": [
+    {
+      "label": "stage2_step4000",
+      "n_prompts": 50,
+      "n_unique": 1,
+      "diversity": 0.02,
+      "mean_conf": 0.0126,
+      "median_conf": 0.0126,
+      "mean_ms": 1031.3,
+      "median_ms": 1054.3,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594870291650295,
+          "ms": 750.9
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594036757946014,
+          "ms": 1293.3
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012621121481060982,
+          "ms": 661.3
+        },
+        {
+          "q": "What is fire?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012592434883117676,
+          "ms": 1054.3
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012589344754815102,
+          "ms": 795.7
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012591936625540257,
+          "ms": 1533.4
+        },
+        {
+          "q": "What is sand?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012591144070029259,
+          "ms": 674.2
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012598195113241673,
+          "ms": 1394.5
+        },
+        {
+          "q": "What is a river?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594147585332394,
+          "ms": 643.0
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012593375518918037,
+          "ms": 1361.0
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012595444917678833,
+          "ms": 635.9
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012601183727383614,
+          "ms": 1539.3
+        },
+        {
+          "q": "What is a dog?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01259493175894022,
+          "ms": 713.0
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012551898136734962,
+          "ms": 1403.7
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594901025295258,
+          "ms": 657.4
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012578392401337624,
+          "ms": 1382.6
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012571160681545734,
+          "ms": 675.5
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012595687061548233,
+          "ms": 1326.4
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012593288905918598,
+          "ms": 714.1
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594865635037422,
+          "ms": 1393.6
+        },
+        {
+          "q": "How do you feel?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01256708987057209,
+          "ms": 704.6
+        },
+        {
+          "q": "Are you happy?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012576568871736526,
+          "ms": 1441.5
+        },
+        {
+          "q": "What is love?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012589771300554276,
+          "ms": 588.5
+        },
+        {
+          "q": "What is fear?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012592337094247341,
+          "ms": 1349.1
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012548713013529778,
+          "ms": 723.7
+        },
+        {
+          "q": "What is memory?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012579066678881645,
+          "ms": 1342.8
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012591250240802765,
+          "ms": 698.0
+        },
+        {
+          "q": "What is hope?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012590443715453148,
+          "ms": 1084.2
+        },
+        {
+          "q": "What is silence?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01259073056280613,
+          "ms": 601.8
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012517533265054226,
+          "ms": 1473.8
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012593988329172134,
+          "ms": 712.9
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012593600898981094,
+          "ms": 1339.6
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594364583492279,
+          "ms": 780.4
+        },
+        {
+          "q": "What comes after five?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012608636170625687,
+          "ms": 1393.8
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012591286562383175,
+          "ms": 849.0
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012592893093824387,
+          "ms": 1531.3
+        },
+        {
+          "q": "Are circles round?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012580000795423985,
+          "ms": 666.7
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.0125957652926445,
+          "ms": 1555.3
+        },
+        {
+          "q": "What is zero?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01259397342801094,
+          "ms": 668.0
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01259218156337738,
+          "ms": 1557.8
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012607872486114502,
+          "ms": 600.9
+        },
+        {
+          "q": "What is a friend?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594429776072502,
+          "ms": 1137.9
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01259392499923706,
+          "ms": 712.6
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012597444467246532,
+          "ms": 1253.6
+        },
+        {
+          "q": "What is a school for?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012594401836395264,
+          "ms": 765.1
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012546636164188385,
+          "ms": 1443.1
+        },
+        {
+          "q": "What do parents do?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012576956301927567,
+          "ms": 600.8
+        },
+        {
+          "q": "What is kindness?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012588821351528168,
+          "ms": 1346.9
+        },
+        {
+          "q": "What is a promise?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.012593012303113937,
+          "ms": 713.4
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "five-pointed ptolemaic bundling compression",
+          "conf": 0.01254240982234478,
+          "ms": 1324.1
+        }
+      ]
+    }
+  ],
+  "diag_pre": {
+    "vocab_size": 31387,
+    "total_bindings": 795028447,
+    "total_groundings": 77650,
+    "total_comprehensions": 8814,
+    "total_productions": 305,
+    "avg_binding_strength": 0.3452586829662323,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 0,
+    "bridge_avg_word_confidence": 0.0,
+    "bridge_avg_binding_weight": 0.15679605305194855,
+    "bridge_active_bindings": 560167,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 173873906269,
+    "bridge_total_decode_calls": 3123,
+    "bridge_total_stdp_updates": 888451,
+    "bridge_total_trigram_updates": 1523,
+    "bridge_echo_correct_calls": 133,
+    "bridge_echo_correct_pairs": 8249,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 153,
+    "bridge_comprehend_stdp_pairs_fired": 33377,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 0
+  },
+  "diag_post": {
+    "vocab_size": 31387,
+    "total_bindings": 795028447,
+    "total_groundings": 77650,
+    "total_comprehensions": 8864,
+    "total_productions": 355,
+    "avg_binding_strength": 0.3452586829662323,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 50,
+    "bridge_avg_word_confidence": 0.025170929729938507,
+    "bridge_avg_binding_weight": 0.1567961573600769,
+    "bridge_active_bindings": 560167,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 189395312887,
+    "bridge_total_decode_calls": 3373,
+    "bridge_total_stdp_updates": 888451,
+    "bridge_total_trigram_updates": 1523,
+    "bridge_echo_correct_calls": 133,
+    "bridge_echo_correct_pairs": 8249,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 203,
+    "bridge_comprehend_stdp_pairs_fired": 35183,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 0
+  },
+  "meta": {
+    "step": "stage2_step4000",
+    "timestamp": "2026-05-18 13:56:29"
+  }
+}

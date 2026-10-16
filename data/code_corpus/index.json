@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "comment": "Source-code curriculum manifest. Hand-authored, well-commented Python and C samples that seed Athena's symbolic-program register, plus a curated slice of NIMCP's own implementation (the 'nimcp_self' register) for meta-grounding. Companion to data/math_corpus/ and data/canonical_corpus/. Each work is a single self-contained source file; chunkers should split on function/class boundaries (see scripts/code_corpus.py: iter_code_chunks). Hand-authored entries use the 'files' field (paths relative to data/code_corpus/); 'nimcp_self' entries use 'repo_files' (paths relative to the NIMCP repo root) and reference the live source tree without duplicating it on disk.",
+  "registers": {
+    "python_basics": "beginner Python: print, loops, simple I/O; Stage 2",
+    "python_intermediate": "intermediate Python: classes, recursion, dictionaries, file processing; Stage 3",
+    "c_basics": "beginner C: main(), arrays, printf; Stage 2",
+    "c_intermediate": "intermediate C: structs, malloc/free, two-pointer techniques, sorted-array search; Stage 3",
+    "nimcp_self": "Curated slices of NIMCP's own source — meta-grounding for the brain on its own implementation."
+  },
+  "works": [
+    {
+      "id": "code.py.hello_world",
+      "register": "python_basics",
+      "title": "Hello world (Python)",
+      "files": ["python/hello_world.py"],
+      "language": "python",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.py.basic_loops",
+      "register": "python_basics",
+      "title": "For/while loops, accumulators, list comprehensions",
+      "files": ["python/basic_loops.py"],
+      "language": "python",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.py.simple_io",
+      "register": "python_basics",
+      "title": "User input, validation, file write/read",
+      "files": ["python/simple_io.py"],
+      "language": "python",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.c.hello_world",
+      "register": "c_basics",
+      "title": "Hello world (C)",
+      "files": ["c/hello_world.c"],
+      "language": "c",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.c.array_basics",
+      "register": "c_basics",
+      "title": "Fixed-size arrays: sum, linear search",
+      "files": ["c/array_basics.c"],
+      "language": "c",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.py.binary_search",
+      "register": "python_intermediate",
+      "title": "Binary search, iterative and recursive",
+      "files": ["python/binary_search.py"],
+      "language": "python",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.py.linked_list",
+      "register": "python_intermediate",
+      "title": "Singly-linked list with insert/traverse/delete",
+      "files": ["python/linked_list.py"],
+      "language": "python",
+      "stage": 3,
+      "weight": 1.1,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.py.quicksort",
+      "register": "python_intermediate",
+      "title": "Quicksort with Lomuto partitioning",
+      "files": ["python/quicksort.py"],
+      "language": "python",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.py.dictionary_word_count",
+      "register": "python_intermediate",
+      "title": "Word frequency counter with dict and sorting",
+      "files": ["python/dictionary_word_count.py"],
+      "language": "python",
+      "stage": 3,
+      "weight": 0.8,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.c.linked_list",
+      "register": "c_intermediate",
+      "title": "Singly-linked list with malloc/free",
+      "files": ["c/linked_list.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 1.2,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.c.binary_search",
+      "register": "c_intermediate",
+      "title": "Binary search on a sorted int array",
+      "files": ["c/binary_search.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "code.c.string_reverse",
+      "register": "c_intermediate",
+      "title": "In-place string reversal with two-pointer technique",
+      "files": ["c/string_reverse.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "nimcp.code.api_lifecycle",
+      "register": "nimcp_self",
+      "title": "NIMCP API init/shutdown lifecycle",
+      "repo_files": ["src/api/nimcp_part_lifecycle.c"],
+      "language": "c",
+      "stage": 2,
+      "weight": 0.8,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.public_header",
+      "register": "nimcp_self",
+      "title": "NIMCP unified public-API header (nimcp.h)",
+      "repo_files": ["include/nimcp.h"],
+      "language": "c",
+      "stage": 2,
+      "weight": 0.8,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.canonical_corpus",
+      "register": "nimcp_self",
+      "title": "Canonical literary corpus loader (Athena's own training)",
+      "repo_files": ["scripts/canonical_corpus.py"],
+      "language": "python",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.streaming_ingest",
+      "register": "nimcp_self",
+      "title": "Streaming ingest foundation",
+      "repo_files": ["scripts/streaming_ingest.py"],
+      "language": "python",
+      "stage": 2,
+      "weight": 0.8,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.examples_brain_demo",
+      "register": "nimcp_self",
+      "title": "Minimal C example: brain creation and inference",
+      "repo_files": ["examples/brain_probe_demo.c"],
+      "language": "c",
+      "stage": 2,
+      "weight": 0.7,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.snn_network",
+      "register": "nimcp_self",
+      "title": "SNN network: spiking dynamics and step",
+      "repo_files": ["src/snn/nimcp_snn_network.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.brain_decide",
+      "register": "nimcp_self",
+      "title": "Brain core: decide and learn paths with safety gates",
+      "repo_files": ["src/core/brain/nimcp_brain_part_core.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.lnn_ode",
+      "register": "nimcp_self",
+      "title": "LNN ODE forward integration (liquid time-constant dynamics)",
+      "repo_files": ["src/lnn/nimcp_lnn_ode.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.cortical_columns",
+      "register": "nimcp_self",
+      "title": "Cortical columns: 6-layer microcircuit",
+      "repo_files": ["src/core/cortical_columns/nimcp_cortical_column.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.audit_log",
+      "register": "nimcp_self",
+      "title": "Tamper-resistant safety audit log",
+      "repo_files": ["src/security/nimcp_audit_log.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 0.8,
+      "source": "nimcp_self_repo"
+    },
+    {
+      "id": "nimcp.code.exception_trace",
+      "register": "nimcp_self",
+      "title": "Exception system: stack trace capture",
+      "repo_files": ["src/utils/exception/nimcp_exception_trace.c"],
+      "language": "c",
+      "stage": 3,
+      "weight": 0.7,
+      "source": "nimcp_self_repo"
+    }
+  ]
+}

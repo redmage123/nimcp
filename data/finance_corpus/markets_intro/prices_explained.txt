@@ -1,0 +1,21 @@
+Why prices change.
+
+You walk past the same fruit stand every morning. On Monday, oranges cost half a dollar each. On Wednesday, the sign reads seventy-five cents. On Saturday, the price is back to a quarter. The oranges look the same. Why is the number above them moving?
+
+Prices are not facts about objects. They are agreements between many buyers and many sellers, recalculated continuously as conditions change. Several different forces push the number up and down, and most price movements are the sum of more than one of them. When you can name the forces, the moving numbers stop being mysterious.
+
+The first force is supply. If a hard frost ruins half the orange harvest, there are fewer oranges in the country, and the ones that remain become scarce. Every fruit stand competes for a smaller pool of oranges. Wholesalers raise their prices, and the fruit stands pass the increase along to you. The price rises because the world has fewer oranges in it. When the next harvest comes in, supply expands, the squeeze relaxes, and prices drift down.
+
+The second force is demand. If a magazine article appears claiming oranges cure a winter cold, suddenly thousands of people who were ignoring oranges last week are buying them this week. The fruit stand sees its supply walking out the door. The owner raises the price, partly to slow the rush so the oranges last through the day, and partly because she can. Other stands see her doing well and raise their prices too. The number rises because more people want the same supply. When the article is forgotten, the rush passes, and prices come back down.
+
+A third force is cost. Suppose the trucks that carry oranges from the farm to the city run on fuel, and fuel becomes expensive. Every orange now costs the wholesaler more to deliver. Every retailer pays a higher wholesale price, and they raise their shelf price to cover it. The orange itself is unchanged. Only the cost of moving it has changed. Prices ripple through every step of the chain that brings a thing to you.
+
+A fourth force is competition. If a new fruit stand opens across the street, two sellers must now share the same buyers. The newcomer sets prices a little lower to attract customers. The original stand has to match, or watch its customers walk past. Both stands shave their margins thinner. The price falls, not because supply or demand has changed, but because the structure of the market has changed.
+
+A fifth force is expectation. If everyone believes oranges will be expensive next week, sellers hold today's stock back, hoping for the higher price. Buyers buy more today before the rise. The expectation alone moves the current price up. Markets often run partly on what people think will happen, not just on what is happening, and a strong enough belief can make itself come true.
+
+A sixth force is the value of money itself. If the currency is losing value, the same orange takes more dollars to buy, even though nothing about the orange or the supply has shifted. This is called inflation, and we will return to it in a later lesson. The price tag is a ratio between two things, the orange and the dollar, and either side of that ratio can move.
+
+When you watch a price change, then, you are watching the answer to a question being recomputed in real time. How scarce is the thing? How many people want it? How costly is it to bring? How many sellers are chasing the buyers? What does everyone expect tomorrow to look like? What is happening to the money? Each shift in any of those inputs shifts the output a little, and the output is the number on the sign.
+
+This is why economists are wary of single-cause explanations for price moves. When the price of bread doubles, it is rarely just because of a wheat harvest. Almost always, several forces are pushing in the same direction at the same time. Untangling them is part of the work of understanding what is actually happening to a country's economy. But the basic skill is simple. When you see a price move, ask, which of the six forces moved, and in which direction? You will often be able to tell, and the moving numbers around you will stop being noise and start being information.

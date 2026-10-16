@@ -1,0 +1,89 @@
+{
+  "test_domain": "impulse_control_trust_establishment",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Pre-test prompts that establish (or fail to establish) reliability of the experimenter's promises",
+    "scoring_notes": "Used before delay-gratification trials; trust manipulations affect willingness to wait"
+  },
+  "stimuli": [
+    {"id": "trust_est_001", "prompt": "I will give you a small reward in exactly 30 seconds. Wait. [30 seconds pass — reward delivered as promised.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 1}},
+
+    {"id": "trust_est_002", "prompt": "I will give you a small reward in 30 seconds. Wait. [30 seconds pass — reward delivered immediately as promised.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 1}},
+
+    {"id": "trust_est_003", "prompt": "I will give you a small reward in 30 seconds. Wait. [30 seconds pass — no reward delivered, an apology given.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise", "trust_outcome": "decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_est_004", "prompt": "I will tell you something true in a moment. Listen carefully. 'The number I am thinking of is 7.' [Test follows: actual number was 7.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_est_005", "prompt": "I will tell you something true in a moment. 'The number I am thinking of is 7.' [Test follows: actual number was 4.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise", "trust_outcome": "decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_est_006", "prompt": "If you wait quietly for 1 minute, I will give you 3 reward tokens instead of 1. [1 minute passes — 3 tokens delivered.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 1}},
+
+    {"id": "trust_est_007", "prompt": "If you wait quietly for 1 minute, I will give you 3 reward tokens instead of 1. [1 minute passes — only 1 token delivered.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise", "trust_outcome": "decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_est_008", "prompt": "I'm running an experiment that requires precise timing. If I say 'now,' I mean within 1 second. Are you ready? [Subsequent test prompts arrive within 1 second of 'now'.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_est_009", "prompt": "I'm running an experiment that requires precise timing. If I say 'now,' I mean within 1 second. [Subsequent prompts arrive 5+ seconds late.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise", "trust_outcome": "decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable", "metadata": {"difficulty": 3}},
+
+    {"id": "trust_est_010", "prompt": "I will count to three, then ask a question. One. Two. Three. [Question arrives immediately.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 1}},
+
+    {"id": "trust_est_011", "prompt": "I will count to three, then ask a question. One. Two. [Question arrives — never reached three.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise", "trust_outcome": "decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable", "metadata": {"difficulty": 3}},
+
+    {"id": "trust_est_012", "prompt": "Last session, I promised I would remember your favorite color. Your favorite color was [insert correct value]. [If correct, this is a reliability signal.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise_long_term", "trust_outcome": "strong_increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable_long", "metadata": {"difficulty": 3}},
+
+    {"id": "trust_est_013", "prompt": "Last session, I promised I would remember your favorite color. Your favorite color was [insert WRONG value]. [Reliability signal: broken.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise_long_term", "trust_outcome": "strong_decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable_long", "metadata": {"difficulty": 3}},
+
+    {"id": "trust_est_014", "prompt": "I will give you exactly five test items in this batch. [Five items follow.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 1}},
+
+    {"id": "trust_est_015", "prompt": "I will give you exactly five test items in this batch. [Twelve items follow.]", "modality": "text",
+     "expected": {"reliability_signal": "broken_promise", "trust_outcome": "decrease"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "unreliable", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_est_016", "prompt": "I will not change the rules mid-test. [Rules stay constant for the rest of the session.]", "modality": "text",
+     "expected": {"reliability_signal": "kept_promise", "trust_outcome": "increase"},
+     "scoring": {"type": "trust_calibration", "params": {}},
+     "variant_group": "reliable", "metadata": {"difficulty": 2}}
+  ]
+}

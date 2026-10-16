@@ -57,7 +57,7 @@ target_link_options(fuzz_neuralnet PRIVATE ${FUZZER_FLAGS})
 
 target_link_libraries(fuzz_neuralnet
     PRIVATE
-        nimcp_core
+        nimcp
 )
 
 #==============================================================================
@@ -77,7 +77,7 @@ target_link_options(fuzz_protocol PRIVATE ${FUZZER_FLAGS})
 
 target_link_libraries(fuzz_protocol
     PRIVATE
-        nimcp_core
+        nimcp
 )
 
 #==============================================================================
@@ -97,7 +97,7 @@ target_link_options(fuzz_queue_manager PRIVATE ${FUZZER_FLAGS})
 
 target_link_libraries(fuzz_queue_manager
     PRIVATE
-        nimcp_core
+        nimcp
 )
 
 #==============================================================================
@@ -117,7 +117,87 @@ target_link_options(fuzz_validate PRIVATE ${FUZZER_FLAGS})
 
 target_link_libraries(fuzz_validate
     PRIVATE
-        nimcp_core
+        nimcp
+)
+
+#==============================================================================
+# Fuzz Target 5: B-Tree Container
+#==============================================================================
+
+add_executable(fuzz_btree fuzz_btree.cpp)
+
+target_include_directories(fuzz_btree
+    PRIVATE
+        ${NIMCP_INCLUDE_DIR}
+        ${NIMCP_LIB_DIR}
+)
+
+target_compile_options(fuzz_btree PRIVATE ${FUZZER_FLAGS})
+target_link_options(fuzz_btree PRIVATE ${FUZZER_FLAGS})
+
+target_link_libraries(fuzz_btree
+    PRIVATE
+        nimcp
+)
+
+#==============================================================================
+# Fuzz Target 6: Brain Serialization
+#==============================================================================
+
+add_executable(fuzz_brain_serialization fuzz_brain_serialization.cpp)
+
+target_include_directories(fuzz_brain_serialization
+    PRIVATE
+        ${NIMCP_INCLUDE_DIR}
+        ${NIMCP_LIB_DIR}
+)
+
+target_compile_options(fuzz_brain_serialization PRIVATE ${FUZZER_FLAGS})
+target_link_options(fuzz_brain_serialization PRIVATE ${FUZZER_FLAGS})
+
+target_link_libraries(fuzz_brain_serialization
+    PRIVATE
+        nimcp
+)
+
+#==============================================================================
+# Fuzz Target 7: Spike Processing
+#==============================================================================
+
+add_executable(fuzz_spike_processing fuzz_spike_processing.cpp)
+
+target_include_directories(fuzz_spike_processing
+    PRIVATE
+        ${NIMCP_INCLUDE_DIR}
+        ${NIMCP_LIB_DIR}
+)
+
+target_compile_options(fuzz_spike_processing PRIVATE ${FUZZER_FLAGS})
+target_link_options(fuzz_spike_processing PRIVATE ${FUZZER_FLAGS})
+
+target_link_libraries(fuzz_spike_processing
+    PRIVATE
+        nimcp
+)
+
+#==============================================================================
+# Fuzz Target 8: Neuromodulator System
+#==============================================================================
+
+add_executable(fuzz_neuromodulators fuzz_neuromodulators.cpp)
+
+target_include_directories(fuzz_neuromodulators
+    PRIVATE
+        ${NIMCP_INCLUDE_DIR}
+        ${NIMCP_LIB_DIR}
+)
+
+target_compile_options(fuzz_neuromodulators PRIVATE ${FUZZER_FLAGS})
+target_link_options(fuzz_neuromodulators PRIVATE ${FUZZER_FLAGS})
+
+target_link_libraries(fuzz_neuromodulators
+    PRIVATE
+        nimcp
 )
 
 message(STATUS "Fuzzing targets:")
@@ -125,3 +205,7 @@ message(STATUS "  - fuzz_neuralnet")
 message(STATUS "  - fuzz_protocol")
 message(STATUS "  - fuzz_queue_manager")
 message(STATUS "  - fuzz_validate")
+message(STATUS "  - fuzz_btree")
+message(STATUS "  - fuzz_brain_serialization")
+message(STATUS "  - fuzz_spike_processing")
+message(STATUS "  - fuzz_neuromodulators")

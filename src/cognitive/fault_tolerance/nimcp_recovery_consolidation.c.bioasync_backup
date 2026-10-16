@@ -1,0 +1,801 @@
+/**
+ * @file nimcp_recovery_consolidation.c
+ * @brief Implementation of recovery consolidation system
+ *
+ * WHAT: Consolidate episodic recovery experiences into semantic rules
+ * WHY:  Extract general principles for faster, more confident decisions
+ * HOW:  Pattern extraction → Statistical validation → Rule creation
+ *
+ * @author NIMCP Development Team
+ * @date 2025-01-20
+ * @version 2.7.0 Phase 10.1
+ */
+
+#include "cognitive/fault_tolerance/nimcp_recovery_consolidation.h"
+#include <unistd.h>
+#include "utils/memory/nimcp_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/thread/nimcp_thread.h"
+
+#include <string.h>
+#include <math.h>
+
+//=============================================================================
+// Constants
+//=============================================================================
+
+#define MAX_PENDING_EPISODES 1000
+#define MAX_PATTERNS 100
+#define CONFIDENCE_Z_SCORE 1.96f  // 95% confidence interval
+
+//=============================================================================
+// Internal Structures
+//=============================================================================
+
+/**
+ * WHAT: Extracted pattern from episode analysis
+ * WHY:  Intermediate representation before rule creation
+ */
+typedef struct {
+    error_pattern_t pattern;
+    recovery_action_t most_common_action;
+    uint32_t episode_count;
+    uint32_t success_count;
+} extracted_pattern_t;
+
+/**
+ * WHAT: Main consolidation structure (opaque)
+ * WHY:  Encapsulate implementation details
+ */
+struct recovery_consolidation {
+    // Configuration
+    consolidation_config_t config;
+
+    // Pending episodes (circular buffer)
+    recovery_episode_t* episodes;
+    uint32_t episode_capacity;
+    uint32_t episode_count;
+    uint32_t episode_head;
+
+    // Extracted patterns
+    extracted_pattern_t* patterns;
+    uint32_t pattern_count;
+    uint32_t pattern_capacity;
+
+    // Semantic rules (hash table)
+    semantic_rule_t* rules;
+    uint32_t rule_count;
+    uint32_t rule_capacity;
+
+    // Statistics
+    consolidation_stats_t stats;
+
+    // State
+    bool consolidation_active;
+
+    // Background thread
+    nimcp_thread_t background_thread;
+    bool background_running;
+    bool background_should_stop;
+    nimcp_mutex_t mutex;
+};
+
+//=============================================================================
+// Helper Functions
+//=============================================================================
+
+/**
+ * @brief Compute hash for error pattern
+ *
+ * WHAT: Generate unique hash for pattern matching
+ * WHY:  Fast rule lookup
+ * HOW:  Combine type and layer_id
+ *
+ * COMPLEXITY: O(1)
+ */
+static uint64_t compute_pattern_hash(error_type_t type, uint32_t layer_id) {
+    return ((uint64_t)type << 32) | layer_id;
+}
+
+/**
+ * @brief Check if two patterns match
+ *
+ * WHAT: Compare pattern equality
+ * WHY:  Pattern matching for rule lookup
+ *
+ * COMPLEXITY: O(1)
+ */
+static bool patterns_match(
+    const error_pattern_t* p1,
+    const error_pattern_t* p2
+) {
+    if (!p1 || !p2) return false;
+    return p1->type == p2->type && p1->layer_id == p2->layer_id;
+}
+
+/**
+ * @brief Calculate binomial confidence interval
+ *
+ * WHAT: Compute statistical confidence for success rate
+ * WHY:  Validate rule reliability
+ * HOW:  Wilson score interval for binomial proportion
+ *
+ * ALGORITHM:
+ * - Uses normal approximation for binomial distribution
+ * - Confidence = 1 - (interval_width / 2)
+ * - Larger N → narrower interval → higher confidence
+ *
+ * COMPLEXITY: O(1)
+ *
+ * @param success_count Number of successes
+ * @param total_count Total trials
+ * @return Confidence score [0.0, 1.0]
+ */
+static float calculate_confidence(uint32_t success_count, uint32_t total_count) {
+    if (total_count == 0) return 0.0f;
+    if (total_count == 1) return 0.3f;  // Low confidence with single sample
+
+    float p = (float)success_count / (float)total_count;
+    float n = (float)total_count;
+
+    // Wilson score interval
+    float z = CONFIDENCE_Z_SCORE;
+    float z2 = z * z;
+
+    // Interval width
+    float numerator = z * sqrtf(p * (1.0f - p) / n + z2 / (4.0f * n * n));
+    float denominator = 1.0f + z2 / n;
+    float interval_width = 2.0f * numerator / denominator;
+
+    // Confidence = 1 - (normalized interval width)
+    float confidence = 1.0f - (interval_width / 2.0f);
+
+    // Clamp to [0, 1]
+    if (confidence < 0.0f) confidence = 0.0f;
+    if (confidence > 1.0f) confidence = 1.0f;
+
+    return confidence;
+}
+
+/**
+ * @brief Find most common recovery action in episodes
+ *
+ * WHAT: Determine which action was used most frequently
+ * WHY:  Identify best recovery strategy for pattern
+ *
+ * COMPLEXITY: O(N) where N = episode count
+ */
+static recovery_action_t find_most_common_action(
+    const recovery_episode_t** episodes,
+    uint32_t count
+) {
+    if (!episodes || count == 0) {
+        return RECOVERY_ACTION_REDUCE_LR;  // Default
+    }
+
+    // Count each action
+    uint32_t action_counts[10] = {0};  // Assume max 10 action types
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (episodes[i]) {
+            uint32_t action = (uint32_t)episodes[i]->recovery_action;
+            if (action < 10) {
+                action_counts[action]++;
+            }
+        }
+    }
+
+    // Find maximum
+    uint32_t max_count = 0;
+    recovery_action_t most_common = RECOVERY_ACTION_REDUCE_LR;
+
+    for (uint32_t i = 0; i < 10; i++) {
+        if (action_counts[i] > max_count) {
+            max_count = action_counts[i];
+            most_common = (recovery_action_t)i;
+        }
+    }
+
+    return most_common;
+}
+
+/**
+ * @brief Background consolidation thread function
+ */
+static void* background_consolidation_thread(void* arg) {
+    recovery_consolidation_t* cons = (recovery_consolidation_t*)arg;
+    if (!cons) return NULL;
+
+    LOG_INFO("Background consolidation thread started");
+
+    while (!cons->background_should_stop) {
+        // Run consolidation if episodes pending
+        nimcp_mutex_lock(&cons->mutex);
+        if (cons->episode_count >= cons->config.min_episodes_for_rule) {
+            recovery_consolidation_run(cons);
+        }
+        nimcp_mutex_unlock(&cons->mutex);
+
+        // Sleep for interval
+        usleep(cons->config.consolidation_interval_ms * 1000);
+    }
+
+    LOG_INFO("Background consolidation thread stopped");
+    return NULL;
+}
+
+//=============================================================================
+// Lifecycle Functions
+//=============================================================================
+
+consolidation_config_t recovery_consolidation_default_config(void) {
+    consolidation_config_t config = {
+        .min_episodes_for_rule = 10,
+        .min_confidence_threshold = 0.8f,
+        .max_rules = 100,
+        .enable_background_consolidation = false,
+        .consolidation_interval_ms = 1000
+    };
+    return config;
+}
+
+recovery_consolidation_t* recovery_consolidation_create(void) {
+    consolidation_config_t config = recovery_consolidation_default_config();
+    return consolidation_create_custom(&config);
+}
+
+recovery_consolidation_t* consolidation_create_custom(
+    const consolidation_config_t* config
+) {
+    // GUARD: Validate config (use defaults if NULL)
+    consolidation_config_t actual_config;
+    if (config) {
+        actual_config = *config;
+    } else {
+        actual_config = recovery_consolidation_default_config();
+    }
+
+    // ALLOCATE: Main structure
+    recovery_consolidation_t* cons = nimcp_malloc(
+        sizeof(recovery_consolidation_t)
+    );
+    if (!cons) {
+        LOG_ERROR("Failed to allocate consolidation structure");
+        return NULL;
+    }
+
+    memset(cons, 0, sizeof(recovery_consolidation_t));
+    cons->config = actual_config;
+
+    // ALLOCATE: Episode buffer
+    cons->episode_capacity = MAX_PENDING_EPISODES;
+    cons->episodes = nimcp_malloc(
+        cons->episode_capacity * sizeof(recovery_episode_t)
+    );
+    if (!cons->episodes) {
+        LOG_ERROR("Failed to allocate episode buffer");
+        nimcp_free(cons);
+        return NULL;
+    }
+
+    // ALLOCATE: Pattern storage
+    cons->pattern_capacity = MAX_PATTERNS;
+    cons->patterns = nimcp_malloc(
+        cons->pattern_capacity * sizeof(extracted_pattern_t)
+    );
+    if (!cons->patterns) {
+        LOG_ERROR("Failed to allocate pattern storage");
+        nimcp_free(cons->episodes);
+        nimcp_free(cons);
+        return NULL;
+    }
+
+    // ALLOCATE: Rule storage
+    cons->rule_capacity = actual_config.max_rules;
+    cons->rules = nimcp_malloc(
+        cons->rule_capacity * sizeof(semantic_rule_t)
+    );
+    if (!cons->rules) {
+        LOG_ERROR("Failed to allocate rule storage");
+        nimcp_free(cons->patterns);
+        nimcp_free(cons->episodes);
+        nimcp_free(cons);
+        return NULL;
+    }
+
+    // INITIALIZE: Mutex
+    if (nimcp_mutex_init(&cons->mutex, NULL) != NIMCP_SUCCESS) {
+        LOG_ERROR("Failed to initialize consolidation mutex");
+        nimcp_free(cons->rules);
+        nimcp_free(cons->patterns);
+        nimcp_free(cons->episodes);
+        nimcp_free(cons);
+        return NULL;
+    }
+
+    LOG_INFO("Consolidation created: max_rules=%u, min_episodes=%u",
+             actual_config.max_rules, actual_config.min_episodes_for_rule);
+
+    return cons;
+}
+
+void recovery_consolidation_destroy(recovery_consolidation_t* consolidation) {
+    // GUARD: NULL check
+    if (!consolidation) return;
+
+    // Stop background thread if running
+    if (consolidation->background_running) {
+        consolidation_stop_background(consolidation);
+    }
+
+    // FREE: All allocations
+    nimcp_mutex_destroy(&consolidation->mutex);
+
+    if (consolidation->rules) {
+        nimcp_free(consolidation->rules);
+    }
+
+    if (consolidation->patterns) {
+        nimcp_free(consolidation->patterns);
+    }
+
+    if (consolidation->episodes) {
+        nimcp_free(consolidation->episodes);
+    }
+
+    nimcp_free(consolidation);
+
+    LOG_INFO("Consolidation destroyed");
+}
+
+//=============================================================================
+// Episode Management
+//=============================================================================
+
+bool recovery_consolidation_add_episode(
+    recovery_consolidation_t* consolidation,
+    const recovery_episode_t* episode
+) {
+    // GUARD: NULL checks
+    if (!consolidation) {
+        LOG_ERROR("NULL consolidation in add_episode");
+        return false;
+    }
+
+    if (!episode) {
+        LOG_ERROR("NULL episode in add_episode");
+        return false;
+    }
+
+    nimcp_mutex_lock(&consolidation->mutex);
+
+    // GUARD: Check capacity
+    if (consolidation->episode_count >= consolidation->episode_capacity) {
+        LOG_WARNING("Episode buffer full, oldest episode will be overwritten");
+        // Overwrite oldest (circular buffer behavior)
+    } else {
+        consolidation->episode_count++;
+    }
+
+    // STORE: Add episode to circular buffer
+    uint32_t index = consolidation->episode_head;
+    memcpy(&consolidation->episodes[index], episode,
+           sizeof(recovery_episode_t));
+
+    // Update head
+    consolidation->episode_head =
+        (consolidation->episode_head + 1) % consolidation->episode_capacity;
+
+    nimcp_mutex_unlock(&consolidation->mutex);
+
+    return true;
+}
+
+uint32_t consolidation_get_episodes_pending(
+    const recovery_consolidation_t* consolidation
+) {
+    if (!consolidation) return 0;
+    return consolidation->episode_count;
+}
+
+//=============================================================================
+// Pattern Extraction
+//=============================================================================
+
+void consolidation_extract_patterns(
+    recovery_consolidation_t* consolidation,
+    const recovery_episode_t* episodes,
+    uint32_t count
+) {
+    // GUARD: NULL checks
+    if (!consolidation || !episodes || count == 0) {
+        return;
+    }
+
+    // RESET: Clear previous patterns
+    consolidation->pattern_count = 0;
+
+    // GROUP: Episodes by error signature
+    // For each unique (type, layer_id) pair, count occurrences
+
+    for (uint32_t i = 0; i < count; i++) {
+        error_type_t type = episodes[i].error_sig.type;
+        uint32_t layer = episodes[i].error_sig.layer_id;
+
+        // Find or create pattern
+        uint32_t pattern_idx = consolidation->pattern_count;
+        bool found = false;
+
+        for (uint32_t p = 0; p < consolidation->pattern_count; p++) {
+            if (consolidation->patterns[p].pattern.type == type &&
+                consolidation->patterns[p].pattern.layer_id == layer) {
+                pattern_idx = p;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found && consolidation->pattern_count < consolidation->pattern_capacity) {
+            // Create new pattern
+            consolidation->patterns[pattern_idx].pattern.type = type;
+            consolidation->patterns[pattern_idx].pattern.layer_id = layer;
+            consolidation->patterns[pattern_idx].pattern.hash =
+                compute_pattern_hash(type, layer);
+            consolidation->patterns[pattern_idx].episode_count = 0;
+            consolidation->patterns[pattern_idx].success_count = 0;
+            consolidation->pattern_count++;
+        }
+
+        if (found || consolidation->pattern_count <= pattern_idx + 1) {
+            // Update pattern counts
+            consolidation->patterns[pattern_idx].episode_count++;
+            if (episodes[i].success) {
+                consolidation->patterns[pattern_idx].success_count++;
+            }
+        }
+    }
+
+    LOG_INFO("Extracted %u patterns from %u episodes",
+             consolidation->pattern_count, count);
+}
+
+uint32_t consolidation_get_pattern_count(
+    const recovery_consolidation_t* consolidation
+) {
+    if (!consolidation) return 0;
+    return consolidation->pattern_count;
+}
+
+//=============================================================================
+// Rule Creation
+//=============================================================================
+
+semantic_rule_t consolidation_create_rule(
+    recovery_consolidation_t* consolidation,
+    const recovery_episode_t** episodes,
+    uint32_t count
+) {
+    semantic_rule_t rule;
+    memset(&rule, 0, sizeof(semantic_rule_t));
+
+    // GUARD: Validate parameters
+    if (!consolidation || !episodes || count == 0) {
+        LOG_WARNING("Invalid parameters to create_rule");
+        return rule;
+    }
+
+    // EXTRACT: Pattern from first episode
+    rule.pattern.type = episodes[0]->error_sig.type;
+    rule.pattern.layer_id = episodes[0]->error_sig.layer_id;
+    rule.pattern.hash = compute_pattern_hash(
+        rule.pattern.type, rule.pattern.layer_id
+    );
+
+    // COMPUTE: Success rate
+    uint32_t success_count = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        if (episodes[i]->success) {
+            success_count++;
+        }
+    }
+
+    rule.success_rate = (float)success_count / (float)count;
+    rule.sample_count = count;
+
+    // COMPUTE: Statistical confidence
+    rule.confidence = calculate_confidence(success_count, count);
+
+    // DETERMINE: Most common action
+    rule.action = find_most_common_action(episodes, count);
+
+    // TIMESTAMP: Current time (placeholder)
+    rule.last_updated_ms = 0;  // Would use actual time in production
+
+    LOG_INFO("Created rule: type=%d, layer=%u, action=%d, success=%.2f, confidence=%.2f, N=%u",
+             rule.pattern.type, rule.pattern.layer_id, rule.action,
+             rule.success_rate, rule.confidence, rule.sample_count);
+
+    return rule;
+}
+
+//=============================================================================
+// Semantic Memory (Rule Storage)
+//=============================================================================
+
+bool consolidation_add_rule(
+    recovery_consolidation_t* consolidation,
+    const semantic_rule_t* rule
+) {
+    // GUARD: NULL checks
+    if (!consolidation || !rule) {
+        LOG_ERROR("NULL parameter in add_rule");
+        return false;
+    }
+
+    nimcp_mutex_lock(&consolidation->mutex);
+
+    // CHECK: If rule already exists, update it
+    for (uint32_t i = 0; i < consolidation->rule_count; i++) {
+        if (patterns_match(&consolidation->rules[i].pattern, &rule->pattern)) {
+            // Update existing rule
+            memcpy(&consolidation->rules[i], rule, sizeof(semantic_rule_t));
+            consolidation->stats.rules_updated++;
+
+            nimcp_mutex_unlock(&consolidation->mutex);
+            LOG_INFO("Updated existing rule at index %u", i);
+            return true;
+        }
+    }
+
+    // ADD: New rule
+    if (consolidation->rule_count >= consolidation->rule_capacity) {
+        // Evict lowest confidence rule
+        uint32_t min_idx = 0;
+        float min_confidence = consolidation->rules[0].confidence;
+
+        for (uint32_t i = 1; i < consolidation->rule_count; i++) {
+            if (consolidation->rules[i].confidence < min_confidence) {
+                min_confidence = consolidation->rules[i].confidence;
+                min_idx = i;
+            }
+        }
+
+        // Replace lowest confidence rule
+        memcpy(&consolidation->rules[min_idx], rule, sizeof(semantic_rule_t));
+        LOG_WARNING("Rule capacity full, evicted rule at index %u", min_idx);
+    } else {
+        // Add new rule
+        memcpy(&consolidation->rules[consolidation->rule_count], rule,
+               sizeof(semantic_rule_t));
+        consolidation->rule_count++;
+        consolidation->stats.rules_created++;
+
+        LOG_INFO("Added new rule, total rules: %u", consolidation->rule_count);
+    }
+
+    nimcp_mutex_unlock(&consolidation->mutex);
+    return true;
+}
+
+semantic_rule_t* recovery_consolidation_get_rule(
+    recovery_consolidation_t* consolidation,
+    const error_pattern_t* pattern
+) {
+    // GUARD: NULL checks
+    if (!consolidation || !pattern) {
+        return NULL;
+    }
+
+    // SEARCH: Linear search through rules
+    // (Could be optimized with hash table in production)
+    for (uint32_t i = 0; i < consolidation->rule_count; i++) {
+        if (patterns_match(&consolidation->rules[i].pattern, pattern)) {
+            return &consolidation->rules[i];
+        }
+    }
+
+    return NULL;  // Not found
+}
+
+uint32_t consolidation_get_rule_count(
+    const recovery_consolidation_t* consolidation
+) {
+    if (!consolidation) return 0;
+    return consolidation->rule_count;
+}
+
+//=============================================================================
+// Consolidation Process
+//=============================================================================
+
+void recovery_consolidation_run(recovery_consolidation_t* consolidation) {
+    // GUARD: NULL check
+    if (!consolidation) return;
+
+    nimcp_mutex_lock(&consolidation->mutex);
+
+    // GUARD: Check if already active
+    if (consolidation->consolidation_active) {
+        nimcp_mutex_unlock(&consolidation->mutex);
+        LOG_WARNING("Consolidation already active");
+        return;
+    }
+
+    consolidation->consolidation_active = true;
+
+    LOG_INFO("Starting consolidation: %u episodes pending",
+             consolidation->episode_count);
+
+    uint64_t start_time = 0;  // Would use actual time in production
+
+    // EXTRACT: Patterns from pending episodes
+    if (consolidation->episode_count > 0) {
+        consolidation_extract_patterns(
+            consolidation,
+            consolidation->episodes,
+            consolidation->episode_count
+        );
+    }
+
+    // CREATE: Rules from patterns
+    for (uint32_t p = 0; p < consolidation->pattern_count; p++) {
+        extracted_pattern_t* pattern = &consolidation->patterns[p];
+
+        // GUARD: Need minimum episodes for reliable rule
+        if (pattern->episode_count < consolidation->config.min_episodes_for_rule) {
+            continue;
+        }
+
+        // COLLECT: Episodes matching this pattern
+        const recovery_episode_t* matching_episodes[MAX_PENDING_EPISODES];
+        uint32_t match_count = 0;
+
+        for (uint32_t i = 0; i < consolidation->episode_count; i++) {
+            if (consolidation->episodes[i].error_sig.type == pattern->pattern.type &&
+                consolidation->episodes[i].error_sig.layer_id == pattern->pattern.layer_id) {
+                matching_episodes[match_count++] = &consolidation->episodes[i];
+            }
+        }
+
+        // CREATE: Rule from matching episodes
+        semantic_rule_t rule = consolidation_create_rule(
+            consolidation,
+            matching_episodes,
+            match_count
+        );
+
+        // VALIDATE: Confidence threshold
+        if (rule.confidence >= consolidation->config.min_confidence_threshold) {
+            consolidation_add_rule(consolidation, &rule);
+        } else {
+            LOG_INFO("Rule rejected: confidence %.2f < threshold %.2f",
+                     rule.confidence, consolidation->config.min_confidence_threshold);
+        }
+    }
+
+    // CLEAR: Processed episodes
+    consolidation->episode_count = 0;
+    consolidation->episode_head = 0;
+
+    // UPDATE: Statistics
+    consolidation->stats.consolidation_runs++;
+    consolidation->stats.total_episodes_processed += consolidation->episode_count;
+
+    // Compute average confidence
+    if (consolidation->rule_count > 0) {
+        float total_confidence = 0.0f;
+        for (uint32_t i = 0; i < consolidation->rule_count; i++) {
+            total_confidence += consolidation->rules[i].confidence;
+        }
+        consolidation->stats.average_confidence =
+            total_confidence / consolidation->rule_count;
+    }
+
+    consolidation->consolidation_active = false;
+
+    nimcp_mutex_unlock(&consolidation->mutex);
+
+    LOG_INFO("Consolidation completed: %u rules total",
+             consolidation->rule_count);
+}
+
+bool consolidation_is_active(
+    const recovery_consolidation_t* consolidation
+) {
+    if (!consolidation) return false;
+    return consolidation->consolidation_active;
+}
+
+//=============================================================================
+// Background Consolidation
+//=============================================================================
+
+bool consolidation_start_background(
+    recovery_consolidation_t* consolidation
+) {
+    // GUARD: NULL check
+    if (!consolidation) {
+        LOG_ERROR("NULL consolidation in start_background");
+        return false;
+    }
+
+    // GUARD: Check if already running
+    if (consolidation->background_running) {
+        LOG_WARNING("Background consolidation already running");
+        return false;
+    }
+
+    // GUARD: Check if enabled
+    if (!consolidation->config.enable_background_consolidation) {
+        LOG_WARNING("Background consolidation not enabled in config");
+        return false;
+    }
+
+    // START: Background thread
+    consolidation->background_should_stop = false;
+
+    int result = nimcp_thread_create(
+        &consolidation->background_thread,
+        background_consolidation_thread,
+        consolidation,
+        NULL
+    );
+
+    if (result != 0) {
+        LOG_ERROR("Failed to create background thread");
+        return false;
+    }
+
+    consolidation->background_running = true;
+    LOG_INFO("Background consolidation started");
+
+    return true;
+}
+
+void consolidation_stop_background(
+    recovery_consolidation_t* consolidation
+) {
+    // GUARD: NULL check
+    if (!consolidation) return;
+
+    // GUARD: Check if running
+    if (!consolidation->background_running) {
+        return;
+    }
+
+    // SIGNAL: Stop thread
+    consolidation->background_should_stop = true;
+
+    // WAIT: For thread to finish
+    nimcp_thread_join(consolidation->background_thread, NULL);
+
+    consolidation->background_running = false;
+    LOG_INFO("Background consolidation stopped");
+}
+
+bool consolidation_is_background_running(
+    const recovery_consolidation_t* consolidation
+) {
+    if (!consolidation) return false;
+    return consolidation->background_running;
+}
+
+//=============================================================================
+// Statistics
+//=============================================================================
+
+bool recovery_consolidation_get_stats(
+    const recovery_consolidation_t* consolidation,
+    consolidation_stats_t* stats
+) {
+    // GUARD: NULL checks
+    if (!consolidation || !stats) {
+        LOG_ERROR("NULL parameter in get_stats");
+        return false;
+    }
+
+    // COPY: Statistics
+    memcpy(stats, &consolidation->stats, sizeof(consolidation_stats_t));
+
+    return true;
+}

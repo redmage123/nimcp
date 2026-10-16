@@ -1,1 +1,1 @@
-/usr/bin/cc -DNIMCP_TESTING -Wall -Wextra -Wpedantic -g CMakeFiles/brain_demo.dir/brain_demo.c.o -o brain_demo  -Wl,-rpath,/home/bbrelin/src/repos/nimcp/bin: ../bin/libnimcp.so.2.5.0 /usr/lib/x86_64-linux-gnu/libpython3.10.so -llz4 -ljansson 
+/usr/bin/cc -O3 -DNDEBUG CMakeFiles/brain_demo.dir/brain_demo.c.o -o brain_demo  -Wl,-rpath,/home/bbrelin/nimcp/lib: ../lib/libnimcp.so.2.6.2 /usr/lib/x86_64-linux-gnu/libpython3.12.so -llz4 -ljansson -lcjson 

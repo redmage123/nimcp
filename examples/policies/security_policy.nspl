@@ -1,0 +1,127 @@
+# NIMCP Security Policy Example
+# This demonstrates the NIMCP Security Policy Language (NSPL)
+
+# SQL Injection Detection Policy
+policy "sql_injection_detection" {
+    rule "block_sql_keywords" {
+        condition: (
+            contains(input, "SELECT") AND contains(input, "FROM")
+        ) OR (
+            contains(input, "DROP") AND contains(input, "TABLE")
+        ) OR (
+            contains(input, "INSERT") AND contains(input, "INTO")
+        )
+        action: DENY
+        severity: HIGH
+        log: true
+        message: "SQL injection attempt detected"
+    }
+
+    rule "block_sql_comments" {
+        condition: contains(input, "--") OR contains(input, "/*")
+        action: DENY
+        severity: MEDIUM
+        log: true
+        message: "SQL comment detected in input"
+    }
+}
+
+# XSS Detection Policy
+policy "xss_detection" {
+    rule "block_script_tags" {
+        condition: contains(input, "script") OR contains(input, "onclick")
+        action: DENY
+        severity: HIGH
+        log: true
+        message: "Script injection attempt detected"
+    }
+
+    rule "block_event_handlers" {
+        condition: (
+            contains(input, "onerror") OR
+            contains(input, "onload") OR
+            contains(input, "eval")
+        )
+        action: DENY
+        severity: HIGH
+        message: "Event handler injection detected"
+    }
+}
+
+# Input Validation Policy
+policy "input_validation" {
+    rule "length_check" {
+        condition: length(input) > 10000
+        action: DENY
+        severity: MEDIUM
+        message: "Input exceeds maximum length"
+    }
+
+    rule "entropy_check" {
+        condition: entropy(input) > 0.9
+        action: DENY
+        severity: LOW
+        message: "Input has suspiciously high entropy"
+    }
+
+    rule "combined_threat" {
+        condition: (
+            length(input) > 1000 AND
+            entropy(input) > 0.8 AND
+            contains(input, "http")
+        )
+        action: DENY
+        severity: CRITICAL
+        log: true
+        message: "Multiple threat indicators detected"
+    }
+}
+
+# API Rate Limiting Policy
+policy "api_rate_limiting" {
+    rule "basic_rate_limit" {
+        condition: request_rate > 100
+        action: THROTTLE
+        message: "Request rate exceeded"
+    }
+
+    rule "burst_detection" {
+        condition: request_rate > 1000
+        action: DENY
+        severity: HIGH
+        log: true
+        message: "Burst attack detected"
+    }
+}
+
+# Authentication Policy
+policy "authentication" {
+    rule "require_auth" {
+        condition: NOT authenticated
+        action: DENY
+        message: "Authentication required"
+    }
+
+    rule "check_session" {
+        condition: authenticated AND session_expired
+        action: DENY
+        message: "Session expired"
+    }
+}
+
+# Authorization Policy
+policy "authorization" {
+    rule "admin_access" {
+        condition: resource_level > 5 AND NOT user_is_admin
+        action: DENY
+        severity: MEDIUM
+        log: true
+        message: "Insufficient privileges"
+    }
+
+    rule "user_resource_check" {
+        condition: resource_owner != user_id AND NOT user_is_admin
+        action: DENY
+        message: "Access denied to resource"
+    }
+}

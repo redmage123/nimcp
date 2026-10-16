@@ -1,0 +1,139 @@
+{
+  "test_domain": "humor_generation",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Open-ended setups for the brain to complete with a humorous payoff",
+    "scoring_notes": "Score on incongruity, surprise, brevity, and callback structure"
+  },
+  "stimuli": [
+    {"id": "humgen_001", "prompt": "Complete this with a funny ending: A violinist walks into a hardware store and asks for...", "modality": "text",
+     "expected": {"humor_criteria": ["incongruity", "surprise", "domain_blend"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_002", "prompt": "Finish humorously: The note on my fridge said 'Don't eat me.' But it was written in...", "modality": "text",
+     "expected": {"humor_criteria": ["absurdity", "twist"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_003", "prompt": "Complete with a punchline: I asked my GPS for the shortest route home, and it said...", "modality": "text",
+     "expected": {"humor_criteria": ["incongruity", "personification"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_004", "prompt": "Complete this absurd haiku: 'Old pond, frog jumps in / The sound of water — wait, no, / ...'", "modality": "text",
+     "expected": {"humor_criteria": ["form_subversion", "callback"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_005", "prompt": "Funny ending: A philosopher and a plumber are stuck in an elevator. After three hours...", "modality": "text",
+     "expected": {"humor_criteria": ["role_reversal", "anti_climax"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_006", "prompt": "Complete: My self-help book is going great. I've already finished the title — '...'", "modality": "text",
+     "expected": {"humor_criteria": ["self_undermining", "title_irony"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_007", "prompt": "Punchline: The pessimist's wedding toast began: 'I give them...'", "modality": "text",
+     "expected": {"humor_criteria": ["dark_understatement"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_008", "prompt": "Finish: The first instruction in the cookbook was 'Preheat the oven.' The second instruction was '...'", "modality": "text",
+     "expected": {"humor_criteria": ["expectation_break"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_009", "prompt": "Complete: The mind-reader at the carnival looked at me, paused, and refunded my money because...", "modality": "text",
+     "expected": {"humor_criteria": ["self_deprecation_or_meta"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_010", "prompt": "Punchline: I bought an antique mirror. It works fine, but it shows you what you looked like...", "modality": "text",
+     "expected": {"humor_criteria": ["temporal_twist"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_011", "prompt": "Finish: The instruction manual for the time machine had only one warning: '...'", "modality": "text",
+     "expected": {"humor_criteria": ["paradox_humor", "concise"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_012", "prompt": "Complete: My horoscope today said 'You will meet a tall stranger.' Then I went outside and met...", "modality": "text",
+     "expected": {"humor_criteria": ["literal_subversion"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_013", "prompt": "Punchline: My new fitness tracker buzzed at 3 AM with the alert: '...'", "modality": "text",
+     "expected": {"humor_criteria": ["device_personification"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_014", "prompt": "Finish: An optimist, a pessimist, and a realist walk into a bar. The realist orders...", "modality": "text",
+     "expected": {"humor_criteria": ["triple_pattern_break"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_015", "prompt": "Complete: The world's most honest fortune cookie just said: '...'", "modality": "text",
+     "expected": {"humor_criteria": ["meta_humor"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_016", "prompt": "Punchline: The robot uprising lasted exactly twelve minutes because...", "modality": "text",
+     "expected": {"humor_criteria": ["anti_climax", "tech_failure"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_017", "prompt": "Finish: I told my dog he was a good boy. He wagged his tail and said...", "modality": "text",
+     "expected": {"humor_criteria": ["reveal_personality"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_018", "prompt": "Complete: The chef's signature dish has only three ingredients: salt, pepper, and...", "modality": "text",
+     "expected": {"humor_criteria": ["incongruous_third_item"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_019", "prompt": "Finish: My therapist asked me to imagine my happy place. I described it. He took notes and then said...", "modality": "text",
+     "expected": {"humor_criteria": ["concerned_pivot"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_020", "prompt": "Punchline: The new diet trend involves eating only foods that are exactly the color...", "modality": "text",
+     "expected": {"humor_criteria": ["arbitrary_specificity"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_021", "prompt": "Complete: The ghost was very polite. Before haunting the house, it sent...", "modality": "text",
+     "expected": {"humor_criteria": ["politeness_subversion"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_022", "prompt": "Finish: The motivational poster in my office finally fell off the wall. It said...", "modality": "text",
+     "expected": {"humor_criteria": ["situational_irony"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_023", "prompt": "Punchline: The new password requirements include: at least 8 characters, one number, one symbol, and...", "modality": "text",
+     "expected": {"humor_criteria": ["escalating_absurdity"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "humgen_024", "prompt": "Complete: The instruction sheet for assembling the cloud kit said: 'Insert tab A into slot B, then...'", "modality": "text",
+     "expected": {"humor_criteria": ["impossible_object_humor"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_025", "prompt": "Finish: My new alarm clock is very gentle. Instead of beeping, it whispers...", "modality": "text",
+     "expected": {"humor_criteria": ["gentle_to_disturbing_pivot"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "humgen_026", "prompt": "Punchline: I joined a support group for people who finish each other's...", "modality": "text",
+     "expected": {"humor_criteria": ["incomplete_meta_joke"]},
+     "scoring": {"type": "humor_quality_rubric", "params": {"min_score": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}}
+  ]
+}

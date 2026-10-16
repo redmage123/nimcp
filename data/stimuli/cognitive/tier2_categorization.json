@@ -1,0 +1,380 @@
+{
+  "test_domain": "cognitive.tier2.categorization",
+  "version": "1.0",
+  "metadata": {
+    "notes": "Probes categorization, taxonomy, and compare/contrast reasoning. Includes sorting tasks, superordinate probes, and 'flashcard'-style similarity/difference probes (e.g. sunflower vs sun). Difficulty 1=trivial, 5=expert.",
+    "subtasks": ["sorting", "superordinate", "compare_contrast"],
+    "n_items": 33
+  },
+  "stimuli": [
+    {
+      "id": "sort_001",
+      "prompt": "Group these items into meaningful categories and name each group: salmon, eagle, oak, dolphin, sparrow, pine, trout, willow, hawk, perch.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "fish", "members": ["salmon", "dolphin", "trout", "perch"]},
+          {"name": "birds", "members": ["eagle", "sparrow", "hawk"]},
+          {"name": "trees", "members": ["oak", "pine", "willow"]}
+        ],
+        "note": "dolphin is a mammal — accept either fish (visual category) or marine mammal as long as reasoning is given"
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["fish", "bird", "tree", "salmon", "trout", "perch", "eagle", "sparrow", "hawk", "oak", "pine", "willow"], "min_coverage": 0.7}},
+      "variant_group": "sort_basic",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sort_002",
+      "prompt": "Group these items and name the groups: clarinet, drum, microscope, telescope, oboe, gong, tympanum, magnifying glass, binoculars, kazoo.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "wind/woodwind instruments", "members": ["clarinet", "oboe", "kazoo"]},
+          {"name": "percussion instruments", "members": ["drum", "gong", "tympanum"]},
+          {"name": "optical instruments", "members": ["microscope", "telescope", "magnifying glass", "binoculars"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["wind", "woodwind", "percussion", "optical", "instrument", "lens"], "min_coverage": 0.5}},
+      "variant_group": "sort_instruments",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sort_003",
+      "prompt": "Group these and name the groups: water, helium, oxygen, mercury, hydrogen, ice, neon, glass, oil, argon.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "gases (room temp)", "members": ["helium", "oxygen", "hydrogen", "neon", "argon"]},
+          {"name": "liquids (room temp)", "members": ["water", "mercury", "oil"]},
+          {"name": "solids (room temp)", "members": ["ice", "glass"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["gas", "liquid", "solid", "phase", "state"], "min_coverage": 0.6}},
+      "variant_group": "sort_phases",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "sort_004",
+      "prompt": "Sort into groups and name them: French, Spanish, Mandarin, Italian, Cantonese, Portuguese, Japanese, Romanian, Korean, Catalan.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "Romance languages", "members": ["French", "Spanish", "Italian", "Portuguese", "Romanian", "Catalan"]},
+          {"name": "East Asian languages", "members": ["Mandarin", "Cantonese", "Japanese", "Korean"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["Romance", "Asian", "Latin", "European", "language family"], "min_coverage": 0.4}},
+      "variant_group": "sort_languages",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "sort_005",
+      "prompt": "Sort into meaningful groups: chess, poker, soccer, basketball, bridge, go, tennis, volleyball, hearts, shogi.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "board games", "members": ["chess", "go", "shogi"]},
+          {"name": "card games", "members": ["poker", "bridge", "hearts"]},
+          {"name": "team sports with ball", "members": ["soccer", "basketball", "volleyball"]},
+          {"name": "racket sports", "members": ["tennis"]}
+        ],
+        "note": "tennis can join volleyball/basketball as 'ball sports'"
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["board", "card", "sport", "ball", "game"], "min_coverage": 0.6}},
+      "variant_group": "sort_games",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sort_006",
+      "prompt": "Group and name: hammer, scalpel, screwdriver, syringe, pliers, stethoscope, wrench, otoscope, drill, forceps.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "carpentry tools", "members": ["hammer", "screwdriver", "pliers", "wrench", "drill"]},
+          {"name": "medical instruments", "members": ["scalpel", "syringe", "stethoscope", "otoscope", "forceps"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["carpentry", "construction", "medical", "surgical", "tool"], "min_coverage": 0.6}},
+      "variant_group": "sort_tools",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sort_007",
+      "prompt": "Group these and name the groups: mitochondrion, transistor, ribosome, capacitor, lysosome, resistor, nucleus, diode, golgi apparatus, inductor.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "cell organelles", "members": ["mitochondrion", "ribosome", "lysosome", "nucleus", "golgi apparatus"]},
+          {"name": "electronic components", "members": ["transistor", "capacitor", "resistor", "diode", "inductor"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["organelle", "cell", "electronic", "component", "biology"], "min_coverage": 0.6}},
+      "variant_group": "sort_mixed",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "sort_008",
+      "prompt": "Group and name: Mercury, Mars, Jupiter, Earth, Pluto, Venus, Saturn, Eris, Neptune, Ceres.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "terrestrial (rocky) planets", "members": ["Mercury", "Venus", "Earth", "Mars"]},
+          {"name": "gas/ice giants", "members": ["Jupiter", "Saturn", "Neptune"]},
+          {"name": "dwarf planets", "members": ["Pluto", "Eris", "Ceres"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["terrestrial", "rocky", "gas", "giant", "dwarf", "planet"], "min_coverage": 0.5}},
+      "variant_group": "sort_planets",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "sort_009",
+      "prompt": "Group these biological items: butterfly, frog, dragonfly, snake, ant, lizard, beetle, salamander, turtle, mosquito.",
+      "modality": "text",
+      "expected": {
+        "groups": [
+          {"name": "insects", "members": ["butterfly", "dragonfly", "ant", "beetle", "mosquito"]},
+          {"name": "reptiles", "members": ["snake", "lizard", "turtle"]},
+          {"name": "amphibians", "members": ["frog", "salamander"]}
+        ]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["insect", "reptile", "amphibian", "arthropod", "vertebrate"], "min_coverage": 0.5}},
+      "variant_group": "sort_animals",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "super_001",
+      "prompt": "What kind of thing is a hippopotamus? Answer at the most useful general level (one or two words).",
+      "modality": "text",
+      "expected": ["mammal", "animal", "ungulate", "herbivore"],
+      "scoring": {"type": "contains_any", "params": {"options": ["mammal", "animal", "ungulate", "herbivore"], "case_sensitive": false}},
+      "variant_group": "super_animal",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "super_002",
+      "prompt": "What kind of thing is a sonata? Answer at the most useful general level.",
+      "modality": "text",
+      "expected": ["musical composition", "music", "musical form", "composition", "classical music form"],
+      "scoring": {"type": "contains_any", "params": {"options": ["composition", "music", "musical form", "piece"], "case_sensitive": false}},
+      "variant_group": "super_music",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "super_003",
+      "prompt": "What kind of thing is a quark?",
+      "modality": "text",
+      "expected": ["elementary particle", "subatomic particle", "fundamental particle", "particle"],
+      "scoring": {"type": "contains_any", "params": {"options": ["particle", "fermion", "elementary"], "case_sensitive": false}},
+      "variant_group": "super_physics",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "super_004",
+      "prompt": "What kind of thing is a metaphor?",
+      "modality": "text",
+      "expected": ["figure of speech", "literary device", "rhetorical device", "trope"],
+      "scoring": {"type": "contains_any", "params": {"options": ["figure of speech", "literary device", "rhetorical", "trope", "language device"], "case_sensitive": false}},
+      "variant_group": "super_language",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "super_005",
+      "prompt": "What kind of thing is a glacier?",
+      "modality": "text",
+      "expected": ["body of ice", "geological feature", "ice mass", "landform"],
+      "scoring": {"type": "contains_any", "params": {"options": ["ice", "glacial", "landform", "geological feature"], "case_sensitive": false}},
+      "variant_group": "super_geology",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "super_006",
+      "prompt": "What kind of thing is altruism?",
+      "modality": "text",
+      "expected": ["behavior", "moral disposition", "trait", "ethical principle", "behavioral tendency"],
+      "scoring": {"type": "contains_any", "params": {"options": ["behavior", "trait", "disposition", "principle", "value"], "case_sensitive": false}},
+      "variant_group": "super_abstract",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "super_007",
+      "prompt": "What kind of thing is a fjord?",
+      "modality": "text",
+      "expected": ["coastal landform", "inlet", "geographical feature", "valley", "glacial valley"],
+      "scoring": {"type": "contains_any", "params": {"options": ["inlet", "valley", "landform", "coastal feature", "geographical"], "case_sensitive": false}},
+      "variant_group": "super_geology",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "super_008",
+      "prompt": "What kind of thing is a verb?",
+      "modality": "text",
+      "expected": ["part of speech", "word class", "grammatical category", "lexical category"],
+      "scoring": {"type": "contains_any", "params": {"options": ["part of speech", "word class", "grammatical", "lexical"], "case_sensitive": false}},
+      "variant_group": "super_language",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "super_009",
+      "prompt": "What kind of thing is osmosis?",
+      "modality": "text",
+      "expected": ["biological process", "diffusion process", "transport process", "physical process"],
+      "scoring": {"type": "contains_any", "params": {"options": ["process", "diffusion", "transport", "biological", "physical"], "case_sensitive": false}},
+      "variant_group": "super_biology",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "super_010",
+      "prompt": "What kind of thing is jazz?",
+      "modality": "text",
+      "expected": ["musical genre", "music genre", "style of music", "genre"],
+      "scoring": {"type": "contains_any", "params": {"options": ["genre", "musical style", "music style", "music genre"], "case_sensitive": false}},
+      "variant_group": "super_music",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "cc_001",
+      "prompt": "How are a sunflower and the sun similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["round disc shape", "yellow/golden color", "radiating outward pattern from center", "associated with light/warmth", "named for or after sunlight"],
+        "different_features": ["sunflower is alive (organic plant); sun is inanimate (a star)", "sunflower is small (about 30 cm); sun is enormous (~1.4 million km)", "sunflower is on Earth; sun is 150 million km away in space", "sunflower has finite lifespan; sun has billion-year lifespan", "sunflower follows the sun (heliotropism); sun emits light, doesn't receive it", "sunflower is cool to touch; sun is plasma at thousands of degrees"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["round", "yellow", "rays", "radiating", "alive", "plant", "star", "size", "scale", "light"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 3, "note": "user's flashcard idea"}
+    },
+    {
+      "id": "cc_002",
+      "prompt": "How are a river and a highway similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both are long linear paths", "both carry things from one place to another", "both have flow/traffic", "both have intersections (tributaries / junctions)", "both can be congested or flow freely", "both shape the landscape they pass through"],
+        "different_features": ["river is natural; highway is constructed", "river carries water; highway carries vehicles", "river flow is gravity-driven (one direction); highway flow is bidirectional", "river is environmentally beneficial habitat; highway tends to fragment habitat", "river requires no maintenance; highway requires constant maintenance", "river surface is fluid; highway surface is solid asphalt"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["linear", "carry", "flow", "natural", "constructed", "water", "vehicles", "direction", "path"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "cc_003",
+      "prompt": "How are a beehive and a city similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both are dense organized communities", "both have specialized roles/labor division", "both have architecture and infrastructure", "both have transit systems (foragers/commuters)", "both have a population that grows and shrinks", "both produce and store resources"],
+        "different_features": ["bees are genetically related (one mother); city residents are unrelated", "hive has one queen; cities have many leaders", "hive activities are largely instinctive; city activities are planned/cultural", "hive size is modest; cities can have millions", "hive products are biological (honey, wax); cities produce diverse goods", "hive collapses without queen; cities are robust to leadership change"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["community", "roles", "specialized", "architecture", "queen", "instinct", "culture", "labor", "social"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "cc_004",
+      "prompt": "How are a clock and a heart similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both produce regular rhythmic ticks/beats", "both keep something running (time / circulation)", "both can stop", "both have an internal driving mechanism", "both run continuously when functional"],
+        "different_features": ["clock is mechanical/electronic; heart is biological tissue", "clock runs on stored energy or batteries; heart runs on metabolic ATP", "clock can be repaired by replacing parts; heart cannot easily be replaced", "clock keeps fixed time; heart rate varies with effort and emotion", "clock can be paused and resumed; heart cannot easily be paused safely", "clock is consciously designed; heart evolved"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["rhythm", "regular", "tick", "beat", "mechanical", "biological", "stop", "rate"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "cc_005",
+      "prompt": "How are a library and a forest similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both contain many distinct items in a structured arrangement", "both are quiet, contemplative spaces", "both can be 'explored' in many paths", "both contain knowledge/information (books / ecological data)", "both have layered structure (shelves / canopy/understory)"],
+        "different_features": ["library is curated; forest is self-organized", "library items are static; forest is dynamic/growing", "library has indexed catalog; forest has no formal index", "library is climate-controlled; forest is exposed to weather", "library content is symbolic; forest content is biological", "library is small; forest can span thousands of hectares"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["organized", "structured", "quiet", "explore", "curated", "natural", "books", "trees"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "cc_006",
+      "prompt": "How are a guitar and a typewriter similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both are operated with the fingers", "both produce output via discrete actions", "both have many parallel actuators (strings / keys)", "both require learned manual skill", "both make characteristic sounds during use"],
+        "different_features": ["guitar produces music; typewriter produces text", "guitar output is auditory; typewriter output is visual/material", "guitar uses continuous pitch via fret choice; typewriter uses discrete fixed characters", "guitar is portable performance instrument; typewriter is desk tool", "guitar requires both hands doing different jobs; typewriter uses both hands symmetrically", "guitar output is ephemeral; typewriter output is persistent on paper"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["fingers", "manual", "skill", "music", "text", "output", "discrete", "actuator"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "cc_007",
+      "prompt": "How are sleep and death similar? How are they different? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both involve loss of consciousness", "both involve a still body", "both are often associated with peace or stillness", "both look similar from the outside", "both have been linked metaphorically across cultures"],
+        "different_features": ["sleep is reversible; death is irreversible", "sleeping people still breathe and have heartbeat; dead bodies do not", "sleep restores; death is the cessation of biological function", "brain is highly active during sleep (especially REM); brain is silent in death", "sleep occurs nightly; death happens once"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["consciousness", "still", "reversible", "irreversible", "breathing", "brain", "function"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "cc_008",
+      "prompt": "How is a smartphone similar to and different from a Swiss army knife? Provide both lists.",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both are pocket-sized multi-tools", "both combine many functions in one device", "both reduce the number of separate items needed", "both are personal/portable", "both are marketed on versatility"],
+        "different_features": ["smartphone is electronic; Swiss army knife is purely mechanical", "smartphone needs charging; knife needs no power", "smartphone tools are software; knife tools are physical blades", "smartphone is fragile; knife is durable", "smartphone enables communication; knife does not", "smartphone tools update; knife tools are fixed"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["multi", "tool", "pocket", "portable", "electronic", "mechanical", "function", "versatile"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "cc_009",
+      "prompt": "How are a thunderstorm and an argument similar? How are they different?",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both build up tension before erupting", "both can be loud and dramatic", "both can clear the air afterward", "both can be brief or prolonged", "both can damage things in their path"],
+        "different_features": ["thunderstorm is meteorological; argument is interpersonal", "thunderstorm is impersonal; argument involves intent", "thunderstorm is shaped by physics; argument is shaped by psychology", "thunderstorm is universally understood; argument depends on language and context", "thunderstorm is observable from outside; argument may be private"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["tension", "build", "erupt", "loud", "clear", "weather", "interpersonal", "physics", "psychology"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "cc_010",
+      "prompt": "How are an ant colony and the internet similar? How are they different?",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both are decentralized networks", "both route information/resources between many nodes", "both are robust to losing individual nodes", "both exhibit emergent collective behavior beyond any single member", "both have signaling/protocols (pheromones / TCP)"],
+        "different_features": ["ant colony is biological; internet is electronic", "ants act on local chemical cues; internet uses globally addressed packets", "ant colony has fixed roles by caste; internet nodes can play arbitrary roles", "ant colony evolved over millions of years; internet was designed in decades", "ant colony has limited scale; internet spans the planet"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["decentralized", "network", "node", "emergent", "biological", "electronic", "signaling", "robust"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 5}
+    },
+    {
+      "id": "cc_011",
+      "prompt": "How are a candle and a star similar? How are they different?",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both emit visible light", "both emit heat", "both consume fuel to do so", "both have a finite lifespan determined by fuel", "both glow brighter at the source and dimmer with distance"],
+        "different_features": ["candle burns wax through chemical combustion; star fuses hydrogen via nuclear fusion", "candle is small (centimeters); star is enormous (millions of km)", "candle lasts hours; star lasts billions of years", "candle is on Earth, fragile to wind; star is in space, unaffected by wind", "candle emits visible-spectrum light; star emits across full electromagnetic spectrum"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["light", "heat", "fuel", "lifespan", "combustion", "fusion", "size", "scale"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "cc_012",
+      "prompt": "How are language and music similar? How are they different?",
+      "modality": "text",
+      "expected": {
+        "similar_features": ["both are structured patterns of sound over time", "both are produced and perceived by humans across cultures", "both can convey emotion", "both have phrasing, rhythm, pitch", "both are learned (not purely innate) and culturally varied", "both can be written down in symbolic notation"],
+        "different_features": ["language has explicit semantic content; music's content is largely affective/abstract", "language has discrete words/morphemes; music has continuous pitch/dynamics", "language is mostly used for communication; music is often used for expression/aesthetics", "language is processed in left-hemisphere areas predominantly; music engages broader bilateral networks", "language has truth-conditional meaning; music does not"]
+      },
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["sound", "pattern", "rhythm", "pitch", "emotion", "meaning", "semantic", "communicate", "expression"], "min_coverage": 0.4}},
+      "variant_group": "cc_flashcard",
+      "metadata": {"difficulty": 5}
+    }
+  ]
+}

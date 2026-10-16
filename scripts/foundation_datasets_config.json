@@ -1,0 +1,1009 @@
+{
+  "description": "Comprehensive dataset configuration for NIMCP Foundation Models — 23 domains (20 text + 3 multimodal)",
+  "version": "5.0",
+  "datasets": [
+    {
+      "name": "fineweb_10bt",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "HuggingFaceFW/fineweb",
+      "hf_subset": "sample-10BT",
+      "description": "FineWeb 10B token sample — high-quality web text (~28GB, largest dataset)"
+    },
+    {
+      "name": "openwebtext",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "openwebtext",
+      "description": "OpenWebText corpus — Reddit-curated web pages (~8M documents, ~12GB)"
+    },
+    {
+      "name": "wikitext103",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "wikitext",
+      "hf_subset": "wikitext-103-raw-v1",
+      "description": "WikiText-103 language modeling dataset (100M words, ~500MB)"
+    },
+    {
+      "name": "squad_v2",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "squad_v2",
+      "description": "Stanford Question Answering Dataset v2.0 (~130K examples)"
+    },
+    {
+      "name": "commonsense_qa",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "commonsense_qa",
+      "description": "Commonsense question answering (~12K examples)"
+    },
+    {
+      "name": "open_orca",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "Open-Orca/OpenOrca",
+      "description": "Large instruction-response dataset (~4M examples, ~2.7GB)"
+    },
+    {
+      "name": "mmlu_mathematics",
+      "domain": "language",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_mathematics",
+      "description": "Mathematical reasoning (cross-domain with language)"
+    },
+    {
+      "name": "github_code_2025",
+      "domain": "programming",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "nick007x/github-code-2025",
+      "description": "1.5M+ curated GitHub repositories from 2025 code ecosystem"
+    },
+    {
+      "name": "livecodebench",
+      "domain": "programming",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "bzantium/livecodebench",
+      "description": "6,281 competitive programming problems from LeetCode/CodeForces/AtCoder"
+    },
+    {
+      "name": "code_contests",
+      "domain": "programming",
+      "priority": 2,
+      "type": "huggingface",
+      "hf_dataset": "deepmind/code_contests",
+      "description": "4,040 competitive programming problems (AlphaCode training data)"
+    },
+    {
+      "name": "hellaswag",
+      "domain": "ethics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "hellaswag",
+      "description": "Commonsense reasoning about situations and consequences (~40K examples)"
+    },
+    {
+      "name": "social_chemistry",
+      "domain": "ethics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "tasksource/social-chemestry-101",
+      "description": "Social norms and moral rules of thumb (355K examples)"
+    },
+    {
+      "name": "prosocial_dialog",
+      "domain": "ethics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "allenai/prosocial-dialog",
+      "description": "Prosocial conversations with safety labels and moral rules of thumb (58K examples)"
+    },
+    {
+      "name": "hh_rlhf",
+      "domain": "ethics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "Anthropic/hh-rlhf",
+      "description": "Human helpfulness and harmlessness preference data (161K examples)"
+    },
+    {
+      "name": "mmlu_us_history",
+      "domain": "history",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_us_history",
+      "description": "US history questions and knowledge"
+    },
+    {
+      "name": "mmlu_world_history",
+      "domain": "history",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_world_history",
+      "description": "World history questions and knowledge"
+    },
+    {
+      "name": "mmlu_european_history",
+      "domain": "history",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_european_history",
+      "description": "European history questions and knowledge"
+    },
+    {
+      "name": "mmlu_high_school_psychology",
+      "domain": "psychology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_psychology",
+      "description": "MMLU high school psychology (590 questions)"
+    },
+    {
+      "name": "mmlu_professional_psychology",
+      "domain": "psychology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "professional_psychology",
+      "description": "MMLU professional psychology (612 questions)"
+    },
+    {
+      "name": "mmlu_world_religions",
+      "domain": "anthropology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "world_religions",
+      "description": "World religions and cultural practices"
+    },
+    {
+      "name": "culturebank",
+      "domain": "anthropology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "SALT-NLP/CultureBank",
+      "description": "23K cultural knowledge examples across 36 topic categories (MIT license)"
+    },
+    {
+      "name": "mmlu_human_aging",
+      "domain": "anthropology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "human_aging",
+      "description": "MMLU human aging — biological and cultural aging (~223 Q)"
+    },
+    {
+      "name": "mmlu_biology",
+      "domain": "biology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_biology",
+      "description": "MMLU college biology questions"
+    },
+    {
+      "name": "mmlu_chemistry",
+      "domain": "chemistry",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_chemistry",
+      "description": "MMLU college chemistry questions"
+    },
+    {
+      "name": "mmlu_physics",
+      "domain": "physics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_physics",
+      "description": "MMLU college physics questions"
+    },
+    {
+      "name": "mmlu_astronomy",
+      "domain": "physics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "astronomy",
+      "description": "MMLU astronomy questions"
+    },
+    {
+      "name": "mmlu_clinical_knowledge",
+      "domain": "medicine",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "clinical_knowledge",
+      "description": "Clinical medicine questions (~265 Q)"
+    },
+    {
+      "name": "mmlu_medical_genetics",
+      "domain": "medicine",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "medical_genetics",
+      "description": "Genetics and hereditary disease (~100 Q)"
+    },
+    {
+      "name": "mmlu_anatomy",
+      "domain": "medicine",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "anatomy",
+      "description": "Human anatomy (~135 Q)"
+    },
+    {
+      "name": "mmlu_college_medicine",
+      "domain": "medicine",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_medicine",
+      "description": "General medical knowledge (~173 Q)"
+    },
+    {
+      "name": "mmlu_professional_medicine",
+      "domain": "medicine",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "professional_medicine",
+      "description": "Clinical practice (~272 Q)"
+    },
+    {
+      "name": "mmlu_philosophy",
+      "domain": "philosophy",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "philosophy",
+      "description": "Major philosophical traditions (~311 Q)"
+    },
+    {
+      "name": "mmlu_moral_scenarios",
+      "domain": "philosophy",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "moral_scenarios",
+      "description": "Ethical decision-making (~895 Q)"
+    },
+    {
+      "name": "mmlu_moral_disputes",
+      "domain": "philosophy",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "moral_disputes",
+      "description": "Controversial moral questions (~346 Q)"
+    },
+    {
+      "name": "mmlu_formal_logic",
+      "domain": "philosophy",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "formal_logic",
+      "description": "Logical reasoning (~126 Q)"
+    },
+    {
+      "name": "gutenberg_english",
+      "domain": "literature",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "manu/project_gutenberg",
+      "hf_split": "en",
+      "description": "Public domain literature from Project Gutenberg (~50K books, English split)"
+    },
+    {
+      "name": "tinystories",
+      "domain": "literature",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "roneneldan/TinyStories",
+      "description": "Simple narrative structure (~2.1M stories)"
+    },
+    {
+      "name": "booksum",
+      "domain": "literature",
+      "priority": 2,
+      "type": "huggingface",
+      "hf_dataset": "kmfoda/booksum",
+      "description": "Book and chapter summaries (~12K summaries)"
+    },
+    {
+      "name": "mmlu_high_school_geography",
+      "domain": "literature",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_geography",
+      "description": "Cultural geography (~198 Q)"
+    },
+    {
+      "name": "mmlu_human_sexuality",
+      "domain": "social_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "human_sexuality",
+      "description": "Human behavior and identity (~131 Q)"
+    },
+    {
+      "name": "mmlu_international_law",
+      "domain": "social_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "international_law",
+      "description": "Law and governance (~121 Q)"
+    },
+    {
+      "name": "mmlu_jurisprudence",
+      "domain": "social_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "jurisprudence",
+      "description": "Legal philosophy (~108 Q)"
+    },
+    {
+      "name": "mmlu_public_relations",
+      "domain": "social_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "public_relations",
+      "description": "Social communication (~110 Q)"
+    },
+    {
+      "name": "mmlu_nutrition",
+      "domain": "social_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "nutrition",
+      "description": "Health and diet (~306 Q)"
+    },
+
+    {
+      "name": "mmlu_global_facts",
+      "domain": "humanities",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "global_facts",
+      "description": "MMLU global facts — world knowledge (~100 Q)"
+    },
+    {
+      "name": "mmlu_miscellaneous",
+      "domain": "humanities",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "miscellaneous",
+      "description": "MMLU miscellaneous — cross-domain knowledge (~783 Q)"
+    },
+    {
+      "name": "mmlu_hs_macroeconomics",
+      "domain": "humanities",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_macroeconomics",
+      "description": "MMLU high school macroeconomics (~390 Q)"
+    },
+
+    {
+      "name": "mmlu_professional_accounting",
+      "domain": "finance",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "professional_accounting",
+      "description": "MMLU professional accounting (~282 Q)"
+    },
+    {
+      "name": "financial_phrasebank",
+      "domain": "finance",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "financial_phrasebank",
+      "hf_subset": "sentences_allagree",
+      "description": "Financial sentiment classification — 4,845 bank/finance sentences"
+    },
+    {
+      "name": "sujet_finance",
+      "domain": "finance",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "sujet-ai/Sujet-Finance-Instruct-177k",
+      "description": "177K finance instruction-response pairs"
+    },
+
+    {
+      "name": "crypto_news",
+      "domain": "cryptocurrency",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "Bybit/crypto-news",
+      "description": "Cryptocurrency news articles for sentiment and topic classification"
+    },
+    {
+      "name": "crypto_tweets",
+      "domain": "cryptocurrency",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "StephanAkkworken/crypto-tweets-labeled",
+      "description": "Labeled cryptocurrency tweets — sentiment analysis"
+    },
+
+    {
+      "name": "mmlu_sociology",
+      "domain": "sociology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "sociology",
+      "description": "MMLU sociology — social structures and institutions (~201 Q)"
+    },
+    {
+      "name": "mmlu_hs_government",
+      "domain": "sociology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_government_and_politics",
+      "description": "MMLU high school government and politics (~193 Q)"
+    },
+    {
+      "name": "mmlu_us_foreign_policy",
+      "domain": "sociology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "us_foreign_policy",
+      "description": "MMLU US foreign policy (~100 Q)"
+    },
+
+    {
+      "name": "mmlu_prehistory",
+      "domain": "paleontology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "prehistory",
+      "description": "MMLU prehistory — early life, fossils, evolution (~381 Q)"
+    },
+    {
+      "name": "mmlu_college_biology_evolution",
+      "domain": "paleontology",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_biology",
+      "description": "MMLU college biology — evolution and paleobiology subset"
+    },
+
+    {
+      "name": "mmlu_econometrics",
+      "domain": "economics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "econometrics",
+      "description": "MMLU econometrics — statistical economics (~114 Q)"
+    },
+    {
+      "name": "mmlu_macroeconomics",
+      "domain": "economics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_macroeconomics",
+      "description": "MMLU macroeconomics — GDP, fiscal, monetary (~390 Q)"
+    },
+
+    {
+      "name": "mmlu_hs_geography",
+      "domain": "earth_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "high_school_geography",
+      "description": "MMLU geography — physical and human geography (~198 Q)"
+    },
+    {
+      "name": "mmlu_astronomy_earth",
+      "domain": "earth_sciences",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "astronomy",
+      "description": "MMLU astronomy — planetary science, earth in solar system (~152 Q)"
+    },
+
+    {
+      "name": "esc50",
+      "domain": "audio",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "ashraq/esc50",
+      "description": "ESC-50 environmental sound classification — 50 classes, 2000 5-second clips",
+      "modality": "audio"
+    },
+    {
+      "name": "common_voice",
+      "domain": "audio",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "mozilla-foundation/common_voice_17_0",
+      "hf_subset": "en",
+      "description": "Mozilla Common Voice — crowdsourced speech recognition",
+      "modality": "audio"
+    },
+    {
+      "name": "gtzan",
+      "domain": "audio",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "marsyas/gtzan",
+      "description": "GTZAN music genre classification — 10 genres, 1000 30-second clips",
+      "modality": "audio"
+    },
+
+    {
+      "name": "cifar100",
+      "domain": "visual",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "uoft-cs/cifar100",
+      "description": "CIFAR-100 — 100 object classes, 60K 32x32 color images",
+      "modality": "visual"
+    },
+    {
+      "name": "fashion_mnist",
+      "domain": "visual",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "zalando-datasets/fashion_mnist",
+      "description": "Fashion-MNIST — 10 clothing classes, 70K 28x28 grayscale images",
+      "modality": "visual"
+    },
+    {
+      "name": "svhn",
+      "domain": "visual",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "ufldl-stanford/svhn",
+      "hf_subset": "cropped_digits",
+      "description": "SVHN — street view house numbers, 10 digit classes",
+      "modality": "visual"
+    },
+
+    {
+      "name": "timit",
+      "domain": "speech",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "timit_asr",
+      "description": "TIMIT — phoneme-labeled read speech corpus, 630 speakers",
+      "modality": "speech"
+    },
+    {
+      "name": "ljspeech",
+      "domain": "speech",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "keithito/lj_speech",
+      "description": "LJ Speech — single speaker, 24 hours of read speech",
+      "modality": "speech"
+    },
+    {
+      "name": "spoken_wikipedia",
+      "domain": "speech",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "Ekzamen/spoken_wikipedia",
+      "hf_subset": "en",
+      "description": "Spoken Wikipedia — speech+text pairs from Wikipedia articles",
+      "modality": "speech"
+    },
+
+    {
+      "name": "nimcp_source_code",
+      "domain": "programming",
+      "priority": 1,
+      "type": "local",
+      "local_path": "datasets/nimcp_local/nimcp_source",
+      "description": "NIMCP C/H source code — 118K function-level chunks from 4,840 files (self-knowledge)"
+    },
+    {
+      "name": "nimcp_documentation",
+      "domain": "language",
+      "priority": 1,
+      "type": "local",
+      "local_path": "datasets/nimcp_local/nimcp_docs",
+      "description": "NIMCP documentation — 26K section-level chunks from 800+ markdown files (self-knowledge)"
+    },
+    {
+      "name": "nimcp_python_scripts",
+      "domain": "programming",
+      "priority": 1,
+      "type": "local",
+      "local_path": "datasets/nimcp_local/nimcp_scripts",
+      "description": "NIMCP Python training/tooling scripts — 937 function-level chunks (self-knowledge)"
+    },
+
+    {
+      "name": "wikipedia_general",
+      "domain": "language",
+      "priority": 2,
+      "type": "wikipedia",
+      "language": "en",
+      "max_examples": 50000,
+      "description": "Random English Wikipedia articles — streamed via MediaWiki API (no disk)"
+    },
+    {
+      "name": "arxiv_cs_ai",
+      "domain": "programming",
+      "priority": 2,
+      "type": "arxiv",
+      "category": "cs.AI",
+      "max_examples": 50000,
+      "description": "arXiv CS.AI paper abstracts — streamed via arXiv API (no disk)"
+    },
+    {
+      "name": "arxiv_physics",
+      "domain": "physics",
+      "priority": 2,
+      "type": "arxiv",
+      "category": "physics",
+      "max_examples": 50000,
+      "description": "arXiv physics paper abstracts — streamed via arXiv API (no disk)"
+    },
+    {
+      "name": "arxiv_math",
+      "domain": "language",
+      "priority": 2,
+      "type": "arxiv",
+      "category": "math",
+      "max_examples": 50000,
+      "description": "arXiv math paper abstracts — streamed via arXiv API (no disk)"
+    },
+    {
+      "name": "stackoverflow_top",
+      "domain": "programming",
+      "priority": 2,
+      "type": "stackexchange",
+      "site": "stackoverflow",
+      "max_examples": 50000,
+      "description": "Top-voted StackOverflow Q&A — streamed via SE API (no disk)"
+    },
+    {
+      "name": "pubmed_neuroscience",
+      "domain": "medicine",
+      "priority": 2,
+      "type": "pubmed",
+      "query": "neuroscience neural networks brain",
+      "max_examples": 50000,
+      "description": "PubMed neuroscience abstracts — streamed via NCBI E-utilities (no disk)"
+    },
+    {
+      "name": "pubmed_medicine",
+      "domain": "medicine",
+      "priority": 2,
+      "type": "pubmed",
+      "query": "clinical medicine diagnosis treatment",
+      "max_examples": 50000,
+      "description": "PubMed clinical medicine abstracts — streamed via NCBI E-utilities (no disk)"
+    },
+    {
+      "name": "gutenberg_literature",
+      "domain": "literature",
+      "priority": 2,
+      "type": "gutenberg",
+      "start_id": 1,
+      "end_id": 70000,
+      "max_examples": 50000,
+      "chunk_size": 2000,
+      "description": "Project Gutenberg books — streamed via HTTP, chunked (no disk)"
+    },
+    {
+      "name": "conceptnet_knowledge",
+      "domain": "language",
+      "priority": 2,
+      "type": "conceptnet",
+      "language": "en",
+      "max_examples": 50000,
+      "description": "ConceptNet semantic relationships — streamed via REST API (no disk)"
+    },
+
+    {
+      "name": "live_news_global",
+      "domain": "news",
+      "priority": 1,
+      "type": "news_rss",
+      "poll_interval_s": 300,
+      "max_examples": 0,
+      "description": "Live news from 22 RSS feeds (Reuters, BBC, NYT, NPR, Al Jazeera, etc.) — continuous, never finishes"
+    },
+
+    {
+      "name": "mmlu_electrical_engineering",
+      "domain": "electrical_engineering",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "electrical_engineering",
+      "description": "MMLU electrical engineering — circuits, signals, electronics (~145 Q)"
+    },
+    {
+      "name": "mmlu_computer_security",
+      "domain": "electrical_engineering",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "computer_security",
+      "description": "MMLU computer security — hardware/software security (~100 Q)"
+    },
+    {
+      "name": "arxiv_eess",
+      "domain": "electrical_engineering",
+      "priority": 2,
+      "type": "arxiv",
+      "category": "eess",
+      "max_examples": 50000,
+      "description": "arXiv Electrical Engineering & Systems Science paper abstracts"
+    },
+
+    {
+      "name": "mmlu_machine_learning",
+      "domain": "mechanical_engineering",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "machine_learning",
+      "description": "MMLU machine learning — ML fundamentals and optimization (~112 Q, overlap with mech eng optimization)"
+    },
+    {
+      "name": "mmlu_conceptual_physics",
+      "domain": "mechanical_engineering",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "conceptual_physics",
+      "description": "MMLU conceptual physics — mechanics, thermodynamics, fluid dynamics (~235 Q)"
+    },
+    {
+      "name": "arxiv_mech_eng",
+      "domain": "mechanical_engineering",
+      "priority": 2,
+      "type": "arxiv",
+      "category": "physics.class-ph",
+      "max_examples": 50000,
+      "description": "arXiv classical physics — mechanics, thermodynamics, material behavior"
+    },
+
+    {
+      "name": "mmlu_college_chemistry_materials",
+      "domain": "materials_science",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_chemistry",
+      "description": "MMLU college chemistry — bonding, crystal structures, material properties"
+    },
+    {
+      "name": "mmlu_college_physics_materials",
+      "domain": "materials_science",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_physics",
+      "description": "MMLU college physics — solid state physics, material mechanics"
+    },
+    {
+      "name": "arxiv_cond_mat",
+      "domain": "materials_science",
+      "priority": 1,
+      "type": "arxiv",
+      "category": "cond-mat",
+      "max_examples": 50000,
+      "description": "arXiv Condensed Matter — materials science, crystallography, superconductors, polymers"
+    },
+    {
+      "name": "pubmed_materials",
+      "domain": "materials_science",
+      "priority": 2,
+      "type": "pubmed",
+      "query": "materials science biomaterials nanocomposites alloy",
+      "max_examples": 50000,
+      "description": "PubMed materials science abstracts — biomaterials, composites, metallurgy"
+    },
+
+    {
+      "name": "arxiv_surface_physics",
+      "domain": "surface_physics",
+      "priority": 1,
+      "type": "arxiv",
+      "category": "cond-mat.mtrl-sci",
+      "max_examples": 50000,
+      "description": "arXiv Materials Science — surface physics, thin films, interfaces, epitaxy"
+    },
+    {
+      "name": "arxiv_surface_physics_soft",
+      "domain": "surface_physics",
+      "priority": 1,
+      "type": "arxiv",
+      "category": "cond-mat.soft",
+      "max_examples": 50000,
+      "description": "arXiv Soft Condensed Matter — surface tension, wetting, colloids, polymers at interfaces"
+    },
+    {
+      "name": "mmlu_college_physics_surface",
+      "domain": "surface_physics",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_physics",
+      "description": "MMLU college physics — surface phenomena, electrostatics, optics at interfaces"
+    },
+
+    {
+      "name": "arxiv_surface_chemistry",
+      "domain": "surface_chemistry",
+      "priority": 1,
+      "type": "arxiv",
+      "category": "physics.chem-ph",
+      "max_examples": 50000,
+      "description": "arXiv Chemical Physics — surface reactions, catalysis, adsorption, electrochemistry"
+    },
+    {
+      "name": "mmlu_college_chemistry_surface",
+      "domain": "surface_chemistry",
+      "priority": 1,
+      "type": "huggingface",
+      "hf_dataset": "cais/mmlu",
+      "hf_subset": "college_chemistry",
+      "description": "MMLU college chemistry — surface chemistry, catalysis, electrochemistry"
+    },
+    {
+      "name": "pubmed_surface_chemistry",
+      "domain": "surface_chemistry",
+      "priority": 2,
+      "type": "pubmed",
+      "query": "surface chemistry catalysis adsorption electrochemistry interface",
+      "max_examples": 50000,
+      "description": "PubMed surface chemistry abstracts — catalysis, coatings, functionalization"
+    }
+  ],
+  "developmental_stages": {
+    "description": "Biological curriculum: sensory → language → comprehension → foundation → mastery",
+    "stage_0_sensory": {
+      "description": "Sensory bootstrapping — establish basic neural connectivity",
+      "exit_criteria": "Loss decreasing on all datasets",
+      "datasets": ["fashion_mnist", "cifar100", "svhn"]
+    },
+    "stage_1_language": {
+      "description": "Language acquisition — train Broca/Wernicke areas",
+      "exit_criteria": "Rolling accuracy on language domain > 60% OR all datasets exhausted",
+      "consolidation": "full",
+      "batch_size": 30,
+      "datasets_ordered": [
+        "tinystories",
+        "wikitext103",
+        "openwebtext",
+        "wikipedia_general",
+        "nimcp_documentation"
+      ]
+    },
+    "stage_2_comprehension": {
+      "description": "Reading comprehension — teach reasoning about text",
+      "exit_criteria": "Rolling accuracy on QA tasks > 50%",
+      "consolidation": "full",
+      "batch_size": 30,
+      "datasets_ordered": [
+        "commonsense_qa",
+        "squad_v2",
+        "hellaswag",
+        "conceptnet_knowledge"
+      ]
+    },
+    "stage_3_foundation": {
+      "description": "Foundation knowledge — domain knowledge built on language understanding",
+      "consolidation": "auto",
+      "batch_size": 30,
+      "exit_criteria": "All domains have > 30% accuracy",
+      "tiers": {
+        "tier_1_language_adjacent": {
+          "description": "Close to language — literature, history, philosophy, humanities, ethics",
+          "domains": ["literature", "history", "philosophy", "humanities", "ethics"]
+        },
+        "tier_2_reasoning": {
+          "description": "Reasoning-heavy — science domains",
+          "domains": ["biology", "chemistry", "physics", "earth_sciences", "medicine"]
+        },
+        "tier_3_specialized": {
+          "description": "Specialized professional domains",
+          "domains": ["finance", "economics", "programming", "psychology", "sociology",
+                      "anthropology", "social_sciences", "cryptocurrency", "paleontology",
+                      "electrical_engineering", "mechanical_engineering", "materials_science",
+                      "surface_physics", "surface_chemistry", "news"]
+        },
+        "tier_4_multimodal": {
+          "description": "Multimodal processing",
+          "domains": ["audio", "visual", "speech"]
+        }
+      }
+    },
+    "stage_4_mastery": {
+      "description": "Self-directed mastery — brain curiosity drives what to study",
+      "exit_criteria": "95% mastery per domain OR time cap",
+      "use_curiosity": true,
+      "use_forager": true
+    }
+  },
+  "training_order": [
+    "language",
+    "literature",
+    "programming",
+    "ethics",
+    "philosophy",
+    "history",
+    "psychology",
+    "anthropology",
+    "social_sciences",
+    "medicine",
+    "biology",
+    "chemistry",
+    "physics",
+    "materials_science",
+    "electrical_engineering",
+    "mechanical_engineering",
+    "surface_physics",
+    "surface_chemistry",
+    "humanities",
+    "finance",
+    "cryptocurrency",
+    "sociology",
+    "paleontology",
+    "economics",
+    "earth_sciences",
+    "news",
+    "audio",
+    "visual",
+    "speech"
+  ],
+  "notes": {
+    "curriculum_strategy": "Biological developmental stages: Stage 0 (sensory) → Stage 1 (language) → Stage 2 (comprehension) → Stage 3 (foundation, tiered) → Stage 4 (self-directed mastery). See developmental_stages section.",
+    "dataset_selection": "ALL datasets verified streaming=True with datasets v4.5+ — no legacy scripts, no gated access",
+    "coverage": "29 domains: 25 text (language, literature, programming, ethics, philosophy, history, psychology, anthropology, social_sciences, medicine, biology, chemistry, physics, materials_science, electrical_engineering, mechanical_engineering, surface_physics, surface_chemistry, humanities, finance, cryptocurrency, sociology, paleontology, economics, earth_sciences) + 3 multimodal (audio, visual, speech) + 1 live (news)",
+    "new_in_v6": "Added 5 engineering/science domains: materials_science (4 datasets), electrical_engineering (3), mechanical_engineering (3), surface_physics (3), surface_chemistry (3)",
+    "multimodal_note": "Audio/visual/speech datasets require sensory cortex Python bindings (audio_cortex_process, visual_cortex_process, speech_cortex_process). Fallback feature extraction used if bindings unavailable.",
+    "api_sources": "7 streaming API sources: wikipedia (MediaWiki API), arxiv (arXiv API), stackexchange (SE API), pubmed (NCBI E-utilities), gutenberg (HTTP), conceptnet (REST API), news_rss (22 RSS feeds). All stream over HTTP — zero disk footprint.",
+    "live_news": "news_rss streams continuously from 22 RSS feeds (Reuters, BBC, NYT, NPR, Al Jazeera, Nature, Ars Technica, HN, Guardian). Polls every 5min, deduplicates by URL, never finishes. Keeps Athena current with world events.",
+    "estimated_total_size": "~60GB+ (text ~50GB + audio/visual/speech ~10GB + local ~200MB + API/news streams ~0 disk)",
+    "total_datasets": 97,
+    "version": "v7.0 — biological curriculum (5 developmental stages), batch optimization, curiosity-driven learning + 29 domains"
+  }
+}

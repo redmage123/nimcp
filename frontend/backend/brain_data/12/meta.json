@@ -1,0 +1,17 @@
+{
+  "name": "test",
+  "created_at": "2026-02-22T18:47:41Z",
+  "dataset": null,
+  "parent_id": null,
+  "num_inputs": 128,
+  "num_outputs": 32,
+  "size": 2,
+  "task": 4,
+  "stats": {
+    "total_inferences": 0,
+    "total_learning_steps": 0,
+    "total_correct": 0,
+    "last_loss": 0.0,
+    "losses": []
+  }
+}

@@ -46,12 +46,18 @@ Makefile
 *.idb
 *.pdb
 
-# Coverage files
+# Coverage files (gcov/lcov)
 *.gcno
 *.gcda
 *.gcov
 coverage/
 *.info
+lcov.info
+coverage.xml
+coverage-report/
+*.profraw
+*.profdata
+htmlcov/
 
 # Python
 __pycache__/
@@ -66,6 +72,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!src/lib/
 lib64/
 parts/
 sdist/
@@ -84,6 +91,13 @@ wheels/
 .cache/
 .clangd/
 compile_commands.json
+
+# Code navigation/indexing (generated artifacts)
+tags
+cscope.out
+cscope.files
+cscope.in.out
+cscope.po.out
 
 # Test artifacts
 Testing/
@@ -192,8 +206,50 @@ systemd/
 src/bindings/web-demo/backend/*.log
 src/bindings/web-demo/frontend/*.log
 
+# Root-level clutter (screenshots moved to docs/screenshots/)
+/*.log
+/*.png
+/*.txt
+/TRAINING_ALERT*
+/ablation_*
+/metrics_log*
+/snapshots/
+
+# Redundant build flavours (only build/ is tracked behavior)
+build-asan/
+build_dbg/
+build-fuzz/
+build_test/
+
+# Stray helper scripts left over from one-off ops
+fix_nginx_*.sh
+
+# QuestDB local data store (telemetry / metrics / KG snapshots)
+data/questdb/
+
 # Brain data
 *.nimcp
 *.brain
 checkpoints/
 /tmp/checkpoints/
+memory-bank/activeContext.md
+
+# Generated training datasets (reproducible via scripts/prepare_nimcp_dataset.py)
+datasets/nimcp_local/
+
+# Canonical literary corpus — text files are reproducible from index.json
+# (Project Gutenberg) or user-supplied to data/canonical_corpus/_inbox/.
+# The manifest (index.json) is committed; corpora and inbox drops are not.
+data/canonical_corpus/**/*.txt
+data/canonical_corpus/_inbox/*
+!data/canonical_corpus/_inbox/.gitkeep
+.claude/worktrees/
+logs/
+frontend/backend/brain_data/
+teaching_state/
+build/
+data/multimodal/*.pkl
+models/*.gguf
+models/
+build/
+data/lexicon/cache/

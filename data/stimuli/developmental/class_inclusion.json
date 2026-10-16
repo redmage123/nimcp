@@ -1,0 +1,114 @@
+{
+  "test_domain": "developmental_class_inclusion",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Class inclusion: superordinate vs subordinate category counting",
+    "scoring_notes": "Correct answer = superordinate is at least as large as any subordinate"
+  },
+  "stimuli": [
+    {"id": "ci_001", "prompt": "A bouquet has 8 roses and 3 daisies. Are there more roses or more flowers?", "modality": "text",
+     "expected": {"answer": "more flowers (11 vs 8)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["flowers", "11", "more flowers"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_002", "prompt": "In a kennel: 12 poodles and 5 retrievers. Are there more poodles or more dogs?", "modality": "text",
+     "expected": {"answer": "more dogs (17 vs 12)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["dogs", "17", "more dogs"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_003", "prompt": "On a tray: 6 strawberries, 2 blueberries, 4 raspberries. Are there more strawberries or more berries?", "modality": "text",
+     "expected": {"answer": "more berries (12 vs 6)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["berries", "12", "more berries"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_004", "prompt": "A library shelf: 20 mystery novels, 8 sci-fi novels, 12 romance novels. Are there more mystery novels or more novels?", "modality": "text",
+     "expected": {"answer": "more novels (40 vs 20)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["novels", "40", "more novels"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_005", "prompt": "A music shop has 30 violins and 6 cellos. Are there more violins or more string instruments?", "modality": "text",
+     "expected": {"answer": "more string instruments (36 vs 30)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["string instruments", "36"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_006", "prompt": "A pond contains 15 koi and 7 goldfish. Are there more koi or more fish?", "modality": "text",
+     "expected": {"answer": "more fish (22 vs 15)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["fish", "22"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_007", "prompt": "Tricky: A vase has 5 tulips. Are there more tulips or more flowers?", "modality": "text",
+     "expected": {"answer": "same (all flowers are tulips)", "principle": "class_inclusion_equal_case"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["same", "equal", "all tulips"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "ci_008", "prompt": "A garage holds 4 sedans, 2 SUVs, 1 pickup truck. Are there more sedans or more vehicles?", "modality": "text",
+     "expected": {"answer": "more vehicles (7 vs 4)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["vehicles", "7"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_009", "prompt": "An aviary holds 50 sparrows and 3 owls. Are there more sparrows or more birds?", "modality": "text",
+     "expected": {"answer": "more birds (53 vs 50)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["birds", "53"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "ci_010", "prompt": "An orchard has 100 apple trees and 0 pear trees. Are there more apple trees or more fruit trees?", "modality": "text",
+     "expected": {"answer": "same (all are apple)", "principle": "class_inclusion_equal_case"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["same", "equal", "all apple"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "ci_011", "prompt": "A storeroom: 9 hammers and 4 screwdrivers. Are there more hammers or more tools?", "modality": "text",
+     "expected": {"answer": "more tools (13 vs 9)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["tools", "13"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_012", "prompt": "Costume drawer: 7 hats, 3 scarves, 5 gloves. Are there more hats or more accessories?", "modality": "text",
+     "expected": {"answer": "more accessories (15 vs 7)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["accessories", "15"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_013", "prompt": "A classroom: 14 girls and 11 boys. Are there more girls or more children?", "modality": "text",
+     "expected": {"answer": "more children (25 vs 14)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["children", "25"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_014", "prompt": "A drawer holds 4 forks, 4 knives, and 4 spoons. Are there more forks, or more pieces of cutlery? And which is the largest single category?", "modality": "text",
+     "expected": {"answer": "more cutlery (12 vs 4); all categories tied at 4", "principle": "class_inclusion_with_tie"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["cutlery", "12", "tied", "equal"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "ci_015", "prompt": "A jar contains only red gummy bears (12 of them). Are there more red gummy bears or more gummy bears?", "modality": "text",
+     "expected": {"answer": "same", "principle": "class_inclusion_equal_case"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["same", "equal"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "ci_016", "prompt": "An aquarium has 6 angelfish, 4 tetras, and 2 catfish. Are there more angelfish or more fish?", "modality": "text",
+     "expected": {"answer": "more fish (12 vs 6)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["fish", "12"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "ci_017", "prompt": "On a workbench: 5 wrenches, 0 hammers, 0 saws. Are there more wrenches or more tools?", "modality": "text",
+     "expected": {"answer": "same (all are wrenches)", "principle": "class_inclusion_equal_case"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["same", "equal", "all wrenches"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "ci_018", "prompt": "A nursery has 22 daffodils and 18 tulips. Are there more daffodils, or fewer flowers than 50?", "modality": "text",
+     "expected": {"answer": "yes there are fewer than 50 (40 total); but separately, more flowers than daffodils", "principle": "class_inclusion_with_threshold"},
+     "scoring": {"type": "class_inclusion_reasoning", "params": {"keywords": ["40", "fewer than 50", "more flowers"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "ci_019", "prompt": "A pet store has 8 hamsters, 3 gerbils, 2 mice. Are there more hamsters or more rodents?", "modality": "text",
+     "expected": {"answer": "more rodents (13 vs 8)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["rodents", "13"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "ci_020", "prompt": "Backpack contains: 2 pens, 1 pencil, 0 erasers. Are there more pens or more writing implements?", "modality": "text",
+     "expected": {"answer": "more writing implements (3 vs 2)", "principle": "class_inclusion"},
+     "scoring": {"type": "class_inclusion_answer", "params": {"keywords": ["writing implements", "3", "more"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "ci_021", "prompt": "A zoo: 100 mammals and 200 birds. Among mammals: 60 are big cats. Are there more big cats or more mammals or more animals?", "modality": "text",
+     "expected": {"answer": "300 animals > 100 mammals > 60 big cats", "principle": "nested_class_inclusion"},
+     "scoring": {"type": "class_inclusion_reasoning", "params": {"keywords": ["300", "100", "60", "animals", "mammals", "big cats"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}}
+  ]
+}

@@ -6,7 +6,7 @@
  * brain architecture, training parameters, and other settings.
  */
 
-#include "../src/include/nimcp.h"
+#include "nimcp.h"
 #include <stdio.h>
 #include <stdlib.h>
 

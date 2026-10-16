@@ -1,0 +1,64 @@
+# nanopb options for collective cognition protocol
+# These constraints ensure predictable memory usage on embedded targets
+
+# ============================================================================
+# Shared Intentionality
+# ============================================================================
+nimcp.collective.SharedGoal.description             max_size:128
+nimcp.collective.SharedGoal.commitments             max_count:16
+nimcp.collective.SharedGoal.roles                   max_count:16
+nimcp.collective.RoleAssignment.role_name           max_size:32
+nimcp.collective.JointAttention.feature_vector      max_count:16
+nimcp.collective.JointAttention.attending_brains    max_count:16
+nimcp.collective.WeModeState.participating_brains   max_count:16
+
+# ============================================================================
+# Beliefs
+# ============================================================================
+nimcp.collective.BeliefGossip.belief_key            max_size:64
+nimcp.collective.BeliefGossip.belief_value          max_size:256
+nimcp.collective.BeliefGossip.belief_hash           max_size:32
+nimcp.collective.BeliefContradiction.value_a        max_size:256
+nimcp.collective.BeliefContradiction.value_b        max_size:256
+nimcp.collective.ConsensusRequest.proposed_value    max_size:256
+nimcp.collective.ConsensusVote.alternative_value    max_size:256
+nimcp.collective.ConsensusVote.rationale            max_size:128
+nimcp.collective.ConsensusResult.final_value        max_size:256
+nimcp.collective.KnowledgeQuery.query_key           max_size:64
+nimcp.collective.KnowledgeResponse.belief_key       max_size:64
+nimcp.collective.KnowledgeResponse.belief_value     max_size:256
+
+# ============================================================================
+# Extended Mind
+# ============================================================================
+nimcp.collective.ExtendedMindQuery.extension_name   max_size:64
+nimcp.collective.ExtendedMindQuery.query_payload    max_size:1024
+nimcp.collective.ExtendedMindResponse.response_payload  max_size:4096
+nimcp.collective.ExtensionStatus.name               max_size:64
+nimcp.collective.ExtensionRegistration.name         max_size:64
+nimcp.collective.ExtensionRegistration.endpoint     max_size:128
+nimcp.collective.ExtensionRegistration.capabilities max_count:16
+*ExtensionRegistration.capabilities                 max_size:32
+nimcp.collective.CognitiveOffload.task_payload      max_size:1024
+nimcp.collective.OffloadResult.result_payload       max_size:4096
+
+# ============================================================================
+# Phi / Consciousness
+# ============================================================================
+nimcp.collective.CollectivePhiUpdate.contributions  max_count:16
+nimcp.collective.QualiaReport.content_vector        max_count:16
+nimcp.collective.NetworkTopology.connections        max_count:64
+
+# ============================================================================
+# Hyperscanning
+# ============================================================================
+nimcp.collective.PhiComputationRequest.target_brains  max_count:16
+
+# ============================================================================
+# Control Messages
+# ============================================================================
+nimcp.collective.BrainRegistration.name             max_size:64
+nimcp.collective.BrainRegistration.capabilities     max_count:16
+*BrainRegistration.capabilities                     max_size:32
+nimcp.collective.ErrorReport.error_code             max_size:32
+nimcp.collective.ErrorReport.description            max_size:256

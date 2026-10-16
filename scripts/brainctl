@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""
+brainctl — Command-line tool to interact with the Athena Brain Daemon.
+
+Usage:
+    brainctl status          # Daemon status + uptime
+    brainctl ping            # Quick health check
+    brainctl stats           # Brain statistics
+    brainctl health          # UTM training health
+    brainctl save [path]     # Force checkpoint
+    brainctl shutdown        # Graceful shutdown
+    brainctl arousal         # Biological state
+    brainctl transcript      # Last cognitive transcript
+"""
+
+import json
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from brain_client import BrainProxy, is_daemon_running, SOCKET_PATH
+
+
+def fmt_duration(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    if h > 0:
+        return f"{h}h {m}m {s}s"
+    if m > 0:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+
+    if cmd == "ping":
+        if is_daemon_running():
+            proxy = BrainProxy()
+            resp = proxy._send({"cmd": "ping"})
+            uptime = resp.get("uptime", 0)
+            print(f"Brain daemon is RUNNING (uptime: {fmt_duration(uptime)})")
+        else:
+            print("Brain daemon is NOT running")
+            sys.exit(1)
+
+    elif cmd == "status":
+        if not is_daemon_running():
+            print("Brain daemon is NOT running")
+            sys.exit(1)
+        proxy = BrainProxy()
+        resp = proxy._send({"cmd": "status"})
+        print(f"Status: RUNNING")
+        print(f"Uptime: {fmt_duration(resp.get('uptime', 0))}")
+        print(f"Total requests:  {resp.get('total_requests', 0)}")
+        print(f"Learn calls:     {resp.get('learn_calls', 0)}")
+        print(f"Infer calls:     {resp.get('infer_calls', 0)}")
+        print(f"Errors:          {resp.get('errors', 0)}")
+
+    elif cmd == "stats":
+        proxy = BrainProxy()
+        resp = proxy._send({"cmd": "stats"})
+        stats = resp.get("stats", {})
+        for k, v in sorted(stats.items()):
+            print(f"  {k}: {v}")
+
+    elif cmd == "health":
+        proxy = BrainProxy()
+        health = proxy.utm_get_training_health()
+        if isinstance(health, dict):
+            for k, v in sorted(health.items()):
+                print(f"  {k}: {v}")
+        else:
+            print(f"  health: {health}")
+
+    elif cmd == "save":
+        proxy = BrainProxy()
+        path = sys.argv[2] if len(sys.argv) > 2 else \
+            "/home/bbrelin/nimcp/checkpoints/athena/athena_daemon.bin"
+        proxy.save(path)
+        print(f"Checkpoint saved: {path}")
+
+    elif cmd == "shutdown":
+        proxy = BrainProxy()
+        proxy._send({"cmd": "shutdown"})
+        print("Shutdown signal sent")
+
+    elif cmd == "arousal":
+        proxy = BrainProxy()
+        print(f"Arousal:              {proxy.medulla_get_arousal():.3f}")
+        print(f"Sleep pressure:       {proxy.sleep_get_pressure():.3f}")
+        print(f"Circadian efficiency: {proxy.medulla_get_circadian_efficiency():.3f}")
+        print(f"Sleep needed:         {proxy.sleep_is_needed()}")
+        print(f"Dopamine:             {proxy.bg_get_dopamine():.3f}")
+        print(f"RPE:                  {proxy.bg_get_rpe():.3f}")
+
+    elif cmd == "transcript":
+        proxy = BrainProxy()
+        transcript = proxy.get_transcript()
+        if transcript:
+            for entry in transcript:
+                if isinstance(entry, dict):
+                    mod = entry.get("module", "?")
+                    sal = entry.get("salience", 0)
+                    summary = entry.get("summary", "")
+                    print(f"  [{mod}] salience={sal:.2f}: {summary}")
+                else:
+                    print(f"  {entry}")
+        else:
+            print("  (no transcript)")
+
+    elif cmd == "neurons":
+        proxy = BrainProxy()
+        print(f"Neuron count: {proxy.get_neuron_count():,}")
+
+    else:
+        print(f"Unknown command: {cmd}")
+        print(__doc__)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

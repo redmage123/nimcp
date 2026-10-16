@@ -1,0 +1,54 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+Running main() from /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 97 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 97 tests from EthicsComprehensiveTest
+[ RUN      ] EthicsComprehensiveTest.EngineCreate_ValidConfig_Success
+[       OK ] EthicsComprehensiveTest.EngineCreate_ValidConfig_Success (561 ms)
+[ RUN      ] EthicsComprehensiveTest.EngineCreate_NullConfig_ReturnsNull
+[       OK ] EthicsComprehensiveTest.EngineCreate_NullConfig_ReturnsNull (551 ms)
+[ RUN      ] EthicsComprehensiveTest.EngineCreate_MinimalConfig_Success
+[       OK ] EthicsComprehensiveTest.EngineCreate_MinimalConfig_Success (1091 ms)
+[ RUN      ] EthicsComprehensiveTest.EngineCreate_LargeConfig_Success
+[       OK ] EthicsComprehensiveTest.EngineCreate_LargeConfig_Success (1102 ms)
+[ RUN      ] EthicsComprehensiveTest.EngineDestroy_Null_NoCrash
+[       OK ] EthicsComprehensiveTest.EngineDestroy_Null_NoCrash (549 ms)
+[ RUN      ] EthicsComprehensiveTest.EngineDestroy_Valid_Success
+
+Program received signal SIGINT, Interrupt.
+0x00007ffff7c6c1d4 in init_neuron_activity_tracking (neuron=0x7fff2eaf38d4) at /home/bbrelin/nimcp/src/core/neuralnet/nimcp_neuralnet.c:384
+384	    neuron->num_synapses = 0;
+
+Thread 1 (Thread 0x7ffff7b5e9c0 (LWP 686962) "unit_test_ethic"):
+#0  0x00007ffff7c6c1d4 in init_neuron_activity_tracking (neuron=0x7fff2eaf38d4) at /home/bbrelin/nimcp/src/core/neuralnet/nimcp_neuralnet.c:384
+#1  0x00007ffff7c6c8d2 in neural_network_create (config=0x5555561e154c) at /home/bbrelin/nimcp/src/core/neuralnet/nimcp_neuralnet.c:593
+#2  0x00007ffff7cc1b05 in adaptive_network_create (config=0x7fffffffd8e0) at /home/bbrelin/nimcp/src/plasticity/adaptive/nimcp_adaptive.c:870
+#3  0x00007ffff7c58f60 in create_brain_network (num_inputs=20, num_outputs=5, num_neurons=10000, sparsity_target=0.850000024) at /home/bbrelin/nimcp/src/core/brain/nimcp_brain.c:965
+#4  0x00007ffff7c5b0eb in brain_create (task_name=0x7ffff7d3d461 "perspective_taking", size=BRAIN_SIZE_MEDIUM, task=BRAIN_TASK_REGRESSION, num_inputs=20, num_outputs=5) at /home/bbrelin/nimcp/src/core/brain/nimcp_brain.c:1864
+#5  0x00007ffff7c8475a in empathy_network_create (config=0x7fffffffda00) at /home/bbrelin/nimcp/src/cognitive/ethics/nimcp_ethics.c:1125
+#6  0x00007ffff7c82dd6 in create_empathy_network () at /home/bbrelin/nimcp/src/cognitive/ethics/nimcp_ethics.c:597
+#7  0x00007ffff7c83471 in ethics_engine_create (config=0x7fffffffdaa0) at /home/bbrelin/nimcp/src/cognitive/ethics/nimcp_ethics.c:714
+#8  0x00005555555b47d7 in (anonymous namespace)::EthicsComprehensiveTest_EngineDestroy_Valid_Success_Test::TestBody (this=0x5555557be050) at /home/bbrelin/nimcp/test/unit/test_ethics_comprehensive.cpp:188
+#9  0x00005555556964b7 in testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void> (object=0x5555557be050, method=&virtual testing::Test::TestBody(), location=0x5555556ca903 "the test body") at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:2612
+#10 0x0000555555686b14 in testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void> (object=0x5555557be050, method=&virtual testing::Test::TestBody(), location=0x5555556ca903 "the test body") at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:2648
+#11 0x0000555555633493 in testing::Test::Run (this=0x5555557be050) at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:2687
+#12 0x0000555555634e1e in testing::TestInfo::Run (this=0x5555557a02e0) at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:2836
+#13 0x0000555555636495 in testing::TestSuite::Run (this=0x55555579f970) at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:3015
+#14 0x000055555565a895 in testing::internal::UnitTestImpl::RunAllTests (this=0x55555579f5d0) at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:5920
+#15 0x0000555555698410 in testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> (object=0x55555579f5d0, method=(bool (testing::internal::UnitTestImpl::*)(class testing::internal::UnitTestImpl * const)) 0x555555659fa0 <testing::internal::UnitTestImpl::RunAllTests()>, location=0x5555556cb350 "auxiliary test code (environments or event listeners)") at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:2612
+#16 0x00005555556891ef in testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> (object=0x55555579f5d0, method=(bool (testing::internal::UnitTestImpl::*)(class testing::internal::UnitTestImpl * const)) 0x555555659fa0 <testing::internal::UnitTestImpl::RunAllTests()>, location=0x5555556cb350 "auxiliary test code (environments or event listeners)") at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:2648
+#17 0x0000555555656f95 in testing::UnitTest::Run (this=0x555555763380 <testing::UnitTest::GetInstance()::instance>) at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest.cc:5484
+#18 0x00005555556bdf24 in RUN_ALL_TESTS () at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/include/gtest/gtest.h:2317
+#19 0x00005555556bdeaa in main (argc=1, argv=0x7fffffffe078) at /home/bbrelin/nimcp/build/_deps/googletest-src/googletest/src/gtest_main.cc:64
+A debugging session is active.
+
+	Inferior 1 [process 686962] will be killed.
+
+Quit anyway? (y or n) [answered Y; input not from terminal]

@@ -1,0 +1,154 @@
+# Cognition subsystem wiring - extracted from bio_router_register_handler calls
+# Auto-generated from /home/bbrelin/nimcp/src/cognitive/ source files
+{"type":"entity","name":"autobiographical_memory","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"global_workspace","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"salience","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"working_memory","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"reasoning_integration","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"remorse_regret","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"knowledge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"knowledge_base_interface","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"introspection","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"emotional_system","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"shadow_emotions","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"grief_and_loss","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"joy_euphoria","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"brain_immune","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"semantic_memory","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"wm_transfer","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"engram","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"ethics","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"systems_consolidation","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_stdp","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"emotion_tensor_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"consolidation","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_neurons","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"executive","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"relation","from":"autobiographical_memory","to":"BIO_MSG_WORKING_MEMORY_RETRIEVE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_WORKING_MEMORY_RETRIEVE"}
+{"type":"relation","from":"global_workspace","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ATTENTION_SHIFT"}
+{"type":"relation","from":"salience","to":"BIO_MSG_SALIENCE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SALIENCE_QUERY"}
+{"type":"relation","from":"working_memory","to":"BIO_MSG_WORKING_MEMORY_STORE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_WORKING_MEMORY_STORE"}
+{"type":"relation","from":"working_memory","to":"BIO_MSG_WORKING_MEMORY_RETRIEVE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_WORKING_MEMORY_RETRIEVE"}
+{"type":"relation","from":"working_memory","to":"BIO_MSG_NEUROMODULATOR_RELEASE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_NEUROMODULATOR_RELEASE"}
+{"type":"relation","from":"reasoning_integration","to":"BIO_MSG_KNOWLEDGE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_KNOWLEDGE_QUERY"}
+{"type":"relation","from":"reasoning_integration","to":"BIO_MSG_DECISION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_DECISION_REQUEST"}
+{"type":"relation","from":"remorse_regret","to":"BIO_MSG_ETHICS_EVALUATION_RESPONSE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ETHICS_EVALUATION_RESPONSE"}
+{"type":"relation","from":"knowledge","to":"BIO_MSG_KNOWLEDGE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_KNOWLEDGE_QUERY"}
+{"type":"relation","from":"knowledge_base_interface","to":"BIO_MSG_KNOWLEDGE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_KNOWLEDGE_QUERY"}
+{"type":"relation","from":"introspection","to":"BIO_MSG_INTROSPECTION_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INTROSPECTION_QUERY"}
+{"type":"relation","from":"emotional_system","to":"BIO_MSG_SALIENCE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SALIENCE_QUERY"}
+{"type":"relation","from":"shadow_emotions","to":"BIO_MSG_INTROSPECTION_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INTROSPECTION_QUERY"}
+{"type":"relation","from":"grief_and_loss","to":"BIO_MSG_INTROSPECTION_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INTROSPECTION_QUERY"}
+{"type":"relation","from":"joy_euphoria","to":"BIO_MSG_CURIOSITY_SIGNAL","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CURIOSITY_SIGNAL"}
+{"type":"relation","from":"brain_immune","to":"BIO_MSG_IMAGINATION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_IMAGINATION_REQUEST"}
+{"type":"relation","from":"semantic_memory","to":"BIO_MSG_KNOWLEDGE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_KNOWLEDGE_QUERY"}
+{"type":"relation","from":"wm_transfer","to":"BIO_MSG_WORKING_MEMORY_STORE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_WORKING_MEMORY_STORE"}
+{"type":"relation","from":"engram","to":"BIO_MSG_WORKING_MEMORY_RETRIEVE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_WORKING_MEMORY_RETRIEVE"}
+{"type":"relation","from":"ethics","to":"BIO_MSG_ETHICS_EVALUATION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ETHICS_EVALUATION_REQUEST"}
+{"type":"relation","from":"systems_consolidation","to":"BIO_MSG_CONSOLIDATION_TRIGGER","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CONSOLIDATION_TRIGGER"}
+{"type":"relation","from":"mirror_stdp","to":"BIO_MSG_MIRROR_NEURON_ACTIVATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_NEURON_ACTIVATION"}
+{"type":"relation","from":"mirror_stdp","to":"BIO_MSG_STDP_EVENT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_STDP_EVENT"}
+{"type":"relation","from":"emotion_tensor_bridge","to":"BIO_MSG_EMOTION_TENSOR_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMOTION_TENSOR_QUERY"}
+{"type":"relation","from":"emotion_tensor_bridge","to":"BIO_MSG_EMOTION_TENSOR_STIMULUS","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMOTION_TENSOR_STIMULUS"}
+{"type":"relation","from":"emotion_tensor_bridge","to":"BIO_MSG_EMOTION_SWARM_SYNC","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_EMOTION_SWARM_SYNC"}
+{"type":"relation","from":"consolidation","to":"BIO_MSG_CONSOLIDATION_TRIGGER","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CONSOLIDATION_TRIGGER"}
+{"type":"relation","from":"mirror_neurons","to":"BIO_MSG_MIRROR_NEURON_ACTIVATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_NEURON_ACTIVATION"}
+{"type":"relation","from":"executive","to":"BIO_MSG_DECISION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_DECISION_REQUEST"}
+{"type":"relation","from":"executive","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ATTENTION_SHIFT"}
+{"type":"relation","from":"executive","to":"BIO_MSG_TYPE_PORTIA_TIER_CHANGE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_TYPE_PORTIA_TIER_CHANGE"}
+{"type":"relation","from":"executive","to":"BIO_MSG_TYPE_PORTIA_DEGRADATION_EVENT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_TYPE_PORTIA_DEGRADATION_EVENT"}
+{"type":"relation","from":"Knowledge_Module","to":"BIO_MSG_KNOWLEDGE_QUERY","relationType":"HANDLES_MESSAGE","message_type":1001}
+{"type":"relation","from":"Introspection_Module","to":"BIO_MSG_INTROSPECTION_QUERY","relationType":"HANDLES_MESSAGE","message_type":1002}
+{"type":"relation","from":"Reasoning_Integration_Module","to":"BIO_MSG_KNOWLEDGE_QUERY","relationType":"HANDLES_MESSAGE","message_type":1001}
+{"type":"relation","from":"Reasoning_Integration_Module","to":"BIO_MSG_DECISION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":1003}
+{"type":"relation","from":"Salience_Module","to":"BIO_MSG_SALIENCE_QUERY","relationType":"HANDLES_MESSAGE","message_type":1004}
+{"type":"relation","from":"Executive_Module","to":"BIO_MSG_DECISION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":1003}
+{"type":"relation","from":"Executive_Module","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":1005}
+{"type":"relation","from":"Global_Workspace_Module","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":1005}
+{"type":"relation","from":"Mirror_Neurons_Module","to":"BIO_MSG_MIRROR_NEURON_ACTIVATION","relationType":"HANDLES_MESSAGE","message_type":1006}
+
+# Mirror neuron subsystems
+{"type":"entity","name":"mirror_hierarchy","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_resonance","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_substrate","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_immune","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_hypothalamus_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_omni_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_language_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_visual_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_motor_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_hippocampus_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_prefrontal_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true}
+{"type":"entity","name":"mirror_tom_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["SIMD-optimized belief state comparisons","Bidirectional mirror-ToM integration","Intention inference from action simulation","False belief detection from prediction errors"]}
+
+# Mirror neuron message handlers
+{"type":"relation","from":"mirror_hypothalamus_bridge","to":"BIO_MSG_MIRROR_OBSERVATION_START","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_OBSERVATION_START"}
+{"type":"relation","from":"mirror_omni_bridge","to":"BIO_MSG_MIRROR_GOAL_INFERRED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_GOAL_INFERRED"}
+{"type":"relation","from":"mirror_visual_bridge","to":"BIO_MSG_VISUAL_AGENT_DETECTED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_VISUAL_AGENT_DETECTED"}
+{"type":"relation","from":"mirror_motor_bridge","to":"BIO_MSG_MOTOR_ACTION_EXECUTED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MOTOR_ACTION_EXECUTED"}
+{"type":"relation","from":"mirror_motor_bridge","to":"BIO_MSG_MIRROR_RESONANCE_TRIGGERED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_RESONANCE_TRIGGERED"}
+{"type":"relation","from":"mirror_tom_bridge","to":"BIO_MSG_MIRROR_TOM_INTENTION_INFER","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_TOM_INTENTION_INFER"}
+{"type":"relation","from":"mirror_tom_bridge","to":"BIO_MSG_MIRROR_TOM_EMPATHY_TRIGGER","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_TOM_EMPATHY_TRIGGER"}
+{"type":"relation","from":"mirror_tom_bridge","to":"BIO_MSG_MIRROR_TOM_FALSE_BELIEF","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_TOM_FALSE_BELIEF"}
+{"type":"relation","from":"mirror_tom_bridge","to":"theory_of_mind","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_tom_bridge","to":"mirror_neurons","relationType":"INTEGRATES_WITH"}
+
+# Mirror-Emotion bridge (emotional contagion and empathy)
+{"type":"entity","name":"mirror_emotion_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["SIMD-optimized emotion feature comparison","Emotional contagion and empathy processing","Facial action unit pattern matching","Crisis detection and emotion regulation"]}
+{"type":"relation","from":"mirror_emotion_bridge","to":"BIO_MSG_MIRROR_NEURON_ACTIVATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MIRROR_NEURON_ACTIVATION"}
+{"type":"relation","from":"mirror_emotion_bridge","to":"emotion_recognition","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_emotion_bridge","to":"mirror_neurons","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_emotion_bridge","to":"empathy","relationType":"INTEGRATES_WITH"}
+
+# Mirror-Attention bridge (joint attention and gaze following)
+{"type":"entity","name":"mirror_attention_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["Joint attention mechanisms","Gaze cueing and following","Saliency map integration","Social attention coordination"]}
+{"type":"relation","from":"mirror_attention_bridge","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ATTENTION_SHIFT"}
+{"type":"relation","from":"mirror_attention_bridge","to":"attention","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_attention_bridge","to":"mirror_neurons","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_attention_bridge","to":"visual_cortex","relationType":"RECEIVES_FROM"}
+
+# Cross-module integration relations
+{"type":"relation","from":"mirror_neurons","to":"theory_of_mind","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_neurons","to":"hypothalamus","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_neurons","to":"visual_cortex","relationType":"RECEIVES_FROM"}
+{"type":"relation","from":"mirror_neurons","to":"motor_cortex","relationType":"SENDS_TO"}
+{"type":"relation","from":"mirror_neurons","to":"broca","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_neurons","to":"wernicke","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_neurons","to":"hippocampus","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_neurons","to":"prefrontal_cortex","relationType":"RECEIVES_FROM"}
+{"type":"relation","from":"mirror_neurons","to":"omni_active_inference","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"mirror_neurons","to":"omni_world_model","relationType":"SENDS_TO"}
+
+# Society of Thought: Surprise bridge subsystems
+{"type":"entity","name":"surprise_plasticity_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["Surprise-driven synaptic plasticity modulation","Habituation tracking per source","STDP window expansion during surprise"]}
+{"type":"entity","name":"surprise_snn_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["Spike train encoding of surprise signals","4-channel encoding: PE, conflict, novelty, hypothesis","Dominant channel detection"]}
+{"type":"entity","name":"surprise_substrate_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["Metabolic constraints on surprise processing","ATP-dependent detection sensitivity","Fatigue-modulated refractory periods"]}
+{"type":"entity","name":"surprise_thalamic_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["Thalamic gating and routing of surprise signals","Signal-type-specific routing to ACC, insula, pulvinar, PFC","Attention-weight-modulated gating"]}
+{"type":"entity","name":"surprise_pink_noise_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["1/f noise injection into surprise parameters","Voss-McCartney pink noise generation","Surprise-adaptive amplitude modulation"]}
+{"type":"entity","name":"surprise_imagination_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["High surprise triggers counterfactual imagination","Cooldown-gated scenario management","Expectation updates from imagined outcomes"]}
+{"type":"entity","name":"surprise_self_model_bridge","entityType":"CognitiveModule","subsystem":"cognition","min_tier":0,"enabled":true,"observations":["Capability surprise drives self-model revision","Confidence-modulated surprise sensitivity","Competence tracking across capabilities"]}
+
+# Surprise bridge message handlers
+{"type":"relation","from":"surprise_plasticity_bridge","to":"BIO_MSG_SURPRISE_PLASTICITY_MODULATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_PLASTICITY_MODULATE"}
+{"type":"relation","from":"surprise_plasticity_bridge","to":"BIO_MSG_SURPRISE_HABITUATION_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_HABITUATION_UPDATE"}
+{"type":"relation","from":"surprise_snn_bridge","to":"BIO_MSG_SURPRISE_SNN_SPIKE_BURST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_SNN_SPIKE_BURST"}
+{"type":"relation","from":"surprise_snn_bridge","to":"BIO_MSG_SURPRISE_SNN_CHANNEL_DOMINANT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_SNN_CHANNEL_DOMINANT"}
+{"type":"relation","from":"surprise_substrate_bridge","to":"BIO_MSG_SURPRISE_SUBSTRATE_MODULATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_SUBSTRATE_MODULATION"}
+{"type":"relation","from":"surprise_substrate_bridge","to":"BIO_MSG_SURPRISE_SUBSTRATE_FATIGUE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_SUBSTRATE_FATIGUE"}
+{"type":"relation","from":"surprise_thalamic_bridge","to":"BIO_MSG_SURPRISE_THALAMIC_ROUTE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_THALAMIC_ROUTE"}
+{"type":"relation","from":"surprise_thalamic_bridge","to":"BIO_MSG_SURPRISE_THALAMIC_GATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_THALAMIC_GATE"}
+{"type":"relation","from":"surprise_pink_noise_bridge","to":"BIO_MSG_SURPRISE_NOISE_INJECTION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_NOISE_INJECTION"}
+{"type":"relation","from":"surprise_pink_noise_bridge","to":"BIO_MSG_SURPRISE_NOISE_ADAPTATION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_NOISE_ADAPTATION"}
+{"type":"relation","from":"surprise_imagination_bridge","to":"BIO_MSG_SURPRISE_IMAGINATION_TRIGGER","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_IMAGINATION_TRIGGER"}
+{"type":"relation","from":"surprise_imagination_bridge","to":"BIO_MSG_SURPRISE_IMAGINATION_RESULT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_IMAGINATION_RESULT"}
+{"type":"relation","from":"surprise_self_model_bridge","to":"BIO_MSG_SURPRISE_SELF_MODEL_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_SELF_MODEL_UPDATE"}
+{"type":"relation","from":"surprise_self_model_bridge","to":"BIO_MSG_SURPRISE_CAPABILITY_REVISION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SURPRISE_CAPABILITY_REVISION"}
+
+# Surprise bridge integration relations
+{"type":"relation","from":"surprise_plasticity_bridge","to":"salience","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"surprise_snn_bridge","to":"salience","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"surprise_substrate_bridge","to":"salience","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"surprise_thalamic_bridge","to":"salience","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"surprise_pink_noise_bridge","to":"salience","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"surprise_imagination_bridge","to":"salience","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"surprise_self_model_bridge","to":"salience","relationType":"INTEGRATES_WITH"}

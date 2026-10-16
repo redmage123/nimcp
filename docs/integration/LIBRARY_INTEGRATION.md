@@ -2,7 +2,7 @@
 
 ## Overview
 
-NIMCP 2.5 builds as a shared library (`libnimcp_core.so`) that can be integrated into any C/C++ application. This guide shows you how to link and use NIMCP in your projects.
+NIMCP 2.5 builds as a shared library (`libnimcp.so`) that can be integrated into any C/C++ application. This guide shows you how to link and use NIMCP in your projects.
 
 ---
 
@@ -18,7 +18,7 @@ sudo make install
 ```
 
 This installs:
-- `/usr/local/lib/libnimcp_core.so` - Shared library
+- `/usr/local/lib/libnimcp.so` - Shared library
 - `/usr/local/include/nimcp_*.h` - Header files
 - `/usr/local/lib/pkgconfig/nimcp.pc` - pkg-config file
 
@@ -28,7 +28,7 @@ This installs:
 gcc myapp.c $(pkg-config --cflags --libs nimcp) -o myapp
 
 # Manual linking
-gcc myapp.c -I/usr/local/include -L/usr/local/lib -lnimcp_core -o myapp
+gcc myapp.c -I/usr/local/include -L/usr/local/lib -lnimcp -o myapp
 ```
 
 ### 3. Run Your Application
@@ -296,7 +296,7 @@ target_link_libraries(myapp ${NIMCP_LIBRARIES})
 ```cmake
 add_executable(myapp main.c)
 target_include_directories(myapp PRIVATE /usr/local/include)
-target_link_libraries(myapp /usr/local/lib/libnimcp_core.so)
+target_link_libraries(myapp /usr/local/lib/libnimcp.so)
 ```
 
 ---
@@ -430,13 +430,13 @@ sudo ldconfig
 ls /usr/local/include/nimcp_*.h
 
 # Add include path
-gcc myapp.c -I/usr/local/include -L/usr/local/lib -lnimcp_core
+gcc myapp.c -I/usr/local/include -L/usr/local/lib -lnimcp
 ```
 
 ### Symbol Not Found
 ```bash
 # Check what symbols are exported
-nm -D /usr/local/lib/libnimcp_core.so | grep brain_create
+nm -D /usr/local/lib/libnimcp.so | grep brain_create
 
 # Verify linking
 ldd myapp

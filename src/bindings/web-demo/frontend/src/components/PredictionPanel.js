@@ -1,22 +1,26 @@
 /**
- * PredictionPanel Component
- * ==========================
+ * PredictionPanel Component (Dataset-Aware)
+ * ==========================================
  *
- * WHAT: Interface for making predictions with trained brain
+ * WHAT: Interface for making predictions with trained brain on any dataset
  * WHY:  Test brain inference and visualize confidence
- * HOW:  Input form with prediction results display
+ * HOW:  Dynamic form that adapts to dataset configuration
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-function PredictionPanel({ onPredict, dataset, loading }) {
-  const [sepalLength, setSepalLength] = useState('5.0');
-  const [sepalWidth, setSepalWidth] = useState('3.5');
-  const [petalLength, setPetalLength] = useState('1.5');
-  const [petalWidth, setPetalWidth] = useState('0.3');
+function PredictionPanel({ onPredict, dataset, datasetInfo, loading }) {
+  const [featuresInput, setFeaturesInput] = useState('');
   const [trueLabel, setTrueLabel] = useState('');
   const [predictionResult, setPredictionResult] = useState(null);
   const [predicting, setPredicting] = useState(false);
+
+  // Update true label when dataset changes
+  useEffect(() => {
+    if (datasetInfo && datasetInfo.classes && datasetInfo.classes.length > 0) {
+      setTrueLabel('');
+    }
+  }, [datasetInfo]);
 
   const handlePredict = async (e) => {
     e.preventDefault();
@@ -24,12 +28,18 @@ function PredictionPanel({ onPredict, dataset, loading }) {
     setPredictionResult(null);
 
     try {
-      const features = [
-        parseFloat(sepalLength),
-        parseFloat(sepalWidth),
-        parseFloat(petalLength),
-        parseFloat(petalWidth)
-      ];
+      // Parse features from input
+      const features = featuresInput.split(',').map(f => parseFloat(f.trim()));
+
+      // Validate feature count
+      if (features.length !== datasetInfo.num_inputs) {
+        setPredictionResult({
+          success: false,
+          error: `Expected ${datasetInfo.num_inputs} features, got ${features.length}`
+        });
+        setPredicting(false);
+        return;
+      }
 
       const result = await onPredict(features, trueLabel || null);
       setPredictionResult(result);
@@ -50,10 +60,7 @@ function PredictionPanel({ onPredict, dataset, loading }) {
     const examples = dataset[className];
     const example = examples[examples.length - 1];
 
-    setSepalLength(example[0].toString());
-    setSepalWidth(example[1].toString());
-    setPetalLength(example[2].toString());
-    setPetalWidth(example[3].toString());
+    setFeaturesInput(example.join(', '));
     setTrueLabel(className);
   };
 
@@ -63,57 +70,57 @@ function PredictionPanel({ onPredict, dataset, loading }) {
     return '#ef4444'; // Red
   };
 
+  const getInputPlaceholder = () => {
+    if (!datasetInfo) return 'Enter feature values...';
+
+    if (datasetInfo.input_type === 'image') {
+      return `Enter ${datasetInfo.num_inputs} pixel values (0-1), comma-separated`;
+    }
+
+    return `Enter ${datasetInfo.num_inputs} feature values, comma-separated`;
+  };
+
+  if (!datasetInfo) {
+    return (
+      <div className="panel prediction-panel">
+        <h2>🔮 Prediction Panel</h2>
+        <p>Loading dataset information...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="panel prediction-panel">
       <h2>🔮 Prediction Panel</h2>
 
+      <div className="dataset-badge">
+        <strong>Dataset:</strong> {datasetInfo.name}
+      </div>
+
       <form onSubmit={handlePredict}>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Sepal Length (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={sepalLength}
-              onChange={(e) => setSepalLength(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Sepal Width (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={sepalWidth}
-              onChange={(e) => setSepalWidth(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Petal Length (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={petalLength}
-              onChange={(e) => setPetalLength(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Petal Width (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={petalWidth}
-              onChange={(e) => setPetalWidth(e.target.value)}
-              required
-            />
-          </div>
+        <div className="form-group">
+          <label>Feature Values</label>
+          <textarea
+            value={featuresInput}
+            onChange={(e) => setFeaturesInput(e.target.value)}
+            placeholder={getInputPlaceholder()}
+            rows="3"
+            required
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              color: 'var(--text-white)',
+              fontSize: '0.9rem',
+              fontFamily: 'monospace',
+              resize: 'vertical'
+            }}
+          />
+          <small style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
+            Expected: {datasetInfo.num_inputs} {datasetInfo.input_type} values
+          </small>
         </div>
 
         <div className="form-group">
@@ -123,9 +130,11 @@ function PredictionPanel({ onPredict, dataset, loading }) {
             onChange={(e) => setTrueLabel(e.target.value)}
           >
             <option value="">-- Select if known --</option>
-            <option value="setosa">🌸 Setosa</option>
-            <option value="versicolor">🌺 Versicolor</option>
-            <option value="virginica">🌷 Virginica</option>
+            {datasetInfo.classes.map((cls) => (
+              <option key={cls} value={cls}>
+                {cls}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -138,27 +147,20 @@ function PredictionPanel({ onPredict, dataset, loading }) {
         </button>
       </form>
 
-      <div className="example-buttons">
-        <p className="help-text">Load test example:</p>
-        <button
-          className="btn btn-outline btn-small"
-          onClick={() => loadExample('setosa')}
-        >
-          Setosa
-        </button>
-        <button
-          className="btn btn-outline btn-small"
-          onClick={() => loadExample('versicolor')}
-        >
-          Versicolor
-        </button>
-        <button
-          className="btn btn-outline btn-small"
-          onClick={() => loadExample('virginica')}
-        >
-          Virginica
-        </button>
-      </div>
+      {dataset && Object.keys(dataset).length > 0 && (
+        <div className="example-buttons">
+          <p className="help-text">Load test example:</p>
+          {Object.keys(dataset).slice(0, 6).map((className) => (
+            <button
+              key={className}
+              className="btn btn-outline btn-small"
+              onClick={() => loadExample(className)}
+            >
+              {className}
+            </button>
+          ))}
+        </div>
+      )}
 
       {predictionResult && (
         <div className="prediction-result">
@@ -169,12 +171,7 @@ function PredictionPanel({ onPredict, dataset, loading }) {
                 <div className="result-item">
                   <span className="result-label">Predicted Class:</span>
                   <span className="result-value prediction-class">
-                    {predictionResult.prediction === 'setosa' && '🌸'}
-                    {predictionResult.prediction === 'versicolor' && '🌺'}
-                    {predictionResult.prediction === 'virginica' && '🌷'}
-                    {' '}
-                    {predictionResult.prediction.charAt(0).toUpperCase() +
-                     predictionResult.prediction.slice(1)}
+                    {predictionResult.prediction}
                   </span>
                 </div>
 

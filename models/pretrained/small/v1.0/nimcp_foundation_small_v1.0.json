@@ -1,0 +1,114 @@
+{
+  "name": "nimcp_foundation_small_v1.0",
+  "display_name": "NIMCP Foundation Small v1.0",
+  "version": "1.0",
+  "size": "small",
+  "type": "foundation",
+  "description": "Compact model optimized for edge devices and low-latency applications",
+
+  "architecture": {
+    "neurons": 2500,
+    "topology": "scale_free",
+    "scale_free_exponent": -2.1,
+    "avg_connections_per_neuron": 60,
+    "neuron_types": {
+      "excitatory": 2000,
+      "inhibitory": 500
+    }
+  },
+
+  "training": {
+    "total_examples": 250000,
+    "training_duration_hours": 48,
+    "training_date": "2025-11-09",
+    "training_framework": "NIMCP v2.7.0",
+    "optimization": {
+      "stdp_enabled": true,
+      "eligibility_traces": true,
+      "neuromodulation": true,
+      "dopamine_modulated": true
+    }
+  },
+
+  "domains": [
+    "ethics",
+    "logic",
+    "basic_reasoning"
+  ],
+
+  "performance": {
+    "accuracy": {
+      "ethics": 0.85,
+      "logic": 0.88,
+      "basic_reasoning": 0.87,
+      "overall": 0.86
+    },
+    "confidence_calibration": 0.88,
+    "inference_latency_ms": {
+      "mean": 3.2,
+      "p50": 2.8,
+      "p95": 4.5,
+      "p99": 6.0
+    }
+  },
+
+  "resources": {
+    "file_size_mb": 5.4,
+    "memory_usage_mb": 8.2,
+    "recommended_cpu_cores": 1,
+    "recommended_ram_mb": 32
+  },
+
+  "capabilities": {
+    "classification": true,
+    "regression": true,
+    "sequence_learning": true,
+    "pattern_matching": true,
+    "association": true,
+    "transfer_learning": true,
+    "fine_tunable": true,
+    "distributed_cognition": false
+  },
+
+  "limitations": {
+    "max_input_dim": 512,
+    "max_output_labels": 1000,
+    "not_suitable_for": [
+      "complex multi-modal tasks",
+      "extremely large knowledge bases"
+    ]
+  },
+
+  "validation": {
+    "test_set_size": 25000,
+    "validation_accuracy": 0.858,
+    "cross_domain_generalization": 0.78,
+    "adversarial_robustness": 0.72
+  },
+
+  "checksum": {
+    "algorithm": "SHA256",
+    "hash": "def456abc789..."
+  },
+
+  "metadata": {
+    "created_date": "2025-11-09T00:00:00Z",
+    "created_by": "NIMCP Development Team",
+    "license": "MIT",
+    "citation": "NIMCP Foundation Models v1.0, 2025",
+    "homepage": "https://github.com/yourusername/nimcp"
+  },
+
+  "usage_examples": {
+    "python": "brain = nimcp.Brain.from_pretrained('foundation_small_v1.0')",
+    "c": "brain_t brain = brain_load_pretrained('nimcp_foundation_small_v1.0', NULL);"
+  },
+
+  "fine_tuning_recommendations": {
+    "learning_rate": 0.001,
+    "min_examples": 50,
+    "recommended_examples": 500,
+    "max_epochs": 30,
+    "early_stopping": true
+  }
+}

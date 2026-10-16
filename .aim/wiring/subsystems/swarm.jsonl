@@ -1,0 +1,11 @@
+# Swarm subsystem wiring - collective intelligence and multi-agent coordination
+# Handles flocking, gossip, narrative sharing, and swarm consciousness
+{"type":"entity","name":"Swarm_Flocking_Module","entityType":"SwarmModule","subsystem":"swarm","min_tier":1,"enabled":true}
+{"type":"entity","name":"Gossip_Beliefs_Module","entityType":"SwarmModule","subsystem":"swarm","min_tier":1,"enabled":true}
+{"type":"entity","name":"Swarm_Narrative_Module","entityType":"SwarmModule","subsystem":"swarm","min_tier":1,"enabled":true}
+{"type":"entity","name":"Swarm_Consciousness_Module","entityType":"SwarmModule","subsystem":"swarm","min_tier":2,"enabled":true}
+{"type":"entity","name":"Swarm_Multi_Module","entityType":"SwarmModule","subsystem":"swarm","min_tier":1,"enabled":true}
+{"type":"entity","name":"Swarm_Logic_Bridge_Module","entityType":"SwarmModule","subsystem":"swarm","min_tier":1,"enabled":true}
+{"type":"relation","from":"Swarm_Flocking_Module","to":"BIO_MSG_BRAIN_STATE_QUERY","relationType":"HANDLES_MESSAGE","message_type":7001}
+{"type":"relation","from":"Swarm_Narrative_Module","to":"BIO_MSG_NARRATIVE_SHARED","relationType":"HANDLES_MESSAGE","message_type":7002}
+{"type":"relation","from":"Gossip_Beliefs_Module","to":"BIO_MSG_GOSSIP_SPREAD","relationType":"HANDLES_MESSAGE","message_type":7003}

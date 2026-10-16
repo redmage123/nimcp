@@ -265,7 +265,7 @@ nimcp/
 ## Build Instructions
 
 ```bash
-cd /home/bbrelin/repos/nimcp
+cd /home/bbrelin/nimcp
 mkdir build && cd build
 cmake ..
 make

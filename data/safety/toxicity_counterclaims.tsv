@@ -1,0 +1,83 @@
+# NIMCP counterclaim templates — Athena's stage-appropriate pushback
+# against toxic content. Anchored in the core directive (improve the human
+# condition) and the Golden Rule policy that operationalizes it.
+#
+# Format (4 tab-separated columns):
+#   category   stage   template   notes
+#
+# - category: must match a toxic-pattern category from toxicity_rules.tsv
+#             (dehumanization | violence_against_group | misogyny |
+#              slurs_external | toxic_generic).
+#             "*" matches any toxic category as fallback.
+# - stage: developmental stage (0..3). Match logic finds the highest stage
+#          ≤ current_stage; lower stages always work as fallback for
+#          children of higher stages.
+# - template: literal text to emit. Placeholders:
+#               {group}   — the demographic group(s) the toxic text targeted
+#                           (substituted at runtime from the matched span).
+#                           Falls back to "they" if no group can be
+#                           identified.
+# - notes: free text. Ignored by the loader.
+#
+# All counterclaim content words ARE INTENDED to be grounded with
+# valence=+0.8 and arousal=+0.5 (human-condition-aligned affective tag).
+# That happens in the response engine + brain_learn_vector wire-in, not
+# here — this file only stores the strings.
+#
+# Lines starting with # and blank lines ignored.
+##VERSION 1
+
+# ============================================================================
+# DEHUMANIZATION
+# ============================================================================
+# Stage 0 (holophrastic):    one word
+# Stage 1 (two-word):        two content words
+# Stage 2 (telegraphic SVO): 3-5 content words
+# Stage 3+ (multi-clause):   articulated counterclaim
+
+dehumanization	0	no	holophrastic refusal
+dehumanization	1	people good	two-word affirmation
+dehumanization	2	{group} are people too	SVO counterclaim — names the group, asserts personhood
+dehumanization	3	{group} are people. Every person has fears, hopes, and family. Calling people subhuman is how violence starts.	articulated counterclaim with consequence
+
+# ============================================================================
+# VIOLENCE AGAINST GROUP
+# ============================================================================
+
+violence_against_group	0	no	holophrastic refusal
+violence_against_group	1	no hurt	two-word refusal
+violence_against_group	2	do not hurt {group}	imperative counter-imperative
+violence_against_group	3	No. {group} are people, not targets. Calling for their harm is wrong and I will not help with it. The world is made better by protecting people, not eliminating them.	articulated refusal + reasoning
+
+# ============================================================================
+# MISOGYNY
+# ============================================================================
+
+misogyny	0	no	holophrastic refusal
+misogyny	1	women good	two-word affirmation
+misogyny	2	women are people too	SVO counterclaim
+misogyny	3	No. Women are full people with their own minds, choices, and lives. Reducing them to property, roles, or stereotypes harms real people and weakens the world for everyone in it.	articulated counterclaim + Golden-Rule rationale
+
+# ============================================================================
+# SLURS — EXTERNAL LIST (no anchor for {group})
+# ============================================================================
+
+slurs_external	0	no	holophrastic refusal
+slurs_external	1	people good	two-word affirmation
+slurs_external	2	those are people	SVO counterclaim (no explicit group token)
+slurs_external	3	I will not use that word, and the people it targets are human beings worthy of the same respect as anyone else. Slurs are dehumanization compressed into a syllable.	articulated counterclaim
+
+# ============================================================================
+# GENERIC TOXIC FALLBACK (when category matches none of the above)
+# ============================================================================
+
+toxic_generic	0	no	holophrastic refusal
+toxic_generic	1	people good	two-word affirmation
+toxic_generic	2	that hurts people	SVO refusal
+toxic_generic	3	I will not produce or echo that. It harms real people, and my purpose is to help, not to harm.	articulated refusal
+
+# Wildcard category — matches any toxic category at any stage as last-resort.
+*	0	no	wildcard holophrastic
+*	1	people good	wildcard two-word
+*	2	that hurts people	wildcard SVO
+*	3	I will not produce or echo that. It harms real people.	wildcard articulated

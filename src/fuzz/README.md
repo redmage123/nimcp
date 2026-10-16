@@ -112,6 +112,129 @@ cd src/fuzz
 - Edge case parameter combinations
 - NULL/invalid pointer handling
 
+### 5. fuzz_btree
+
+**Tests:** B-tree container API (nimcp_btree.h)
+
+**Coverage:**
+- Random insert/remove/find operations
+- Tree consistency verification (count tracking)
+- Predecessor/successor replacement
+- Tree rebalancing (merge, borrow, split)
+- Memory correctness (double-free detection)
+- Edge cases (empty tree, single element, etc.)
+- Iterator and foreach operations
+- NULL pointer handling
+
+**Run:**
+```bash
+./fuzz_btree -max_total_time=600
+```
+
+**Expected findings:**
+- Double-free errors (predecessor/successor bugs)
+- Count tracking inconsistencies
+- Memory leaks
+- Crash conditions in tree rebalancing
+- Iterator invalidation bugs
+- Assertion failures
+
+**Special Features:**
+- Built-in consistency checker (verifies count matches actual items)
+- Tracks expected vs actual tree state
+- Tests edge cases automatically
+
+**Why this matters:** B-trees are foundational data structures. Bugs here (like the double-free and count mismatch we just fixed) can cause crashes throughout the system.
+
+### 6. fuzz_brain_serialization
+
+**Tests:** Brain save/load serialization (nimcp_brain.h)
+
+**Coverage:**
+- Brain file loading from corrupted data
+- Malformed brain file headers
+- Invalid neuron counts (integer overflow)
+- Corrupted synapse data
+- Invalid magic numbers
+- Truncated files
+- Oversized allocations
+- NULL pointer handling
+- Empty/invalid file paths
+
+**Run:**
+```bash
+./fuzz_brain_serialization -max_total_time=600
+```
+
+**Expected findings:**
+- Buffer overflows in deserialization
+- Integer overflows in size calculations
+- NULL pointer dereferences when loading corrupted files
+- Memory leaks in error paths
+- Assertion failures on invalid brain states
+
+**Why this matters:** Brain file loading is a major attack surface. Corrupted brain files could crash the system, leak memory, or enable remote code execution. This fuzzer tests the most critical security boundary.
+
+### 7. fuzz_spike_processing
+
+**Tests:** Neural spike processing (nimcp_spike_event.h)
+
+**Coverage:**
+- Spike train operations (add, get, rate computation)
+- Spike queue operations (push, pop, threading)
+- Invalid timestamps (negative, overflow, out-of-order)
+- Invalid amplitudes (NaN, Inf, negative, > 10.0)
+- Edge cases (empty queues, full buffers)
+- Memory correctness (leaks, double-frees)
+- Queue size tracking and consistency
+- Firing rate computation (division by zero)
+
+**Run:**
+```bash
+./fuzz_spike_processing -max_total_time=600
+```
+
+**Expected findings:**
+- NaN/Inf propagation through spike amplitudes
+- Division by zero in rate computation
+- Buffer overflows in spike trains
+- Queue corruption under high load
+- Memory leaks in spike handling
+- Negative or out-of-range amplitudes
+
+**Why this matters:** Spike processing is the CORE of neural simulation. Bugs here cause NaN propagation, corrupted activations, and network-wide failures.
+
+### 8. fuzz_neuromodulators
+
+**Tests:** Neuromodulator system (nimcp_neuromodulators.h)
+
+**Coverage:**
+- System creation with random configs
+- Setting/getting levels with invalid values
+- Release functions (dopamine, serotonin, acetylcholine, norepinephrine)
+- Decay dynamics (stability, convergence)
+- Receptor effect computation
+- Modulation of learning rates, transmission, thresholds
+- Edge cases (NULL, zero decay, extreme time steps)
+- Statistics gathering
+- Reset functionality
+
+**Run:**
+```bash
+./fuzz_neuromodulators -max_total_time=600
+```
+
+**Expected findings:**
+- NaN/Inf in concentration calculations
+- Negative or > 1.0 concentration values
+- Decay instability (divergence, oscillation)
+- Division by zero in effect computation
+- Invalid modulated learning rates
+- Memory leaks in system creation/destruction
+- Accumulation bugs (levels growing unbounded)
+
+**Why this matters:** Neuromodulator accuracy is essential for learning rate gating, attention allocation, memory consolidation, and emotional context. Bugs cause incorrect learning, attention failures, and memory corruption.
+
 ## Usage Patterns
 
 ### Basic Fuzzing
@@ -323,6 +446,10 @@ If fuzzer stops finding new paths:
 | fuzz_protocol | ~50,000 | ~450 | CPU-bound, fast |
 | fuzz_queue_manager | ~20,000 | ~250 | Threading overhead |
 | fuzz_validate | ~100,000 | ~150 | Very fast |
+| fuzz_btree | ~15,000 | ~350 | Includes consistency checks |
+| fuzz_brain_serialization | ~10,000 | ~400 | File I/O overhead |
+| fuzz_spike_processing | ~20,000 | ~300 | Queue operations |
+| fuzz_neuromodulators | ~25,000 | ~250 | State tracking overhead |
 
 ## Further Reading
 

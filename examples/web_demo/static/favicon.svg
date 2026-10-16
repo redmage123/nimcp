@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="45" fill="#667eea" opacity="0.2"/>
+
+  <!-- Neural nodes -->
+  <circle cx="30" cy="30" r="6" fill="#667eea"/>
+  <circle cx="70" cy="30" r="6" fill="#667eea"/>
+  <circle cx="50" cy="50" r="6" fill="#764ba2"/>
+  <circle cx="30" cy="70" r="6" fill="#667eea"/>
+  <circle cx="70" cy="70" r="6" fill="#667eea"/>
+
+  <!-- Connections -->
+  <line x1="30" y1="30" x2="50" y2="50" stroke="#667eea" stroke-width="2" opacity="0.6"/>
+  <line x1="70" y1="30" x2="50" y2="50" stroke="#667eea" stroke-width="2" opacity="0.6"/>
+  <line x1="50" y1="50" x2="30" y2="70" stroke="#764ba2" stroke-width="2" opacity="0.6"/>
+  <line x1="50" y1="50" x2="70" y2="70" stroke="#764ba2" stroke-width="2" opacity="0.6"/>
+  <line x1="30" y1="30" x2="70" y2="30" stroke="#667eea" stroke-width="1" opacity="0.4"/>
+  <line x1="30" y1="70" x2="70" y2="70" stroke="#667eea" stroke-width="1" opacity="0.4"/>
+</svg>

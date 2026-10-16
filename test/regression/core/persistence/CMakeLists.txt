@@ -1,0 +1,5 @@
+add_executable(regression_checkpoint test_checkpoint_regression.cpp)
+target_link_libraries(regression_checkpoint PRIVATE nimcp GTest::gtest GTest::gtest_main Threads::Threads m)
+target_compile_features(regression_checkpoint PRIVATE cxx_std_17)
+target_include_directories(regression_checkpoint PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
+gtest_discover_tests(regression_checkpoint PROPERTIES LABELS "regression;core;checkpoint" TIMEOUT 60)

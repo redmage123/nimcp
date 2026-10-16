@@ -1,0 +1,85 @@
+{
+  "_comment": "CROSS Wave-3 (2026-05-19) — default runtime language-architecture config applied by brain_daemon.py after every brain create/load. Every flag below is RUNTIME-ONLY in the C library (not persisted in nimcp_brain_save). This file is the source of truth for how the cascade behaves on daemon start. Override per-deployment by placing a JSON at /etc/athena/runtime_lang_config.json or pointing the LANG_CONFIG env var at an alternate file. Set LANG_CONFIG=off to skip the apply entirely.",
+  "_design_doc": "docs/claude/recurrent-language-architecture.md",
+
+  "_slice_1": "iterative cascade convergence — orchestrator only, no flag here; max_iters is per-call",
+
+  "_slice_2_arcuate": "Wernicke<->Broca arcuate feedback. No public setter on this branch (lives on brain->arcuate_feedback_strength, written only by the recurrent loop itself). Listed here for documentation.",
+
+  "respond_via_cascade": true,
+  "cascade_self_train_enabled": true,
+  "cascade_self_train_tunables": { "alpha": 0.05, "lr_scale": 1.0 },
+
+  "_deprecated_option1_rebuild": "trigram_learning_enabled / ltd_margin / comprehend_stdp_enabled / da_modulation_enabled / da_modulation_gain were removed when the SNN-language bridge became transport-only (Option-1 rebuild, 2026-05-19). The daemon no longer applies them (not in _apply_runtime_lang_config) and their RPC handlers return 'deprecated'. Dropped from this file (walkthrough R3, 2026-05-27) so they no longer imply active tuning.",
+  "reconsolidation_enabled": false,
+  "reconsolidation_decay": 0.05,
+
+  "_slice_4_lateral_inhibition": "K-WTA over lexical cohort. Default ON with divisive-norm tunables p=2.0 (gain_self repurposed as exponent) and eps=1e-6 (gain_inhibit repurposed as denominator floor). See S4-C1 in cascade.c.",
+  "lateral_inhibition_enabled": true,
+  "lateral_inhibition_params": {
+    "gain_self": 2.0,
+    "gain_inhibit": 0.000001,
+    "micro_steps": 20
+  },
+
+  "_slice_5_phonological_loop": "Baddeley working-memory phonological store + articulatory rehearsal. Default ON with biologically-reasonable decay/threshold.",
+  "phonological_loop_enabled": true,
+  "phonological_loop_decay": 0.15,
+  "phonological_loop_threshold": 0.3,
+
+  "_slice_6_thalamic_gates": "Per-stage pulvinar-style gain. Default ON; the recurrent loop computes weights from arousal+attention each cascade run. Manual overrides via thalamic_gate_overrides{stage_idx: weight}.",
+  "thalamic_gate_enabled": true,
+  "thalamic_gate_overrides": {},
+
+  "_slice_7_cerebellar_correction": "Predict + climbing-fiber LTD via existing cerebellum adapter. Default OFF until forward-model has had enough training to clear the confidence>0.3 gate (S7-H2). Operators flip on once cereb_motor_confidence stabilizes >0.3 in lang_status.",
+  "cerebellar_correction_enabled": false,
+  "cerebellar_correction_strength": 0.5,
+  "cerebellar_pe_threshold": 0.2,
+
+  "sentence_segmentation_enabled": true,
+  "speech_act_classification_enabled": true,
+  "topic_shift_enabled": true,
+  "topic_shift_threshold": 0.6,
+  "topic_shift_min_turns": 3,
+
+  "_produce_and_nlp_flags": "Default-OFF developmental features (walkthrough R1/R2, 2026-05-27). Previously absent from this file, so they had no enable knob on the pod (the daemon's _apply_runtime_lang_config skips absent keys). Listed here at their current default (false) so an operator can flip them on per-deployment via /etc/athena/runtime_lang_config.json. reason_in_content is Tier-1 Step E; the produce_* trio is Tier-2 coherence; coref/subword are NLP-2/NLP-1. All re-applied from this file every daemon start (runtime-only, not in the checkpoint).",
+  "reason_in_content": false,
+  "_network_into_language": "Non-SNN networks → language content_intent (2026-06-05). Every network except the FNO feeds the SNN language generator via the cascade content stage. ann/lnn/cnn blend a vector into content_intent; hnn (no semantic vector) modulates the produce confidence floor from its energy-deviation. All default OFF, runtime-only, re-applied every daemon start. No effect unless respond_via_cascade is also ON.",
+  "ann_in_content": false,
+  "lnn_in_content": false,
+  "hnn_in_content": false,
+  "cnn_in_content": false,
+  "coref_resolution_enabled": false,
+  "subword_oov_fallback_enabled": false,
+  "autoregressive_produce": false,
+  "produce_pronominalize": false,
+  "produce_discourse_seed": false,
+
+  "_producer_foundation": "FND-1 (2026-05-27): produce_clause_frame builds a real SVO clause (predicate + agent/patient) from the grounded top-K instead of a reranked content-word bag. Default false; effective at stage>=2, falls back to greedy emit on weak signal. The first 'strengthen the producer foundation' slice.",
+  "produce_clause_frame": false,
+
+  "_produce_score_rebalance": "Produce-score rebalance (2026-05-27): produce_distributional_weight is the weight on the distributional (context-vector) term vs the concept-binding term in produce word scoring (raw = w*distributional + (1-w)*concept). Default 0.4 = historical 0.4/0.6 split. Raise toward ~0.7 so concrete intent-correct words outrank the broad abstract cluster whose wide concept bindings otherwise monopolize produce regardless of intent (diagnosed: produce collapsed to ~20 abstract nouns). Clamped [0,1].",
+  "produce_distributional_weight": 0.7,
+
+  "_produce_frequency_penalty": "Produce-score frequency penalty (2026-06-01): IDF-style damping of high-frequency words in produce scoring (raw *= 1/(1 + p*log1p(frequency))). Default 0.0 = OFF. Raise (~0.1-0.3) so distributionally-central technical-corpus vocab (gpu/impedance/lidar/...) stops monopolizing produce filler positions — the word-salad contamination diagnosed 2026-06-01. Runtime-only (applied from this file at daemon start; not LANC-persisted). p<0 clamped to 0.",
+  "produce_frequency_penalty": 0.1,
+
+  "_produce_via_snn": "Increment-1 (2026-06-02): SNN-as-generator A/B switch. Default false. When true, grounded_language_produce sources candidate words from the SNN language bridge's per-tick Broca spike cache (decode_spikes_cached) instead of find_words_near_vector, with the lexicon producer as permanent fallback when the SNN yields no signal. The intent it decodes against is the cascade's cognitively-integrated content_intent, so all cognitive modules that reach content_intent drive SNN generation. Runtime-only (applied at daemon start).",
+  "produce_via_snn": false,
+
+  "_metacog_gates_produce": "Metacognitive produce-floor modulation (2026-06-02). Default false. When true, cascade_stage_content shifts the produce confidence floor from world-model surprise (FEP prediction-error trajectory fep_pe_terminal/fep_pe_initial): a converged model lowers the floor (more willing to assert), a still-surprised model raises it (more 'I don't know'). This is the correct integration for the modulatory cognitive modules (emotion/introspection/world-model) which carry no semantic content vector for content_intent. Introspection confidence + wellbeing distress fold into the same adjust as follow-ons. Runtime-only.",
+  "metacog_gates_produce": false,
+
+  "_t3_givenness_definite": "T3-1 (2026-05-28): produce_givenness_definite, default ON. gl_apply_givenness_definite runs in the surface cascade right AFTER T2 pronominalization and swaps the preceding 'a'/'an' to 'the' on a NOUN re-mention (recency window) that T2-1 did NOT pronominalize (person nouns, unanchored slots). Marks the second mention as given, which is the natural complement to T2-1/T2-3. Stage-gated >=2 inside the helper. Conservative + idempotent so ON-by-default is safe — operators can flip false per-deployment.",
+  "produce_givenness_definite": true,
+
+  "_t3_conjunction": "T3-2 (2026-05-29): produce_t3_conjunction, default ON. gl_apply_t3_conjunction runs AFTER T3-1 in the cascade. Scans for the first adjacent SVO pair (VERB ... DET-or-NOUN ... VERB) and inserts 'and' before the second clause's leading determiner/noun unless that token is already a connective (and/but/so/or/then/while/because/although). Single insert per pass, idempotent on re-run. Stage-gated >=2. Conservative — leaves output unchanged when the pattern isn't detected, so ON-by-default is safe.",
+  "produce_t3_conjunction": true,
+
+  "_tf_feedback": "TF-2 (2026-05-28): Tier-feedback plasticity — the cascade-delta diff feeds back into NN training so the network eventually internalizes the corrected form. produce_corrector_feedback_enabled default true; tf_enabled_correctors default 31 (all five bits: 1=F3, 2=F4, 4=T2-1, 8=T3-1, 16=T3-2). Trigram + distributional EMA fire at their default lrs (0.002 / 0.01) on every cascade pass that the outcome gate (stage>=2, DA>=0, no speech-repair retry, fresh reward) passes. Bridge STDP stays at 0.0 EVEN WHEN MASTER IS ON — TF-5 walkthrough required before raising. Per-path max: trigram 0.05, distrib 0.1, bridge stdp 0.1. Flip the master to false to disable TF entirely.",
+  "produce_corrector_feedback_enabled": true,
+  "tf_enabled_correctors": 31,
+  "tf_lr_trigram": 0.002,
+  "tf_lr_distrib": 0.01,
+  "tf_lr_bridge_stdp": 0.0
+}

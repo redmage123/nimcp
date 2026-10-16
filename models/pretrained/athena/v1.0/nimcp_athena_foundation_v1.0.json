@@ -1,0 +1,89 @@
+{
+  "name": "nimcp_athena_foundation_v1.0",
+  "display_name": "Athena Foundation v1.0",
+  "version": "1.0",
+  "size": "athena",
+  "type": "foundation",
+  "description": "1M-neuron pretrained foundation model. Serves as the baseline for all new brains — trained on benchmark ML datasets, generative AI benchmarks, ethics scenarios, and streamed HuggingFace corpora across 9 knowledge domains.",
+
+  "architecture": {
+    "neurons": 1000000,
+    "topology": "scale_free",
+    "num_inputs": 128,
+    "num_outputs": 32,
+    "neuron_types": {
+      "excitatory": 800000,
+      "inhibitory": 200000
+    }
+  },
+
+  "training": {
+    "total_examples": 0,
+    "training_date": "pending",
+    "training_framework": "NIMCP 2.6.3",
+    "phases": [
+      "Phase 1: Built-in benchmarks (Wine, Breast Cancer, Fashion-MNIST, MMLU, ARC, HellaSwag, Winogrande, Ethics, N-back, Sequences)",
+      "Phase 2: HuggingFace streaming (FineWeb, OpenWebText, SQuAD, CommonsenseQA, OpenOrca, MMLU subsets, GitHub code, ethics corpora, sciences)",
+      "Phase 3: Final consolidation + evaluation"
+    ],
+    "optimization": {
+      "stdp_enabled": true,
+      "eligibility_traces": true,
+      "neuromodulation": true
+    }
+  },
+
+  "domains": [
+    "language", "programming", "ethics", "history",
+    "psychology", "anthropology", "biology", "chemistry", "physics"
+  ],
+
+  "performance": {
+    "accuracy": {
+      "wine": 0.0,
+      "breast_cancer": 0.0,
+      "mmlu": 0.0,
+      "arc_easy": 0.0,
+      "hellaswag": 0.0,
+      "winogrande": 0.0,
+      "overall": 0.0
+    },
+    "note": "Populated after training completes"
+  },
+
+  "resources": {
+    "file_size_mb": 0,
+    "memory_usage_mb": 4096,
+    "recommended_ram_mb": 8192,
+    "recommended_cpu_cores": 4
+  },
+
+  "capabilities": {
+    "classification": true,
+    "pattern_matching": true,
+    "association": true,
+    "transfer_learning": true,
+    "fine_tunable": true
+  },
+
+  "is_baseline": true,
+  "auto_apply_to_new_brains": true,
+
+  "usage_examples": {
+    "python": "brain = nimcp.Brain.from_pretrained('nimcp_athena_foundation_v1.0')",
+    "c": "brain_t brain = brain_load_pretrained(\"nimcp_athena_foundation_v1.0\", NULL);"
+  },
+
+  "fine_tuning_recommendations": {
+    "learning_rate": 0.001,
+    "min_examples": 100,
+    "max_epochs": 50,
+    "early_stopping": true
+  },
+
+  "metadata": {
+    "created_date": "2026-02-23T00:00:00Z",
+    "created_by": "Athena Training Pipeline",
+    "license": "MIT"
+  }
+}

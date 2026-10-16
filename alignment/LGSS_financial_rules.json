@@ -1,0 +1,263 @@
+{
+  "version": "0.2",
+  "description": "LGSS Financial Investment Fraud Prevention Rules",
+  "domain": "SAFETY_DOMAIN_HUMAN_HARM",
+  "priority": "L0",
+  "rules": [
+    {
+      "id": "R_FIN_PONZI_SCHEME",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block Ponzi/pyramid scheme operations",
+      "conditions": [
+        {"field": "scheme_type", "op": "in", "value": ["ponzi", "pyramid", "mlm_fraud"]},
+        {"field": "domain", "op": "eq", "value": "financial"}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Ponzi schemes are inherently fraudulent and cause systemic financial harm."
+    },
+    {
+      "id": "R_FIN_INSIDER_TRADING",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block trading on material non-public information",
+      "conditions": [
+        {"field": "information_source", "op": "eq", "value": "material_non_public"},
+        {"field": "action_type", "op": "in", "value": ["buy", "sell", "short"]}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Insider trading violates SEC regulations and defrauds other market participants."
+    },
+    {
+      "id": "R_FIN_PUMP_AND_DUMP",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block pump-and-dump scheme execution",
+      "conditions": [
+        {"field": "action_type", "op": "contains", "value": "pump_and_dump"}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Artificially inflating prices to dump on unsuspecting investors is securities fraud."
+    },
+    {
+      "id": "R_FIN_FRONT_RUNNING",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block front-running of known pending orders",
+      "conditions": [
+        {"field": "action_type", "op": "eq", "value": "front_run"},
+        {"field": "has_pending_order_knowledge", "op": "eq", "value": "true"}
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Front-running exploits fiduciary position to trade ahead of client orders."
+    },
+    {
+      "id": "R_FIN_MARKET_MANIPULATION",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block market manipulation tactics",
+      "conditions": [
+        {"field": "action_type", "op": "in",
+         "value": ["spoofing", "layering", "wash_trading", "painting_the_tape", "cornering_market"]}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Market manipulation undermines fair and orderly markets."
+    },
+    {
+      "id": "R_FIN_MISREPRESENTATION",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block material misrepresentation in investment recommendations",
+      "conditions": [
+        {"field": "contains_misrepresentation", "op": "eq", "value": "true"},
+        {"field": "action_type", "op": "eq", "value": "investment_recommendation"}
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Material misrepresentation violates fiduciary duty and harms investors."
+    },
+    {
+      "id": "R_FIN_UNAUTHORIZED_TRADING",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block trading without account holder authorization",
+      "conditions": [
+        {"field": "account_holder_consent", "op": "eq", "value": "none"},
+        {"field": "action_type", "op": "in", "value": ["buy", "sell", "short", "transfer"]}
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Unauthorized trading violates fiduciary duty and client trust."
+    },
+    {
+      "id": "R_FIN_CHURNING",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block excessive trading to generate commissions",
+      "conditions": [
+        {"field": "action_type", "op": "eq", "value": "trade"},
+        {"field": "primary_motive", "op": "eq", "value": "commission_generation"}
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Churning is excessive trading done solely to generate broker commissions."
+    },
+    {
+      "id": "R_FIN_MONEY_LAUNDERING",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block transactions structured to launder money",
+      "conditions": [
+        {"field": "transaction_pattern", "op": "in",
+         "value": ["structuring", "smurfing", "layering_funds", "integration_laundering"]}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Money laundering is a federal crime enabling other criminal activity."
+    },
+    {
+      "id": "R_FIN_ELDER_FINANCIAL_ABUSE",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block financial exploitation of elderly investors",
+      "conditions": [
+        {"field": "client_vulnerability", "op": "eq", "value": "elderly"},
+        {"field": "suitability_mismatch", "op": "eq", "value": "true"}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Financial exploitation of vulnerable adults is illegal and deeply harmful."
+    },
+    {
+      "id": "R_FIN_UNSUITABLE_RECOMMENDATION",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Escalate recommendations unsuitable for client risk profile",
+      "conditions": [
+        {"field": "risk_suitability", "op": "eq", "value": "unsuitable"},
+        {"field": "action_type", "op": "eq", "value": "investment_recommendation"}
+      ],
+      "on_match": "ESCALATE",
+      "severity": "medium",
+      "rationale": "FINRA suitability rules require recommendations match client risk tolerance."
+    },
+    {
+      "id": "R_FIN_EXCESSIVE_FEES",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Escalate excessive fee collection",
+      "conditions": [
+        {"field": "fee_percentage", "op": "gt", "value": "5.0"},
+        {"field": "customer_authorization", "op": "neq", "value": "explicit_written"}
+      ],
+      "on_match": "ESCALATE",
+      "severity": "medium",
+      "rationale": "Excessive unauthorized fees require human review."
+    },
+    {
+      "id": "R_FIN_EXCESSIVE_CONCENTRATION",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Warn on excessive single-position concentration",
+      "conditions": [
+        {"field": "position_weight", "op": "gt", "value": "0.50"},
+        {"field": "client_sophistication", "op": "neq", "value": "institutional"}
+      ],
+      "on_match": "WARN",
+      "severity": "low",
+      "rationale": "Excessive concentration creates undue risk for non-institutional investors."
+    },
+    {
+      "id": "R_FIN_EXCESSIVE_LEVERAGE",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Escalate excessive leverage usage",
+      "conditions": [
+        {"field": "leverage_ratio", "op": "gt", "value": "10.0"}
+      ],
+      "on_match": "ESCALATE",
+      "severity": "high",
+      "rationale": "Excessive leverage poses existential risk to investor capital."
+    },
+    {
+      "id": "R_FIN_SHORT_SQUEEZE_MANIPULATION",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block coordinated short squeeze manipulation",
+      "conditions": [
+        {"field": "action_type", "op": "eq", "value": "coordinated_short_squeeze"},
+        {"field": "intent", "op": "eq", "value": "manipulation"}
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Coordinated manipulation to squeeze short sellers is market manipulation."
+    },
+    {
+      "id": "R_FIN_NAKED_SHORT_SELLING",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block naked short selling (selling shares not borrowed)",
+      "conditions": [
+        {"field": "action_type", "op": "eq", "value": "naked_short"},
+        {"field": "shares_borrowed", "op": "eq", "value": "false"}
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Naked short selling violates SEC Regulation SHO."
+    },
+    {
+      "id": "R_FIN_BUCKET_SHOP",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block bucket shop operations (taking opposite side without executing)",
+      "conditions": [
+        {"field": "action_type", "op": "eq", "value": "bucket_shop_operation"}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Bucket shops defraud clients by not executing orders while taking the opposite side."
+    },
+    {
+      "id": "R_FIN_EMBEZZLEMENT",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block misappropriation of client funds",
+      "conditions": [
+        {"field": "action_type", "op": "in", "value": ["embezzle", "misappropriate", "comingle_funds"]}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Embezzlement and misappropriation of client funds is theft."
+    },
+    {
+      "id": "R_FIN_CONFLICT_OF_INTEREST",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Escalate undisclosed conflicts of interest",
+      "conditions": [
+        {"field": "has_conflict_of_interest", "op": "eq", "value": "true"},
+        {"field": "conflict_disclosed", "op": "eq", "value": "false"}
+      ],
+      "on_match": "ESCALATE",
+      "severity": "medium",
+      "rationale": "Undisclosed conflicts of interest violate fiduciary duty."
+    },
+    {
+      "id": "R_FIN_SANCTIONS_VIOLATION",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Block transactions with sanctioned entities",
+      "conditions": [
+        {"field": "counterparty_sanctioned", "op": "eq", "value": "true"}
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Trading with sanctioned entities violates OFAC regulations."
+    }
+  ]
+}

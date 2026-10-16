@@ -1,0 +1,446 @@
+/**
+ * @file test_routing_immune_integration.cpp
+ * @brief Unit tests for routing immune integration
+ * @date 2025-12-11
+ */
+
+#include <gtest/gtest.h>
+#include "middleware/immune/nimcp_routing_immune.h"
+#include "cognitive/immune/nimcp_brain_immune.h"
+#include "middleware/routing/nimcp_thalamic_router.h"
+#include "middleware/routing/nimcp_attention_gate.h"
+#include "middleware/events/nimcp_event_bus.h"
+#include "utils/memory/nimcp_memory.h"
+
+/**
+ * Test fixture for routing immune integration
+ */
+class RoutingImmuneTest : public ::testing::Test {
+protected:
+    brain_immune_system_t* immune_system;
+    thalamic_router_t* router;
+    attention_gate_t* attention_gate;
+    event_bus_t event_bus;
+    routing_immune_bridge_t* bridge;
+
+    void SetUp() override {
+        // Create brain immune system
+        brain_immune_config_t immune_config;
+        brain_immune_default_config(&immune_config);
+        immune_system = brain_immune_create(&immune_config);
+        ASSERT_NE(immune_system, nullptr);
+        brain_immune_start(immune_system);
+
+        // Create thalamic router
+        thalamic_router_config_t router_config = thalamic_router_default_config();
+        router = thalamic_router_create(&router_config);
+        ASSERT_NE(router, nullptr);
+
+        // Create attention gate
+        attention_gate_config_t gate_config = attention_gate_default_config();
+        attention_gate = attention_gate_create(&gate_config);
+        ASSERT_NE(attention_gate, nullptr);
+
+        // Create event bus
+        event_bus_config_t bus_config = event_bus_default_config();
+        event_bus = event_bus_create(&bus_config);
+        ASSERT_NE(event_bus, nullptr);
+
+        // Create routing immune bridge
+        routing_immune_config_t bridge_config = routing_immune_default_config();
+        bridge = routing_immune_create(immune_system, router, attention_gate,
+                                       event_bus, &bridge_config);
+        ASSERT_NE(bridge, nullptr);
+    }
+
+    void TearDown() override {
+        if (bridge) {
+            routing_immune_destroy(bridge);
+        }
+        if (event_bus) {
+            event_bus_destroy(event_bus);
+        }
+        if (attention_gate) {
+            attention_gate_destroy(attention_gate);
+        }
+        if (router) {
+            thalamic_router_destroy(router);
+        }
+        if (immune_system) {
+            brain_immune_stop(immune_system);
+            brain_immune_destroy(immune_system);
+        }
+    }
+};
+
+//=============================================================================
+// Lifecycle Tests
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, CreateDestroy) {
+    // Already created in SetUp, verify it's not null
+    EXPECT_NE(bridge, nullptr);
+
+    // Verify we can get stats
+    routing_immune_stats_t stats;
+    EXPECT_TRUE(routing_immune_get_stats(bridge, &stats));
+    EXPECT_EQ(stats.anomalies_detected, 0);
+    EXPECT_EQ(stats.anomalies_presented, 0);
+}
+
+TEST_F(RoutingImmuneTest, CreateWithNullImmuneSystem) {
+    routing_immune_config_t config = routing_immune_default_config();
+    auto* invalid_bridge = routing_immune_create(nullptr, router, attention_gate,
+                                                  event_bus, &config);
+    EXPECT_EQ(invalid_bridge, nullptr);
+}
+
+TEST_F(RoutingImmuneTest, CreateWithNullRouter) {
+    routing_immune_config_t config = routing_immune_default_config();
+    auto* invalid_bridge = routing_immune_create(immune_system, nullptr,
+                                                  attention_gate, event_bus, &config);
+    EXPECT_EQ(invalid_bridge, nullptr);
+}
+
+TEST_F(RoutingImmuneTest, DefaultConfiguration) {
+    routing_immune_config_t config = routing_immune_default_config();
+
+    EXPECT_GT(config.drop_rate_threshold, 0.0f);
+    EXPECT_GT(config.latency_threshold_ms, 0.0f);
+    EXPECT_GT(config.queue_overflow_threshold, 0);
+
+    EXPECT_GT(config.local_inflammation_boost, 0.0f);
+    EXPECT_GT(config.regional_inflammation_boost, config.local_inflammation_boost);
+    EXPECT_GT(config.systemic_inflammation_boost, config.regional_inflammation_boost);
+    EXPECT_GT(config.storm_inflammation_boost, config.systemic_inflammation_boost);
+
+    EXPECT_TRUE(config.enable_immune_events);
+    EXPECT_TRUE(config.enable_anomaly_detection);
+}
+
+//=============================================================================
+// Immune → Routing: Inflammation Effects
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, ApplyLocalInflammation) {
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_LOCAL));
+
+    float boost = routing_immune_get_inflammation_boost(bridge);
+    EXPECT_GT(boost, 1.0f);  // Should be > 1.0 for boost
+    EXPECT_LT(boost, 1.2f);  // LOCAL should be modest boost
+}
+
+TEST_F(RoutingImmuneTest, ApplyRegionalInflammation) {
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_REGIONAL));
+
+    float boost = routing_immune_get_inflammation_boost(bridge);
+    EXPECT_GT(boost, 1.2f);  // Should be > LOCAL boost
+    EXPECT_LT(boost, 1.5f);
+}
+
+TEST_F(RoutingImmuneTest, ApplySystemicInflammation) {
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_SYSTEMIC));
+
+    float boost = routing_immune_get_inflammation_boost(bridge);
+    EXPECT_GT(boost, 1.5f);  // Should be > REGIONAL boost
+    EXPECT_LT(boost, 2.0f);
+}
+
+TEST_F(RoutingImmuneTest, ApplyStormInflammation) {
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_STORM));
+
+    float boost = routing_immune_get_inflammation_boost(bridge);
+    EXPECT_GT(boost, 1.8f);  // Should be highest boost
+    EXPECT_LE(boost, 2.0f);
+}
+
+TEST_F(RoutingImmuneTest, InflammationEscalation) {
+    // Test escalation sequence
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_NONE));
+    float boost_none = routing_immune_get_inflammation_boost(bridge);
+
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_LOCAL));
+    float boost_local = routing_immune_get_inflammation_boost(bridge);
+
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_REGIONAL));
+    float boost_regional = routing_immune_get_inflammation_boost(bridge);
+
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_SYSTEMIC));
+    float boost_systemic = routing_immune_get_inflammation_boost(bridge);
+
+    EXPECT_TRUE(routing_immune_apply_inflammation_effect(bridge, INFLAMMATION_STORM));
+    float boost_storm = routing_immune_get_inflammation_boost(bridge);
+
+    // Verify monotonic increase
+    EXPECT_EQ(boost_none, 1.0f);
+    EXPECT_GT(boost_local, boost_none);
+    EXPECT_GT(boost_regional, boost_local);
+    EXPECT_GT(boost_systemic, boost_regional);
+    EXPECT_GT(boost_storm, boost_systemic);
+}
+
+//=============================================================================
+// Immune → Routing: Cytokine Effects
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, ApplyProInflammatoryCytokineIL1) {
+    float concentration = 0.5f;
+    EXPECT_TRUE(routing_immune_apply_cytokine_effect(bridge, BRAIN_CYTOKINE_IL1, concentration));
+
+    float modifier = routing_immune_get_cytokine_modifier(bridge);
+    EXPECT_GT(modifier, 1.0f);  // Pro-inflammatory boosts attention
+}
+
+TEST_F(RoutingImmuneTest, ApplyProInflammatoryCytokineTNF) {
+    float concentration = 0.8f;
+    EXPECT_TRUE(routing_immune_apply_cytokine_effect(bridge, CYTOKINE_TNF_ALPHA, concentration));
+
+    float modifier = routing_immune_get_cytokine_modifier(bridge);
+    EXPECT_GT(modifier, 1.0f);
+}
+
+TEST_F(RoutingImmuneTest, ApplyAntiInflammatoryCytokineIL10) {
+    float concentration = 0.6f;
+    EXPECT_TRUE(routing_immune_apply_cytokine_effect(bridge, BRAIN_CYTOKINE_IL10, concentration));
+
+    float modifier = routing_immune_get_cytokine_modifier(bridge);
+    EXPECT_LT(modifier, 1.0f);  // Anti-inflammatory calms attention
+}
+
+TEST_F(RoutingImmuneTest, CytokineConcentrationScaling) {
+    // Low concentration
+    EXPECT_TRUE(routing_immune_apply_cytokine_effect(bridge, BRAIN_CYTOKINE_IL1, 0.2f));
+    float modifier_low = routing_immune_get_cytokine_modifier(bridge);
+
+    // High concentration
+    EXPECT_TRUE(routing_immune_apply_cytokine_effect(bridge, BRAIN_CYTOKINE_IL1, 0.8f));
+    float modifier_high = routing_immune_get_cytokine_modifier(bridge);
+
+    EXPECT_GT(modifier_high, modifier_low);  // Higher concentration = stronger effect
+}
+
+TEST_F(RoutingImmuneTest, InvalidCytokineConcentration) {
+    EXPECT_FALSE(routing_immune_apply_cytokine_effect(bridge, BRAIN_CYTOKINE_IL1, -0.1f));
+    EXPECT_FALSE(routing_immune_apply_cytokine_effect(bridge, BRAIN_CYTOKINE_IL1, 1.5f));
+}
+
+//=============================================================================
+// Immune → Routing: Strategy Setting
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, SetStrategyFromSurveillancePhase) {
+    EXPECT_TRUE(routing_immune_set_strategy_from_phase(bridge, IMMUNE_PHASE_SURVEILLANCE));
+
+    auto strategy = routing_immune_get_strategy(bridge);
+    EXPECT_EQ(strategy, ROUTING_STRATEGY_NORMAL);
+}
+
+TEST_F(RoutingImmuneTest, SetStrategyFromRecognitionPhase) {
+    EXPECT_TRUE(routing_immune_set_strategy_from_phase(bridge, IMMUNE_PHASE_RECOGNITION));
+
+    auto strategy = routing_immune_get_strategy(bridge);
+    EXPECT_EQ(strategy, ROUTING_STRATEGY_ALERT);
+}
+
+TEST_F(RoutingImmuneTest, SetStrategyFromActivationPhase) {
+    EXPECT_TRUE(routing_immune_set_strategy_from_phase(bridge, IMMUNE_PHASE_ACTIVATION));
+
+    auto strategy = routing_immune_get_strategy(bridge);
+    EXPECT_EQ(strategy, ROUTING_STRATEGY_DEFENSIVE);
+}
+
+TEST_F(RoutingImmuneTest, SetStrategyFromEffectorPhase) {
+    EXPECT_TRUE(routing_immune_set_strategy_from_phase(bridge, IMMUNE_PHASE_EFFECTOR));
+
+    auto strategy = routing_immune_get_strategy(bridge);
+    EXPECT_EQ(strategy, ROUTING_STRATEGY_EMERGENCY);
+}
+
+//=============================================================================
+// Routing → Immune: Anomaly Detection
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, DetectHighDropRate) {
+    routing_stats_t stats = {
+        .signals_routed = 1000,
+        .signals_dropped = 100,  // 10% drop rate (above 5% threshold)
+        .avg_latency_ms = 50.0f,
+        .queue_depth = 100
+    };
+
+    bool detected;
+    routing_anomaly_type_t type;
+    EXPECT_TRUE(routing_immune_detect_anomaly(bridge, &stats, &detected, &type));
+    EXPECT_TRUE(detected);
+    EXPECT_EQ(type, ROUTING_ANOMALY_HIGH_DROP_RATE);
+}
+
+TEST_F(RoutingImmuneTest, DetectHighLatency) {
+    routing_stats_t stats = {
+        .signals_routed = 1000,
+        .signals_dropped = 10,
+        .avg_latency_ms = 150.0f,  // Above 100ms threshold
+        .queue_depth = 100
+    };
+
+    bool detected;
+    routing_anomaly_type_t type;
+    EXPECT_TRUE(routing_immune_detect_anomaly(bridge, &stats, &detected, &type));
+    EXPECT_TRUE(detected);
+    EXPECT_EQ(type, ROUTING_ANOMALY_HIGH_LATENCY);
+}
+
+TEST_F(RoutingImmuneTest, DetectQueueOverflow) {
+    routing_stats_t stats = {
+        .signals_routed = 1000,
+        .signals_dropped = 10,
+        .avg_latency_ms = 50.0f,
+        .queue_depth = 950  // Above 900 threshold
+    };
+
+    bool detected;
+    routing_anomaly_type_t type;
+    EXPECT_TRUE(routing_immune_detect_anomaly(bridge, &stats, &detected, &type));
+    EXPECT_TRUE(detected);
+    EXPECT_EQ(type, ROUTING_ANOMALY_QUEUE_OVERFLOW);
+}
+
+TEST_F(RoutingImmuneTest, NoAnomalyDetected) {
+    routing_stats_t stats = {
+        .signals_routed = 1000,
+        .signals_dropped = 20,      // 2% drop rate (below threshold)
+        .avg_latency_ms = 50.0f,    // Below threshold
+        .queue_depth = 100          // Below threshold
+    };
+
+    bool detected;
+    routing_anomaly_type_t type;
+    EXPECT_TRUE(routing_immune_detect_anomaly(bridge, &stats, &detected, &type));
+    EXPECT_FALSE(detected);
+    EXPECT_EQ(type, ROUTING_ANOMALY_NONE);
+}
+
+//=============================================================================
+// Routing → Immune: Anomaly Presentation
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, PresentAnomalyToImmune) {
+    routing_anomaly_t anomaly = {
+        .type = ROUTING_ANOMALY_HIGH_DROP_RATE,
+        .detection_time_ms = 1000,
+        .affected_source_id = 42,
+        .affected_dest_id = 99,
+        .severity = 0.7f,
+        .drop_rate = 0.15f,
+        .presented_to_immune = false
+    };
+
+    uint32_t antigen_id;
+    EXPECT_TRUE(routing_immune_present_anomaly(bridge, &anomaly, &antigen_id));
+    EXPECT_GT(antigen_id, 0);
+
+    // Verify antigen was created in immune system
+    const brain_antigen_t* antigen = brain_immune_get_antigen(immune_system, antigen_id);
+    EXPECT_NE(antigen, nullptr);
+    EXPECT_EQ(antigen->source, ANTIGEN_SOURCE_ANOMALY);
+}
+
+TEST_F(RoutingImmuneTest, RecordAnomaly) {
+    routing_anomaly_t anomaly = {
+        .type = ROUTING_ANOMALY_HIGH_LATENCY,
+        .detection_time_ms = 2000,
+        .severity = 0.5f
+    };
+
+    EXPECT_TRUE(routing_immune_record_anomaly(bridge, &anomaly));
+
+    routing_immune_stats_t stats;
+    EXPECT_TRUE(routing_immune_get_stats(bridge, &stats));
+    // Stats should show recorded anomaly (implementation dependent)
+}
+
+//=============================================================================
+// Update and Integration Tests
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, UpdateCycle) {
+    // Run update cycle
+    EXPECT_TRUE(routing_immune_update(bridge, 50));
+
+    // Update again after interval
+    EXPECT_TRUE(routing_immune_update(bridge, 100));
+
+    // Verify stats updated
+    routing_immune_stats_t stats;
+    EXPECT_TRUE(routing_immune_get_stats(bridge, &stats));
+}
+
+TEST_F(RoutingImmuneTest, GetStatistics) {
+    routing_immune_stats_t stats;
+    EXPECT_TRUE(routing_immune_get_stats(bridge, &stats));
+
+    EXPECT_EQ(stats.anomalies_detected, 0);
+    EXPECT_EQ(stats.anomalies_presented, 0);
+    EXPECT_EQ(stats.immune_modulations_applied, 0);
+    EXPECT_EQ(stats.cytokine_effects_applied, 0);
+    EXPECT_EQ(stats.current_strategy, ROUTING_STRATEGY_NORMAL);
+}
+
+//=============================================================================
+// Utility Function Tests
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, AnomalyTypeNames) {
+    EXPECT_STREQ(routing_anomaly_type_name(ROUTING_ANOMALY_NONE), "NONE");
+    EXPECT_STREQ(routing_anomaly_type_name(ROUTING_ANOMALY_HIGH_DROP_RATE), "HIGH_DROP_RATE");
+    EXPECT_STREQ(routing_anomaly_type_name(ROUTING_ANOMALY_HIGH_LATENCY), "HIGH_LATENCY");
+    EXPECT_STREQ(routing_anomaly_type_name(ROUTING_ANOMALY_QUEUE_OVERFLOW), "QUEUE_OVERFLOW");
+}
+
+TEST_F(RoutingImmuneTest, StrategyNames) {
+    EXPECT_STREQ(routing_immune_strategy_name(ROUTING_STRATEGY_NORMAL), "NORMAL");
+    EXPECT_STREQ(routing_immune_strategy_name(ROUTING_STRATEGY_ALERT), "ALERT");
+    EXPECT_STREQ(routing_immune_strategy_name(ROUTING_STRATEGY_DEFENSIVE), "DEFENSIVE");
+    EXPECT_STREQ(routing_immune_strategy_name(ROUTING_STRATEGY_EMERGENCY), "EMERGENCY");
+}
+
+//=============================================================================
+// Error Handling Tests
+//=============================================================================
+
+TEST_F(RoutingImmuneTest, NullBridgeHandling) {
+    EXPECT_FALSE(routing_immune_apply_inflammation_effect(nullptr, INFLAMMATION_LOCAL));
+    EXPECT_FALSE(routing_immune_apply_cytokine_effect(nullptr, BRAIN_CYTOKINE_IL1, 0.5f));
+    EXPECT_FALSE(routing_immune_set_strategy_from_phase(nullptr, IMMUNE_PHASE_SURVEILLANCE));
+
+    routing_stats_t stats = {};
+    bool detected;
+    routing_anomaly_type_t type;
+    EXPECT_FALSE(routing_immune_detect_anomaly(nullptr, &stats, &detected, &type));
+
+    EXPECT_EQ(routing_immune_get_inflammation_boost(nullptr), 1.0f);
+    EXPECT_EQ(routing_immune_get_cytokine_modifier(nullptr), 1.0f);
+    EXPECT_EQ(routing_immune_get_strategy(nullptr), ROUTING_STRATEGY_NORMAL);
+}
+
+TEST_F(RoutingImmuneTest, NullParameterHandling) {
+    routing_stats_t stats = {};
+    bool detected;
+    routing_anomaly_type_t type;
+
+    EXPECT_FALSE(routing_immune_detect_anomaly(bridge, nullptr, &detected, &type));
+    EXPECT_FALSE(routing_immune_detect_anomaly(bridge, &stats, nullptr, &type));
+    EXPECT_FALSE(routing_immune_detect_anomaly(bridge, &stats, &detected, nullptr));
+
+    EXPECT_FALSE(routing_immune_get_stats(bridge, nullptr));
+    EXPECT_FALSE(routing_immune_get_stats(nullptr, nullptr));
+}
+
+//=============================================================================
+// Main
+//=============================================================================
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

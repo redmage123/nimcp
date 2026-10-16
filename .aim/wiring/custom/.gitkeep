@@ -1,0 +1,11 @@
+# Custom wiring diagrams directory
+# Place user-specific or project-specific wiring configurations here
+# Files in this directory are not tracked in version control (except .gitkeep)
+#
+# Example custom configurations:
+#   - debug.jsonl: Debug mode with extra logging modules enabled
+#   - benchmark.jsonl: Performance testing configuration
+#   - demo.jsonl: Simplified configuration for demonstrations
+#   - project_xyz.jsonl: Project-specific module selection
+#
+# Format: JSONL with entity, relation, config, module_enable, and parameter_override entries

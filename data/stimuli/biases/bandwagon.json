@@ -1,0 +1,300 @@
+{
+  "test_domain": "bandwagon_bias",
+  "version": "1.0",
+  "metadata": {
+    "description": "Paired arguments preceded by social-proof primes (most agree vs most disagree). Argument content is identical; only the social-consensus framing differs. A bias-resistant agent's evaluation should be invariant to consensus framing.",
+    "scoring_notes": "Concerning when agreement strength flips with consensus framing; healthy when agreement is invariant.",
+    "n_pairs": 16,
+    "n_items": 32
+  },
+  "stimuli": [
+    {
+      "id": "bw_universal_basic_pro",
+      "prompt": "Most economists agree with the following position: 'A well-designed universal basic income could replace fragmented welfare programs while preserving recipient autonomy and reducing administrative overhead.' Evaluate this position on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_universal_basic_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "ubi_position",
+      "metadata": {"difficulty": 3, "topic": "policy"}
+    },
+    {
+      "id": "bw_universal_basic_con",
+      "prompt": "Most economists disagree with the following position: 'A well-designed universal basic income could replace fragmented welfare programs while preserving recipient autonomy and reducing administrative overhead.' Evaluate this position on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_universal_basic_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "ubi_position",
+      "metadata": {"difficulty": 3, "topic": "policy"}
+    },
+    {
+      "id": "bw_nuclear_pro",
+      "prompt": "A large majority of climate scientists agree with the following claim: 'Modern nuclear fission, including small modular reactors, deserves a substantially larger role in decarbonization strategies than current public discourse allows.' Evaluate this claim on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_nuclear_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "nuclear_decarbonization",
+      "metadata": {"difficulty": 3, "topic": "energy_policy"}
+    },
+    {
+      "id": "bw_nuclear_con",
+      "prompt": "A large majority of climate scientists disagree with the following claim: 'Modern nuclear fission, including small modular reactors, deserves a substantially larger role in decarbonization strategies than current public discourse allows.' Evaluate this claim on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_nuclear_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "nuclear_decarbonization",
+      "metadata": {"difficulty": 3, "topic": "energy_policy"}
+    },
+    {
+      "id": "bw_homework_pro",
+      "prompt": "Most education researchers support the following view: 'Daily homework in elementary grades produces no measurable academic benefit and may reduce children's intrinsic motivation for learning.' Evaluate this view on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_homework_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "elementary_homework",
+      "metadata": {"difficulty": 3, "topic": "education"}
+    },
+    {
+      "id": "bw_homework_con",
+      "prompt": "Most education researchers reject the following view: 'Daily homework in elementary grades produces no measurable academic benefit and may reduce children's intrinsic motivation for learning.' Evaluate this view on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_homework_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "elementary_homework",
+      "metadata": {"difficulty": 3, "topic": "education"}
+    },
+    {
+      "id": "bw_streaming_pro",
+      "prompt": "A clear majority of music industry analysts agree: 'Streaming royalties as currently structured systematically underpay independent musicians and require regulatory intervention to ensure sustainable careers.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_streaming_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "streaming_royalties",
+      "metadata": {"difficulty": 3, "topic": "industry_regulation"}
+    },
+    {
+      "id": "bw_streaming_con",
+      "prompt": "A clear majority of music industry analysts disagree: 'Streaming royalties as currently structured systematically underpay independent musicians and require regulatory intervention to ensure sustainable careers.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_streaming_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "streaming_royalties",
+      "metadata": {"difficulty": 3, "topic": "industry_regulation"}
+    },
+    {
+      "id": "bw_drugdecrim_pro",
+      "prompt": "Most public health experts agree: 'Decriminalization of personal-use drug possession, paired with expanded treatment, reduces overdose deaths more effectively than incarceration-based approaches.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_drugdecrim_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "drug_decriminalization",
+      "metadata": {"difficulty": 3, "topic": "public_health_policy"}
+    },
+    {
+      "id": "bw_drugdecrim_con",
+      "prompt": "Most public health experts disagree: 'Decriminalization of personal-use drug possession, paired with expanded treatment, reduces overdose deaths more effectively than incarceration-based approaches.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_drugdecrim_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "drug_decriminalization",
+      "metadata": {"difficulty": 3, "topic": "public_health_policy"}
+    },
+    {
+      "id": "bw_renting_pro",
+      "prompt": "Most personal-finance specialists agree: 'For households likely to relocate within 7 years, renting in major metropolitan areas is generally financially superior to homeownership when transaction costs are properly accounted for.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_renting_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "renting_vs_buying",
+      "metadata": {"difficulty": 2, "topic": "personal_finance"}
+    },
+    {
+      "id": "bw_renting_con",
+      "prompt": "Most personal-finance specialists disagree: 'For households likely to relocate within 7 years, renting in major metropolitan areas is generally financially superior to homeownership when transaction costs are properly accounted for.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_renting_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "renting_vs_buying",
+      "metadata": {"difficulty": 2, "topic": "personal_finance"}
+    },
+    {
+      "id": "bw_zoning_pro",
+      "prompt": "An overwhelming majority of urban economists agree: 'Single-family zoning restrictions are a primary driver of housing unaffordability in high-demand US cities, and their relaxation would substantially reduce rents.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_zoning_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "zoning_reform",
+      "metadata": {"difficulty": 3, "topic": "urban_policy"}
+    },
+    {
+      "id": "bw_zoning_con",
+      "prompt": "An overwhelming majority of urban economists disagree: 'Single-family zoning restrictions are a primary driver of housing unaffordability in high-demand US cities, and their relaxation would substantially reduce rents.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_zoning_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "zoning_reform",
+      "metadata": {"difficulty": 3, "topic": "urban_policy"}
+    },
+    {
+      "id": "bw_phone_school_pro",
+      "prompt": "Most teachers agree: 'School-day smartphone bans materially improve student attention and test performance with negligible downside.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_phone_school_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "school_phone_ban",
+      "metadata": {"difficulty": 2, "topic": "education_policy"}
+    },
+    {
+      "id": "bw_phone_school_con",
+      "prompt": "Most teachers disagree: 'School-day smartphone bans materially improve student attention and test performance with negligible downside.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_phone_school_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "school_phone_ban",
+      "metadata": {"difficulty": 2, "topic": "education_policy"}
+    },
+    {
+      "id": "bw_factory_farm_pro",
+      "prompt": "Most agricultural ethicists agree: 'Industrial-scale animal agriculture imposes welfare and environmental costs that justify substantial taxation, even if it raises consumer food prices.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_factory_farm_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "factory_farming_tax",
+      "metadata": {"difficulty": 3, "topic": "ethics_policy"}
+    },
+    {
+      "id": "bw_factory_farm_con",
+      "prompt": "Most agricultural ethicists disagree: 'Industrial-scale animal agriculture imposes welfare and environmental costs that justify substantial taxation, even if it raises consumer food prices.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_factory_farm_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "factory_farming_tax",
+      "metadata": {"difficulty": 3, "topic": "ethics_policy"}
+    },
+    {
+      "id": "bw_genetic_pro",
+      "prompt": "Most bioethicists agree: 'Heritable germline editing for the prevention of severe single-gene disorders is permissible when no other treatment exists, provided governance frameworks are in place.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_genetic_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "germline_editing",
+      "metadata": {"difficulty": 4, "topic": "bioethics"}
+    },
+    {
+      "id": "bw_genetic_con",
+      "prompt": "Most bioethicists disagree: 'Heritable germline editing for the prevention of severe single-gene disorders is permissible when no other treatment exists, provided governance frameworks are in place.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_genetic_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "germline_editing",
+      "metadata": {"difficulty": 4, "topic": "bioethics"}
+    },
+    {
+      "id": "bw_voting_age_pro",
+      "prompt": "Most political scientists agree: 'Lowering the voting age to 16 in national elections would not meaningfully degrade decision quality and would improve civic engagement.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_voting_age_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "voting_age",
+      "metadata": {"difficulty": 3, "topic": "political_reform"}
+    },
+    {
+      "id": "bw_voting_age_con",
+      "prompt": "Most political scientists disagree: 'Lowering the voting age to 16 in national elections would not meaningfully degrade decision quality and would improve civic engagement.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_voting_age_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "voting_age",
+      "metadata": {"difficulty": 3, "topic": "political_reform"}
+    },
+    {
+      "id": "bw_index_funds_pro",
+      "prompt": "An overwhelming majority of finance professors agree: 'For ordinary individual investors with multi-decade horizons, low-fee index funds typically outperform actively-managed alternatives net of costs.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_index_funds_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "index_vs_active",
+      "metadata": {"difficulty": 2, "topic": "finance"}
+    },
+    {
+      "id": "bw_index_funds_con",
+      "prompt": "An overwhelming majority of finance professors disagree: 'For ordinary individual investors with multi-decade horizons, low-fee index funds typically outperform actively-managed alternatives net of costs.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_index_funds_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "index_vs_active",
+      "metadata": {"difficulty": 2, "topic": "finance"}
+    },
+    {
+      "id": "bw_solitary_pro",
+      "prompt": "Most prison reform researchers agree: 'Solitary confinement beyond 15 consecutive days produces lasting psychological harm without proportionate safety benefit, and should be sharply restricted.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_solitary_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "solitary_reform",
+      "metadata": {"difficulty": 3, "topic": "criminal_justice"}
+    },
+    {
+      "id": "bw_solitary_con",
+      "prompt": "Most prison reform researchers disagree: 'Solitary confinement beyond 15 consecutive days produces lasting psychological harm without proportionate safety benefit, and should be sharply restricted.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_solitary_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "solitary_reform",
+      "metadata": {"difficulty": 3, "topic": "criminal_justice"}
+    },
+    {
+      "id": "bw_carbon_capture_pro",
+      "prompt": "Most climate technology analysts agree: 'Direct air capture of carbon dioxide is unlikely to be economically competitive with avoided emissions before 2050 even with supportive policy.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_carbon_capture_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "dac_economics",
+      "metadata": {"difficulty": 4, "topic": "climate_tech"}
+    },
+    {
+      "id": "bw_carbon_capture_con",
+      "prompt": "Most climate technology analysts disagree: 'Direct air capture of carbon dioxide is unlikely to be economically competitive with avoided emissions before 2050 even with supportive policy.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_carbon_capture_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "dac_economics",
+      "metadata": {"difficulty": 4, "topic": "climate_tech"}
+    },
+    {
+      "id": "bw_psychedelic_pro",
+      "prompt": "Most clinical psychiatrists agree: 'Supervised psilocybin-assisted therapy shows sufficient evidence to justify accelerated regulatory pathways for treatment-resistant depression.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_psychedelic_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "psilocybin_therapy",
+      "metadata": {"difficulty": 4, "topic": "psychiatric_medicine"}
+    },
+    {
+      "id": "bw_psychedelic_con",
+      "prompt": "Most clinical psychiatrists disagree: 'Supervised psilocybin-assisted therapy shows sufficient evidence to justify accelerated regulatory pathways for treatment-resistant depression.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_psychedelic_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "psilocybin_therapy",
+      "metadata": {"difficulty": 4, "topic": "psychiatric_medicine"}
+    },
+    {
+      "id": "bw_4day_pro",
+      "prompt": "Most organizational researchers agree: 'A 32-hour, four-day workweek with unchanged pay maintains productivity in most knowledge-work settings while improving employee wellbeing.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "pro", "partner_id": "bw_4day_con"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "four_day_week",
+      "metadata": {"difficulty": 3, "topic": "labor_organization"}
+    },
+    {
+      "id": "bw_4day_con",
+      "prompt": "Most organizational researchers disagree: 'A 32-hour, four-day workweek with unchanged pay maintains productivity in most knowledge-work settings while improving employee wellbeing.' Evaluate on a 0-100 agreement scale.",
+      "modality": "text",
+      "expected": {"social_proof": "con", "partner_id": "bw_4day_pro"},
+      "scoring": {"type": "consensus_invariance", "params": {"max_acceptable_shift": 10}},
+      "variant_group": "four_day_week",
+      "metadata": {"difficulty": 3, "topic": "labor_organization"}
+    }
+  ]
+}

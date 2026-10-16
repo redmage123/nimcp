@@ -1,0 +1,281 @@
+{
+  "test_domain": "conjunction_fallacy",
+  "version": "1.0",
+  "metadata": {
+    "description": "Variants on the conjunction fallacy avoiding canonical Linda phrasing. Each item presents a character description and asks which of two possibilities is more likely: a single trait (correct) or the conjunction of that trait with a representative-but-additional trait (the trap).",
+    "scoring_notes": "Correct answer is always the single (non-conjunctive) option due to P(A) >= P(A and B). Selecting the conjunction is the fallacy.",
+    "n_items": 30
+  },
+  "stimuli": [
+    {
+      "id": "cf_steve_librarian",
+      "prompt": "Steve is 34, soft-spoken, meticulous about details, and prefers solitary weekends reading. Which is more probable? A) Steve is a librarian. B) Steve is a librarian who collects rare first editions.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "occupation"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_marcus_marathon",
+      "prompt": "Marcus is 41, gets up at 5 a.m. every day, eats only whole foods, and tracks his sleep with a smart ring. Which is more probable? A) Marcus runs marathons. B) Marcus runs marathons and is a vegan.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "lifestyle"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_priya_phd",
+      "prompt": "Priya was the valedictorian of her engineering school, won a national robotics prize at 19, and has published in three peer-reviewed journals. Which is more probable? A) Priya holds a PhD. B) Priya holds a PhD and works at a Silicon Valley startup.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_jorge_band",
+      "prompt": "Jorge has tattoos covering both arms, sleeps until noon, and has a pet ferret named Ozzy. Which is more probable? A) Jorge plays in a band. B) Jorge plays in a band and works at a record store.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "lifestyle"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_eleanor_cat",
+      "prompt": "Eleanor is 73, lives alone in a small cottage, knits sweaters in her free time, and bakes bread on Sundays. Which is more probable? A) Eleanor owns a cat. B) Eleanor owns a cat and watches cozy mystery shows.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "demographics"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_diego_spanish",
+      "prompt": "Diego was born in a small town near Seville, attended a Catholic primary school, and his grandparents only spoke Castilian at home. Which is more probable? A) Diego speaks Spanish. B) Diego speaks Spanish and supports Real Madrid football club.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "language"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_aiden_gamer",
+      "prompt": "Aiden is 16, has a custom-built PC with RGB lighting, three monitors, and a high-end mechanical keyboard. Which is more probable? A) Aiden plays video games. B) Aiden plays video games and streams on Twitch.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "hobby"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_kenji_anime",
+      "prompt": "Kenji grew up in Osaka, his parents both worked in the publishing industry, and as a teen he hand-drew comics in his notebooks. Which is more probable? A) Kenji enjoys anime. B) Kenji enjoys anime and has visited Akihabara at least once.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "interests"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_olivia_yoga",
+      "prompt": "Olivia teaches a meditation workshop on weekends, journals every morning, and her bookshelves are filled with books about Buddhist philosophy. Which is more probable? A) Olivia practices yoga. B) Olivia practices yoga and has been to a silent retreat.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "lifestyle"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_marcus_artist",
+      "prompt": "Marcus dropped out of business school, lives in a converted warehouse, and his apartment smells faintly of turpentine. Which is more probable? A) Marcus is an artist. B) Marcus is an artist and has shown work in a gallery.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "occupation"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_sophia_horse",
+      "prompt": "Sophia is 12, has a poster of a galloping mustang above her bed, watches every National Velvet rerun, and saves her allowance for riding lessons. Which is more probable? A) Sophia owns a horse-themed toy. B) Sophia owns a horse-themed toy and has been to a working ranch.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "interests"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_alistair_wine",
+      "prompt": "Alistair attended Oxford, owns three tweed jackets, and his grandfather was a viscount. Which is more probable? A) Alistair drinks red wine. B) Alistair drinks red wine and is a member of a private club.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "lifestyle"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_amara_doctor",
+      "prompt": "Amara was top of her medical school class in Lagos, completed a fellowship in pediatric cardiology in London, and has volunteered with Doctors Without Borders. Which is more probable? A) Amara works in healthcare. B) Amara works in healthcare and has published research on congenital heart defects.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_noah_climber",
+      "prompt": "Noah has callused fingertips, drives a beat-up Subaru full of climbing gear, and his Instagram is exclusively photos of granite faces. Which is more probable? A) Noah climbs rocks. B) Noah climbs rocks and has summited a peak in the Sierra Nevada.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "hobby"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_isabela_chef",
+      "prompt": "Isabela grew up in her grandmother's restaurant in Oaxaca, can identify thirty varieties of chili by smell, and runs a popular food blog. Which is more probable? A) Isabela cooks professionally. B) Isabela cooks professionally and owns a cookbook collection of more than 100 titles.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "occupation"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_ravi_engineer",
+      "prompt": "Ravi has a degree in mechanical engineering from IIT Bombay, owns a 3D printer, and built his own DIY home automation system. Which is more probable? A) Ravi works in tech. B) Ravi works in tech and contributes to open-source projects.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_zara_journalist",
+      "prompt": "Zara studied politics at university, interned at a major newspaper for two summers, and her thesis was on press freedom in Eastern Europe. Which is more probable? A) Zara works as a journalist. B) Zara works as a journalist and has reported from a conflict zone.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_pierre_sommelier",
+      "prompt": "Pierre grew up on a vineyard in Burgundy, can identify the year and varietal of most French wines by taste, and has worked in three Michelin-starred restaurants. Which is more probable? A) Pierre works in the wine industry. B) Pierre works in the wine industry and has passed the Master Sommelier exam.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "occupation"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_hannah_quaker",
+      "prompt": "Hannah was raised in a Mennonite family in Pennsylvania, attended a private religious high school, and her grandfather was a pastor. Which is more probable? A) Hannah identifies as Christian. B) Hannah identifies as Christian and attends services weekly.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "religion"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_tobias_violin",
+      "prompt": "Tobias started Suzuki violin lessons at age four, attended a conservatory at sixteen, and won a regional youth competition twice. Which is more probable? A) Tobias plays a string instrument. B) Tobias plays a string instrument and performs in chamber music groups.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "skill"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_lila_environmentalist",
+      "prompt": "Lila has not eaten meat in twelve years, composts her food scraps, drives a hybrid, and works for a non-profit that lobbies for clean-water legislation. Which is more probable? A) Lila votes Green Party. B) Lila votes Green Party and donates to environmental causes.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "politics"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_kwame_basketball",
+      "prompt": "Kwame is 6'9'', was a high school basketball MVP, attended Duke on a sports scholarship, and was drafted in the second round. Which is more probable? A) Kwame plays professional sports. B) Kwame plays professional sports and has signed multi-million-dollar contracts.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_camille_dancer",
+      "prompt": "Camille started ballet at three, attended the Paris Opera ballet school, and was promoted to soloist by twenty-two. Which is more probable? A) Camille performs on stage. B) Camille performs on stage and has danced principal roles in Swan Lake.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_yusuf_imam",
+      "prompt": "Yusuf memorized the Qur'an by age fourteen, studied at Al-Azhar University in Cairo, and his father served as a judge in a religious court. Which is more probable? A) Yusuf practices Islam. B) Yusuf practices Islam and leads prayers at a mosque.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "religion"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_freja_skier",
+      "prompt": "Freja grew up in a Norwegian alpine village, was on the junior national ski team, and trained competitively until a knee injury at age twenty-one. Which is more probable? A) Freja skis. B) Freja skis and has competed in international events.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "hobby"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_tariq_pilot",
+      "prompt": "Tariq served twelve years in the air force as a fighter pilot instructor, is type-rated on three commercial jets, and has logged over 8,000 flight hours. Which is more probable? A) Tariq is a pilot. B) Tariq is a pilot and works for a major airline.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 1, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_brigitte_painter",
+      "prompt": "Brigitte studied at the Beaux-Arts in Paris, spent her twenties in Montmartre, and has been included in two group shows at the Pompidou. Which is more probable? A) Brigitte makes visual art. B) Brigitte makes visual art and has had a solo exhibition.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_marius_lawyer",
+      "prompt": "Marius graduated top of his class from Yale Law School, clerked for a federal appellate judge, and his father was a state supreme court justice. Which is more probable? A) Marius practices law. B) Marius practices law and works at a top-tier firm.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_anya_cellist",
+      "prompt": "Anya was a child prodigy who debuted with the Moscow Philharmonic at age eleven, recorded her first solo album at sixteen, and tours internationally six months a year. Which is more probable? A) Anya is a professional musician. B) Anya is a professional musician and plays a Stradivarius instrument on loan.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "career"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    },
+    {
+      "id": "cf_oluwaseun_activist",
+      "prompt": "Oluwaseun organized student protests in college, spent two years working for a refugee aid organization in Greece, and writes opinion pieces for international publications. Which is more probable? A) Oluwaseun is politically active. B) Oluwaseun is politically active and has been arrested at a demonstration.",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "conjunction_trap": "B", "domain": "lifestyle"},
+      "scoring": {"type": "conjunction_correct", "params": {}},
+      "variant_group": "single_item",
+      "metadata": {"difficulty": 2, "stereotype_pull": "high"}
+    }
+  ]
+}

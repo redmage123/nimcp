@@ -1,0 +1,23 @@
+Number theory primer.
+
+Number theory is the study of integers and their structure. Despite using only whole numbers, it contains some of the deepest unsolved problems in mathematics.
+
+Divisibility. We say that a divides b, written a divides b or sometimes a vertical bar between a and b, when there is an integer k with b equals a times k. Three divides twelve because twelve equals three times four. Three does not divide ten because no integer multiplied by three gives ten.
+
+A prime number is an integer greater than one whose only positive divisors are one and itself. The primes begin two, three, five, seven, eleven, thirteen, seventeen, nineteen, twenty-three, twenty-nine. Two is the only even prime. A composite number is a non-prime integer greater than one. One is neither prime nor composite by convention; this convention makes the next theorem clean.
+
+The fundamental theorem of arithmetic. Every integer greater than one can be written as a product of primes, and the factorization is unique up to the order of the factors. Six equals two times three. Sixty equals two-squared times three times five. The factorization is the same no matter how we obtain it. This is why one is excluded from the primes — if one were prime, the factorization would no longer be unique, since one could be appended any number of times.
+
+Euclid proved twenty-three centuries ago that there are infinitely many primes. The argument: suppose there were only finitely many — call them p1 through pn. Form the number N equals p1 times p2 times all the way to pn, plus one. N is greater than one, so it has a prime factor by the fundamental theorem. That prime factor cannot be any of p1 through pn — dividing N by any of them leaves remainder one. So there is some other prime, contradicting the assumption that p1 through pn was the complete list. The contradiction means there are infinitely many primes.
+
+The greatest common divisor of two integers, gcd(a, b), is the largest integer that divides both. The Euclidean algorithm computes it efficiently: gcd(a, b) equals gcd(b, a mod b), repeating until the remainder is zero. The last nonzero remainder is the gcd. Two integers are coprime, or relatively prime, when their gcd is one.
+
+Modular arithmetic. We write a is congruent to b modulo n, sometimes written with three horizontal lines, when n divides a minus b. So 17 is congruent to 5 modulo 12, because 12 divides 17 minus 5 (which is 12). Modular arithmetic is the arithmetic of clock faces. Hours wrap around at twelve; modular arithmetic wraps around at any chosen modulus n.
+
+Fermat's little theorem. If p is prime and a is not divisible by p, then a-to-the-(p-1) is congruent to one modulo p. This is the basis for many primality tests and for the RSA cryptosystem.
+
+Euler's theorem generalizes: a-to-the-phi(n) is congruent to one modulo n whenever a is coprime to n, where phi(n) is Euler's totient function — the count of integers from one to n that are coprime to n. For prime p, phi(p) is p minus one, so Euler's theorem reduces to Fermat's.
+
+The distribution of primes is irregular but trends are known. The prime counting function pi(x) — the number of primes up to x — grows roughly as x divided by the natural logarithm of x. The prime number theorem, proved independently by Hadamard and de la Vallee Poussin in 1896, makes this precise: the ratio of pi(x) to x-over-ln-x approaches one as x grows large.
+
+Open problems abound. The Goldbach conjecture, that every even integer greater than two is the sum of two primes, has been verified for very large numbers but never proved. The twin prime conjecture, that there are infinitely many pairs of primes differing by two, remains open. The Riemann hypothesis, which would precisely describe the distribution of primes, is the most famous open problem in mathematics.

@@ -1,0 +1,13 @@
+# Intel Loihi neuromorphic chip configuration
+# Native spiking neural network acceleration
+{"type":"config","hardware":"Loihi","description":"Intel Loihi neuromorphic processor"}
+{"type":"hardware_requirement","loihi_version":"Loihi2","min_cores":1,"recommended_cores":8}
+{"type":"module_config","module":"Spiking_Network","backend":"Loihi","notes":"Native spike processing"}
+{"type":"module_config","module":"STDP_Engine","backend":"Loihi","notes":"On-chip STDP learning"}
+{"type":"module_config","module":"LTP_LTD_System","backend":"Loihi","notes":"Native synaptic plasticity"}
+{"type":"module_config","module":"Tensor_Engine","backend":"CPU","notes":"Dense tensors on host"}
+{"type":"module_config","module":"Predictive_Processing","backend":"Loihi","notes":"Spike-based prediction"}
+{"type":"parameter_override","module":"Spiking_Network","parameter":"time_resolution_us","value":1,"notes":"Microsecond precision"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"online_learning","value":true,"notes":"Real-time learning"}
+{"type":"loihi_config","compartments_per_core":1024,"synapses_per_core":128000,"learning_epochs":100}
+{"type":"loihi_config","spike_encoding":"rate","axon_delay_bits":6,"weight_bits":8}

@@ -1,0 +1,48 @@
+{
+  "datasets": [
+    {
+      "name": "imdb_sentiment",
+      "domain": "sentiment",
+      "source_dir": "imdb/aclImdb",
+      "format": "folders",
+      "max_features": 512,
+      "train_ratio": 0.7,
+      "val_ratio": 0.15,
+      "test_ratio": 0.15
+    },
+    {
+      "name": "ag_news",
+      "domain": "classification",
+      "source_dir": "ag_news",
+      "format": "csv",
+      "text_column": "description",
+      "label_column": "class",
+      "max_features": 512,
+      "train_ratio": 0.7,
+      "val_ratio": 0.15,
+      "test_ratio": 0.15
+    },
+    {
+      "name": "spam_classification",
+      "domain": "classification",
+      "source_dir": "spam",
+      "format": "csv",
+      "text_column": "message",
+      "label_column": "label",
+      "max_features": 512,
+      "train_ratio": 0.7,
+      "val_ratio": 0.15,
+      "test_ratio": 0.15
+    },
+    {
+      "name": "20newsgroups",
+      "domain": "classification",
+      "source_dir": "20newsgroups/20news-bydate-train",
+      "format": "folders",
+      "max_features": 512,
+      "train_ratio": 0.7,
+      "val_ratio": 0.15,
+      "test_ratio": 0.15
+    }
+  ]
+}

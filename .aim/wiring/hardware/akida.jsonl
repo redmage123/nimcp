@@ -1,0 +1,13 @@
+# BrainChip Akida neuromorphic processor configuration
+# Edge-optimized spiking neural network acceleration
+{"type":"config","hardware":"Akida","description":"BrainChip Akida neuromorphic edge processor"}
+{"type":"hardware_requirement","akida_version":"AKD1000","min_npu_cores":1,"power_budget_watts":1.0}
+{"type":"module_config","module":"Spiking_Network","backend":"Akida","notes":"Edge spike processing"}
+{"type":"module_config","module":"STDP_Engine","backend":"Akida","notes":"On-chip incremental learning"}
+{"type":"module_config","module":"Visual_Cortex","backend":"Akida","notes":"Event-driven vision"}
+{"type":"module_config","module":"Auditory_Cortex","backend":"Akida","notes":"Spike-based audio"}
+{"type":"module_config","module":"Tensor_Engine","backend":"CPU","notes":"Dense ops on host"}
+{"type":"parameter_override","module":"Spiking_Network","parameter":"sparse_activation","value":true,"notes":"Energy efficient"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"online_learning","value":true,"notes":"Edge learning"}
+{"type":"akida_config","neurons_per_layer":256,"sparsity_threshold":0.1,"quantization_bits":4}
+{"type":"akida_config","event_driven":true,"power_mode":"low","input_encoding":"temporal"}

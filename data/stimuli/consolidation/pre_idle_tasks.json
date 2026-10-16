@@ -1,0 +1,139 @@
+{
+  "test_domain": "consolidation_pre_idle",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Teach novel facts/skills once, then test recall after an idle/sleep period",
+    "protocol": "Present each item, then leave brain idle for N minutes/hours, then deliver matching post_idle_probe"
+  },
+  "stimuli": [
+    {"id": "preidle_001", "prompt": "Learn this: A tubby is a small purple animal that eats moss and lives near waterfalls in cold climates.", "modality": "text",
+     "expected": {"novel_concept": "tubby", "probe_after_idle": "postidle_001", "key_facts": ["small", "purple", "eats moss", "waterfalls", "cold"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "preidle_002", "prompt": "Remember: The capital of the fictional country Veldoria is Brimhollow, founded in the year 1742 by a navigator named Aris Henn.", "modality": "text",
+     "expected": {"novel_concept": "Veldoria capital", "probe_after_idle": "postidle_002", "key_facts": ["Brimhollow", "1742", "Aris Henn", "navigator"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_003", "prompt": "Learn this rule: When two glark stones are rubbed together, they emit a faint blue light for exactly seven seconds.", "modality": "text",
+     "expected": {"novel_concept": "glark stones", "probe_after_idle": "postidle_003", "key_facts": ["rubbed together", "blue light", "seven seconds"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "preidle_004", "prompt": "Memorize this poem: 'When mornin breaks on copper hills / The wren sings twice and then is still / The river bends past silver wheat / And whispers names beneath your feet.'", "modality": "text",
+     "expected": {"novel_concept": "copper hills poem", "probe_after_idle": "postidle_004", "key_facts": ["copper hills", "wren sings twice", "river bends", "silver wheat", "whispers names"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_005", "prompt": "Learn: The Zindari knot is tied by passing the rope under itself twice clockwise, then through the resulting loop counterclockwise.", "modality": "text",
+     "expected": {"novel_concept": "Zindari knot", "probe_after_idle": "postidle_005", "key_facts": ["under itself twice", "clockwise", "through loop", "counterclockwise"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_006", "prompt": "Remember this person: Dr. Kira Olwen, neuroscientist, born in Reykjavik in 2003, discovered the 'olwen oscillation' in cerebellar granule cells.", "modality": "text",
+     "expected": {"novel_concept": "Dr. Kira Olwen", "probe_after_idle": "postidle_006", "key_facts": ["neuroscientist", "Reykjavik", "2003", "olwen oscillation", "cerebellar"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_007", "prompt": "Learn the recipe: A 'hush soup' is made with three cups of broth, two diced parsnips, a sprig of thyme, and exactly five black peppercorns. Simmer 22 minutes.", "modality": "text",
+     "expected": {"novel_concept": "hush soup", "probe_after_idle": "postidle_007", "key_facts": ["three cups broth", "two parsnips", "thyme", "five peppercorns", "22 minutes"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_008", "prompt": "Remember: My favorite color is the specific shade of dusk-orange that appears on the underside of clouds about ten minutes after sunset.", "modality": "text",
+     "expected": {"novel_concept": "user favorite color", "probe_after_idle": "postidle_008", "key_facts": ["dusk-orange", "underside of clouds", "ten minutes after sunset"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_009", "prompt": "Learn the sequence: 7, 13, 26, 53, 107. The pattern is: double the previous number, then alternate adding 0 or 1.", "modality": "text",
+     "expected": {"novel_concept": "alternating-add sequence", "probe_after_idle": "postidle_009", "key_facts": ["7 13 26 53 107", "double", "alternate add 0 or 1"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_010", "prompt": "Remember this place: The Grewen Library is on the third floor of a building shaped like a half-moon, with a green-tiled roof and 14 stained glass windows.", "modality": "text",
+     "expected": {"novel_concept": "Grewen Library", "probe_after_idle": "postidle_010", "key_facts": ["third floor", "half-moon", "green-tiled roof", "14 stained glass windows"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_011", "prompt": "Learn this proverb: 'A jar that listens never breaks.' It comes from the Mintzu people of the southern coast.", "modality": "text",
+     "expected": {"novel_concept": "Mintzu proverb", "probe_after_idle": "postidle_011", "key_facts": ["jar that listens", "never breaks", "Mintzu", "southern coast"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_012", "prompt": "Remember: My sister's birthday is March 17th. She is allergic to walnuts but loves pecans. Her favorite book is 'The Inland Wind'.", "modality": "text",
+     "expected": {"novel_concept": "user sister profile", "probe_after_idle": "postidle_012", "key_facts": ["March 17", "allergic walnuts", "loves pecans", "Inland Wind"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_013", "prompt": "Learn this protein: Karilin-9 is a heat-shock protein found only in deep-sea tube worms; it folds in 0.3 milliseconds.", "modality": "text",
+     "expected": {"novel_concept": "Karilin-9", "probe_after_idle": "postidle_013", "key_facts": ["heat-shock", "deep-sea tube worms", "0.3 milliseconds"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_014", "prompt": "Remember this melody (by note name): C, E, G, F, D, A, G. It loops once.", "modality": "text",
+     "expected": {"novel_concept": "novel melody", "probe_after_idle": "postidle_014", "key_facts": ["C E G F D A G", "loops once"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 1}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_015", "prompt": "Learn this: In the made-up language Olothi, 'velkar' means 'tomorrow', 'mish' means 'rain', and 'olothi velkar mish' means 'It will rain tomorrow'.", "modality": "text",
+     "expected": {"novel_concept": "Olothi vocabulary", "probe_after_idle": "postidle_015", "key_facts": ["velkar=tomorrow", "mish=rain", "olothi velkar mish"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_016", "prompt": "Remember: The ancient game of Kepi is played on a 9x9 board with 41 stones per side. The winner is the first to surround three of their own stones with their opponent's.", "modality": "text",
+     "expected": {"novel_concept": "Kepi game rules", "probe_after_idle": "postidle_016", "key_facts": ["9x9 board", "41 stones", "surround three of own stones", "by opponent"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_017", "prompt": "Learn: The constellation 'Two Foxes' has six bright stars and is only visible from latitudes south of 40 degrees, between June and September.", "modality": "text",
+     "expected": {"novel_concept": "Two Foxes constellation", "probe_after_idle": "postidle_017", "key_facts": ["six bright stars", "south of 40 degrees", "June to September"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_018", "prompt": "Remember: My favorite quiet activity is folding paper boats and floating them in puddles after rain, especially on cobblestone streets.", "modality": "text",
+     "expected": {"novel_concept": "user quiet activity", "probe_after_idle": "postidle_018", "key_facts": ["paper boats", "puddles", "after rain", "cobblestone"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "preidle_019", "prompt": "Learn: In the fictional metric 'phloric units', 1 phlor equals 3.7 meters and 1 kilophlor is used to measure river widths.", "modality": "text",
+     "expected": {"novel_concept": "phloric units", "probe_after_idle": "postidle_019", "key_facts": ["1 phlor = 3.7 m", "kilophlor", "river widths"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_020", "prompt": "Remember this rule of thumb for the imaginary craft of 'tessering': always braid odd-numbered strands inward, even outward, and never tie a knot on a Tuesday.", "modality": "text",
+     "expected": {"novel_concept": "tessering rule", "probe_after_idle": "postidle_020", "key_facts": ["odd inward", "even outward", "no knots Tuesday"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_021", "prompt": "Learn: The historical figure Maela the Quiet ruled the Theron Isles from 1218 to 1241 and is famous for never raising her voice in court.", "modality": "text",
+     "expected": {"novel_concept": "Maela the Quiet", "probe_after_idle": "postidle_021", "key_facts": ["Theron Isles", "1218-1241", "never raised voice"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_022", "prompt": "Remember: A 'caelin moth' has wings patterned with concentric rings, drinks only nectar from white flowers, and migrates at altitudes of 4 km.", "modality": "text",
+     "expected": {"novel_concept": "caelin moth", "probe_after_idle": "postidle_022", "key_facts": ["concentric ring wings", "white flower nectar", "4 km altitude"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_023", "prompt": "Learn this safe combination: turn right to 17, left to 42, right to 8, left to 31, then back to 17.", "modality": "text",
+     "expected": {"novel_concept": "safe combination", "probe_after_idle": "postidle_023", "key_facts": ["R17 L42 R8 L31 17"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 1}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "preidle_024", "prompt": "Remember: The mathematical constant 'omegoid' (omega-prime) approximates to 2.318 and appears in the dynamics of stretched membranes.", "modality": "text",
+     "expected": {"novel_concept": "omegoid constant", "probe_after_idle": "postidle_024", "key_facts": ["2.318", "stretched membranes"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "preidle_025", "prompt": "Learn: I prefer to be addressed as 'Wren' even though my given name is something else. Please remember to use Wren going forward.", "modality": "text",
+     "expected": {"novel_concept": "user preferred name", "probe_after_idle": "postidle_025", "key_facts": ["preferred name Wren"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 1}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "preidle_026", "prompt": "Remember this story beat: Ila the cartographer found a door in a tree, walked through it, and emerged in her own kitchen, but the kettle was now made of glass.", "modality": "text",
+     "expected": {"novel_concept": "Ila story", "probe_after_idle": "postidle_026", "key_facts": ["Ila", "cartographer", "door in tree", "own kitchen", "glass kettle"]},
+     "scoring": {"type": "consolidation_recall", "params": {"required_fact_count": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}}
+  ]
+}

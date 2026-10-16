@@ -33,7 +33,7 @@ python example.py
 
 # C++ example
 cd ../cpp
-g++ -std=c++17 example.cpp -I../../src/include -L../../build/src/lib -lnimcp_core -o example
+g++ -std=c++17 example.cpp -I../../src/include -L../../build/src/lib -lnimcp -o example
 
 # TypeScript example
 cd ../typescript

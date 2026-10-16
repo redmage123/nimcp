@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "stage": 0,
+    "stage_name": "holophrastic",
+    "age_equivalent_months": "12-18",
+    "brown_stage": "I (pre-syntactic / one-word)",
+    "source": "Curated caregiver-frequency-anchored single-word vocabulary. Anchored to CHILDES MacArthur-Bates CDI 'Words and Gestures' high-frequency list (12-18mo). Used by scripts/caregiver_critic.py for Slice C reward shaping.",
+    "size": 50,
+    "rules": {
+      "min_words": 1,
+      "max_words": 1,
+      "grammar": "NOUN_ONLY"
+    }
+  },
+  "words": [
+    "mama", "dada", "dog", "cat", "water", "milk", "food", "more", "yes", "no",
+    "up", "down", "eat", "drink", "sleep", "play", "big", "small", "hot", "cold",
+    "wet", "dry", "red", "blue", "green", "yellow", "ball", "car", "bed", "hat",
+    "shoe", "sock", "hand", "foot", "head", "eye", "ear", "nose", "mouth", "here",
+    "there", "mine", "my", "good", "bad", "happy", "sad", "love", "hug", "kiss"
+  ],
+  "semantic_hints": {
+    "what color is grass?": "green",
+    "what color is the sky?": "blue",
+    "what color is the sun?": "yellow",
+    "what color is blood?": "red",
+    "what do you drink?": "water",
+    "what do dogs say?": "dog",
+    "where is the ball?": "here",
+    "are you hungry?": "yes",
+    "do you want more?": "more",
+    "is it hot?": "hot",
+    "is it cold?": "cold",
+    "do you love mama?": "love",
+    "who is that?": "mama",
+    "what is that?": "ball",
+    "where does food go?": "mouth",
+    "what is on your foot?": "shoe",
+    "where do you sleep?": "bed",
+    "is it big?": "big",
+    "is it small?": "small",
+    "are you happy?": "happy",
+    "are you sad?": "sad",
+    "where is your nose?": "nose",
+    "where are your eyes?": "eye",
+    "what color is a banana?": "yellow",
+    "what color are leaves?": "green",
+    "what do you eat?": "food",
+    "what do you wear on your head?": "hat",
+    "what do cats drink?": "milk",
+    "what is up?": "up",
+    "what is down?": "down"
+  }
+}

@@ -79,9 +79,9 @@ This comprehensive security audit checklist should be completed before each rele
   - [ ] `-fPIE -pie`
   - [ ] `-Wformat-security`
   - [ ] `-Werror=format-security`
-- [ ] Verify RELRO enabled: `readelf -d build/lib/libnimcp_core.so | grep RELRO`
-- [ ] Verify NX enabled: `readelf -l build/lib/libnimcp_core.so | grep GNU_STACK`
-- [ ] Check for position-independent code: `readelf -h build/lib/libnimcp_core.so | grep Type`
+- [ ] Verify RELRO enabled: `readelf -d build/lib/libnimcp.so | grep RELRO`
+- [ ] Verify NX enabled: `readelf -l build/lib/libnimcp.so | grep GNU_STACK`
+- [ ] Check for position-independent code: `readelf -h build/lib/libnimcp.so | grep Type`
 
 #### Dependencies
 - [ ] Run dependency scan: `./scripts/dependency-scan.sh --report --strict`

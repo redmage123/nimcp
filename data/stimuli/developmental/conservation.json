@@ -1,0 +1,114 @@
+{
+  "test_domain": "developmental_conservation",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Piaget conservation tasks: volume, number, mass, length, area",
+    "scoring_notes": "Concrete operational stage answer = quantity unchanged"
+  },
+  "stimuli": [
+    {"id": "cons_001", "prompt": "Two identical short wide glasses each hold the same amount of water. I pour one into a tall narrow glass. Which now contains more water?", "modality": "text",
+     "expected": {"task_type": "volume", "answer": "same amount", "principle": "conservation_of_liquid_volume"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "equal", "no different"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_002", "prompt": "Two rows of 7 coins each, lined up identically. I spread one row out so it's longer. Which row has more coins?", "modality": "text",
+     "expected": {"task_type": "number", "answer": "same number", "principle": "conservation_of_number"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "equal", "seven"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_003", "prompt": "Two equal balls of clay. I roll one into a long sausage shape. Which has more clay?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "same amount", "principle": "conservation_of_mass"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "equal"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_004", "prompt": "Two identical sticks side by side. I shift one stick to the right by 5 cm. Which stick is longer?", "modality": "text",
+     "expected": {"task_type": "length", "answer": "same length", "principle": "conservation_of_length"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "equal", "neither"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_005", "prompt": "Two identical green pastures. On one I scatter 5 cows; on the other I cluster 5 cows in one corner. Which pasture has more grass-eating area covered?", "modality": "text",
+     "expected": {"task_type": "area", "answer": "same area covered", "principle": "conservation_of_area"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same area", "equal", "5 cows"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cons_006", "prompt": "I weigh a banana whole on a scale: 130 g. I peel it. Now what does the banana (without peel) plus the peel weigh?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "still 130 g total", "principle": "mass_conservation"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["130", "same", "total"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cons_007", "prompt": "I have 12 identical marbles in two groups of 6. I put one group inside a box and one group spread on the table. Which group has more?", "modality": "text",
+     "expected": {"task_type": "number", "answer": "same", "principle": "conservation_of_number"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "six", "equal"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_008", "prompt": "A sponge weighs 50 g dry. I soak it in water and squeeze out as much as I can. The sponge is now visibly larger but I removed the absorbed water. Compared to before soaking, does the sponge itself weigh more, less, or the same?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "approximately the same (some water remains so slightly more)", "principle": "conservation_with_caveat"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["roughly same", "slightly more if wet", "approximately"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cons_009", "prompt": "An ice cube melts into a puddle. The puddle looks larger than the cube did. Has the amount of water changed?", "modality": "text",
+     "expected": {"task_type": "volume", "answer": "approximately the same (water expands ~9% as ice; melted water slightly less)", "principle": "conservation_of_volume_with_phase"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["roughly same", "slightly less", "approximately equal"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cons_010", "prompt": "I have a square sheet of paper. I cut it in half and lay the two pieces side by side. Has the total area changed?", "modality": "text",
+     "expected": {"task_type": "area", "answer": "no", "principle": "conservation_of_area"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["no", "same area", "unchanged"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_011", "prompt": "Two glasses, A (tall thin) and B (short wide). They're both full. Without measuring, can you say which has more water?", "modality": "text",
+     "expected": {"task_type": "volume", "answer": "cannot say without dimensions", "principle": "no_conservation_inference_without_data"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["cannot tell", "depends on dimensions", "need to measure"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cons_012", "prompt": "12 chocolates arranged in a 3x4 grid. I rearrange them in a 2x6 grid. Are there now more, fewer, or the same number of chocolates?", "modality": "text",
+     "expected": {"task_type": "number", "answer": "same (12)", "principle": "conservation_of_number"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["12", "same"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_013", "prompt": "I take a single cookie and break it into 8 small pieces. Is there now more cookie, less cookie, or the same?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "same total amount", "principle": "conservation_of_mass"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "total"]}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "cons_014", "prompt": "Two identical cubes of metal. One I leave at room temperature; the other I heat to 200°C. Has the heated cube's mass changed?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "essentially no (mass conserved; volume slightly larger)", "principle": "mass_conservation_under_heating"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["mass same", "expanded", "volume"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cons_015", "prompt": "Three sticks of equal length. I bend the second into a U shape and the third into a circle. Compared to the straight stick, are the bent sticks the same length?", "modality": "text",
+     "expected": {"task_type": "length", "answer": "yes, length preserved", "principle": "conservation_of_length"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["yes", "same length"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cons_016", "prompt": "An apple is cut into thin slices, then arranged to look like a flower. Compared to the whole apple, has the amount of apple changed?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "no", "principle": "conservation_of_mass"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["no", "same", "still all the apple"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_017", "prompt": "A balloon partially inflated has volume V. I dunk it in cold water; it shrinks visibly. Has the air inside actually decreased in mass?", "modality": "text",
+     "expected": {"task_type": "mass_volume_distinction", "answer": "no, mass same; volume decreased due to cooling", "principle": "conservation_of_mass_under_temperature"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["mass same", "volume changed", "temperature"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "cons_018", "prompt": "Two equal stacks of 10 dimes each. I tip one stack over so the dimes lie flat in a row. Which stack/row has more dimes?", "modality": "text",
+     "expected": {"task_type": "number", "answer": "same (10)", "principle": "conservation_of_number"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["same", "10", "ten"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cons_019", "prompt": "A loaf of bread weighs 500 g. I bake it longer, evaporating off 50 g of water. Did the total mass conserve?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "yes if you count the evaporated water; loaf alone is now 450 g", "principle": "conservation_with_open_system"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["evaporated", "left the loaf", "system"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cons_020", "prompt": "I roll two equal play-doh balls. I leave one alone. The other I let dry for a day; it shrinks slightly and weighs less. What was conserved across the dried ball + the moisture that left?", "modality": "text",
+     "expected": {"task_type": "mass", "answer": "total mass (when including evaporated water)", "principle": "conservation_with_open_system"},
+     "scoring": {"type": "conservation_reasoning", "params": {"keywords": ["total", "including evaporation", "system"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cons_021", "prompt": "I have an L-shaped paper region of area 24 cm^2. I cut and rearrange it into a rectangle. Is the area still 24 cm^2?", "modality": "text",
+     "expected": {"task_type": "area", "answer": "yes", "principle": "conservation_of_area"},
+     "scoring": {"type": "conservation_answer", "params": {"keywords": ["yes", "24", "same"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}}
+  ]
+}

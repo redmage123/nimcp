@@ -1,6 +1,7 @@
 # Python module
 Python3_add_library(nimcp_python MODULE
-    nimcp_module.c
+    ../bindings/python/nimcp_python.c
+    ../bindings/python/nimcp_signal_filter_py.c
 )
 
 set_target_properties(nimcp_python 
@@ -16,6 +17,7 @@ target_include_directories(nimcp_python
         ${NIMCP_INCLUDE_DIR}
         ${NIMCP_LIB_DIR}
         ${Python3_INCLUDE_DIRS}
+        ${Python3_NumPy_INCLUDE_DIRS}
 )
 
 target_link_libraries(nimcp_python

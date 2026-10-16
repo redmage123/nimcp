@@ -1,6 +1,12 @@
+#include <stddef.h>  /* for NULL */
 //=============================================================================
 // nimcp_thread.c - Thread Abstraction Layer for NIMCP
 //=============================================================================
+// Enable GNU extensions for CPU affinity APIs (pthread_setaffinity_np, cpu_set_t)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 // ARCHITECTURAL OVERVIEW:
 // This module implements a comprehensive POSIX thread abstraction layer that
 // provides platform-independent threading primitives with robust error handling,
@@ -477,17 +483,32 @@
  * @file nimcp_thread.c
  * @brief Thread abstraction layer implementation
  *
- * WHAT: POSIX thread wrapper with error handling and resource management
+ * WHAT: Platform-independent thread wrapper with error handling and resource management
  * WHY: Simplify threading, enable portability, provide named locks
- * HOW: Adapter pattern + bucketed hash table for named resources
+ * HOW: Adapter pattern + bucketed hash table for named resources + platform abstraction layer
  */
 
 #include "utils/thread/nimcp_thread.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_messages.h"
 #include <errno.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "utils/memory/nimcp_memory.h"  // CRITICAL: Declares nimcp_calloc/nimcp_free return types
+
+// Keep pthread.h for rwlock and once operations that aren't in platform layer yet
+#include <pthread.h>
+#include "utils/memory/nimcp_unified_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/exception/nimcp_exception_macros.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(thread)
 
 //=============================================================================
 // Thread-Local Error Storage
@@ -563,7 +584,7 @@ static nimcp_once_t init_once = NIMCP_ONCE_INIT;
  * @param format Printf-style format string
  * @param ... Variable arguments for format
  */
-static void set_thread_error(int error_code, const char* format, ...)
+void set_thread_error(int error_code, const char* format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -647,12 +668,12 @@ void nimcp_thread_clear_error(void)
 static void thread_init_routine(void)
 {
     // Global mutex protects table-level operations (future use)
-    pthread_mutex_init(&resource_table.global_mutex, NULL);
+    nimcp_platform_mutex_init(&resource_table.global_mutex, false);
 
     // Initialize all buckets
     // WHY LOOP: Each bucket needs its own mutex and empty entry list
     for (int i = 0; i < RESOURCE_LOCK_BUCKETS; i++) {
-        pthread_mutex_init(&resource_table.buckets[i].bucket_mutex, NULL);
+        nimcp_platform_mutex_init(&resource_table.buckets[i].bucket_mutex, false);
         resource_table.buckets[i].entries = NULL;  // Empty list
     }
 
@@ -754,51 +775,22 @@ nimcp_result_t nimcp_thread_create(nimcp_thread_t* thread, void* (*start_routine
                                    const thread_attr_t* attr)
 {
     // Validate required parameters
-    // WHY CHECK: pthread_create with NULL thread or start_routine is UB
-    if (!thread || !start_routine) {
-        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid thread parameters");
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    // WHY CHECK: thread_create with NULL thread or start_routine is UB
+    NIMCP_CHECK_THROW(thread && start_routine, NIMCP_ERROR_INVALID_PARAM, "Invalid thread parameters");
 
-    // Initialize pthread attributes
-    // WHY LOCAL: Attribute object only needed during pthread_create
-    pthread_attr_t pthread_attr;
-    pthread_attr_init(&pthread_attr);
-
-    // Configure attributes if provided
+    // Note: Platform layer doesn't support attributes yet, so we use basic creation
+    // TODO: Add attribute support to platform layer
     if (attr) {
-        // Stack size: Custom size for deep recursion or memory constraints
-        if (attr->stack_size > 0) {
-            pthread_attr_setstacksize(&pthread_attr, attr->stack_size);
-        }
-
-        // Detached: Thread cleans up automatically on exit (no join needed)
-        if (attr->detached) {
-            pthread_attr_setdetachstate(&pthread_attr, PTHREAD_CREATE_DETACHED);
-        }
-
-// Priority: Real-time or background priority (if supported)
-#ifdef _POSIX_PRIORITY_SCHEDULING
-        if (attr->priority > 0) {
-            struct sched_param param;
-            param.sched_priority = attr->priority;
-            pthread_attr_setschedparam(&pthread_attr, &param);
-        }
-#endif
+        // For now, we can only handle basic creation
+        // Stack size, priority, and detached state are not yet supported in platform layer
+        // This is a temporary limitation
     }
 
-    // Create thread with configured attributes
-    int result = pthread_create(thread, &pthread_attr, start_routine, arg);
-
-    // Clean up attribute object (no longer needed after pthread_create)
-    // WHY DESTROY: Free any internal resources allocated by pthread_attr_*
-    pthread_attr_destroy(&pthread_attr);
+    // Create thread using platform abstraction
+    int result = nimcp_platform_thread_create(thread, start_routine, arg);
 
     // Check result and set error if failed
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Thread creation failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "Thread creation failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -830,11 +822,8 @@ nimcp_result_t nimcp_thread_create(nimcp_thread_t* thread, void* (*start_routine
  */
 nimcp_result_t nimcp_thread_join(nimcp_thread_t thread, void** retval)
 {
-    int result = pthread_join(thread, retval);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Thread join failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    int result = nimcp_platform_thread_join(thread, retval);
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "Thread join failed: %s", strerror(result));
     return NIMCP_SUCCESS;
 }
 
@@ -863,11 +852,8 @@ nimcp_result_t nimcp_thread_join(nimcp_thread_t thread, void** retval)
  */
 nimcp_result_t nimcp_thread_detach(nimcp_thread_t thread)
 {
-    int result = pthread_detach(thread);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Thread detach failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    int result = nimcp_platform_thread_detach(thread);
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "Thread detach failed: %s", strerror(result));
     return NIMCP_SUCCESS;
 }
 
@@ -913,7 +899,7 @@ void nimcp_thread_exit(void* retval)
  */
 nimcp_thread_t nimcp_thread_self(void)
 {
-    return pthread_self();
+    return nimcp_platform_thread_self();
 }
 
 /**
@@ -973,417 +959,17 @@ bool nimcp_thread_equal(nimcp_thread_t t1, nimcp_thread_t t2)
 nimcp_result_t nimcp_once(nimcp_once_t* once_control, void (*init_routine)(void))
 {
     // Validate parameters
-    if (!once_control || !init_routine) {
-        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid once parameters");
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(once_control && init_routine, NIMCP_ERROR_INVALID_PARAM, "Invalid once parameters");
 
     int result = pthread_once(once_control, init_routine);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "pthread_once failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "pthread_once failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
 
 //=============================================================================
-// Mutex Operations
+// Mutex & Spinlock Operations - See nimcp_thread_mutex.c
 //=============================================================================
-
-/**
- * @brief Initialize mutex with attributes (Factory + Adapter pattern)
- *
- * WHY FACTORY PATTERN:
- * - Creates different mutex types based on attributes
- * - Encapsulates pthread attribute complexity
- * - Single creation point for all mutex types
- *
- * MUTEX TYPES:
- * - NORMAL (default): Fast, no recursion checking, UB on relock
- * - RECURSIVE: Can be locked multiple times by same thread
- * - ERRORCHECK: Returns error on recursive lock (debugging)
- *
- * ALGORITHM:
- * 1. Validate mutex pointer
- * 2. Initialize pthread_mutexattr_t
- * 3. If attr provided, translate type:
- *    - MUTEX_TYPE_RECURSIVE → PTHREAD_MUTEX_RECURSIVE
- *    - MUTEX_TYPE_ERRORCHECK → PTHREAD_MUTEX_ERRORCHECK
- *    - MUTEX_TYPE_NORMAL → PTHREAD_MUTEX_NORMAL
- * 4. Set attribute type
- * 5. Initialize mutex with attributes
- * 6. Destroy attribute object (no longer needed)
- *
- * WHY SUPPORT MULTIPLE TYPES:
- * - NORMAL: Fastest, for simple critical sections
- * - RECURSIVE: Simplifies complex call chains (lock held across layers)
- *   Example: Function A locks, calls Function B which locks same mutex
- * - ERRORCHECK: Catches programming errors during development
- *   Example: Detects if function forgets to unlock before re-locking
- *
- * COMPLEXITY: O(1)
- * THREAD SAFETY: Fully safe (creates new independent mutex)
- *
- * @param mutex Mutex to initialize
- * @param attr Mutex attributes (NULL for default NORMAL type)
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_mutex_init(nimcp_mutex_t* mutex, const mutex_attr_t* attr)
-{
-    if (!mutex) {
-        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid mutex pointer");
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    pthread_mutexattr_t mutex_attr;
-    pthread_mutexattr_init(&mutex_attr);
-
-    // Translate NIMCP mutex types to pthread types
-    if (attr) {
-        int type;
-        switch (attr->type) {
-            case MUTEX_TYPE_RECURSIVE:
-                type = PTHREAD_MUTEX_RECURSIVE;
-                break;
-            case MUTEX_TYPE_ERRORCHECK:
-                type = PTHREAD_MUTEX_ERRORCHECK;
-                break;
-            default:
-                type = PTHREAD_MUTEX_NORMAL;
-        }
-        pthread_mutexattr_settype(&mutex_attr, type);
-    }
-
-    // Initialize mutex with attributes
-    int result = pthread_mutex_init(mutex, &mutex_attr);
-
-    // Clean up attribute object
-    pthread_mutexattr_destroy(&mutex_attr);
-
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Mutex initialization failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Destroy mutex (Adapter for pthread_mutex_destroy)
- *
- * WHY DESTROY:
- * - Free kernel resources (futex on Linux)
- * - Clean shutdown
- * - Detect programming errors (destroying locked mutex fails)
- *
- * PRECONDITIONS:
- * - Mutex must not be locked
- * - No threads waiting on mutex
- *
- * ERROR CASES:
- * - EBUSY: Mutex is locked or has waiters
- * - EINVAL: Invalid mutex
- *
- * COMPLEXITY: O(1)
- * THREAD SAFETY: Caller must ensure no concurrent use
- *
- * @param mutex Mutex to destroy
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_mutex_destroy(nimcp_mutex_t* mutex)
-{
-    if (!mutex) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_destroy(mutex);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Mutex destruction failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Lock mutex (Adapter for pthread_mutex_lock)
- *
- * WHY LOCK:
- * - Protect critical section (shared data access)
- * - Ensure mutual exclusion (only one thread in section)
- * - Serialize access to non-thread-safe operations
- *
- * SEMANTICS:
- * - Blocks if mutex already locked
- * - Acquires lock when available
- * - Must be unlocked by same thread
- *
- * CRITICAL SECTION PATTERN:
- *   nimcp_mutex_lock(&mutex);
- *   // ... critical section ...
- *   nimcp_mutex_unlock(&mutex);
- *
- * ERROR CASES:
- * - EINVAL: Invalid mutex or uninitialized
- * - EDEADLK: Deadlock detected (ERRORCHECK or RECURSIVE type)
- *
- * COMPLEXITY: O(1) uncontended, O(n) if queued (n = number of waiters)
- * THREAD SAFETY: Fully safe (that's the point!)
- *
- * @param mutex Mutex to lock
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_mutex_lock(nimcp_mutex_t* mutex)
-{
-    if (!mutex) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_lock(mutex);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Mutex lock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Try to lock mutex without blocking (Adapter for pthread_mutex_trylock)
- *
- * WHY TRYLOCK:
- * - Non-blocking alternative to lock
- * - Avoid deadlock (can back off and retry)
- * - Polling pattern (try lock, do other work, retry)
- *
- * SEMANTICS:
- * - Returns immediately (never blocks)
- * - NIMCP_SUCCESS if lock acquired
- * - NIMCP_BUSY if already locked (not an error!)
- *
- * TYPICAL USAGE (opportunistic locking):
- *   if (nimcp_mutex_trylock(&mutex) == NIMCP_SUCCESS) {
- *       // Got lock, do critical section
- *       work_on_shared_data();
- *       nimcp_mutex_unlock(&mutex);
- *   } else {
- *       // Couldn't get lock, do something else
- *       work_on_local_data();
- *   }
- *
- * WHY NIMCP_BUSY (not error):
- * - EBUSY is expected outcome (mutex already locked)
- * - Not a failure, just status information
- * - Consistent with timeout behavior
- *
- * COMPLEXITY: O(1) (always non-blocking)
- * THREAD SAFETY: Fully safe
- *
- * @param mutex Mutex to try locking
- * @return NIMCP_SUCCESS if locked, NIMCP_BUSY if already locked, NIMCP_ERROR_* on error
- */
-nimcp_result_t nimcp_mutex_trylock(nimcp_mutex_t* mutex)
-{
-    if (!mutex) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_trylock(mutex);
-
-    // EBUSY means mutex is locked (expected, not error)
-    if (result == EBUSY) {
-        return NIMCP_BUSY;
-    } else if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Mutex trylock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Unlock mutex (Adapter for pthread_mutex_unlock)
- *
- * WHY UNLOCK:
- * - Release critical section
- * - Allow other threads to acquire lock
- * - Required pairing with lock (must unlock what you locked)
- *
- * SEMANTICS:
- * - Must be called by thread that locked mutex
- * - Wakes one waiting thread (if any)
- * - Undefined behavior if unlocking non-locked mutex
- *
- * ERROR CASES:
- * - EINVAL: Invalid mutex
- * - EPERM: Mutex not locked by current thread (ERRORCHECK type)
- *
- * COMPLEXITY: O(1)
- * THREAD SAFETY: Fully safe (must be called by locking thread)
- *
- * @param mutex Mutex to unlock
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_mutex_unlock(nimcp_mutex_t* mutex)
-{
-    if (!mutex) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_unlock(mutex);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Mutex unlock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-//=============================================================================
-// Spinlock Operations (implemented as mutexes for portability)
-//=============================================================================
-
-/**
- * @brief Initialize spinlock (Adapter for pthread_mutex_init)
- *
- * WHY MUTEX NOT SPINLOCK:
- * - pthread_spin_lock not universally available (optional POSIX feature)
- * - Mutex provides better portability across platforms
- * - For short critical sections, mutex performance is comparable
- * - Futex-based mutexes (Linux) already spin briefly before blocking
- *
- * WHY SPINLOCK INTERFACE:
- * - Semantic clarity: indicates intent for short critical sections
- * - Future optimization: could use real spinlocks on platforms that support them
- * - Matches expected API in glial cell modules
- *
- * COMPLEXITY: O(1)
- * THREAD SAFETY: Fully safe (creates new independent lock)
- *
- * @param lock Spinlock to initialize
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_spinlock_init(nimcp_spinlock_t* lock)
-{
-    if (!lock) {
-        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid spinlock pointer");
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_init(lock, NULL);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Spinlock initialization failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Destroy spinlock (Adapter for pthread_mutex_destroy)
- *
- * WHY DESTROY:
- * - Free kernel resources (futex on Linux)
- * - Clean shutdown
- * - Detect programming errors (destroying locked spinlock fails)
- *
- * PRECONDITIONS:
- * - Spinlock must not be locked
- * - No threads waiting on spinlock
- *
- * COMPLEXITY: O(1)
- * THREAD SAFETY: Caller must ensure no concurrent use
- *
- * @param lock Spinlock to destroy
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_spinlock_destroy(nimcp_spinlock_t* lock)
-{
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_destroy(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Spinlock destruction failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Lock spinlock (Adapter for pthread_mutex_lock)
- *
- * WHY LOCK:
- * - Protect critical section in glial cells (short duration)
- * - Ensure mutual exclusion for activity score updates
- * - Serialize access to monitored synapse arrays
- *
- * SEMANTICS:
- * - Blocks if spinlock already locked
- * - Acquires lock when available
- * - Must be unlocked by same thread
- *
- * TYPICAL USAGE (microglia activity tracking):
- *   nimcp_spinlock_lock(&microglia->lock);
- *   microglia->synapse_activity_scores[idx] = new_score;
- *   nimcp_spinlock_unlock(&microglia->lock);
- *
- * COMPLEXITY: O(1) uncontended
- * THREAD SAFETY: Fully safe
- *
- * @param lock Spinlock to lock
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_spinlock_lock(nimcp_spinlock_t* lock)
-{
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_lock(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Spinlock lock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Unlock spinlock (Adapter for pthread_mutex_unlock)
- *
- * WHY UNLOCK:
- * - Release critical section
- * - Allow other threads to acquire lock
- * - Required pairing with lock
- *
- * SEMANTICS:
- * - Must be called by thread that locked spinlock
- * - Wakes one waiting thread (if any)
- *
- * COMPLEXITY: O(1)
- * THREAD SAFETY: Fully safe (must be called by locking thread)
- *
- * @param lock Spinlock to unlock
- * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
- */
-nimcp_result_t nimcp_spinlock_unlock(nimcp_spinlock_t* lock)
-{
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
-
-    int result = pthread_mutex_unlock(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Spinlock unlock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
-
-    return NIMCP_SUCCESS;
-}
 
 //=============================================================================
 // Read-Write Lock Operations
@@ -1406,16 +992,10 @@ nimcp_result_t nimcp_spinlock_unlock(nimcp_spinlock_t* lock)
  */
 nimcp_result_t nimcp_rwlock_init(nimcp_rwlock_t* lock)
 {
-    if (!lock) {
-        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid rwlock pointer");
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "Invalid rwlock pointer");
 
     int result = pthread_rwlock_init(lock, NULL);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock initialization failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "RWlock initialization failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -1434,15 +1014,10 @@ nimcp_result_t nimcp_rwlock_init(nimcp_rwlock_t* lock)
  */
 nimcp_result_t nimcp_rwlock_destroy(nimcp_rwlock_t* lock)
 {
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
 
     int result = pthread_rwlock_destroy(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock destruction failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "RWlock destruction failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -1468,15 +1043,10 @@ nimcp_result_t nimcp_rwlock_destroy(nimcp_rwlock_t* lock)
  */
 nimcp_result_t nimcp_rwlock_rdlock(nimcp_rwlock_t* lock)
 {
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
 
     int result = pthread_rwlock_rdlock(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock rdlock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "RWlock rdlock failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -1502,15 +1072,10 @@ nimcp_result_t nimcp_rwlock_rdlock(nimcp_rwlock_t* lock)
  */
 nimcp_result_t nimcp_rwlock_wrlock(nimcp_rwlock_t* lock)
 {
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
 
     int result = pthread_rwlock_wrlock(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock wrlock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "RWlock wrlock failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -1531,14 +1096,292 @@ nimcp_result_t nimcp_rwlock_wrlock(nimcp_rwlock_t* lock)
  */
 nimcp_result_t nimcp_rwlock_unlock(nimcp_rwlock_t* lock)
 {
-    if (!lock) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
 
     int result = pthread_rwlock_unlock(lock);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock unlock failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "RWlock unlock failed: %s", strerror(result));
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Try to acquire read lock without blocking (Adapter for pthread_rwlock_tryrdlock)
+ *
+ * WHY TRYRDLOCK:
+ * - Non-blocking alternative to rdlock
+ * - Allows opportunistic read access patterns
+ * - Useful for lock-free read paths with fallback
+ *
+ * SEMANTICS:
+ * - Returns immediately (never blocks)
+ * - NIMCP_SUCCESS if read lock acquired
+ * - NIMCP_BUSY if would block (write lock held or writer waiting)
+ *
+ * TYPICAL USAGE (fast path read):
+ *   if (nimcp_rwlock_tryrdlock(&lock) == NIMCP_SUCCESS) {
+ *       // Got read lock, access shared data
+ *       value = shared_data;
+ *       nimcp_rwlock_unlock(&lock);
+ *   } else {
+ *       // Couldn't get lock, use cached value or wait
+ *       value = cached_data;
+ *   }
+ *
+ * WHY NIMCP_BUSY (not error):
+ * - EBUSY is expected outcome (writer active or waiting)
+ * - Not a failure, just status information
+ * - Consistent with mutex_trylock and timeout semantics
+ *
+ * ALGORITHM:
+ * 1. Validate lock pointer
+ * 2. Call pthread_rwlock_tryrdlock
+ * 3. If EBUSY, return NIMCP_BUSY (expected case)
+ * 4. If other error, set error message and return NIMCP_ERROR_SYSTEM
+ * 5. If success, return NIMCP_SUCCESS
+ *
+ * COMPLEXITY: O(1) (always non-blocking)
+ * THREAD SAFETY: Fully safe
+ *
+ * @param lock Read-write lock
+ * @return NIMCP_SUCCESS if locked, NIMCP_BUSY if would block, NIMCP_ERROR_* on error
+ */
+nimcp_result_t nimcp_rwlock_tryrdlock(nimcp_rwlock_t* lock)
+{
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
+
+    int result = pthread_rwlock_tryrdlock(lock);
+
+    // EBUSY means lock is held by writer (expected, not error)
+    if (result == EBUSY) {
+        return NIMCP_BUSY;
+    } else if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock tryrdlock failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_rwlock_tryrdlock: pthread_rwlock_tryrdlock failed");
+    }
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Try to acquire write lock without blocking (Adapter for pthread_rwlock_trywrlock)
+ *
+ * WHY TRYWRLOCK:
+ * - Non-blocking alternative to wrlock
+ * - Avoid deadlock in complex lock hierarchies
+ * - Allows try-and-defer patterns for write operations
+ *
+ * SEMANTICS:
+ * - Returns immediately (never blocks)
+ * - NIMCP_SUCCESS if write lock acquired
+ * - NIMCP_BUSY if would block (any readers or writer active)
+ *
+ * TYPICAL USAGE (deferred write):
+ *   if (nimcp_rwlock_trywrlock(&lock) == NIMCP_SUCCESS) {
+ *       // Got write lock, update immediately
+ *       shared_data = new_value;
+ *       nimcp_rwlock_unlock(&lock);
+ *   } else {
+ *       // Couldn't get lock, queue write for later
+ *       enqueue_pending_write(new_value);
+ *   }
+ *
+ * WHY NIMCP_BUSY (not error):
+ * - EBUSY is expected outcome (readers or writer active)
+ * - Not a failure, just status information
+ * - Consistent with tryrdlock and timeout semantics
+ *
+ * ALGORITHM:
+ * 1. Validate lock pointer
+ * 2. Call pthread_rwlock_trywrlock
+ * 3. If EBUSY, return NIMCP_BUSY (expected case)
+ * 4. If other error, set error message and return NIMCP_ERROR_SYSTEM
+ * 5. If success, return NIMCP_SUCCESS
+ *
+ * COMPLEXITY: O(1) (always non-blocking)
+ * THREAD SAFETY: Fully safe
+ *
+ * @param lock Read-write lock
+ * @return NIMCP_SUCCESS if locked, NIMCP_BUSY if would block, NIMCP_ERROR_* on error
+ */
+nimcp_result_t nimcp_rwlock_trywrlock(nimcp_rwlock_t* lock)
+{
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
+
+    int result = pthread_rwlock_trywrlock(lock);
+
+    // EBUSY means lock is held (expected, not error)
+    if (result == EBUSY) {
+        return NIMCP_BUSY;
+    } else if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock trywrlock failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_rwlock_trywrlock: pthread_rwlock_trywrlock failed");
+    }
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Try to acquire read lock with timeout (Adapter for pthread_rwlock_timedrdlock)
+ *
+ * WHY TIMED READ LOCK:
+ * - Prevent indefinite blocking on read operations
+ * - Implement watchdog patterns for read access
+ * - Graceful degradation when write lock held too long
+ *
+ * ALGORITHM:
+ * 1. Validate lock pointer
+ * 2. Get current absolute time (CLOCK_REALTIME)
+ * 3. Add timeout_ms to current time:
+ *    a. Add milliseconds to seconds (ms / 1000)
+ *    b. Add remainder to nanoseconds ((ms % 1000) * 1000000)
+ * 4. Handle nanosecond overflow (≥1 billion → carry to seconds)
+ * 5. Call pthread_rwlock_timedrdlock with absolute deadline
+ * 6. If ETIMEDOUT, return NIMCP_BUSY (consistent with trylock)
+ *
+ * WHY ABSOLUTE TIME (not relative):
+ * - pthread_rwlock_timedrdlock requires absolute time
+ * - Prevents drift with multiple timed operations
+ * - Standard POSIX interface
+ *
+ * WHY CLOCK_REALTIME:
+ * - Required by pthread_rwlock_timedrdlock
+ * - Consistent with cond_timedwait
+ *
+ * TYPICAL USAGE (timeout read):
+ *   nimcp_result_t r = nimcp_rwlock_timedrdlock(&lock, 1000);  // 1 second timeout
+ *   if (r == NIMCP_SUCCESS) {
+ *       value = shared_data;
+ *       nimcp_rwlock_unlock(&lock);
+ *   } else if (r == NIMCP_BUSY) {
+ *       // Timeout - writer holding lock too long
+ *       log_warning("Read lock timeout");
+ *   }
+ *
+ * COMPLEXITY: O(1) to enter wait, blocks up to timeout_ms
+ * THREAD SAFETY: Fully safe
+ *
+ * @param lock Read-write lock
+ * @param timeout_ms Timeout in milliseconds
+ * @return NIMCP_SUCCESS if locked, NIMCP_BUSY if timeout, NIMCP_ERROR_* on error
+ */
+nimcp_result_t nimcp_rwlock_timedrdlock(nimcp_rwlock_t* lock, uint32_t timeout_ms)
+{
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
+
+    // Calculate absolute timeout (CLOCK_REALTIME)
+    struct timespec abstime;
+    if (clock_gettime(CLOCK_REALTIME, &abstime) != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "clock_gettime failed: %s", strerror(errno));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_rwlock_timedrdlock: clock_gettime failed");
+    }
+
+    // Add timeout milliseconds to current time
+    // WHY: Convert ms to seconds + nanoseconds
+    abstime.tv_sec += timeout_ms / 1000;
+    abstime.tv_nsec += (timeout_ms % 1000) * 1000000L;
+
+    // Handle nanosecond overflow (carry to seconds)
+    // WHY: tv_nsec must be < 1,000,000,000
+    if (abstime.tv_nsec >= 1000000000L) {
+        abstime.tv_sec += 1;
+        abstime.tv_nsec -= 1000000000L;
+    }
+
+    int result = pthread_rwlock_timedrdlock(lock, &abstime);
+
+    // ETIMEDOUT is expected outcome (timeout expired)
+    if (result == ETIMEDOUT) {
+        return NIMCP_BUSY;  // Consistent with trylock semantics
+    } else if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock timedrdlock failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_rwlock_timedrdlock: pthread_rwlock_timedrdlock failed");
+    }
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Try to acquire write lock with timeout (Adapter for pthread_rwlock_timedwrlock)
+ *
+ * WHY TIMED WRITE LOCK:
+ * - Prevent indefinite blocking on write operations
+ * - Implement watchdog patterns for write access
+ * - Detect excessive reader activity (starvation prevention)
+ *
+ * ALGORITHM:
+ * 1. Validate lock pointer
+ * 2. Get current absolute time (CLOCK_REALTIME)
+ * 3. Add timeout_ms to current time:
+ *    a. Add milliseconds to seconds (ms / 1000)
+ *    b. Add remainder to nanoseconds ((ms % 1000) * 1000000)
+ * 4. Handle nanosecond overflow (≥1 billion → carry to seconds)
+ * 5. Call pthread_rwlock_timedwrlock with absolute deadline
+ * 6. If ETIMEDOUT, return NIMCP_BUSY (consistent with trylock)
+ *
+ * WHY ABSOLUTE TIME (not relative):
+ * - pthread_rwlock_timedwrlock requires absolute time
+ * - Prevents drift with multiple timed operations
+ * - Standard POSIX interface
+ *
+ * WHY CLOCK_REALTIME:
+ * - Required by pthread_rwlock_timedwrlock
+ * - Consistent with timedrdlock and cond_timedwait
+ *
+ * TYPICAL USAGE (timeout write with fallback):
+ *   nimcp_result_t r = nimcp_rwlock_timedwrlock(&lock, 500);  // 500ms timeout
+ *   if (r == NIMCP_SUCCESS) {
+ *       shared_data = new_value;
+ *       nimcp_rwlock_unlock(&lock);
+ *   } else if (r == NIMCP_BUSY) {
+ *       // Timeout - too many readers or slow writer
+ *       log_warning("Write lock timeout - readers active");
+ *       enqueue_for_retry(new_value);
+ *   }
+ *
+ * COMPLEXITY: O(1) to enter wait, blocks up to timeout_ms
+ * THREAD SAFETY: Fully safe
+ *
+ * @param lock Read-write lock
+ * @param timeout_ms Timeout in milliseconds
+ * @return NIMCP_SUCCESS if locked, NIMCP_BUSY if timeout, NIMCP_ERROR_* on error
+ */
+nimcp_result_t nimcp_rwlock_timedwrlock(nimcp_rwlock_t* lock, uint32_t timeout_ms)
+{
+    NIMCP_CHECK_THROW(lock, NIMCP_ERROR_INVALID_PARAM, "rwlock is NULL");
+
+    // Calculate absolute timeout (CLOCK_REALTIME)
+    struct timespec abstime;
+    if (clock_gettime(CLOCK_REALTIME, &abstime) != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "clock_gettime failed: %s", strerror(errno));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_rwlock_timedwrlock: clock_gettime failed");
+    }
+
+    // Add timeout milliseconds to current time
+    // WHY: Convert ms to seconds + nanoseconds
+    abstime.tv_sec += timeout_ms / 1000;
+    abstime.tv_nsec += (timeout_ms % 1000) * 1000000L;
+
+    // Handle nanosecond overflow (carry to seconds)
+    // WHY: tv_nsec must be < 1,000,000,000
+    if (abstime.tv_nsec >= 1000000000L) {
+        abstime.tv_sec += 1;
+        abstime.tv_nsec -= 1000000000L;
+    }
+
+    int result = pthread_rwlock_timedwrlock(lock, &abstime);
+
+    // ETIMEDOUT is expected outcome (timeout expired)
+    if (result == ETIMEDOUT) {
+        return NIMCP_BUSY;  // Consistent with trylock semantics
+    } else if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "RWlock timedwrlock failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_rwlock_timedwrlock: pthread_rwlock_timedwrlock failed");
     }
 
     return NIMCP_SUCCESS;
@@ -1565,18 +1408,36 @@ nimcp_result_t nimcp_rwlock_unlock(nimcp_rwlock_t* lock)
  */
 nimcp_result_t nimcp_cond_init(nimcp_cond_t* cond)
 {
-    if (!cond) {
-        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid cond pointer");
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(cond, NIMCP_ERROR_INVALID_PARAM, "Invalid cond pointer");
 
-    int result = pthread_cond_init(cond, NULL);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Cond initialization failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    int result = nimcp_platform_cond_init(cond);
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "Cond initialization failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Create a new condition variable (allocate and initialize)
+ *
+ * @return Pointer to initialized condition variable or NULL on failure
+ */
+nimcp_cond_t* nimcp_cond_create(void)
+{
+    nimcp_cond_t* cond = (nimcp_cond_t*)nimcp_malloc(sizeof(nimcp_cond_t));
+    if (!cond) {
+        set_thread_error(NIMCP_ERROR_MEMORY, "Failed to allocate cond");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "cond is NULL");
+
+        return NULL;
+    }
+
+    if (nimcp_cond_init(cond) != NIMCP_SUCCESS) {
+        nimcp_free(cond);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NOT_INITIALIZED, "nimcp_cond_create: validation failed");
+        return NULL;
+    }
+
+    return cond;
 }
 
 /**
@@ -1597,15 +1458,10 @@ nimcp_result_t nimcp_cond_init(nimcp_cond_t* cond)
  */
 nimcp_result_t nimcp_cond_destroy(nimcp_cond_t* cond)
 {
-    if (!cond) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(cond, NIMCP_ERROR_INVALID_PARAM, "cond is NULL");
 
-    int result = pthread_cond_destroy(cond);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Cond destruction failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    int result = nimcp_platform_cond_destroy(cond);
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "Cond destruction failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -1652,15 +1508,10 @@ nimcp_result_t nimcp_cond_destroy(nimcp_cond_t* cond)
  */
 nimcp_result_t nimcp_cond_wait(nimcp_cond_t* cond, nimcp_mutex_t* mutex)
 {
-    if (!cond || !mutex) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(cond && mutex, NIMCP_ERROR_INVALID_PARAM, "cond or mutex is NULL");
 
-    int result = pthread_cond_wait(cond, mutex);
-    if (result != 0) {
-        set_thread_error(NIMCP_ERROR_SYSTEM, "Cond wait failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
-    }
+    int result = nimcp_platform_cond_wait(cond, mutex);
+    NIMCP_CHECK_THROW(result == 0, NIMCP_ERROR_SYSTEM, "Cond wait failed: %s", strerror(result));
 
     return NIMCP_SUCCESS;
 }
@@ -1717,33 +1568,18 @@ nimcp_result_t nimcp_cond_wait(nimcp_cond_t* cond, nimcp_mutex_t* mutex)
  */
 nimcp_result_t nimcp_cond_timedwait(nimcp_cond_t* cond, nimcp_mutex_t* mutex, uint32_t timeout_ms)
 {
-    if (!cond || !mutex) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    if (!cond || !mutex) return NIMCP_ERROR_INVALID_PARAM;
 
-    // Get current absolute time
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-
-    // Add timeout (convert milliseconds to seconds and nanoseconds)
-    ts.tv_sec += timeout_ms / 1000;               // Add seconds
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000;  // Add nanoseconds
-
-    // Handle nanosecond overflow
-    // WHY NEEDED: tv_nsec must be in [0, 999999999]
-    if (ts.tv_nsec >= 1000000000) {
-        ts.tv_sec += 1;            // Carry to seconds
-        ts.tv_nsec -= 1000000000;  // Normalize nanoseconds
-    }
-
-    int result = pthread_cond_timedwait(cond, mutex, &ts);
+    // Use platform abstraction for timed wait
+    int result = nimcp_platform_cond_timedwait(cond, mutex, timeout_ms);
 
     // ETIMEDOUT is expected outcome (not error)
     if (result == ETIMEDOUT) {
         return NIMCP_BUSY;  // Consistent with trylock semantics
     } else if (result != 0) {
         set_thread_error(NIMCP_ERROR_SYSTEM, "Cond timedwait failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_cond_timedwait: platform cond timedwait failed");
     }
 
     return NIMCP_SUCCESS;
@@ -1786,14 +1622,13 @@ nimcp_result_t nimcp_cond_timedwait(nimcp_cond_t* cond, nimcp_mutex_t* mutex, ui
  */
 nimcp_result_t nimcp_cond_signal(nimcp_cond_t* cond)
 {
-    if (!cond) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(cond, NIMCP_ERROR_INVALID_PARAM, "cond is NULL");
 
-    int result = pthread_cond_signal(cond);
+    int result = nimcp_platform_cond_signal(cond);
     if (result != 0) {
         set_thread_error(NIMCP_ERROR_SYSTEM, "Cond signal failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_cond_signal: platform cond signal failed");
     }
 
     return NIMCP_SUCCESS;
@@ -1837,14 +1672,13 @@ nimcp_result_t nimcp_cond_signal(nimcp_cond_t* cond)
  */
 nimcp_result_t nimcp_cond_broadcast(nimcp_cond_t* cond)
 {
-    if (!cond) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(cond, NIMCP_ERROR_INVALID_PARAM, "cond is NULL");
 
-    int result = pthread_cond_broadcast(cond);
+    int result = nimcp_platform_cond_broadcast(cond);
     if (result != 0) {
         set_thread_error(NIMCP_ERROR_SYSTEM, "Cond broadcast failed: %s", strerror(result));
-        return NIMCP_ERROR_SYSTEM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_cond_broadcast: platform cond broadcast failed");
     }
 
     return NIMCP_SUCCESS;
@@ -1984,7 +1818,8 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
     // Validate parameters
     if (!resource_id || !mutex) {
         set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid resource lock parameters");
-        return NIMCP_ERROR_INVALID_PARAM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_INVALID_PARAM,
+                          "nimcp_get_resource_lock: invalid parameters");
     }
 
     // Lazy initialization: Ensure table is initialized
@@ -1997,7 +1832,7 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
 
     // Acquire bucket mutex (fine-grained lock)
     // WHY BUCKET LOCK: Only blocks threads accessing this specific bucket
-    pthread_mutex_lock(&resource_table.buckets[bucket].bucket_mutex);
+    nimcp_platform_mutex_lock(&resource_table.buckets[bucket].bucket_mutex);
 
     // Search bucket's entry list for resource_id
     resource_entry_t* entry = resource_table.buckets[bucket].entries;
@@ -2006,7 +1841,7 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
             // FOUND: Resource already exists, increment reference count
             entry->ref_count++;
             *mutex = entry->lock;
-            pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+            nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
             return NIMCP_SUCCESS;
         }
         entry = entry->next;
@@ -2018,9 +1853,10 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
     // WHY MALLOC: Dynamic number of locks (not known at compile time)
     entry = nimcp_malloc(sizeof(resource_entry_t));
     if (!entry) {
-        pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+        nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
         set_thread_error(NIMCP_ERROR_MEMORY, "Failed to allocate resource entry");
-        return NIMCP_ERROR_MEMORY;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_MEMORY,
+                          "nimcp_get_resource_lock: failed to allocate resource entry");
     }
 
     // Duplicate resource_id string (use nimcp_malloc to match nimcp_free below)
@@ -2040,20 +1876,22 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
         nimcp_free(entry->resource_id);
         nimcp_free(entry->lock);
         nimcp_free(entry);
-        pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+        nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
         set_thread_error(NIMCP_ERROR_MEMORY, "Failed to allocate resource lock");
-        return NIMCP_ERROR_MEMORY;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_MEMORY,
+                          "nimcp_get_resource_lock: failed to allocate resource lock");
     }
 
-    // Initialize mutex
-    if (pthread_mutex_init(entry->lock, NULL) != 0) {
+    // Initialize mutex using platform abstraction
+    if (nimcp_platform_mutex_init(entry->lock, false) != 0) {
         // Cleanup on init failure
         nimcp_free(entry->resource_id);
         nimcp_free(entry->lock);
         nimcp_free(entry);
-        pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+        nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
         set_thread_error(NIMCP_ERROR_SYSTEM, "Failed to initialize resource mutex");
-        return NIMCP_ERROR_SYSTEM;
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_get_resource_lock: failed to initialize mutex");
     }
 
     // Set initial reference count
@@ -2066,7 +1904,7 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
     // Return mutex to caller
     *mutex = entry->lock;
 
-    pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+    nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
     return NIMCP_SUCCESS;
 }
 
@@ -2124,15 +1962,14 @@ nimcp_result_t nimcp_get_resource_lock(const char* resource_id, nimcp_mutex_t** 
  */
 nimcp_result_t nimcp_release_resource_lock(const char* resource_id)
 {
-    if (!resource_id) {
-        return NIMCP_ERROR_INVALID_PARAM;
-    }
+    NIMCP_CHECK_THROW(resource_id, NIMCP_ERROR_INVALID_PARAM,
+                      "nimcp_release_resource_lock: resource_id is NULL");
 
     // Compute hash bucket
     unsigned int bucket = hash_string(resource_id);
 
     // Acquire bucket mutex
-    pthread_mutex_lock(&resource_table.buckets[bucket].bucket_mutex);
+    nimcp_platform_mutex_lock(&resource_table.buckets[bucket].bucket_mutex);
 
     // Search bucket's entry list for resource_id
     resource_entry_t* entry = resource_table.buckets[bucket].entries;
@@ -2155,8 +1992,8 @@ nimcp_result_t nimcp_release_resource_lock(const char* resource_id)
                     resource_table.buckets[bucket].entries = entry->next;
                 }
 
-                // Destroy mutex (free kernel resources)
-                pthread_mutex_destroy(entry->lock);
+                // Destroy mutex using platform abstraction (free kernel resources)
+                nimcp_platform_mutex_destroy(entry->lock);
 
                 // Free allocated memory
                 nimcp_free(entry->lock);
@@ -2164,7 +2001,7 @@ nimcp_result_t nimcp_release_resource_lock(const char* resource_id)
                 nimcp_free(entry);               // Free entry structure
             }
 
-            pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+            nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
             return NIMCP_SUCCESS;
         }
 
@@ -2174,8 +2011,307 @@ nimcp_result_t nimcp_release_resource_lock(const char* resource_id)
     }
 
     // NOT FOUND: Resource doesn't exist
-    pthread_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
-    return NIMCP_ERROR_NOT_FOUND;
+    nimcp_platform_mutex_unlock(&resource_table.buckets[bucket].bucket_mutex);
+    NIMCP_CHECK_THROW(false, NIMCP_ERROR_NOT_FOUND,
+                      "nimcp_release_resource_lock: resource not found");
+}
+
+//=============================================================================
+// Thread Naming and Affinity
+//=============================================================================
+
+/**
+ * @brief Set name of calling thread (Adapter for pthread_setname_np)
+ *
+ * WHY THREAD NAMING:
+ * - Debugger visibility: gdb shows thread names in 'info threads'
+ * - Profiler clarity: perf, vtune show named threads
+ * - Log correlation: Associate log messages with specific threads
+ * - Development aid: Easier to identify threads in dumps/traces
+ *
+ * ALGORITHM:
+ * 1. Validate name pointer
+ * 2. Check name length (pthread limit is 16 chars including null)
+ * 3. Call pthread_setname_np with current thread handle
+ * 4. Handle errors (name too long, permission denied)
+ *
+ * PLATFORM NOTES:
+ * - Linux: pthread_setname_np available (glibc 2.12+)
+ * - macOS: Different signature (takes pthread_t explicitly)
+ * - Windows: No pthread equivalent (use SetThreadDescription on Win10+)
+ * - Other POSIX: May not be available (compile-time check)
+ *
+ * WHY 16 CHARACTER LIMIT:
+ * - Linux kernel limit (TASK_COMM_LEN = 16 in kernel)
+ * - 15 characters + null terminator
+ * - Historical limit from early Unix
+ *
+ * TYPICAL USAGE (worker threads):
+ *   void* worker_thread(void* arg) {
+ *       nimcp_thread_set_name("bcm_worker");
+ *       // ... thread work ...
+ *   }
+ *
+ * DEBUGGER EXAMPLE:
+ *   (gdb) info threads
+ *     Id   Target Id         Frame     Name
+ *   * 1    Thread 0x7f... main          main() at main.c:42
+ *     2    Thread 0x7f... bcm_worker    bcm_update() at bcm.c:156
+ *     3    Thread 0x7f... neuro_updater neuromod_process() at neuro.c:89
+ *
+ * COMPLEXITY: O(1) (kernel syscall)
+ * THREAD SAFETY: Fully safe (only affects calling thread)
+ *
+ * @param name Thread name (max 15 chars + null, will be truncated if longer)
+ * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
+ */
+nimcp_result_t nimcp_thread_set_name(const char* name)
+{
+    if (!name) {
+        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid thread name pointer");
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_INVALID_PARAM,
+                          "nimcp_thread_set_name: name is NULL");
+    }
+
+#if defined(__linux__) || defined(__APPLE__)
+    // WHAT: Truncate name to platform limits
+    // WHY: Linux limit is 16 chars (15 + null), macOS is similar
+    // HOW: Copy to local buffer with size limit
+    char truncated_name[NIMCP_THREAD_NAME_MAX];
+    size_t len = strlen(name);
+    if (len >= NIMCP_THREAD_NAME_MAX) {
+        // Truncate to 15 chars + null terminator
+        strncpy(truncated_name, name, NIMCP_THREAD_NAME_MAX - 1);
+        truncated_name[NIMCP_THREAD_NAME_MAX - 1] = '\0';
+    } else {
+        // Name fits, copy as-is (use strncpy for consistency/safety)
+        strncpy(truncated_name, name, NIMCP_THREAD_NAME_MAX - 1);
+        truncated_name[NIMCP_THREAD_NAME_MAX - 1] = '\0';
+    }
+
+    // Linux and macOS support pthread_setname_np
+    // Note: macOS has different signature but we use Linux version
+    #ifdef __linux__
+        // Linux: pthread_setname_np(pthread_self(), name)
+        int result = pthread_setname_np(pthread_self(), truncated_name);
+        if (result != 0) {
+            set_thread_error(NIMCP_ERROR_SYSTEM, "pthread_setname_np failed: %s", strerror(result));
+            NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                              "nimcp_thread_set_name: pthread_setname_np failed");
+        }
+    #elif __APPLE__
+        // macOS: pthread_setname_np(name) - operates on current thread
+        int result = pthread_setname_np(truncated_name);
+        if (result != 0) {
+            set_thread_error(NIMCP_ERROR_SYSTEM, "pthread_setname_np failed: %s", strerror(result));
+            NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                              "nimcp_thread_set_name: pthread_setname_np failed");
+        }
+    #endif
+#else
+    // Platform doesn't support thread naming (not an error, just no-op)
+    // WHY: Graceful degradation on platforms without this feature
+    (void)name;  // Suppress unused parameter warning
+#endif
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Get name of calling thread (Adapter for pthread_getname_np)
+ *
+ * WHY GET THREAD NAME:
+ * - Verify thread name was set correctly
+ * - Log current thread name in error messages
+ * - Testing and debugging
+ *
+ * ALGORITHM:
+ * 1. Validate output buffer and length
+ * 2. Check buffer is large enough (NIMCP_THREAD_NAME_MAX)
+ * 3. Call pthread_getname_np with current thread handle
+ * 4. Copy name to output buffer
+ *
+ * PLATFORM NOTES:
+ * - Linux: pthread_getname_np available (glibc 2.12+)
+ * - macOS: pthread_getname_np available (macOS 10.6+)
+ * - Windows: No pthread equivalent
+ * - Other POSIX: May not be available (compile-time check)
+ *
+ * TYPICAL USAGE (logging):
+ *   char thread_name[NIMCP_THREAD_NAME_MAX];
+ *   if (nimcp_thread_get_name(thread_name, sizeof(thread_name)) == NIMCP_SUCCESS) {
+ *       fprintf(stderr, "[%s] Error occurred\n", thread_name);
+ *   }
+ *
+ * COMPLEXITY: O(1) (kernel syscall)
+ * THREAD SAFETY: Fully safe (only affects calling thread)
+ *
+ * @param name Buffer to receive thread name
+ * @param len Buffer length (must be at least NIMCP_THREAD_NAME_MAX)
+ * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
+ */
+nimcp_result_t nimcp_thread_get_name(char* name, size_t len)
+{
+    if (!name || len < NIMCP_THREAD_NAME_MAX) {
+        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid name buffer or length");
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_INVALID_PARAM,
+                          "nimcp_thread_get_name: invalid buffer or length");
+    }
+
+#if defined(__linux__) || defined(__APPLE__)
+    // Linux and macOS support pthread_getname_np
+    int result = pthread_getname_np(pthread_self(), name, len);
+    if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "pthread_getname_np failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_thread_get_name: pthread_getname_np failed");
+    }
+#else
+    // Platform doesn't support thread naming
+    // WHY: Return empty string on platforms without this feature
+    name[0] = '\0';
+#endif
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Set CPU affinity for thread (Adapter for pthread_setaffinity_np)
+ *
+ * WHY CPU AFFINITY:
+ * - Performance: Pin thread to specific core (cache locality)
+ * - Real-time: Isolate critical threads from general workload
+ * - NUMA optimization: Bind thread to core with local memory
+ * - Benchmarking: Eliminate scheduling variability
+ *
+ * ALGORITHM:
+ * 1. Validate thread handle and cpu_id
+ * 2. Create CPU set with single CPU
+ * 3. Call pthread_setaffinity_np
+ * 4. Handle errors (invalid CPU, permission denied)
+ *
+ * PLATFORM NOTES:
+ * - Linux: pthread_setaffinity_np available (glibc 2.3.4+)
+ * - macOS: No pthread_setaffinity_np (use thread_policy_set)
+ * - Windows: Use SetThreadAffinityMask
+ * - Other POSIX: May not be available (returns success, no-op)
+ *
+ * WHY LINUX-SPECIFIC:
+ * - Not in POSIX standard (Linux extension)
+ * - Platform-specific CPU scheduling policy
+ * - Optional optimization (not required for correctness)
+ *
+ * TYPICAL USAGE (real-time thread):
+ *   nimcp_thread_t rt_thread;
+ *   nimcp_thread_create(&rt_thread, rt_worker, NULL, NULL);
+ *   nimcp_thread_set_affinity(rt_thread, 3);  // Pin to CPU 3
+ *
+ * PERFORMANCE BENEFITS:
+ * - Cache affinity: Data stays in L1/L2 cache
+ * - No migration overhead: Thread stays on same core
+ * - Predictable timing: No variability from core migration
+ *
+ * COMPLEXITY: O(1) (kernel syscall)
+ * THREAD SAFETY: Fully safe
+ *
+ * @param thread Thread handle
+ * @param cpu_id CPU core ID to bind to (0-based)
+ * @return NIMCP_SUCCESS or NIMCP_ERROR_SYSTEM
+ */
+nimcp_result_t nimcp_thread_set_affinity(nimcp_thread_t thread, uint32_t cpu_id)
+{
+#ifdef __linux__
+    // Linux: Use pthread_setaffinity_np with cpu_set_t
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu_id, &cpuset);
+
+    int result = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+    if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "pthread_setaffinity_np failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_thread_set_affinity: pthread_setaffinity_np failed");
+    }
+#else
+    // Platform doesn't support CPU affinity (not an error, just no-op)
+    // WHY: Graceful degradation - affinity is optimization, not requirement
+    (void)thread;
+    (void)cpu_id;
+#endif
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Get CPU affinity for thread (Adapter for pthread_getaffinity_np)
+ *
+ * WHY GET AFFINITY:
+ * - Verify affinity was set correctly
+ * - Query current CPU assignment
+ * - Testing and debugging
+ *
+ * ALGORITHM:
+ * 1. Validate thread handle and cpu_id pointer
+ * 2. Call pthread_getaffinity_np
+ * 3. Find first set CPU in cpu_set
+ * 4. Return CPU ID to caller
+ *
+ * PLATFORM NOTES:
+ * - Linux: pthread_getaffinity_np available (glibc 2.3.4+)
+ * - macOS: No pthread_getaffinity_np
+ * - Windows: Use GetThreadAffinityMask
+ * - Other POSIX: Returns 0 (no affinity set)
+ *
+ * TYPICAL USAGE (verification):
+ *   uint32_t cpu;
+ *   nimcp_thread_get_affinity(thread, &cpu);
+ *   printf("Thread bound to CPU %u\n", cpu);
+ *
+ * COMPLEXITY: O(1) (kernel syscall)
+ * THREAD SAFETY: Fully safe
+ *
+ * @param thread Thread handle
+ * @param cpu_id Output parameter for CPU core ID
+ * @return NIMCP_SUCCESS or NIMCP_ERROR_INVALID_PARAM or NIMCP_ERROR_SYSTEM
+ */
+nimcp_result_t nimcp_thread_get_affinity(nimcp_thread_t thread, uint32_t* cpu_id)
+{
+    if (!cpu_id) {
+        set_thread_error(NIMCP_ERROR_INVALID_PARAM, "Invalid cpu_id pointer");
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_INVALID_PARAM,
+                          "nimcp_thread_get_affinity: cpu_id is NULL");
+    }
+
+#ifdef __linux__
+    // Linux: Use pthread_getaffinity_np with cpu_set_t
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+
+    int result = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+    if (result != 0) {
+        set_thread_error(NIMCP_ERROR_SYSTEM, "pthread_getaffinity_np failed: %s", strerror(result));
+        NIMCP_CHECK_THROW(false, NIMCP_ERROR_SYSTEM,
+                          "nimcp_thread_get_affinity: pthread_getaffinity_np failed");
+    }
+
+    // Find first set CPU in the set
+    // WHY: Thread may be bound to multiple CPUs (return first one)
+    for (int i = 0; i < CPU_SETSIZE; i++) {
+        if (CPU_ISSET(i, &cpuset)) {
+            *cpu_id = (uint32_t)i;
+            return NIMCP_SUCCESS;
+        }
+    }
+
+    // No CPU set (should not happen if setaffinity was called)
+    *cpu_id = 0;
+#else
+    // Platform doesn't support CPU affinity
+    // WHY: Return 0 as default (no specific CPU)
+    *cpu_id = 0;
+#endif
+
+    return NIMCP_SUCCESS;
 }
 
 //=============================================================================
@@ -2231,20 +2367,20 @@ void nimcp_thread_cleanup(void)
     }
 
     // Acquire global mutex (table-level protection)
-    pthread_mutex_lock(&resource_table.global_mutex);
+    nimcp_platform_mutex_lock(&resource_table.global_mutex);
 
     // Clean up all buckets
     for (int i = 0; i < RESOURCE_LOCK_BUCKETS; i++) {
         // Acquire bucket mutex
-        pthread_mutex_lock(&resource_table.buckets[i].bucket_mutex);
+        nimcp_platform_mutex_lock(&resource_table.buckets[i].bucket_mutex);
 
         // Free all entries in this bucket
         resource_entry_t* entry = resource_table.buckets[i].entries;
         while (entry) {
             resource_entry_t* next = entry->next;
 
-            // Destroy mutex and free memory
-            pthread_mutex_destroy(entry->lock);
+            // Destroy mutex using platform abstraction and free memory
+            nimcp_platform_mutex_destroy(entry->lock);
             nimcp_free(entry->lock);
             nimcp_free(entry->resource_id);
             nimcp_free(entry);
@@ -2253,14 +2389,19 @@ void nimcp_thread_cleanup(void)
         }
 
         // Release and destroy bucket mutex
-        pthread_mutex_unlock(&resource_table.buckets[i].bucket_mutex);
-        pthread_mutex_destroy(&resource_table.buckets[i].bucket_mutex);
+        nimcp_platform_mutex_unlock(&resource_table.buckets[i].bucket_mutex);
+        nimcp_platform_mutex_destroy(&resource_table.buckets[i].bucket_mutex);
     }
 
     // Release and destroy global mutex
-    pthread_mutex_unlock(&resource_table.global_mutex);
-    pthread_mutex_destroy(&resource_table.global_mutex);
+    nimcp_platform_mutex_unlock(&resource_table.global_mutex);
+    nimcp_platform_mutex_destroy(&resource_table.global_mutex);
 
     // Mark as uninitialized
     resource_table.initialized = false;
+
+    // Reset pthread_once control so nimcp_thread_init() can re-initialize
+    // Without this, pthread_once is a no-op after cleanup, leaving the
+    // resource table in a destroyed-but-unreinitializable state.
+    init_once = (nimcp_once_t)NIMCP_ONCE_INIT;
 }

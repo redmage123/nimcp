@@ -1,1 +1,0 @@
-/usr/bin/cc  -Wall -Wextra -Wpedantic -g CMakeFiles/infant_demo.dir/infant_learning_demo.c.o -o infant_demo  -Wl,-rpath,/home/bbrelin/src/repos/nimcp/bin: ../../bin/libnimcp.so.2.5.0 /usr/lib/x86_64-linux-gnu/libpython3.10.so -llz4 -ljansson 

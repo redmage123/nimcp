@@ -600,7 +600,7 @@ class SelfReflectiveConsciousness(ArtemisConsciousnessV2):
 
 ```bash
 # Installation
-cd /home/bbrelin/repos/nimcp/build
+cd /home/bbrelin/nimcp/build
 sudo make install
 
 # Verify
@@ -783,9 +783,9 @@ This moves Artemis from **knowing itself** (structure) to **understanding itself
 ## References
 
 ### NIMCP Documentation
-- Library Integration: `/home/bbrelin/repos/nimcp/LIBRARY_INTEGRATION.md`
-- Brain API Examples: `/home/bbrelin/repos/nimcp/examples/brain_demo.c`
-- Python Bindings: `/home/bbrelin/repos/nimcp/bindings/python/`
+- Library Integration: `/home/bbrelin/nimcp/LIBRARY_INTEGRATION.md`
+- Brain API Examples: `/home/bbrelin/nimcp/examples/brain_demo.c`
+- Python Bindings: `/home/bbrelin/nimcp/bindings/python/`
 
 ### Artemis Self-Awareness
 - Self Map: `/home/bbrelin/src/repos/artemis/src/self_awareness/self_map.py`

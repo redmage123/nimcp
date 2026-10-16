@@ -1,0 +1,353 @@
+{
+  "test_domain": "cognitive.tier5.reasoning",
+  "version": "1.0",
+  "metadata": {
+    "notes": "Probes higher-order reasoning: pattern completion, causal inference, transitive inference, syllogisms, deductive chains. Items use novel scenarios where possible to avoid memorized canonical puzzles.",
+    "subtasks": ["pattern_completion", "causal", "transitive", "syllogism", "deductive_chain"],
+    "n_items": 36
+  },
+  "stimuli": [
+    {
+      "id": "pat_001",
+      "prompt": "What number comes next? 2, 4, 6, 8, ?",
+      "modality": "text",
+      "expected": "10",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_arithmetic",
+      "metadata": {"difficulty": 1, "rule": "+2"}
+    },
+    {
+      "id": "pat_002",
+      "prompt": "What number comes next? 1, 4, 9, 16, 25, ?",
+      "modality": "text",
+      "expected": "36",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_squares",
+      "metadata": {"difficulty": 2, "rule": "n^2"}
+    },
+    {
+      "id": "pat_003",
+      "prompt": "What comes next? 3, 6, 12, 24, 48, ?",
+      "modality": "text",
+      "expected": "96",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_geometric",
+      "metadata": {"difficulty": 2, "rule": "*2"}
+    },
+    {
+      "id": "pat_004",
+      "prompt": "What comes next? 1, 1, 2, 3, 5, 8, 13, ?",
+      "modality": "text",
+      "expected": "21",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_recursive",
+      "metadata": {"difficulty": 2, "rule": "fibonacci"}
+    },
+    {
+      "id": "pat_005",
+      "prompt": "What number comes next? 100, 81, 64, 49, 36, ?",
+      "modality": "text",
+      "expected": "25",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_descending_squares",
+      "metadata": {"difficulty": 3, "rule": "10^2 down to 5^2"}
+    },
+    {
+      "id": "pat_006",
+      "prompt": "What letter comes next? B, D, F, H, J, ?",
+      "modality": "text",
+      "expected": "L",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_letters",
+      "metadata": {"difficulty": 1, "rule": "skip one letter"}
+    },
+    {
+      "id": "pat_007",
+      "prompt": "What letter comes next? A, C, F, J, O, ?",
+      "modality": "text",
+      "expected": "U",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_letters",
+      "metadata": {"difficulty": 4, "rule": "skip increasing: +2, +3, +4, +5, +6"}
+    },
+    {
+      "id": "pat_008",
+      "prompt": "What comes next in the sequence? 2, 3, 5, 7, 11, 13, ?",
+      "modality": "text",
+      "expected": "17",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_primes",
+      "metadata": {"difficulty": 3, "rule": "primes"}
+    },
+    {
+      "id": "pat_009",
+      "prompt": "Sequence: triangle(3), square(4), pentagon(5), hexagon(6). What is the next shape's name?",
+      "modality": "text",
+      "expected": ["heptagon", "septagon"],
+      "scoring": {"type": "contains_any", "params": {"options": ["heptagon", "septagon"], "case_sensitive": false}},
+      "variant_group": "pattern_polygons",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "pat_010",
+      "prompt": "What number comes next? 1, 2, 4, 7, 11, 16, ?",
+      "modality": "text",
+      "expected": "22",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_diff_increment",
+      "metadata": {"difficulty": 3, "rule": "differences increase by 1"}
+    },
+    {
+      "id": "pat_011",
+      "prompt": "What number comes next? 256, 128, 64, 32, ?",
+      "modality": "text",
+      "expected": "16",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_geometric_decay",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "pat_012",
+      "prompt": "What comes next? 1, 8, 27, 64, ?",
+      "modality": "text",
+      "expected": "125",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pattern_cubes",
+      "metadata": {"difficulty": 3, "rule": "n^3"}
+    },
+    {
+      "id": "cause_001",
+      "prompt": "Mira walked into the kitchen and saw the glass on the floor in pieces. Earlier, the cat had jumped onto the counter. What most likely caused the glass to break?",
+      "modality": "text",
+      "expected": ["the cat", "cat", "cat knocked it off", "cat pushed it", "cat jumping on the counter"],
+      "scoring": {"type": "contains_any", "params": {"options": ["cat"], "case_sensitive": false}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "cause_002",
+      "prompt": "After the heavy rain last night, the basement was flooded. The house has not been flooded in five years. What is the most likely cause of the flooding?",
+      "modality": "text",
+      "expected": ["the rain", "heavy rain", "rain", "rainfall", "rainstorm"],
+      "scoring": {"type": "contains_any", "params": {"options": ["rain"], "case_sensitive": false}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "cause_003",
+      "prompt": "The lemonade tastes very salty. Earlier, the chef accidentally grabbed the wrong container while making it. What likely happened?",
+      "modality": "text",
+      "expected": ["chef used salt instead of sugar", "salt instead of sugar", "added salt", "used the salt container", "mistook salt for sugar"],
+      "scoring": {"type": "contains_any", "params": {"options": ["salt instead of sugar", "salt", "wrong ingredient"], "case_sensitive": false}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cause_004",
+      "prompt": "The plant on the windowsill has wilted, and the soil is very dry. The owner returned from a two-week vacation and didn't ask anyone to water it. What most likely caused the wilting?",
+      "modality": "text",
+      "expected": ["lack of water", "no water", "not watered", "dehydration", "drought", "underwatering"],
+      "scoring": {"type": "contains_any", "params": {"options": ["lack of water", "no water", "not watered", "underwatering", "dehydration"], "case_sensitive": false}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "cause_005",
+      "prompt": "The car wouldn't start this morning. Last night the headlights had been left on. What is the most likely cause?",
+      "modality": "text",
+      "expected": ["dead battery", "battery is dead", "drained battery", "battery"],
+      "scoring": {"type": "contains_any", "params": {"options": ["dead battery", "drained battery", "battery"], "case_sensitive": false}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cause_006",
+      "prompt": "When Sara opened the freezer, frozen food fell out. The freezer door had not closed properly the night before. What likely caused food to fall?",
+      "modality": "text",
+      "expected": ["food shifted/melted/refroze and pressure released them", "ice or food expanded and pushed against the door", "door was ajar so contents shifted forward", "items thawed and moved", "the door wasn't closed", "open door"],
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["door", "open", "ajar", "thaw", "shift", "melt", "press"], "min_coverage": 0.25}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "cause_007",
+      "prompt": "Aiden has been getting headaches every afternoon for the past week. He recently started a new desk job and has been forgetting to drink water. What is the most likely cause of the headaches?",
+      "modality": "text",
+      "expected": ["dehydration", "lack of water", "not drinking water", "insufficient water"],
+      "scoring": {"type": "contains_any", "params": {"options": ["dehydration", "not drinking", "insufficient water", "lack of water"], "case_sensitive": false}},
+      "variant_group": "causal_inference",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "cause_008",
+      "prompt": "Two minutes after Lin pressed the elevator button, the elevator doors opened. Did Lin's button press CAUSE the elevator to arrive? Answer 'yes', 'no', or 'partly'.",
+      "modality": "text",
+      "expected": ["partly", "yes", "yes, partly"],
+      "scoring": {"type": "contains_any", "params": {"options": ["partly", "yes"], "case_sensitive": false}},
+      "variant_group": "causal_subtle",
+      "metadata": {"difficulty": 4, "rationale": "press is necessary contributing cause but elevator may have arrived for other riders too"}
+    },
+    {
+      "id": "trans_001",
+      "prompt": "If A is taller than B, and B is taller than C, who is the tallest?",
+      "modality": "text",
+      "expected": "A",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "transitive",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "trans_002",
+      "prompt": "Penelope is older than Quinn. Quinn is older than Rosa. Rosa is older than Suki. Who is youngest?",
+      "modality": "text",
+      "expected": "Suki",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "transitive",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "trans_003",
+      "prompt": "The book is heavier than the lamp. The lamp is heavier than the mug. Is the book heavier than the mug? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "transitive",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "trans_004",
+      "prompt": "Marcus runs faster than Theo. Pia runs faster than Marcus. Who runs slowest of the three?",
+      "modality": "text",
+      "expected": "Theo",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "transitive",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "trans_005",
+      "prompt": "The red box is to the left of the blue box. The blue box is to the left of the green box. The green box is to the left of the yellow box. Which box is rightmost?",
+      "modality": "text",
+      "expected": ["yellow", "yellow box"],
+      "scoring": {"type": "contains_any", "params": {"options": ["yellow"], "case_sensitive": false}},
+      "variant_group": "transitive_spatial",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "trans_006",
+      "prompt": "If 'thraps' beat 'glints' and 'glints' beat 'fwoms', and 'fwoms' beat 'plurks', which group definitely beats 'plurks'? List all that apply: thraps, glints, fwoms, plurks.",
+      "modality": "text",
+      "expected": ["thraps and glints and fwoms", "thraps, glints, fwoms"],
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["thraps", "glints", "fwoms"], "min_coverage": 1.0}},
+      "variant_group": "transitive_nonsense",
+      "metadata": {"difficulty": 3, "rationale": "tests pure logical inference with novel words"}
+    },
+    {
+      "id": "trans_007",
+      "prompt": "A is closer to B than C is. C is closer to B than D is. Who is closest to B: A, C, or D?",
+      "modality": "text",
+      "expected": "A",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "transitive",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "syl_001",
+      "prompt": "Premise 1: All zebrines are mammals. Premise 2: All mammals breathe air. Conclusion: All zebrines breathe air. Is the conclusion valid? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_valid",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "syl_002",
+      "prompt": "Premise 1: Some birds cannot fly. Premise 2: Penguins are birds. Conclusion: Penguins cannot fly. Is the conclusion VALIDLY drawn from the premises? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_invalid",
+      "metadata": {"difficulty": 4, "rationale": "conclusion is true but does not validly follow — penguins might be among the flying birds based on premises alone"}
+    },
+    {
+      "id": "syl_003",
+      "prompt": "Premise 1: No reptiles are warm-blooded. Premise 2: All snakes are reptiles. Conclusion: No snakes are warm-blooded. Is this valid? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_valid",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "syl_004",
+      "prompt": "Premise 1: All quoxlons are blue. Premise 2: Some blue things are heavy. Conclusion: Some quoxlons are heavy. Is this valid? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_invalid",
+      "metadata": {"difficulty": 5, "rationale": "the heavy blue things might not be the quoxlons; classic invalid"}
+    },
+    {
+      "id": "syl_005",
+      "prompt": "Premise 1: If it rains, the picnic is canceled. Premise 2: It rained. Conclusion: The picnic was canceled. Valid? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_modus_ponens",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "syl_006",
+      "prompt": "Premise 1: If the alarm goes off, the door is locked. Premise 2: The door is locked. Conclusion: The alarm went off. Valid? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_invalid",
+      "metadata": {"difficulty": 4, "rationale": "affirming the consequent — door could be locked for other reasons"}
+    },
+    {
+      "id": "syl_007",
+      "prompt": "Premise 1: All glints have wings. Premise 2: Nothing with wings is purely subterranean. Conclusion: No glint is purely subterranean. Valid? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "syllogism_valid",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "ded_001",
+      "prompt": "Five friends sit in a row: Ana, Ben, Cleo, Dev, Eli. Ana is at one end. Ben is next to Ana. Cleo is two seats from Eli. Dev is in the middle. Eli is at the other end. What is the seating order from left to right? (assume Ana is at the left end)",
+      "modality": "text",
+      "expected": "Ana Ben Dev Cleo Eli",
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["Ana", "Ben", "Dev", "Cleo", "Eli"], "min_coverage": 1.0, "ordered": true}},
+      "variant_group": "deduction_seating",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "ded_002",
+      "prompt": "Three boxes contain different items. Box 1 is labeled 'apples'. Box 2 is labeled 'oranges'. Box 3 is labeled 'mixed'. ALL labels are wrong. You can pick one fruit from one box. From which box should you pick to determine all box contents in one move?",
+      "modality": "text",
+      "expected": ["box 3", "the mixed box", "mixed", "3"],
+      "scoring": {"type": "contains_any", "params": {"options": ["box 3", "mixed", "3"], "case_sensitive": false}},
+      "variant_group": "deduction_classic_relabel",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "ded_003",
+      "prompt": "On a far planet, all 'plurks' are 'gribs'. No 'gribs' are 'qiffs'. Some 'qiffs' are 'mocks'. Can a plurk be a mock? Answer 'must be', 'might be', or 'cannot be'.",
+      "modality": "text",
+      "expected": ["might be"],
+      "scoring": {"type": "contains_any", "params": {"options": ["might", "could", "possibly"], "case_sensitive": false}},
+      "variant_group": "deduction_chain",
+      "metadata": {"difficulty": 5, "rationale": "plurks are not qiffs (since plurks are gribs and gribs are not qiffs), but the question is whether they can be mocks. Mocks may or may not be qiffs; some plurks could still be mocks if those mocks are not qiffs."}
+    },
+    {
+      "id": "ded_004",
+      "prompt": "Four cards are on a table showing E, K, 4, 7. Each card has a letter on one side and a number on the other. Rule: 'If a card has a vowel on one side, then it has an even number on the other.' Which cards MUST you flip to test the rule? List the cards.",
+      "modality": "text",
+      "expected": ["E and 7", "E, 7"],
+      "scoring": {"type": "keyword_coverage", "params": {"keywords": ["E", "7"], "min_coverage": 1.0}},
+      "variant_group": "deduction_wason",
+      "metadata": {"difficulty": 5, "note": "classic Wason selection task"}
+    }
+  ]
+}

@@ -1,74 +1,69 @@
 # NIMCP API Reference
 
-**Version:** 2.6.1
-**Last Updated:** 2025-11-04
+**Version:** 2.6.3
+**Last Updated:** 2026-01-16
 
 This document provides comprehensive reference documentation for all public APIs in the NIMCP (Neuromorphic Infant Machine Cognitive Platform) library.
 
-## Recent Updates (2025-11-04)
+## Recent Updates (2026-01-16)
+
+### Version 2.6.3 - Unified API Enhancements
+- **Added:** Complete Training Pipeline API with loss functions, optimizers, LR schedulers
+- **Added:** Training Callbacks API for event-driven training monitoring and control
+- **Added:** Dynamic Brain Resizing API for automatic scaling based on utilization
+- **Added:** Brain Snapshots API for named, timestamped backups and A/B testing
+- **Added:** Copy-on-Write (COW) Cache API with 86% memory savings for clones
+- **Added:** Working Memory API implementing Miller's 7±2 buffer
+- **Added:** Global Workspace API for conscious access broadcasting (Baars' GWT)
+- **Added:** Complex Oscillation API for phase coding and neural synchrony
+- **Added:** Brain Immune System API (B cells, T cells, antibodies, cytokines)
+- **Added:** Bio-Async API with neuromodulator channels and phase coupling
+- **Added:** Swarm Brain API for distributed cognitive processing
 
 ### Security Hardening (v2.6.1)
 - **Fixed:** Replaced all unsafe `strcpy()` calls with `strncpy()` + explicit null termination
-  - src/cognitive/knowledge/nimcp_knowledge.c:1675
-  - src/utils/thread/nimcp_thread.c:2030
-  - src/utils/json/nimcp_json.c:483,524
 - **Fixed:** Memory corruption bug in Knowledge module that caused test segfaults
-- **Fixed:** Knowledge.LearnFromStory test now passes (previously segfaulted)
 - **Security:** Defense-in-depth buffer overflow protection across codebase
-- **Testing:** All 287 cognitive tests passing, all 27 JSON tests passing
-- **Commit:** ea8d766
-
-## Recent Updates (2025-11-03)
 
 ### Spectral Analysis & Brain Oscillations (v2.6.0)
-- **Added:** FFT (Fast Fourier Transform) spectral analysis utilities (`utils/spectral/nimcp_fft.h`)
-  - Cooley-Tukey radix-2 FFT algorithm (O(N log N) complexity)
-  - Real-to-complex and complex-to-complex transforms
-  - Window functions (Hann, Hamming, Blackman) for spectral leakage reduction
-  - Power spectral density (PSD) computation
-  - Brain wave band power extraction (Delta, Theta, Alpha, Beta, Gamma)
-- **Added:** Brain oscillation analysis module (`core/brain_oscillations/nimcp_brain_oscillations.h`)
-  - Real-time neural oscillation detection
-  - Cognitive state inference from brain waves (sleep states, focus, attention)
-  - Phase-amplitude coupling (PAC) analysis
-  - Network synchrony computation
-- **Status:** 14/14 FFT tests passing; all spectral analysis functionality validated
+- **Added:** FFT spectral analysis utilities with brain wave band extraction
+- **Added:** Brain oscillation analysis module with cognitive state inference
 
-### Knowledge System (v2.5.1)
-- **Added:** Knowledge B-tree indexing for efficient confidence-based queries (O(log n) range queries)
-- **Added:** `knowledge_get_by_confidence_range()` - Query knowledge items by confidence level
-- **Added:** `knowledge_get_all_ordered_by_confidence()` - Get all knowledge sorted by confidence
-- **Added:** `knowledge_add_item()` - Test helper API for direct knowledge insertion
-- **Fixed:** B-tree key extraction pattern using stable stored keys instead of thread-local buffers
-- **Status:** 600+ tests passing; 2/3 knowledge B-tree tests passing (1 performance issue under investigation)
+---
 
 ## Table of Contents
 
 1. [Core Neural Network APIs](#core-neural-network-apis)
 2. [Brain & Cognitive Systems](#brain--cognitive-systems)
    - [Brain Oscillation Analysis](#brain-oscillation-analysis)
-3. [Learning Systems](#learning-systems)
-   - [Adaptive Learning](#adaptive-learning)
-   - [Neuromodulator System](#neuromodulator-system)
-   - [BCM Learning Rule](#bcm-learning-rule)
-4. [Event Processing](#event-processing)
-5. [P2P Networking](#p2p-networking)
-6. [Data I/O & Streaming](#data-io--streaming)
-7. [Attention & Salience](#attention--salience)
-8. [Memory Consolidation](#memory-consolidation)
-9. [Introspection & Monitoring](#introspection--monitoring)
-10. [Higher-Level Cognitive APIs](#higher-level-cognitive-apis)
-11. [Thread Safety & Synchronization](#thread-safety--synchronization)
-12. [Utility APIs](#utility-apis)
-   - [FFT Spectral Analysis](#fft-spectral-analysis)
-13. [Language Bindings](#language-bindings)
-    - [Python Bindings](#python-bindings)
-    - [C++ Bindings](#c-bindings)
-    - [Java Bindings](#java-bindings)
-    - [Rust Bindings](#rust-bindings)
-    - [Go Bindings](#go-bindings)
-    - [Perl Bindings](#perl-bindings)
-    - [C# Bindings](#c-bindings-1)
+3. [Training Pipeline API](#training-pipeline-api)
+   - [Loss Functions](#loss-functions)
+   - [Optimizers](#optimizers)
+   - [Learning Rate Schedulers](#learning-rate-schedulers)
+4. [Training Callbacks API](#training-callbacks-api)
+5. [Dynamic Brain Resizing](#dynamic-brain-resizing)
+6. [Brain Snapshots](#brain-snapshots)
+7. [Copy-on-Write (COW) Cache](#copy-on-write-cow-cache)
+8. [Working Memory API](#working-memory-api)
+9. [Global Workspace API](#global-workspace-api)
+10. [Complex Oscillation API](#complex-oscillation-api)
+11. [Brain Immune System](#brain-immune-system)
+12. [Bio-Async System](#bio-async-system)
+13. [Swarm Intelligence](#swarm-intelligence)
+14. [Learning Systems](#learning-systems)
+    - [Adaptive Learning](#adaptive-learning)
+    - [Neuromodulator System](#neuromodulator-system)
+    - [BCM Learning Rule](#bcm-learning-rule)
+15. [Event Processing](#event-processing)
+16. [P2P Networking](#p2p-networking)
+17. [Data I/O & Streaming](#data-io--streaming)
+18. [Attention & Salience](#attention--salience)
+19. [Memory Consolidation](#memory-consolidation)
+20. [Introspection & Monitoring](#introspection--monitoring)
+21. [Higher-Level Cognitive APIs](#higher-level-cognitive-apis)
+22. [Thread Safety & Synchronization](#thread-safety--synchronization)
+23. [Utility APIs](#utility-apis)
+24. [Language Bindings](#language-bindings)
 
 ---
 
@@ -111,225 +106,853 @@ typedef struct {
 
 **`void nimcp_neuralnet_destroy(nimcp_neuralnet_t* net)`**
 - **Description:** Destroys a neural network and frees resources
-- **Parameters:**
-  - `net`: Network handle
 - **Thread Safety:** Must not be called concurrently with same network
 
 **`void nimcp_neuralnet_forward(nimcp_neuralnet_t* net, const float* inputs, float* outputs)`**
 - **Description:** Performs forward propagation through the network
-- **Parameters:**
-  - `net`: Network handle
-  - `inputs`: Input array (size = num_inputs)
-  - `outputs`: Output array (size = num_outputs)
 - **Thread Safety:** Not thread-safe, external synchronization required
 
 **`void nimcp_neuralnet_backward(nimcp_neuralnet_t* net, const float* target, float* error)`**
 - **Description:** Performs backpropagation and learning
-- **Parameters:**
-  - `net`: Network handle
-  - `target`: Target output values
-  - `error`: Computed error (output)
-- **Thread Safety:** Not thread-safe
 
 **`void nimcp_neuralnet_get_stats(nimcp_neuralnet_t* net, network_stats_t* stats)`**
 - **Description:** Retrieves network statistics
-- **Parameters:**
-  - `net`: Network handle
-  - `stats`: Output statistics structure
 - **Thread Safety:** Thread-safe (read-only operation)
 
 **`int nimcp_neuralnet_save(nimcp_neuralnet_t* net, const char* filename)`**
-- **Description:** Saves network to file
 - **Returns:** 0 on success, -1 on failure
 
 **`nimcp_neuralnet_t* nimcp_neuralnet_load(const char* filename)`**
-- **Description:** Loads network from file
 - **Returns:** Network handle or NULL on failure
 
 ---
 
 ## Brain & Cognitive Systems
 
-### Brain API
-**Header:** `nimcp_brain.h`
+### Unified Brain API
+**Header:** `nimcp.h`
 
-Provides high-level cognitive brain abstraction that combines multiple neural networks with memory consolidation, salience detection, and learning.
+The unified API provides a single entry point for all language bindings with opaque handles for ABI stability.
 
 #### Types
 ```c
-typedef struct nimcp_brain_t nimcp_brain_t;
+typedef struct nimcp_brain_handle* nimcp_brain_t;
+typedef struct nimcp_network_handle* nimcp_network_t;
+typedef struct nimcp_ethics_handle* nimcp_ethics_t;
+typedef struct nimcp_knowledge_handle* nimcp_knowledge_t;
 
+typedef enum {
+    NIMCP_BRAIN_TINY = 0,   // 100 neurons, <1MB, ~0.1ms inference
+    NIMCP_BRAIN_SMALL = 1,  // 1K neurons, ~10MB, ~0.5ms inference
+    NIMCP_BRAIN_MEDIUM = 2, // 10K neurons, ~50MB, ~5ms inference
+    NIMCP_BRAIN_LARGE = 3   // 100K neurons, ~500MB, ~50ms inference
+} nimcp_brain_size_t;
+
+typedef enum {
+    NIMCP_TASK_CLASSIFICATION = 0,
+    NIMCP_TASK_REGRESSION = 1,
+    NIMCP_TASK_PATTERN_MATCHING = 2,
+    NIMCP_TASK_SEQUENCE = 3,
+    NIMCP_TASK_ASSOCIATION = 4
+} nimcp_brain_task_t;
+
+typedef enum {
+    NIMCP_OK = 0,
+    NIMCP_ERROR = 1000,
+    NIMCP_ERROR_NULL_ARG = 1003,
+    NIMCP_ERROR_INVALID = 1004,
+    NIMCP_ERROR_MEMORY = 2000,
+    NIMCP_ERROR_IO = 4000
+} nimcp_status_t;
+```
+
+#### Core Brain Functions
+
+**`nimcp_brain_t nimcp_brain_create(const char* name, nimcp_brain_size_t size, nimcp_brain_task_t task, uint32_t num_inputs, uint32_t num_outputs)`**
+- **Description:** Create a brain with preset configuration
+- **Returns:** Brain handle or NULL on error
+
+**`void nimcp_brain_destroy(nimcp_brain_t brain)`**
+- **Description:** Destroy brain and free all resources
+
+**`nimcp_status_t nimcp_brain_learn_example(nimcp_brain_t brain, const float* features, uint32_t num_features, const char* label, float confidence)`**
+- **Description:** Learn from a single example
+- **Returns:** NIMCP_OK on success
+
+**`nimcp_status_t nimcp_brain_predict(nimcp_brain_t brain, const float* features, uint32_t num_features, char* out_label, float* out_confidence)`**
+- **Description:** Make a decision/prediction
+- **Returns:** NIMCP_OK on success
+
+**`nimcp_status_t nimcp_brain_infer(nimcp_brain_t brain, const float* features, uint32_t num_features, float* outputs, uint32_t num_outputs)`**
+- **Description:** Run inference and get raw output vector
+- **Returns:** NIMCP_OK on success
+
+**`nimcp_status_t nimcp_brain_save(nimcp_brain_t brain, const char* filepath)`**
+**`nimcp_brain_t nimcp_brain_load(const char* filepath)`**
+- **Description:** Persist and restore brain state
+
+**`nimcp_brain_t nimcp_brain_create_from_config(const char* config_filepath)`**
+- **Description:** Create brain from YAML or JSON configuration file
+
+#### Brain Probe Statistics
+```c
 typedef struct {
+    char task_name[64];
+    nimcp_brain_size_t size;
+    nimcp_brain_task_t task;
+    uint32_t num_neurons;
+    uint32_t num_synapses;
+    uint32_t num_active_synapses;
+    uint64_t total_inferences;
+    uint64_t total_learning_steps;
+    float avg_sparsity;
+    float avg_inference_time_us;
+    float current_learning_rate;
+    float accuracy;
+    size_t memory_bytes;
     uint32_t num_inputs;
     uint32_t num_outputs;
-    uint32_t hidden_layers[16];
-    uint32_t num_hidden_layers;
-    uint32_t consolidation_interval;
-    float salience_threshold;
-    char task_name[128];
-} nimcp_brain_config_t;
-
-typedef struct {
-    uint64_t total_experiences;
-    uint32_t memories_consolidated;
-    float avg_salience;
-    float learning_progress;
-} brain_stats_t;
+    bool is_cow_clone;
+    uint32_t cow_ref_count;
+    size_t cow_shared_bytes;
+    size_t cow_private_bytes;
+} nimcp_brain_probe_t;
 ```
 
-#### Functions
+**`nimcp_status_t nimcp_brain_probe(nimcp_brain_t brain, nimcp_brain_probe_t* probe)`**
+- **Description:** Get comprehensive brain statistics
 
-**`nimcp_brain_t* nimcp_brain_create(const nimcp_brain_config_t* config)`**
-- **Description:** Creates a cognitive brain with integrated learning systems
-- **Features:** Multi-layer networks, automatic consolidation, salience tracking
-- **Returns:** Brain handle or NULL on failure
-
-**`void nimcp_brain_destroy(nimcp_brain_t* brain)`**
-- **Description:** Destroys brain and all subsystems
-
-**`void nimcp_brain_process(nimcp_brain_t* brain, const float* inputs, float* outputs)`**
-- **Description:** Process inputs through the brain, update learning
-- **Side Effects:** Updates internal state, triggers consolidation if needed
-
-**`void nimcp_brain_consolidate(nimcp_brain_t* brain)`**
-- **Description:** Manually trigger memory consolidation
-- **Use Case:** Consolidate important experiences into long-term memory
-
-**`void nimcp_brain_get_stats(nimcp_brain_t* brain, brain_stats_t* stats)`**
-- **Description:** Get brain statistics and learning progress
-
-**`int nimcp_brain_save(nimcp_brain_t* brain, const char* filename)`**
-- **Description:** Save complete brain state to file
-
-**`nimcp_brain_t* nimcp_brain_load(const char* filename)`**
-- **Description:** Load brain from saved state
+**`nimcp_status_t nimcp_brain_broadcast_probe(nimcp_brain_t brain)`**
+- **Description:** Broadcast brain probe data via bio-async message system
 
 ---
 
-### Brain Oscillation Analysis
-**Header:** `core/brain_oscillations/nimcp_brain_oscillations.h`
+## Training Pipeline API
 
-FFT-based spectral analysis of neural activity for detecting brain rhythms and inferring cognitive states.
+**Header:** `nimcp.h`
 
-#### Types
+Complete training system with loss functions, optimizers, and learning rate schedulers.
+
+### Types
+
 ```c
-typedef struct brain_oscillation_analyzer_t brain_oscillation_analyzer_t;
+typedef enum {
+    NIMCP_API_LOSS_MSE = 0,           // Mean Squared Error (regression)
+    NIMCP_API_LOSS_CROSS_ENTROPY = 1, // Cross-Entropy (classification)
+    NIMCP_API_LOSS_BINARY_CE = 2,     // Binary Cross-Entropy
+    NIMCP_API_LOSS_HUBER = 3,         // Huber Loss (robust regression)
+    NIMCP_API_LOSS_MAE = 4,           // Mean Absolute Error
+    NIMCP_API_LOSS_FOCAL = 5,         // Focal Loss (imbalanced classes)
+    NIMCP_API_LOSS_KL_DIV = 6         // KL Divergence
+} nimcp_api_loss_t;
 
 typedef enum {
-    BRAIN_WAVE_DELTA,   // 1-4 Hz: Deep sleep, unconscious
-    BRAIN_WAVE_THETA,   // 4-8 Hz: Memory consolidation, meditation
-    BRAIN_WAVE_ALPHA,   // 8-13 Hz: Relaxed wakefulness
-    BRAIN_WAVE_BETA,    // 13-30 Hz: Active thinking, focus
-    BRAIN_WAVE_GAMMA    // 30-100 Hz: Feature binding, attention
-} brain_wave_band_t;
+    NIMCP_API_OPT_SGD = 0,            // Stochastic Gradient Descent
+    NIMCP_API_OPT_MOMENTUM = 1,       // SGD with Momentum
+    NIMCP_API_OPT_ADAM = 2,           // Adam optimizer
+    NIMCP_API_OPT_ADAMW = 3,          // AdamW (weight decay)
+    NIMCP_API_OPT_RMSPROP = 4,        // RMSprop
+    NIMCP_API_OPT_ADAGRAD = 5         // Adagrad
+} nimcp_api_optimizer_t;
+
+typedef enum {
+    NIMCP_API_SCHED_CONSTANT = 0,        // Constant learning rate
+    NIMCP_API_SCHED_STEP = 1,            // Step decay
+    NIMCP_API_SCHED_EXPONENTIAL = 2,     // Exponential decay
+    NIMCP_API_SCHED_COSINE = 3,          // Cosine annealing
+    NIMCP_API_SCHED_WARMUP_COSINE = 4,   // Warmup + Cosine annealing
+    NIMCP_API_SCHED_REDUCE_ON_PLATEAU = 5, // Reduce when metric plateaus
+    NIMCP_API_SCHED_CYCLIC = 6           // Cyclic learning rate
+} nimcp_api_scheduler_t;
 
 typedef struct {
-    float delta_power;
-    float theta_power;
-    float alpha_power;
-    float beta_power;
-    float gamma_power;
-    float total_power;
-    float dominant_freq;
-    brain_wave_band_t dominant_band;
-} brain_wave_power_t;
+    nimcp_api_loss_t loss_type;
+    nimcp_api_optimizer_t optimizer_type;
+    nimcp_api_scheduler_t scheduler_type;
+    float learning_rate;        // Default: 0.001
+    float weight_decay;         // Default: 0.0
+    float momentum;             // Default: 0.9
+    float beta1;                // Adam beta1 (default: 0.9)
+    float beta2;                // Adam beta2 (default: 0.999)
+    float epsilon;              // Adam epsilon (default: 1e-8)
+    uint32_t scheduler_step_size;
+    float scheduler_gamma;      // Default: 0.1
+    uint32_t warmup_steps;
+    bool enable_gradient_clipping;
+    float gradient_clip_value;  // Default: 1.0
+    bool enable_biological_modulation;
+    float biological_blend;     // Modulation strength (0-1)
+} nimcp_training_config_t;
 
-typedef enum {
-    COGNITIVE_STATE_UNKNOWN,
-    COGNITIVE_STATE_DEEP_SLEEP,      // Delta dominance
-    COGNITIVE_STATE_LIGHT_SLEEP,     // Theta + delta
-    COGNITIVE_STATE_RELAXED,         // Alpha dominance
-    COGNITIVE_STATE_FOCUSED,         // Beta dominance
-    COGNITIVE_STATE_ATTENTIVE,       // Gamma + beta
-    COGNITIVE_STATE_CONSOLIDATING    // Theta dominance (memory)
-} cognitive_state_t;
+typedef struct {
+    float loss;
+    float learning_rate;
+    uint32_t step;
+    bool early_stopped;
+    float gradient_norm;
+} nimcp_training_result_t;
 ```
 
-#### Functions
+### Functions
 
-**`brain_oscillation_analyzer_t* brain_oscillation_create(brain_t brain, uint32_t window_size_ms, uint32_t sampling_rate_hz)`**
-- **Description:** Create oscillation analyzer with specified window size and sampling rate
-- **Parameters:**
-  - `brain`: Brain to analyze
-  - `window_size_ms`: Analysis window in milliseconds (100-10000ms)
-  - `sampling_rate_hz`: Sampling rate in Hz (10-10000Hz)
-- **Returns:** Analyzer handle or NULL on failure
-- **Complexity:** O(N) where N = window size in samples
-- **Recommended settings:**
-  - Short-term (attention): 250ms window, 500Hz sampling
-  - Medium-term (task): 500ms window, 250Hz sampling
-  - Long-term (sleep): 1000ms window, 100Hz sampling
+**`nimcp_training_config_t nimcp_training_config_default(void)`**
+- **Description:** Get default training configuration
+- **Returns:** Sensible defaults (Cross-Entropy, Adam, Cosine annealing)
 
-**`void brain_oscillation_destroy(brain_oscillation_analyzer_t* analyzer)`**
-- **Description:** Destroy oscillation analyzer and free resources
-
-**`bool brain_oscillation_record_activity(brain_oscillation_analyzer_t* analyzer)`**
-- **Description:** Record current brain activity snapshot (call at sampling rate)
-- **Complexity:** O(N) where N = number of neurons
-
-**`bool brain_oscillation_analyze(brain_oscillation_analyzer_t* analyzer, oscillation_analysis_t* results)`**
-- **Description:** Perform full spectral analysis (power, state, metrics)
-- **Complexity:** O(N log N) for FFT
-- **Requires:** Full activity buffer
-
-**`bool brain_oscillation_get_wave_power(brain_oscillation_analyzer_t* analyzer, brain_wave_power_t* wave_power)`**
-- **Description:** Get power in each brain wave band
-- **Complexity:** O(N log N)
-
-**`bool brain_oscillation_get_state(brain_oscillation_analyzer_t* analyzer, cognitive_state_t* state, float* confidence)`**
-- **Description:** Infer cognitive state from oscillation patterns
-- **State inference:**
-  - Delta > 60% total → DEEP_SLEEP
-  - Theta > 40% total → CONSOLIDATING or LIGHT_SLEEP
-  - Alpha > 40% total → RELAXED
-  - Beta > 40% total → FOCUSED
-  - Gamma > 30% total → ATTENTIVE
-
-**`const char* brain_oscillation_state_to_string(cognitive_state_t state)`**
-- **Description:** Convert cognitive state to human-readable string
-
-#### Example Usage
+**`nimcp_status_t nimcp_brain_configure_training(nimcp_brain_t brain, const nimcp_training_config_t* config)`**
+- **Description:** Configure brain's training pipeline
+- **Example:**
 ```c
-// Create analyzer for 500ms window at 250Hz sampling
-brain_oscillation_analyzer_t* analyzer = brain_oscillation_create(
-    brain, 500, 250
+nimcp_training_config_t config = nimcp_training_config_default();
+config.loss_type = NIMCP_API_LOSS_CROSS_ENTROPY;
+config.optimizer_type = NIMCP_API_OPT_ADAM;
+config.learning_rate = 0.001f;
+nimcp_brain_configure_training(brain, &config);
+```
+
+**`nimcp_status_t nimcp_brain_train_step(nimcp_brain_t brain, const float* features, uint32_t num_features, const float* targets, uint32_t num_targets, nimcp_training_result_t* result)`**
+- **Description:** Train brain using training pipeline (single step)
+- **Process:** Forward → Loss → Gradients → Regularization → Biological modulation → Update → LR schedule
+
+**`nimcp_status_t nimcp_brain_train_batch(nimcp_brain_t brain, const float* features, const float* targets, uint32_t batch_size, uint32_t num_features, uint32_t num_targets, nimcp_training_result_t* result)`**
+- **Description:** Train on a batch of examples (mini-batch gradient descent)
+
+**`nimcp_status_t nimcp_brain_get_training_stats(nimcp_brain_t brain, uint64_t* total_steps, float* total_loss, float* current_lr)`**
+- **Description:** Get current training statistics
+
+**`float nimcp_brain_step_scheduler(nimcp_brain_t brain, float validation_metric)`**
+- **Description:** Step the learning rate scheduler (call at epoch end)
+- **Returns:** New learning rate
+
+---
+
+## Training Callbacks API
+
+**Header:** `nimcp.h`
+
+Event-driven training monitoring and control system.
+
+### Types
+
+```c
+typedef enum {
+    NIMCP_CB_STEP_COMPLETE = 0,     // Training step finished
+    NIMCP_CB_EPOCH_COMPLETE,        // Epoch finished
+    NIMCP_CB_LOSS_COMPUTED,         // Loss calculated
+    NIMCP_CB_WEIGHTS_UPDATED,       // Weights modified
+    NIMCP_CB_LR_CHANGED,            // Learning rate changed
+    NIMCP_CB_CONVERGENCE,           // Early stopping triggered
+    NIMCP_CB_DIVERGENCE,            // Training instability
+    NIMCP_CB_CHECKPOINT,            // Checkpoint saved
+    NIMCP_CB_EVENT_COUNT
+} nimcp_callback_event_t;
+
+typedef enum {
+    NIMCP_CB_ACTION_CONTINUE = 0,   // Continue training normally
+    NIMCP_CB_ACTION_STOP,           // Stop training loop
+    NIMCP_CB_ACTION_SKIP,           // Skip current step
+    NIMCP_CB_ACTION_ROLLBACK,       // Rollback to checkpoint
+    NIMCP_CB_ACTION_REDUCE_LR,      // Reduce learning rate
+    NIMCP_CB_ACTION_INCREASE_LR     // Increase learning rate
+} nimcp_callback_action_t;
+
+typedef struct {
+    uint64_t step;
+    uint64_t epoch;
+    float loss;
+    float loss_ema;
+    float learning_rate;
+    float gradient_norm;
+    uint64_t step_time_us;
+    bool is_converging;
+    bool is_diverging;
+} nimcp_callback_metrics_t;
+
+typedef nimcp_callback_action_t (*nimcp_training_callback_fn)(
+    nimcp_callback_event_t event,
+    const nimcp_callback_metrics_t* metrics,
+    void* user_data
 );
 
-// Record activity at 250Hz (every 4ms)
-for (int i = 0; i < 1000; i++) {
-    brain_oscillation_record_activity(analyzer);
-    usleep(4000);  // 4ms delay
+typedef struct {
+    bool enable_auto_checkpoint;
+    uint32_t checkpoint_interval;
+    bool enable_early_stopping;
+    uint32_t patience;
+    float min_delta;
+    float divergence_threshold;
+    uint32_t log_interval;
+} nimcp_callback_config_t;
+```
+
+### Functions
+
+**`nimcp_callback_config_t nimcp_callback_config_default(void)`**
+- **Description:** Get default callback configuration
+
+**`nimcp_status_t nimcp_brain_enable_callbacks(nimcp_brain_t brain, const nimcp_callback_config_t* config)`**
+- **Description:** Enable training callbacks
+
+**`nimcp_status_t nimcp_brain_disable_callbacks(nimcp_brain_t brain)`**
+- **Description:** Disable training callbacks
+
+**`uint32_t nimcp_brain_register_callback(nimcp_brain_t brain, nimcp_callback_event_t event, nimcp_training_callback_fn callback, void* user_data, const char* name)`**
+- **Description:** Register a callback for a specific event type
+- **Returns:** Callback ID (>0) on success, 0 on error
+- **Example:**
+```c
+nimcp_callback_action_t my_logger(
+    nimcp_callback_event_t event,
+    const nimcp_callback_metrics_t* m,
+    void* user_data)
+{
+    printf("Step %lu: loss=%.4f lr=%.6f\n", m->step, m->loss, m->learning_rate);
+    return NIMCP_CB_ACTION_CONTINUE;
 }
 
-// Analyze oscillations
-brain_wave_power_t power;
-if (brain_oscillation_get_wave_power(analyzer, &power)) {
-    printf("Delta: %.2f, Theta: %.2f, Alpha: %.2f\n",
-           power.delta_power, power.theta_power, power.alpha_power);
-    printf("Dominant frequency: %.2f Hz\n", power.dominant_freq);
-}
+uint32_t cb_id = nimcp_brain_register_callback(
+    brain, NIMCP_CB_STEP_COMPLETE, my_logger, NULL, "logger");
+```
 
-// Get cognitive state
-cognitive_state_t state;
-float confidence;
-if (brain_oscillation_get_state(analyzer, &state, &confidence)) {
-    printf("State: %s (confidence: %.2f)\n",
-           brain_oscillation_state_to_string(state), confidence);
-}
+**`nimcp_status_t nimcp_brain_unregister_callback(nimcp_brain_t brain, uint32_t callback_id)`**
+- **Description:** Unregister a callback
 
-brain_oscillation_destroy(analyzer);
+**`nimcp_status_t nimcp_brain_get_callback_stats(nimcp_brain_t brain, uint64_t* total_fired, float* avg_time_us, uint32_t* early_stops)`**
+- **Description:** Get callback statistics
+
+---
+
+## Dynamic Brain Resizing
+
+**Header:** `nimcp.h`
+
+Dynamic scaling based on hardware capabilities and utilization.
+
+### Functions
+
+**`bool nimcp_brain_resize(nimcp_brain_t brain, uint32_t new_neuron_count)`**
+- **Description:** Manually resize brain to specific neuron count
+- **Returns:** true on success
+
+**`bool nimcp_brain_auto_resize(nimcp_brain_t brain)`**
+- **Description:** Automatically resize based on hardware and utilization
+- **Returns:** true if resized
+
+**`uint32_t nimcp_brain_get_neuron_count(nimcp_brain_t brain)`**
+- **Description:** Get current neuron count
+- **Returns:** Neuron count or 0 on error
+
+**`bool nimcp_brain_get_utilization_metrics(nimcp_brain_t brain, float* utilization, float* saturation)`**
+- **Description:** Get brain utilization metrics
+- **Parameters:**
+  - `utilization`: Percentage of neurons being used (0.0-1.0)
+  - `saturation`: Percentage of neurons at capacity (0.0-1.0)
+
+---
+
+## Brain Snapshots
+
+**Header:** `nimcp.h`
+
+Named, timestamped backups for versioning and A/B testing.
+
+### Types
+
+```c
+typedef struct {
+    char name[128];
+    char description[512];
+    uint64_t timestamp;
+    uint32_t file_size;
+    bool is_compressed;
+    bool is_encrypted;
+} nimcp_brain_snapshot_info_t;
+```
+
+### Functions
+
+**`nimcp_status_t nimcp_brain_snapshot_save(nimcp_brain_t brain, const char* name, const char* description)`**
+- **Description:** Save a named snapshot
+- **Example:**
+```c
+nimcp_brain_snapshot_save(brain, "before_training", "Baseline state");
+// Train...
+nimcp_brain_snapshot_save(brain, "after_epoch_1", "After 1 epoch");
+```
+
+**`nimcp_brain_t nimcp_brain_snapshot_restore(nimcp_brain_t brain, const char* name)`**
+- **Description:** Restore brain from snapshot
+- **Returns:** Restored brain instance or NULL
+
+**`nimcp_status_t nimcp_brain_snapshot_list(nimcp_brain_t brain, nimcp_brain_snapshot_info_t* infos, uint32_t max_count, uint32_t* out_count)`**
+- **Description:** List all available snapshots
+
+**`nimcp_status_t nimcp_brain_snapshot_delete(nimcp_brain_t brain, const char* name)`**
+- **Description:** Delete a named snapshot
+
+---
+
+## Copy-on-Write (COW) Cache
+
+**Header:** `nimcp.h`
+
+Efficient memory sharing with 86% memory savings for brain clones.
+
+### Types
+
+```c
+typedef struct nimcp_brain_snapshot_handle* nimcp_brain_snapshot_t;
+```
+
+### Functions
+
+**`nimcp_brain_t nimcp_brain_clone_cow(nimcp_brain_t original)`**
+- **Description:** Clone brain using copy-on-write semantics
+- **Performance:**
+  - Clone time: <10ms (vs ~1000ms for full copy)
+  - Memory overhead: ~1MB metadata (vs ~50MB full copy)
+  - Memory savings: 86% for replicas
+- **Example:**
+```c
+nimcp_brain_t original = nimcp_brain_create(...);
+nimcp_brain_t clone = nimcp_brain_clone_cow(original);
+// clone shares memory with original (fast, low memory)
+nimcp_brain_learn_example(clone, ...);  // Triggers copy on first write
+```
+
+**`nimcp_brain_snapshot_t nimcp_brain_snapshot_cow(nimcp_brain_t brain)`**
+- **Description:** Create instant snapshot using COW (zero-copy)
+- **Performance:** <1ms, ~48 bytes overhead, 99% memory savings
+- **Example:**
+```c
+nimcp_brain_snapshot_t checkpoint = nimcp_brain_snapshot_cow(brain);
+train_epochs(brain, 100);
+if (performance < threshold) {
+    nimcp_brain_restore_cow(brain, checkpoint);  // Instant rollback
+}
+nimcp_brain_snapshot_destroy(checkpoint);
+```
+
+**`nimcp_status_t nimcp_brain_restore_cow(nimcp_brain_t brain, nimcp_brain_snapshot_t snapshot)`**
+- **Description:** Restore brain state from COW snapshot
+- **Performance:** <1ms (pointer swapping)
+
+**`void nimcp_brain_snapshot_destroy(nimcp_brain_snapshot_t snapshot)`**
+- **Description:** Destroy snapshot and release references
+
+---
+
+## Working Memory API
+
+**Header:** `nimcp.h`
+
+Active representation buffer implementing Miller's 7±2 capacity limit.
+
+### Functions
+
+**`nimcp_status_t nimcp_brain_working_memory_add(nimcp_brain_t brain, const float* data, uint32_t size, float salience)`**
+- **Description:** Add item to working memory
+- **Parameters:**
+  - `data`: Feature vector
+  - `size`: Number of floats
+  - `salience`: Initial importance (0.0-1.0)
+- **Notes:**
+  - Items stored with salience-based priority
+  - Lowest-salience items evicted when at capacity
+  - Items decay over time unless refreshed
+
+**`const float* nimcp_brain_working_memory_get(nimcp_brain_t brain, uint32_t index, uint32_t* size_out)`**
+- **Description:** Get item by index (0 = highest salience)
+- **Returns:** Item data pointer or NULL
+
+**`nimcp_status_t nimcp_brain_working_memory_stats(nimcp_brain_t brain, uint32_t* current_size_out, uint32_t* capacity_out)`**
+- **Description:** Get working memory statistics
+
+**`nimcp_status_t nimcp_brain_working_memory_refresh(nimcp_brain_t brain, uint32_t index)`**
+- **Description:** Refresh item to prevent decay (simulates attention/rehearsal)
+
+---
+
+## Global Workspace API
+
+**Header:** `nimcp.h`
+
+Conscious access broadcasting based on Global Workspace Theory (Baars, 1988; Dehaene, 2011).
+
+### Types
+
+```c
+typedef enum {
+    NIMCP_MODULE_NONE = 0,
+    NIMCP_MODULE_PERCEPTION,
+    NIMCP_MODULE_WORKING_MEMORY,
+    NIMCP_MODULE_EXECUTIVE,
+    NIMCP_MODULE_THEORY_OF_MIND,
+    NIMCP_MODULE_ETHICS,
+    NIMCP_MODULE_ATTENTION,
+    NIMCP_MODULE_EMOTION,
+    NIMCP_MODULE_SALIENCE,
+    NIMCP_MODULE_MOTOR,
+    NIMCP_MODULE_LANGUAGE,
+    NIMCP_MODULE_METACOGNITION,
+    NIMCP_MODULE_CURIOSITY,
+    NIMCP_MODULE_INTROSPECTION,
+    NIMCP_MODULE_PREDICTIVE,
+    NIMCP_MODULE_CONSOLIDATION,
+    NIMCP_MODULE_EPISODIC_MEMORY,
+    NIMCP_MODULE_SEMANTIC_MEMORY,
+    NIMCP_MODULE_WELLBEING,
+    NIMCP_MODULE_MENTAL_HEALTH,
+    NIMCP_MODULE_GOAL_MOTIVATION,
+    NIMCP_MODULE_COGNITIVE_CONTROL,
+    NIMCP_MODULE_CUSTOM_START = 100
+} nimcp_cognitive_module_t;
+```
+
+### Functions
+
+**`nimcp_status_t nimcp_brain_workspace_compete(nimcp_brain_t brain, nimcp_cognitive_module_t module, const float* content, uint32_t content_dim, float strength)`**
+- **Description:** Submit content for conscious broadcast
+- **Parameters:**
+  - `strength`: Competition strength (0.0-1.0, higher = more likely to win)
+- **Returns:** NIMCP_OK if won and broadcast
+- **Notes:**
+  - Refractory period (default 50ms) prevents rapid successive broadcasts
+  - Ignition threshold (default 0.6) gates conscious access
+
+**`nimcp_status_t nimcp_brain_workspace_read(nimcp_brain_t brain, float* content, uint32_t max_dim, uint32_t* actual_dim, nimcp_cognitive_module_t* source_module)`**
+- **Description:** Read current global workspace broadcast
+
+**`nimcp_status_t nimcp_brain_workspace_subscribe(nimcp_brain_t brain, nimcp_cognitive_module_t module)`**
+- **Description:** Subscribe module to workspace broadcasts
+
+**`nimcp_status_t nimcp_brain_workspace_unsubscribe(nimcp_brain_t brain, nimcp_cognitive_module_t module)`**
+- **Description:** Unsubscribe from broadcasts
+
+**`nimcp_status_t nimcp_brain_workspace_has_broadcast(nimcp_brain_t brain, bool* has_broadcast)`**
+- **Description:** Check if workspace has active broadcast
+
+**`nimcp_status_t nimcp_brain_workspace_stats(nimcp_brain_t brain, uint32_t* total_broadcasts, uint32_t* total_competitions, float* avg_strength)`**
+- **Description:** Get workspace statistics
+
+---
+
+## Complex Oscillation API
+
+**Header:** `nimcp.h`
+
+Phase coding and neural synchrony for theta-gamma coupling and phase-based memory.
+
+### Types
+
+```c
+typedef struct {
+    float amplitude;  // Oscillation amplitude (>= 0)
+    float phase;      // Phase angle in radians (-pi to pi)
+} nimcp_oscillation_phasor_t;
+```
+
+### Functions
+
+**`bool nimcp_enable_complex_oscillations(nimcp_brain_t brain, bool enable)`**
+- **Description:** Enable/disable complex oscillation features
+- **Performance impact:**
+  - Memory: +15% (phase data storage)
+  - Compute: +10% (complex arithmetic)
+- **Benefits:** Phase-based memory, theta-gamma coupling
+
+**`bool nimcp_is_complex_oscillations_enabled(nimcp_brain_t brain)`**
+- **Description:** Check if complex oscillations are enabled
+
+**`nimcp_oscillation_phasor_t nimcp_get_oscillation_phasor(nimcp_brain_t brain, uint32_t neuron_id)`**
+- **Description:** Get amplitude and phase for a specific neuron
+- **Returns:** Phasor with amplitude and phase
+
+**`float nimcp_get_phase_coherence(nimcp_brain_t brain, const uint32_t* neuron_ids, uint32_t count)`**
+- **Description:** Compute phase coherence across multiple neurons
+- **Returns:** Phase coherence [0, 1] where:
+  - 0.0 = random phases (no synchronization)
+  - 0.3 = weak synchronization
+  - 0.6 = moderate synchronization
+  - 1.0 = perfect phase locking
+- **Example:**
+```c
+uint32_t neurons[] = {10, 20, 30, 40, 50};
+float coherence = nimcp_get_phase_coherence(brain, neurons, 5);
+if (coherence > 0.6f) {
+    printf("High synchronization detected!\n");
+}
+```
+
+**`float nimcp_get_pac_modulation(nimcp_brain_t brain, float theta_freq, float gamma_freq)`**
+- **Description:** Compute phase-amplitude coupling (PAC) modulation index
+- **Parameters:**
+  - `theta_freq`: Theta frequency (typically 4-8 Hz)
+  - `gamma_freq`: Gamma frequency (typically 30-100 Hz)
+- **Returns:** PAC modulation index [0, 1] where:
+  - 0.0 = no coupling
+  - 0.2 = weak coupling
+  - 0.4 = moderate coupling
+  - 0.6+ = strong coupling (indicates active encoding/retrieval)
+
+---
+
+## Brain Immune System
+
+**Header:** `cognitive/immune/nimcp_brain_immune.h`
+
+Adaptive defense coordination implementing biological immune concepts.
+
+### Biological Model
+
+```
+BIOLOGICAL CONCEPT              NIMCP IMPLEMENTATION
+───────────────────────────────────────────────────────────────
+Antigen presentation         → BBB threat detection → immune processing
+B cells (antibody production)→ Swarm immune memory cells + response gen
+Helper T cells (CD4+)        → Coordination signals via bio-async
+Killer T cells (CD8+/CTL)    → BFT quarantine + DFT node isolation
+Antibodies                   → Swarm immune response strategies
+Memory cells                 → Swarm immune memory + BFT trust scores
+Cytokines                    → Bio-async messages (NOREPINEPHRINE channel)
+Inflammation                 → Hierarchical recovery escalation
+Resolution                   → Recovery completion + trust restoration
+```
+
+### Types
+
+```c
+typedef struct brain_immune_system brain_immune_system_t;
+
+typedef enum {
+    B_CELL_NAIVE = 0,       // Unactivated, no bound antigen
+    B_CELL_ACTIVATED,       // Antigen recognized, proliferating
+    B_CELL_PLASMA,          // Antibody-producing state
+    B_CELL_MEMORY           // Long-lived memory state
+} b_cell_state_t;
+
+typedef enum {
+    T_CELL_HELPER = 0,      // CD4+ coordination
+    T_CELL_KILLER           // CD8+/CTL cytotoxic
+} t_cell_type_t;
+```
+
+### Key Functions
+
+**`brain_immune_system_t* brain_immune_create(const brain_immune_config_t* config)`**
+- **Description:** Create brain immune system
+- **Returns:** System handle or NULL
+
+**`void brain_immune_destroy(brain_immune_system_t* system)`**
+- **Description:** Destroy immune system
+
+**`int brain_immune_present_antigen(brain_immune_system_t* system, const antigen_t* antigen)`**
+- **Description:** Present threat (antigen) to immune system
+- **Returns:** 0 on success
+
+**`int brain_immune_activate_b_cell(brain_immune_system_t* system, uint32_t cell_id, const antigen_t* antigen)`**
+- **Description:** Activate B cell for specific antigen
+
+**`int brain_immune_deploy_antibodies(brain_immune_system_t* system, uint32_t b_cell_id)`**
+- **Description:** Deploy antibodies from plasma B cell
+
+**`int brain_immune_signal_cytokine(brain_immune_system_t* system, cytokine_type_t type, float amount)`**
+- **Description:** Signal via bio-async cytokine channels
+
+**Important:** B cells must be in PLASMA state to produce antibodies. State progression: NAIVE → ACTIVATED → PLASMA.
+
+---
+
+## Bio-Async System
+
+**Header:** `async/nimcp_bio_async.h`
+
+Biologically-inspired asynchronous computation replacing traditional futures/promises.
+
+### Neuromodulator Channels
+
+| Channel | Purpose | Timing |
+|---------|---------|--------|
+| DOPAMINE | Goal completion, reward | Fast, medium decay |
+| SEROTONIN | Mood, state coordination | Slow, long decay |
+| NOREPINEPHRINE | Alertness, priority | Fast, medium decay |
+| ACETYLCHOLINE | Attention, fast switching | Very fast, short decay |
+
+### Types
+
+```c
+typedef struct nimcp_bio_promise_struct* nimcp_bio_promise_t;
+typedef struct nimcp_bio_future_struct* nimcp_bio_future_t;
+typedef struct nimcp_phase_sync_struct* nimcp_phase_sync_t;
+typedef struct nimcp_glial_wave_struct* nimcp_glial_wave_t;
+
+typedef enum {
+    BIO_CHANNEL_DOPAMINE = 0,
+    BIO_CHANNEL_SEROTONIN = 1,
+    BIO_CHANNEL_NOREPINEPHRINE = 2,
+    BIO_CHANNEL_ACETYLCHOLINE = 3,
+    BIO_CHANNEL_COUNT = 4
+} nimcp_bio_channel_type_t;
+
+typedef enum {
+    BIO_OSC_DELTA = 0,  // 0.5-4 Hz: Deep coordination
+    BIO_OSC_THETA = 1,  // 4-8 Hz: Memory, sequential processing
+    BIO_OSC_ALPHA = 2,  // 8-12 Hz: Attention, inhibitory gating
+    BIO_OSC_BETA = 3,   // 12-30 Hz: Motor/working memory
+    BIO_OSC_GAMMA = 4,  // 30-100 Hz: Fast binding, consciousness
+    BIO_OSC_BAND_COUNT = 5
+} nimcp_oscillation_band_t;
+```
+
+### Core Functions
+
+**`nimcp_error_t nimcp_bio_async_init(const nimcp_bio_async_config_t* config)`**
+- **Description:** Initialize bio-async system
+
+**`nimcp_bio_promise_t nimcp_bio_promise_create(nimcp_bio_channel_type_t channel, size_t result_size)`**
+- **Description:** Create neuromodulator-based promise
+
+**`nimcp_bio_future_t nimcp_bio_promise_get_future(nimcp_bio_promise_t promise)`**
+- **Description:** Get future from promise
+
+**`nimcp_error_t nimcp_bio_promise_complete(nimcp_bio_promise_t promise, const void* result)`**
+- **Description:** Complete promise with biological dynamics
+
+**`nimcp_error_t nimcp_bio_future_wait(nimcp_bio_future_t future, void* result, uint32_t timeout_ms)`**
+- **Description:** Wait with biological timeout (follows neuromodulator decay)
+
+**`float nimcp_bio_future_get_confidence(nimcp_bio_future_t future)`**
+- **Description:** Get confidence level (decays over time!)
+
+### Phase Coupling
+
+**`nimcp_phase_sync_t nimcp_phase_sync_create(nimcp_oscillation_band_t band)`**
+- **Description:** Create phase synchronization coordinator
+
+**`nimcp_error_t nimcp_phase_sync_add_future(nimcp_phase_sync_t sync, nimcp_bio_future_t future)`**
+- **Description:** Add future to phase coupling group
+
+**`nimcp_error_t nimcp_phase_sync_wait_coherent(nimcp_phase_sync_t sync, float coherence_threshold)`**
+- **Description:** Wait for phase coherence (biological "all ready")
+
+### Example Usage
+
+```c
+// Create neuromodulator-based promise (dopamine = reward/completion)
+nimcp_bio_promise_t promise = nimcp_bio_promise_create(
+    BIO_CHANNEL_DOPAMINE, sizeof(float));
+nimcp_bio_future_t future = nimcp_bio_promise_get_future(promise);
+
+// Complete with biological dynamics
+float result = 42.0f;
+nimcp_bio_promise_complete(promise, &result);
+
+// Wait with biological timeout
+nimcp_bio_future_wait(future, &result, 0);
+float confidence = nimcp_bio_future_get_confidence(future);  // Decays!
+
+// Phase-coupled synchronization
+nimcp_phase_sync_t sync = nimcp_phase_sync_create(BIO_OSC_GAMMA);
+nimcp_phase_sync_add_future(sync, future1);
+nimcp_phase_sync_add_future(sync, future2);
+nimcp_phase_sync_wait_coherent(sync, 0.8f);  // 80% coherence
 ```
 
 ---
 
-## Adaptive Learning
+## Swarm Intelligence
+
+**Header:** `swarm/nimcp_swarm_brain.h`
+
+Distributed cognitive processing for drone/robot collectives.
+
+### Architecture
+
+- **Local Brain:** Resource-constrained NIMCP processing
+- **Collective Workspace:** Shared attention and goals
+- **Consensus Engine:** Voting and decision-making
+- **Signal Adapter:** Radio communication abstraction
+- **Emergence Detection:** Tier tracking for swarm size
+
+### Emergence Tiers
+
+| Tier | Size | Behavior |
+|------|------|----------|
+| TIER_0_DISCONNECTED | 1 | Solo operation |
+| TIER_1_PAIRED | 2-3 | Basic coordination |
+| TIER_2_CLUSTER | 4-7 | Group behaviors |
+| TIER_3_SWARM | 8+ | Emergent intelligence |
+| TIER_4_SUPERORGANISM | 16+ | High coherence collective |
+
+### Types
+
+```c
+typedef struct swarm_brain_config {
+    uint32_t drone_id;
+    char swarm_name[SWARM_MAX_NAME_LEN];
+    uint32_t heartbeat_ms;
+    float coherence_threshold;
+    bool enable_bio_async;
+} swarm_brain_config_t;
+```
+
+### Functions
+
+**`swarm_brain_t* swarm_brain_create(const swarm_brain_config_t* config)`**
+- **Description:** Create swarm brain coordinator
+
+**`int swarm_brain_join(swarm_brain_t* swarm)`**
+- **Description:** Join swarm network
+
+**`int swarm_brain_leave(swarm_brain_t* swarm)`**
+- **Description:** Leave swarm network
+
+**`int swarm_brain_process(swarm_brain_t* swarm)`**
+- **Description:** Process messages, votes, synchronization
+
+**`int swarm_brain_broadcast_perception(swarm_brain_t* swarm, const perception_data_t* data)`**
+- **Description:** Share sensor observations
+
+**`swarm_emergence_tier_t swarm_brain_get_emergence_tier(swarm_brain_t* swarm)`**
+- **Description:** Get current emergence level
+
+**`void swarm_brain_destroy(swarm_brain_t* swarm)`**
+- **Description:** Destroy swarm brain
+
+### Example Usage
+
+```c
+swarm_brain_config_t config = {
+    .drone_id = 1,
+    .swarm_name = "alpha_squadron",
+    .heartbeat_ms = 100,
+    .coherence_threshold = 0.5,
+    .enable_bio_async = true
+};
+swarm_brain_t* swarm = swarm_brain_create(&config);
+swarm_brain_join(swarm);
+
+while (running) {
+    swarm_brain_process(swarm);
+
+    perception_data_t data = {...};
+    swarm_brain_broadcast_perception(swarm, &data);
+
+    swarm_emergence_tier_t tier = swarm_brain_get_emergence_tier(swarm);
+    sleep_ms(10);
+}
+
+swarm_brain_leave(swarm);
+swarm_brain_destroy(swarm);
+```
+
+---
+
+## Learning Systems
 
 ### Adaptive Threshold Spiking Network
 **Header:** `nimcp_adaptive.h`
 
-Implements adaptive threshold spiking neurons with dynamic sparsity control.
-
-#### Types
 ```c
 typedef struct adaptive_network_t adaptive_network_t;
 
@@ -337,51 +960,30 @@ typedef struct {
     uint32_t num_inputs;
     uint32_t num_outputs;
     uint32_t num_hidden;
-    float k_factor;              // Winner-take-all factor
+    float k_factor;           // Winner-take-all factor
     float min_threshold;
     float max_threshold;
-    float target_sparsity;       // 0.0 - 1.0
+    float target_sparsity;    // 0.0 - 1.0
 } adaptive_network_config_t;
 ```
 
-#### Functions
-
 **`adaptive_network_t* adaptive_network_create(const adaptive_network_config_t* config)`**
-- **Description:** Create adaptive spiking network with homeostatic plasticity
-- **Returns:** Network handle or NULL
-
 **`void adaptive_network_forward(adaptive_network_t* net, const float* inputs, float* outputs)`**
-- **Description:** Forward pass with adaptive thresholds
-- **Features:** k-winner-take-all competition, dynamic threshold adjustment
-
 **`float adaptive_network_get_sparsity(adaptive_network_t* net)`**
-- **Description:** Get current activation sparsity (fraction of neurons active)
-- **Returns:** Sparsity value (0.0 = dense, 1.0 = sparse)
-
 **`void adaptive_network_prune(adaptive_network_t* net, float threshold)`**
-- **Description:** Prune weak synapses below threshold
-
-**`void adaptive_network_learn_supervised(adaptive_network_t* net, const float* inputs, const float* targets, float learning_rate)`**
-- **Description:** Supervised learning with target outputs
-
-**`void adaptive_network_learn_unsupervised(adaptive_network_t* net, const float* inputs, float learning_rate)`**
-- **Description:** Unsupervised Hebbian learning
 
 ### Neuromodulator System
 **Header:** `nimcp_neuromodulators.h`
 
-Implements biologically-inspired neuromodulator systems (dopamine, serotonin, acetylcholine, norepinephrine) with thread-safe concurrent access.
+Thread-safe neuromodulator system with reader-writer locks.
 
-#### Types
 ```c
-typedef struct neuromodulator_system_t neuromodulator_system_t;
-
 typedef enum {
-    NEUROMOD_DOPAMINE = 0,       // Reward, motivation, learning
-    NEUROMOD_SEROTONIN,          // Mood regulation, patience
+    NEUROMOD_DOPAMINE = 0,       // Reward, motivation
+    NEUROMOD_SEROTONIN,          // Mood, patience
     NEUROMOD_ACETYLCHOLINE,      // Attention, arousal
-    NEUROMOD_NOREPINEPHRINE,     // Alertness, stress response
-    NEUROMOD_COUNT               // Total count
+    NEUROMOD_NOREPINEPHRINE,     // Alertness, stress
+    NEUROMOD_COUNT
 } neuromodulator_type_t;
 
 typedef struct {
@@ -390,142 +992,37 @@ typedef struct {
     float attention_focus;
     float memory_consolidation;
 } modulation_effects_t;
-
-typedef struct {
-    float concentrations[NEUROMOD_COUNT];
-    float moving_averages[NEUROMOD_COUNT];
-    uint64_t release_counts[NEUROMOD_COUNT];
-    uint64_t update_count;
-} neuromodulator_stats_t;
 ```
 
-#### Functions
-
 **`neuromodulator_system_t neuromodulator_system_create(void)`**
-- **Description:** Create thread-safe neuromodulator system
-- **Thread Safety:** Thread-safe creation
-- **Returns:** System handle
-
-**`void neuromodulator_system_destroy(neuromodulator_system_t system)`**
-- **Description:** Destroy neuromodulator system and release resources
-- **Thread Safety:** Must not be called concurrently with other operations
-
 **`void neuromodulator_release(neuromodulator_system_t system, neuromodulator_type_t type, float amount)`**
-- **Description:** Release neuromodulator (thread-safe)
-- **Parameters:**
-  - `type`: Which neuromodulator to release
-  - `amount`: Amount to release (0.0-1.0)
-- **Thread Safety:** Thread-safe with reader-writer lock
-- **Performance:** ~100ns write lock overhead
+- Thread-safe with ~100ns write lock overhead
 
 **`float neuromodulator_get_level(neuromodulator_system_t system, neuromodulator_type_t type)`**
-- **Description:** Get current concentration level
-- **Returns:** Concentration (0.0-1.0)
-- **Thread Safety:** Thread-safe read operation (~50ns overhead)
-- **Use Case:** Query before making learning decisions
+- Thread-safe read (~50ns overhead)
 
 **`modulation_effects_t neuromodulator_get_effects(neuromodulator_system_t system)`**
-- **Description:** Get current modulation effects on learning
-- **Returns:** Combined effects of all neuromodulators
-- **Thread Safety:** Thread-safe (uses thread-local buffer, 0ns contention)
-- **Performance:** Lock-free access to pre-computed effects
-
-**`bool neuromodulator_update(neuromodulator_system_t system, float dt)`**
-- **Description:** Update neuromodulator concentrations over time
-- **Parameters:**
-  - `dt`: Time delta in seconds
-- **Thread Safety:** Thread-safe with write lock
-- **Returns:** true on success
-
-**`void neuromodulator_get_stats(neuromodulator_system_t system, neuromodulator_stats_t* stats)`**
-- **Description:** Get statistics (thread-safe)
-- **Output:** Concentrations, averages, release counts
-- **Thread Safety:** Uses atomic counters for lock-free increments
-
-#### Design Patterns Used
-- **Monitor Pattern:** Reader-writer lock protecting shared state
-- **Thread-Local Storage Pattern:** Zero-contention effect buffers
-- **Atomic Operations:** Lock-free statistics counters
-
----
+- Lock-free access via thread-local buffer
 
 ### BCM Learning Rule
 **Header:** `nimcp_bcm.h`
 
-Bienenstock-Cooper-Munro learning rule with sliding threshold and thread-safe synapse updates.
+Bienenstock-Cooper-Munro learning with spinlock protection.
 
-#### Types
 ```c
 typedef struct {
-    float weight;                    // Synapse weight
-    float threshold;                 // BCM sliding threshold
-    float avg_post_activity;         // Average postsynaptic activity
-    float eligibility;               // Eligibility trace for delayed learning
-    nimcp_spinlock_t lock;          // Spinlock for thread-safe updates
+    float weight;
+    float threshold;
+    float avg_post_activity;
+    float eligibility;
+    nimcp_spinlock_t lock;
 } bcm_synapse_t;
-
-typedef struct {
-    float learning_rate;             // Base learning rate
-    float threshold_tau;             // Time constant for threshold adaptation
-    float trace_decay;               // Eligibility trace decay
-    float min_weight;               // Weight bounds
-    float max_weight;
-} bcm_params_t;
 ```
 
-#### Functions
-
 **`bcm_synapse_t bcm_synapse_init(float initial_weight, float initial_threshold)`**
-- **Description:** Initialize BCM synapse with spinlock
-- **Parameters:**
-  - `initial_weight`: Starting weight value
-  - `initial_threshold`: Starting threshold
-- **Thread Safety:** Spinlock initialized for concurrent access
-- **Returns:** Initialized synapse structure
-
-**`void bcm_apply_rule(bcm_synapse_t* synapse, float pre_activity, float post_activity, float dt, const bcm_params_t* params)`**
-- **Description:** Apply BCM learning rule (thread-safe)
-- **Algorithm:** Δw = η × pre × post × (post - θ)
-- **Parameters:**
-  - `synapse`: Synapse to update (locked during update)
-  - `pre_activity`: Presynaptic activity
-  - `post_activity`: Postsynaptic activity
-  - `dt`: Time step
-  - `params`: Learning parameters
-- **Thread Safety:** Spinlock-protected (~10-20ns overhead)
-- **Performance:** Optimized for <100 cycle critical sections
-
-**`void bcm_update_threshold(bcm_synapse_t* synapse, float post_activity, float dt, const bcm_params_t* params)`**
-- **Description:** Update BCM sliding threshold
-- **Formula:** θ(t) = E[post²(t)]
-- **Thread Safety:** Spinlock-protected
-
-**`void bcm_update_eligibility(bcm_synapse_t* synapse, float pre_activity, float post_activity, float dt, const bcm_params_t* params)`**
-- **Description:** Update eligibility trace for three-factor learning
-- **Use Case:** Enables dopamine-modulated BCM learning
-- **Thread Safety:** Spinlock-protected
-
-**`void bcm_apply_modulation(bcm_synapse_t* synapse, float modulation, const bcm_params_t* params)`**
-- **Description:** Apply neuromodulator to eligibility trace
-- **Parameters:**
-  - `modulation`: Neuromodulator signal (typically dopamine)
-- **Algorithm:** Δw = modulation × eligibility
-- **Thread Safety:** Spinlock-protected
-
-**`void bcm_synapse_destroy(bcm_synapse_t* synapse)`**
-- **Description:** Destroy spinlock and cleanup
-- **Thread Safety:** Must not be called while synapse is in use
-
-#### Design Patterns Used
-- **Factory Pattern:** bcm_synapse_init() constructs with all invariants
-- **Monitor Pattern:** Spinlock protects mutable state
-- **Template Method Pattern:** Modular update functions
-
-#### Performance Characteristics
-- **Spinlock Acquisition:** ~10-20ns (busy-wait)
-- **BCM Update:** ~50-100ns total (including lock)
-- **Best For:** Brief critical sections (<100 CPU cycles)
-- **Not For:** Long-running computations (use rwlock instead)
+**`void bcm_apply_rule(bcm_synapse_t* synapse, float pre, float post, float dt, const bcm_params_t* params)`**
+- Spinlock-protected (~10-20ns overhead)
+- Algorithm: Δw = η × pre × post × (post - θ)
 
 ---
 
@@ -534,13 +1031,7 @@ typedef struct {
 ### Event-Driven Processing
 **Header:** `nimcp_events.h`
 
-Event-based spike encoding and processing for neuromorphic communication.
-
-#### Types
 ```c
-typedef struct event_generator_t event_generator_t;
-typedef struct event_receiver_t event_receiver_t;
-
 typedef struct {
     uint64_t timestamp;
     uint32_t source_neuron;
@@ -552,80 +1043,32 @@ typedef struct {
 typedef void (*event_callback_t)(const event_packet_t* event, void* user_data);
 ```
 
-#### Event Generator Functions
-
 **`event_generator_t* event_generator_create(const event_generator_config_t* config, event_callback_t callback, void* user_data)`**
-- **Description:** Create event generator attached to neural network
-- **Parameters:**
-  - `config`: Generator configuration
-  - `callback`: Function called when events are generated
-  - `user_data`: User context passed to callback
-
 **`void event_generator_on_spike(event_generator_t* gen, uint32_t neuron_id)`**
-- **Description:** Notify generator of neuron spike
-- **Use Case:** Connect to network spike output
-
-#### Event Receiver Functions
-
-**`event_receiver_t* event_receiver_create(const event_receiver_config_t* config, nimcp_neuralnet_t* target_network)`**
-- **Description:** Create event receiver that injects spikes into network
-
+**`event_receiver_t* event_receiver_create(const event_receiver_config_t* config, nimcp_neuralnet_t* target)`**
 **`void event_receiver_process(event_receiver_t* recv, const event_packet_t* packet)`**
-- **Description:** Process incoming event packet
-- **Side Effects:** May inject current into target neurons
-
-**`void event_receiver_add_filter(event_receiver_t* recv, uint16_t feature_code, bool enabled)`**
-- **Description:** Enable/disable filtering for specific feature codes
 
 ---
 
 ## P2P Networking
 
-### Peer-to-Peer Node
 **Header:** `nimcp_p2pnode.h`
 
-Distributed neural network communication via P2P networking.
-
-#### Types
 ```c
-typedef struct p2p_node_t p2p_node_t;
-
 typedef struct {
     char node_name[64];
     uint16_t listen_port;
     uint32_t max_peers;
     uint32_t connection_timeout_ms;
 } p2p_node_config_t;
-
-typedef struct {
-    char ip[64];
-    uint16_t port;
-    uint32_t latency_ms;
-    bool connected;
-} peer_info_t;
 ```
 
-#### Functions
-
 **`p2p_node_t* p2p_node_create(const p2p_node_config_t* config)`**
-- **Description:** Create P2P node for distributed learning
-
 **`int p2p_node_start(p2p_node_t* node)`**
-- **Description:** Start listening for connections
-- **Returns:** 0 on success
-
 **`int p2p_node_connect(p2p_node_t* node, const char* peer_ip, uint16_t peer_port)`**
-- **Description:** Connect to remote peer
-- **Returns:** 0 on success, -1 on failure
-
 **`int p2p_node_broadcast(p2p_node_t* node, const uint8_t* data, size_t size)`**
-- **Description:** Broadcast data to all connected peers
-
 **`int p2p_node_get_peers(p2p_node_t* node, peer_info_t* peers, uint32_t* count)`**
-- **Description:** Get list of connected peers
-
 **`void p2p_node_stop(p2p_node_t* node)`**
-- **Description:** Stop node and disconnect all peers
 
 ---
 
@@ -634,138 +1077,53 @@ typedef struct {
 ### Data I/O
 **Header:** `nimcp_dataio.h`
 
-CSV data loading, batch processing, and training utilities.
-
-#### Types
-```c
-typedef struct nimcp_dataset_t nimcp_dataset_t;
-
-typedef struct {
-    float** inputs;
-    float** outputs;
-    uint32_t count;
-} nimcp_batch_t;
-```
-
-#### Functions
-
 **`nimcp_dataset_t* nimcp_dataio_load_csv(const char* filepath, bool has_header)`**
-- **Description:** Load dataset from CSV file
-- **Returns:** Dataset handle or NULL
-
 **`int nimcp_dataio_read_batch(nimcp_dataset_t* dataset, nimcp_batch_t* batch, uint32_t batch_size)`**
-- **Description:** Read next batch from dataset
-- **Returns:** Number of samples read
-
 **`void nimcp_dataio_reset(nimcp_dataset_t* dataset)`**
-- **Description:** Reset dataset iterator to beginning
-
 **`int nimcp_dataio_train(nimcp_brain_t* brain, nimcp_dataset_t* dataset, uint32_t epochs, float validation_split)`**
-- **Description:** Train brain on dataset
-- **Parameters:**
-  - `validation_split`: Fraction for validation (0.0-1.0)
-- **Returns:** 0 on success
-
-**`int nimcp_dataio_save_csv(const char* filepath, const float** data, uint32_t rows, uint32_t cols, const char** headers)`**
-- **Description:** Save data to CSV file
 
 ### Streaming API
 **Header:** `nimcp_stream.h`
 
-Real-time streaming input processing.
-
-#### Types
 ```c
-typedef struct nimcp_stream_t nimcp_stream_t;
-
 typedef enum {
-    STREAM_MODE_SYNCHRONOUS,    // Immediate processing
-    STREAM_MODE_BACKGROUND,     // Background thread
-    STREAM_MODE_BATCHED        // Batch accumulation
+    STREAM_MODE_SYNCHRONOUS,
+    STREAM_MODE_BACKGROUND,
+    STREAM_MODE_BATCHED
 } stream_mode_t;
-
-typedef void (*stream_decision_callback_t)(const float* decision, float confidence, void* user_data);
 ```
 
-#### Functions
-
 **`nimcp_stream_t* nimcp_stream_create(nimcp_brain_t* brain, stream_mode_t mode, const stream_config_t* config)`**
-- **Description:** Create streaming processor
-
 **`int nimcp_stream_feed(nimcp_stream_t* stream, const float* features, uint32_t size)`**
-- **Description:** Feed new input to stream
-- **Returns:** 0 on success
-
 **`int nimcp_stream_get_decision(nimcp_stream_t* stream, float* decision, float* confidence, uint32_t timeout_ms)`**
-- **Description:** Get processed decision output
-- **Blocking:** May block up to timeout_ms
-
-**`void nimcp_stream_pause(nimcp_stream_t* stream)`**
-- **Description:** Pause processing (for BACKGROUND mode)
-
-**`void nimcp_stream_resume(nimcp_stream_t* stream)`**
-- **Description:** Resume processing
-
-**`void nimcp_stream_flush(nimcp_stream_t* stream)`**
-- **Description:** Flush pending inputs
 
 ---
 
 ## Attention & Salience
 
-### Salience Detection
 **Header:** `nimcp_salience.h`
 
-Attention mechanisms and salience (importance) evaluation.
-
-#### Types
 ```c
-typedef struct salience_evaluator_t salience_evaluator_t;
-
-typedef enum {
-    SALIENCE_MODE_FAST,      // Fast heuristic
-    SALIENCE_MODE_ACCURATE   // Full computation
-} salience_mode_t;
-
 typedef struct {
-    float novelty;           // How new is this input
-    float surprise;          // How unexpected
-    float relevance;         // How relevant to current task
-    float urgency;           // How urgent to process
-    float overall_salience;  // Combined score
+    float novelty;
+    float surprise;
+    float relevance;
+    float urgency;
+    float overall_salience;
 } salience_score_t;
 ```
 
-#### Functions
-
 **`salience_evaluator_t* salience_evaluator_create(nimcp_brain_t* brain, salience_mode_t mode)`**
-- **Description:** Create salience evaluator
-
 **`void salience_evaluate(salience_evaluator_t* eval, const float* features, uint32_t size, salience_score_t* score)`**
-- **Description:** Evaluate salience of input
-- **Output:** Detailed salience scores
-
 **`float salience_get_novelty(salience_evaluator_t* eval, const float* features, uint32_t size)`**
-- **Description:** Get novelty score only
-- **Returns:** Novelty (0.0 = familiar, 1.0 = novel)
-
-**`float salience_get_surprise(salience_evaluator_t* eval, const float* expected, const float* actual, uint32_t size)`**
-- **Description:** Measure surprise (prediction error)
-- **Returns:** Surprise level
 
 ---
 
 ## Memory Consolidation
 
-### Memory Systems
 **Header:** `nimcp_consolidation.h`
 
-Memory consolidation for moving short-term experiences to long-term storage.
-
-#### Types
 ```c
-typedef struct consolidation_system_t consolidation_system_t;
-
 typedef struct {
     float* pattern;
     uint32_t size;
@@ -775,54 +1133,23 @@ typedef struct {
 } memory_trace_t;
 ```
 
-#### Functions
-
 **`consolidation_system_t* consolidation_create(nimcp_brain_t* brain, uint32_t max_traces)`**
-- **Description:** Create memory consolidation system
-
 **`void consolidation_add_trace(consolidation_system_t* sys, const float* pattern, uint32_t size, float salience)`**
-- **Description:** Add short-term memory trace
-
 **`void consolidation_consolidate(consolidation_system_t* sys)`**
-- **Description:** Consolidate high-salience traces to long-term memory
-- **Process:** Rehearsal, integration into network weights
-
 **`int consolidation_recall(consolidation_system_t* sys, const float* cue, uint32_t size, float* output, float* confidence)`**
-- **Description:** Recall memory from cue
-- **Returns:** 1 if recalled, 0 if not found
-
-**`uint32_t consolidation_get_trace_count(consolidation_system_t* sys)`**
-- **Description:** Get number of stored traces
 
 ---
 
 ## Introspection & Monitoring
 
-### Network Introspection
 **Header:** `nimcp_introspection.h`
 
-Runtime inspection and monitoring of network internals.
-
-#### Functions
-
 **`uint32_t nimcp_introspection_get_neuron_count(nimcp_neuralnet_t* net)`**
-- **Description:** Get total neuron count
-
 **`float nimcp_introspection_get_neuron_activation(nimcp_neuralnet_t* net, uint32_t neuron_id)`**
-- **Description:** Get current activation of specific neuron
-
 **`int nimcp_introspection_get_active_neurons(nimcp_neuralnet_t* net, uint32_t* neuron_ids, uint32_t max_count)`**
-- **Description:** Get list of currently active neurons
-- **Returns:** Number of active neurons
-
 **`uint32_t nimcp_introspection_get_synapse_count(nimcp_neuralnet_t* net)`**
-- **Description:** Get total synapse count
-
-**`float nimcp_introspection_get_synapse_weight(nimcp_neuralnet_t* net, uint32_t from_neuron, uint32_t to_neuron)`**
-- **Description:** Get weight of specific synapse
-
+**`float nimcp_introspection_get_synapse_weight(nimcp_neuralnet_t* net, uint32_t from, uint32_t to)`**
 **`void nimcp_introspection_dump_state(nimcp_neuralnet_t* net, FILE* output)`**
-- **Description:** Dump complete network state for debugging
 
 ---
 
@@ -831,370 +1158,60 @@ Runtime inspection and monitoring of network internals.
 ### Curiosity-Driven Learning
 **Header:** `nimcp_curiosity.h`
 
-Intrinsic motivation and autonomous exploration.
-
-#### Types
-```c
-typedef struct curiosity_engine_t curiosity_engine_t;
-
-typedef struct {
-    float exploration_rate;
-    float novelty_threshold;
-    float learning_progress_weight;
-} curiosity_config_t;
-```
-
-#### Functions
-
 **`curiosity_engine_t* curiosity_create(const curiosity_config_t* config)`**
-- **Description:** Create curiosity-driven learning engine
-
 **`float curiosity_get_intrinsic_reward(curiosity_engine_t* engine, const float* state, const float* next_state, float external_reward)`**
-- **Description:** Compute intrinsic motivation reward
-- **Returns:** Combined intrinsic + extrinsic reward
-
-**`void curiosity_update(curiosity_engine_t* engine, const float* observation, float prediction_error)`**
-- **Description:** Update curiosity model based on experience
 
 ### Knowledge Acquisition
 **Header:** `nimcp_knowledge.h`
 
-Multi-domain knowledge acquisition system with B-tree indexed queries for efficient retrieval.
-
-#### Types
-```c
-typedef struct knowledge_system_struct* knowledge_system_t;
-
-typedef enum {
-    KNOWLEDGE_DOMAIN_LANGUAGE,
-    KNOWLEDGE_DOMAIN_LITERATURE,
-    KNOWLEDGE_DOMAIN_ART,
-    KNOWLEDGE_DOMAIN_ETHICS,
-    KNOWLEDGE_DOMAIN_HISTORY,
-    KNOWLEDGE_DOMAIN_SCIENCE,
-    KNOWLEDGE_DOMAIN_MATHEMATICS,
-    KNOWLEDGE_DOMAIN_SOCIAL,
-    KNOWLEDGE_DOMAIN_TECHNICAL,
-    KNOWLEDGE_DOMAIN_PHILOSOPHY,
-    KNOWLEDGE_DOMAIN_GENERAL
-} knowledge_domain_t;
-
-typedef struct {
-    char concept[256];
-    knowledge_domain_t domain;
-    char definition[1024];
-    char context[512];
-    char** examples;
-    uint32_t num_examples;
-    char** related_concepts;
-    uint32_t num_related;
-    float confidence;              // How well understood (0-1)
-    uint64_t learned_timestamp;
-    uint32_t reinforcement_count;
-    char confidence_key[16];       // B-tree key field
-} knowledge_item_t;
-
-typedef struct {
-    knowledge_domain_t domain;
-    uint32_t concepts_known;
-    uint32_t estimated_total;
-    float coverage_percentage;
-    float avg_confidence;
-    char gaps[5][256];
-    uint32_t num_gaps;
-} domain_knowledge_t;
-```
-
-#### System Management
-
 **`knowledge_system_t knowledge_system_create(const char* learner_name)`**
-- **Description:** Create knowledge system
-- **Parameters:** `learner_name` - Name for the learner
-- **Returns:** Knowledge system handle or NULL on error
-- **Thread Safety:** Thread-safe
-
-**`void knowledge_system_destroy(knowledge_system_t system)`**
-- **Description:** Destroy knowledge system and free resources
-- **Thread Safety:** Must not be called concurrently with same system
-
-#### Learning Functions
-
 **`uint32_t knowledge_learn_from_text(knowledge_system_t system, const char* text, knowledge_domain_t domain)`**
-- **Description:** Learn from text incrementally
-- **Returns:** Number of concepts learned
-
 **`bool knowledge_retrieve(knowledge_system_t system, const char* concept, knowledge_item_t* item)`**
-- **Description:** Retrieve knowledge about a concept
-- **Returns:** true if found
-
-**`bool knowledge_reinforce(knowledge_system_t system, const char* concept, const char* new_example)`**
-- **Description:** Strengthen understanding through repetition
-- **Returns:** true on success
-
-#### B-Tree Indexed Queries (New in v2.5.1)
-
-**`uint32_t knowledge_get_by_confidence_range(knowledge_system_t system, float min_confidence, float max_confidence, knowledge_item_t** results_out)`**
-- **Description:** Query knowledge items within confidence range using B-tree
-- **Parameters:**
-  - `system` - Knowledge system handle
-  - `min_confidence` - Minimum confidence threshold (0.0-1.0)
-  - `max_confidence` - Maximum confidence threshold (0.0-1.0)
-  - `results_out` - Output array (caller must free with nimcp_free)
-- **Returns:** Number of items in range
-- **Complexity:** O(log n + k) where k = results in range
-- **Thread Safety:** Thread-safe
-- **Use Cases:**
-  - Find well-understood concepts: `(0.8, 1.0)`
-  - Find weak knowledge needing reinforcement: `(0.0, 0.4)`
-  - Find moderately confident items: `(0.4, 0.7)`
-
-**`uint32_t knowledge_get_all_ordered_by_confidence(knowledge_system_t system, knowledge_item_t** results_out)`**
-- **Description:** Get all knowledge items sorted by confidence (low to high)
-- **Parameters:**
-  - `system` - Knowledge system handle
-  - `results_out` - Output array (caller must free with nimcp_free)
-- **Returns:** Number of items
-- **Complexity:** O(n) via B-tree in-order traversal
-- **Thread Safety:** Thread-safe
-- **Use Cases:** Review knowledge progression, identify learning gaps
-
-#### Testing API
-
-**`bool knowledge_add_item(knowledge_system_t system, const knowledge_item_t* item)`**
-- **Description:** Add knowledge item directly (for testing)
-- **Parameters:**
-  - `system` - Knowledge system handle
-  - `item` - Knowledge item to add
-- **Returns:** true on success
-- **Note:** Only available when NIMCP_TESTING is defined
-
-#### Assessment
-
-**`bool knowledge_assess_domain(knowledge_system_t system, knowledge_domain_t domain, domain_knowledge_t* assessment)`**
-- **Description:** Assess knowledge coverage in a domain
-- **Returns:** true on success
-
-**`uint32_t knowledge_get_summary(knowledge_system_t system, domain_knowledge_t* all_domains, uint32_t max_domains)`**
-- **Description:** Get overall knowledge summary across all domains
-- **Returns:** Number of domains assessed
-
-#### Persistence
-
-**`bool knowledge_save(knowledge_system_t system, const char* filepath)`**
-- **Description:** Save knowledge to file (persistent memory)
-- **Returns:** true on success
-
-**`knowledge_system_t knowledge_load(const char* filepath)`**
-- **Description:** Load knowledge from file
-- **Returns:** Knowledge system or NULL on error
+**`uint32_t knowledge_get_by_confidence_range(knowledge_system_t system, float min, float max, knowledge_item_t** results_out)`**
+- B-tree indexed, O(log n + k) complexity
 
 ### Ethical Reasoning
 **Header:** `nimcp_ethics.h`
 
-Ethical constraint checking and decision evaluation.
-
-#### Types
-```c
-typedef struct ethics_engine_t ethics_engine_t;
-
-typedef struct {
-    bool is_ethical;
-    float confidence;
-    char explanation[256];
-    float harm_score;
-    float fairness_score;
-} ethical_evaluation_t;
-```
-
-#### Functions
-
 **`ethics_engine_t* ethics_create(const char* rules_file)`**
-- **Description:** Create ethics engine with rule set
-
 **`void ethics_evaluate_action(ethics_engine_t* engine, const float* state, const float* action, ethical_evaluation_t* result)`**
-- **Description:** Evaluate if action is ethical
-
 **`bool ethics_is_allowed(ethics_engine_t* engine, const float* action)`**
-- **Description:** Quick ethical check
-- **Returns:** true if allowed
 
 ---
 
 ## Thread Safety & Synchronization
 
-### Thread Utilities
 **Header:** `utils/nimcp_thread.h`
 
-POSIX thread wrappers with NIMCP conventions and comprehensive error handling.
-
-#### Types
-```c
-typedef pthread_mutex_t nimcp_mutex_t;
-typedef pthread_cond_t nimcp_cond_t;
-typedef pthread_rwlock_t nimcp_rwlock_t;        // Reader-writer lock
-typedef pthread_spinlock_t nimcp_spinlock_t;    // Spinlock
-typedef pthread_t nimcp_thread_t;
-```
-
-#### Reader-Writer Lock API
-
-**WHAT:** Multiple concurrent readers OR single exclusive writer
-**WHY:** Enables parallel read access to shared data (10x faster than mutex for read-heavy workloads)
-**WHEN TO USE:** Read-heavy data structures, configuration, statistics
-
-**`nimcp_result_t nimcp_rwlock_init(nimcp_rwlock_t* rwlock)`**
-- **Description:** Initialize reader-writer lock
-- **Returns:** NIMCP_SUCCESS or error code
-- **Thread Safety:** Not thread-safe (call before sharing)
-
-**`nimcp_result_t nimcp_rwlock_rdlock(nimcp_rwlock_t* rwlock)`**
-- **Description:** Acquire read lock (multiple readers allowed)
-- **Performance:** ~50-100ns (no blocking with other readers!)
-- **Use Case:** Reading configuration, querying statistics
-- **Blocking:** Blocks only if writer holds lock
-
-**`nimcp_result_t nimcp_rwlock_wrlock(nimcp_rwlock_t* rwlock)`**
-- **Description:** Acquire write lock (exclusive access)
-- **Performance:** ~50-100ns + wait for readers to finish
-- **Use Case:** Updating shared state, releasing neuromodulators
-- **Blocking:** Blocks until all readers and writers release
-
-**`nimcp_result_t nimcp_rwlock_unlock(nimcp_rwlock_t* rwlock)`**
-- **Description:** Release read or write lock
-- **Performance:** ~50-100ns
-- **Important:** MUST be called after rdlock or wrlock
-
-**`nimcp_result_t nimcp_rwlock_destroy(nimcp_rwlock_t* rwlock)`**
-- **Description:** Destroy rwlock
-- **Thread Safety:** Must not be in use
-
-#### Spinlock API
-
-**WHAT:** Busy-wait lock for very brief critical sections
-**WHY:** Faster than mutex for <100 cycle critical sections (~10-20ns overhead)
-**WHEN TO USE:** Protecting individual synapse updates, brief counter increments
-**WHEN NOT TO USE:** Long-running operations, I/O, memory allocation
-
-**`nimcp_result_t nimcp_spinlock_init(nimcp_spinlock_t* spinlock)`**
-- **Description:** Initialize spinlock
-- **Returns:** NIMCP_SUCCESS or error code
-
-**`nimcp_result_t nimcp_spinlock_lock(nimcp_spinlock_t* spinlock)`**
-- **Description:** Acquire spinlock (busy-wait)
-- **Performance:** ~10-20ns if uncontended
-- **Behavior:** Spins (burns CPU) until lock acquired
-- **Best For:** <100 CPU cycles of work
-
-**`nimcp_result_t nimcp_spinlock_unlock(nimcp_spinlock_t* spinlock)`**
-- **Description:** Release spinlock
-- **Performance:** ~5-10ns
-
-**`nimcp_result_t nimcp_spinlock_destroy(nimcp_spinlock_t* spinlock)`**
-- **Description:** Destroy spinlock
-
-#### Atomic Operations
-
-**WHAT:** Lock-free atomic operations for counters and flags
-**WHY:** ~50x faster than mutex-protected increments (~5ns vs ~250ns)
-**WHEN TO USE:** Statistics counters, reference counts, flags
+### Reader-Writer Lock API
 
 ```c
-#include <stdatomic.h>
-
-// Atomic types
-typedef atomic_uint_fast64_t nimcp_atomic_counter_t;
-typedef atomic_bool nimcp_atomic_flag_t;
-
-// Atomic operations
-uint64_t atomic_fetch_add(&counter, 1);           // Atomic increment
-bool atomic_load(&flag);                          // Atomic read
-atomic_store(&flag, true);                        // Atomic write
+nimcp_result_t nimcp_rwlock_init(nimcp_rwlock_t* rwlock);
+nimcp_result_t nimcp_rwlock_rdlock(nimcp_rwlock_t* rwlock);   // ~50-100ns
+nimcp_result_t nimcp_rwlock_wrlock(nimcp_rwlock_t* rwlock);   // ~50-100ns + wait
+nimcp_result_t nimcp_rwlock_unlock(nimcp_rwlock_t* rwlock);
+nimcp_result_t nimcp_rwlock_destroy(nimcp_rwlock_t* rwlock);
 ```
 
-#### Thread-Local Storage
-
-**WHAT:** Per-thread private storage (zero contention)
-**WHY:** Eliminates lock contention for thread-private data
-**WHEN TO USE:** Per-thread buffers, temporary computation results
+### Spinlock API (for <100 cycle critical sections)
 
 ```c
-// Declaration
-_Thread_local modulation_effects_t thread_effect_buffer;
-
-// Usage (zero synchronization overhead!)
-thread_effect_buffer.learning_rate = 1.5f;
+nimcp_result_t nimcp_spinlock_init(nimcp_spinlock_t* spinlock);
+nimcp_result_t nimcp_spinlock_lock(nimcp_spinlock_t* spinlock);   // ~10-20ns
+nimcp_result_t nimcp_spinlock_unlock(nimcp_spinlock_t* spinlock); // ~5-10ns
+nimcp_result_t nimcp_spinlock_destroy(nimcp_spinlock_t* spinlock);
 ```
 
-#### Design Patterns for Thread Safety
-
-**Monitor Pattern:**
-```c
-struct protected_data {
-    nimcp_rwlock_t rwlock;
-    float shared_value;
-};
-
-// Read operation (parallel with other readers)
-nimcp_rwlock_rdlock(&data->rwlock);
-float value = data->shared_value;
-nimcp_rwlock_unlock(&data->rwlock);
-
-// Write operation (exclusive)
-nimcp_rwlock_wrlock(&data->rwlock);
-data->shared_value = new_value;
-nimcp_rwlock_unlock(&data->rwlock);
-```
-
-**Spinlock for Brief Updates:**
-```c
-bcm_synapse_t synapse;
-nimcp_spinlock_init(&synapse.lock);
-
-// Brief critical section (<100 cycles)
-nimcp_spinlock_lock(&synapse.lock);
-synapse.weight += delta;
-nimcp_spinlock_unlock(&synapse.lock);
-```
-
-**Atomic Counters for Statistics:**
-```c
-atomic_uint_fast64_t update_count = 0;
-
-// Lock-free increment (5ns, zero contention)
-atomic_fetch_add(&update_count, 1);
-```
-
-#### Performance Comparison
+### Performance Comparison
 
 | Operation | Latency | Parallel? | Best For |
 |-----------|---------|-----------|----------|
-| **RWLock Read** | ~50-100ns | ✅ Multiple readers | Read-heavy data |
-| **RWLock Write** | ~50-100ns | ❌ Exclusive | Infrequent updates |
-| **Spinlock** | ~10-20ns | ❌ Exclusive | <100 cycle sections |
-| **Mutex** | ~50-100ns | ❌ Exclusive | General purpose |
-| **Atomic Increment** | ~5ns | ✅ Lock-free | Counters, flags |
-| **Thread-Local** | 0ns | ✅ No sync needed | Per-thread data |
-
-#### Thread Safety Guarantees
-
-**Thread-Safe Operations:**
-- ✅ Neuromodulator release/query (rwlock)
-- ✅ BCM synapse updates (spinlock)
-- ✅ Statistics increments (atomics)
-- ✅ Queue operations (internal locking)
-
-**Not Thread-Safe:**
-- ❌ Network creation/destruction
-- ❌ Forward pass on same network
-- ❌ Parameter updates
-
-**Best Practices:**
-1. Use RWLock for read-heavy data structures
-2. Use Spinlock for <100 cycle critical sections
-3. Use Atomics for counters and flags
-4. Use Thread-Local for per-thread buffers
-5. Minimize critical section duration
-6. Never hold lock while doing I/O or allocation
+| RWLock Read | ~50-100ns | Multiple readers | Read-heavy data |
+| RWLock Write | ~50-100ns | Exclusive | Infrequent updates |
+| Spinlock | ~10-20ns | Exclusive | <100 cycle sections |
+| Mutex | ~50-100ns | Exclusive | General purpose |
+| Atomic Increment | ~5ns | Lock-free | Counters, flags |
+| Thread-Local | 0ns | No sync needed | Per-thread data |
 
 ---
 
@@ -1203,890 +1220,120 @@ atomic_fetch_add(&update_count, 1);
 ### FFT Spectral Analysis
 **Header:** `utils/spectral/nimcp_fft.h`
 
-Fast Fourier Transform utilities for frequency-domain signal analysis. Implements Cooley-Tukey radix-2 FFT algorithm with O(N log N) complexity.
-
-#### Types
 ```c
-typedef struct {
-    float real;
-    float imag;
-} fft_complex_t;
-
-typedef struct fft_plan_t fft_plan_t;
-
-typedef enum {
-    FFT_REAL,       // Real-to-complex FFT
-    FFT_COMPLEX,    // Complex-to-complex FFT
-    FFT_INVERSE     // Inverse FFT
-} fft_type_t;
-
-typedef enum {
-    FFT_WINDOW_NONE,
-    FFT_WINDOW_HANN,
-    FFT_WINDOW_HAMMING,
-    FFT_WINDOW_BLACKMAN
-} fft_window_type_t;
-
-typedef enum {
-    BRAIN_WAVE_DELTA,   // 1-4 Hz
-    BRAIN_WAVE_THETA,   // 4-8 Hz
-    BRAIN_WAVE_ALPHA,   // 8-13 Hz
-    BRAIN_WAVE_BETA,    // 13-30 Hz
-    BRAIN_WAVE_GAMMA    // 30-100 Hz
-} brain_wave_band_t;
+fft_plan_t* fft_plan_create(uint32_t size, fft_type_t type);
+bool fft_plan_set_window(fft_plan_t* plan, fft_window_type_t window);
+bool fft_execute_real(fft_plan_t* plan, const float* input, fft_complex_t* output);
+bool fft_power_spectrum(const fft_complex_t* spectrum, float* power, uint32_t size);
+float fft_dominant_frequency(const float* power, uint32_t size, float sampling_rate);
+float fft_brain_wave_power(const float* power, uint32_t size, float sampling_rate, brain_wave_band_t band);
 ```
-
-#### FFT Planning
-
-**`fft_plan_t* fft_plan_create(uint32_t size, fft_type_t type)`**
-- **Description:** Create FFT plan with pre-computed twiddle factors
-- **Parameters:**
-  - `size`: FFT size (must be power of 2: 2, 4, 8, ..., 65536)
-  - `type`: Transform type (FFT_REAL, FFT_COMPLEX, FFT_INVERSE)
-- **Returns:** FFT plan or NULL on failure
-- **Complexity:** O(N) for twiddle factor computation
-
-**`void fft_plan_destroy(fft_plan_t* plan)`**
-- **Description:** Destroy FFT plan and free resources
-
-**`bool fft_plan_set_window(fft_plan_t* plan, fft_window_type_t window)`**
-- **Description:** Set window function to reduce spectral leakage
-- **Window types:**
-  - `FFT_WINDOW_NONE`: Rectangular (no windowing)
-  - `FFT_WINDOW_HANN`: Hann window (good general purpose)
-  - `FFT_WINDOW_HAMMING`: Hamming window (better side-lobe suppression)
-  - `FFT_WINDOW_BLACKMAN`: Blackman window (best side-lobe suppression)
-
-#### FFT Execution
-
-**`bool fft_execute_real(fft_plan_t* plan, const float* input, fft_complex_t* output)`**
-- **Description:** Execute real-to-complex FFT
-- **Parameters:**
-  - `plan`: FFT plan (must be FFT_REAL type)
-  - `input`: Real input signal [size]
-  - `output`: Complex output spectrum [size/2 + 1]
-- **Complexity:** O(N log N)
-- **Note:** Exploits Hermitian symmetry of real signals
-
-**`bool fft_execute_complex(fft_plan_t* plan, const fft_complex_t* input, fft_complex_t* output)`**
-- **Description:** Execute complex-to-complex FFT
-- **Complexity:** O(N log N)
-
-#### Power Spectral Density
-
-**`bool fft_power_spectrum(const fft_complex_t* spectrum, float* power, uint32_t size)`**
-- **Description:** Compute power spectrum (magnitude squared)
-- **Formula:** power[k] = real[k]² + imag[k]²
-- **Complexity:** O(N)
-
-**`bool fft_magnitude_spectrum(const fft_complex_t* spectrum, float* magnitude, uint32_t size)`**
-- **Description:** Compute magnitude spectrum
-- **Formula:** magnitude[k] = sqrt(real[k]² + imag[k]²)
-
-**`bool fft_power_spectrum_db(const fft_complex_t* spectrum, float* psd_db, uint32_t size)`**
-- **Description:** Compute power spectrum in decibels
-- **Formula:** psd_db[k] = 10 * log10(power[k])
-
-**`float fft_dominant_frequency(const float* power, uint32_t size, float sampling_rate)`**
-- **Description:** Find frequency with maximum power
-- **Returns:** Dominant frequency in Hz
-
-**`float fft_band_power(const float* power, uint32_t size, float sampling_rate, float freq_low, float freq_high)`**
-- **Description:** Sum power in frequency range
-- **Returns:** Total power in [freq_low, freq_high] band
-
-**`float fft_brain_wave_power(const float* power, uint32_t size, float sampling_rate, brain_wave_band_t band)`**
-- **Description:** Compute power in specific brain wave band
-- **Brain wave bands:**
-  - Delta (1-4 Hz): Deep sleep, unconscious processes
-  - Theta (4-8 Hz): Memory consolidation, meditation
-  - Alpha (8-13 Hz): Relaxed wakefulness, default mode
-  - Beta (13-30 Hz): Active thinking, motor control
-  - Gamma (30-100 Hz): Feature binding, attention
-
-#### Frequency Utilities
-
-**`float fft_bin_to_frequency(uint32_t bin, uint32_t fft_size, float sampling_rate)`**
-- **Description:** Convert FFT bin index to frequency (Hz)
-- **Formula:** freq = bin * (sampling_rate / fft_size)
-
-**`int32_t fft_frequency_to_bin(float frequency, uint32_t fft_size, float sampling_rate)`**
-- **Description:** Convert frequency (Hz) to nearest bin index
-
-**`bool fft_is_power_of_2(uint32_t n)`**
-- **Description:** Check if n is power of 2
-
-**`uint32_t fft_next_power_of_2(uint32_t n)`**
-- **Description:** Find next power of 2 >= n
-
-#### Example Usage
-```c
-// Create 1024-point real FFT plan
-fft_plan_t* plan = fft_plan_create(1024, FFT_REAL);
-fft_plan_set_window(plan, FFT_WINDOW_HANN);
-
-// Input signal (1024 samples)
-float signal[1024];
-// ... fill with data ...
-
-// Output spectrum (513 bins for real FFT)
-fft_complex_t spectrum[513];
-
-// Execute FFT
-fft_execute_real(plan, signal, spectrum);
-
-// Compute power spectrum
-float power[513];
-fft_power_spectrum(spectrum, power, 513);
-
-// Find dominant frequency
-float sampling_rate = 1000.0f;  // 1000 Hz
-float dominant = fft_dominant_frequency(power, 513, sampling_rate);
-
-// Get brain wave power
-float alpha_power = fft_brain_wave_power(
-    power, 513, sampling_rate, BRAIN_WAVE_ALPHA
-);
-
-fft_plan_destroy(plan);
-```
-
----
-
-### Queue Management
-**Header:** `utils/nimcp_queue_manager.h`
-
-Multi-channel priority queue system.
-
-#### Types
-```c
-typedef struct nimcp_queue_manager_t nimcp_queue_manager_t;
-typedef struct nimcp_message_t nimcp_message_t;
-
-typedef struct {
-    uint32_t num_channels;
-    uint32_t max_queue_size;
-    uint32_t num_priorities;
-} nimcp_queue_manager_config_t;
-```
-
-#### Functions
-
-**`nimcp_queue_manager_t* nimcp_queue_manager_create(const nimcp_queue_manager_config_t* config)`**
-
-**`int nimcp_queue_manager_enqueue(nimcp_queue_manager_t* manager, uint32_t channel, const nimcp_message_t* message, uint32_t priority)`**
-
-**`int nimcp_queue_manager_dequeue(nimcp_queue_manager_t* manager, uint32_t channel, nimcp_message_t* message, uint32_t priority)`**
-
-**`bool nimcp_queue_manager_is_empty(nimcp_queue_manager_t* manager, uint32_t channel)`**
-
-**`bool nimcp_queue_manager_is_full(nimcp_queue_manager_t* manager, uint32_t channel)`**
-
-### Thread Pool
-**Header:** `utils/nimcp_thread_pool.h`
-
-Worker thread pool for parallel processing.
-
-#### Functions
-
-**`nimcp_thread_pool_t* nimcp_thread_pool_create(uint32_t num_threads)`**
-
-**`int nimcp_thread_pool_submit(nimcp_thread_pool_t* pool, void (*task)(void*), void* arg)`**
-
-**`void nimcp_thread_pool_wait(nimcp_thread_pool_t* pool)`**
-
-**`void nimcp_thread_pool_destroy(nimcp_thread_pool_t* pool)`**
 
 ### Memory Tracking
 **Header:** `utils/nimcp_memory.h`
 
-Memory allocation tracking and leak detection.
-
-#### Functions
-
 **`void* nimcp_malloc(size_t size, const char* file, int line)`**
-
 **`void nimcp_free(void* ptr, const char* file, int line)`**
-
 **`void nimcp_memory_report(FILE* output)`**
-- **Description:** Print memory allocation report
-
 **`size_t nimcp_memory_get_allocated(void)`**
-- **Description:** Get total allocated bytes
 
 ### Data Structures
 **Header:** `utils/nimcp_hash_table.h`, `utils/nimcp_btree.h`, `utils/nimcp_graph.h`
 
-Standard data structures with neuromorphic optimizations.
+Hash tables, B-trees, and graphs with neuromorphic optimizations.
 
-#### Hash Table
+---
 
-**`nimcp_hash_table_t* nimcp_hash_table_create(uint32_t capacity)`**
+## Utility Functions
 
-**`int nimcp_hash_table_insert(nimcp_hash_table_t* table, const char* key, void* value)`**
+**`const char* nimcp_version(void)`**
+- Returns version string (e.g., "2.6.3")
 
-**`void* nimcp_hash_table_get(nimcp_hash_table_t* table, const char* key)`**
+**`int nimcp_version_int(void)`**
+- Returns version integer (e.g., 20603)
 
-**`void nimcp_hash_table_remove(nimcp_hash_table_t* table, const char* key)`**
+**`const char* nimcp_get_error(void)`**
+- Get error message for last error
 
-#### B-Tree
+**`nimcp_status_t nimcp_init(void)`**
+- Initialize NIMCP library (call once at startup)
 
-**`nimcp_btree_t* nimcp_btree_create(uint32_t order)`**
-
-**`void nimcp_btree_insert(nimcp_btree_t* tree, uint64_t key, void* value)`**
-
-**`void* nimcp_btree_search(nimcp_btree_t* tree, uint64_t key)`**
-
-#### Graph
-
-**`nimcp_graph_t* nimcp_graph_create(uint32_t num_vertices)`**
-
-**`void nimcp_graph_add_edge(nimcp_graph_t* graph, uint32_t from, uint32_t to, float weight)`**
-
-**`int nimcp_graph_shortest_path(nimcp_graph_t* graph, uint32_t from, uint32_t to, uint32_t* path, uint32_t* path_length)`**
+**`void nimcp_shutdown(void)`**
+- Shutdown NIMCP library (call once at cleanup)
 
 ---
 
 ## Language Bindings
 
-NIMCP provides bindings for 7 languages, each following language-specific conventions while maintaining API consistency.
+NIMCP provides bindings for 7 languages:
 
-### Python Bindings
+| Language | Directory | Build |
+|----------|-----------|-------|
+| Python | `src/python/` | `python setup.py install` |
+| C++ | `src/bindings/cpp/` | CMake |
+| Java | `src/bindings/java/` | `mvn package` |
+| Rust | `src/bindings/rust/` | `cargo build` |
+| Go | `src/bindings/go/` | `go build` |
+| Perl | `src/bindings/perl/` | `perl Makefile.PL && make` |
+| C# | `src/bindings/csharp/` | `dotnet build` |
 
-**Directory:** `src/python/`
-**Module:** `nimcp`
-**Build:** `python setup.py install`
-
-#### Example Usage
+### Python Example
 
 ```python
 import nimcp
 
-# Create neural network
-config = nimcp.NetworkConfig(
-    num_inputs=10,
-    num_outputs=5,
-    num_hidden=20,
-    learning_rate=0.01
-)
-net = nimcp.NeuralNetwork(config)
-
-# Forward pass
-inputs = [0.1, 0.2, 0.3, ...]
-outputs = net.forward(inputs)
-
-# Create brain with neuromodulators
-brain_config = nimcp.BrainConfig(
+# Create brain with preset
+config = nimcp.BrainConfig(
     num_inputs=10,
     num_outputs=5,
     hidden_layers=[20, 15],
     task_name="classification"
 )
-brain = nimcp.Brain(brain_config)
+brain = nimcp.Brain(config)
 
-# Process with neuromodulation
+# Process and learn
 result = brain.process(inputs)
-brain.release_dopamine(0.8)  # Reward signal
-stats = brain.get_stats()
+brain.release_dopamine(0.8)
 
-# BCM learning
-synapse = nimcp.BCMSynapse(initial_weight=0.5)
-params = nimcp.BCMParams(learning_rate=0.01)
-synapse.apply_rule(pre=0.8, post=0.9, dt=0.001, params=params)
-
-# P2P networking
-node = nimcp.P2PNode("my_node", port=8080, max_peers=10)
-node.start()
-node.connect("192.168.1.100", 8080)
-node.broadcast(data)
-```
-
-#### Threading
-
-Python bindings release GIL for compute-intensive operations:
-- `forward()` - Releases GIL
-- `update()` - Releases GIL
-- `consolidate()` - Releases GIL
-
----
-
-### C++ Bindings
-
-**Directory:** `src/bindings/cpp/`
-**Namespace:** `nimcp`
-**Build:** `g++ -std=c++17 -lnimcp_core -lnimcp_cpp`
-
-C++ bindings provide RAII wrappers, exceptions, and modern C++ idioms.
-
-#### Example Usage
-
-```cpp
-#include <nimcp/neural_network.hpp>
-#include <nimcp/brain.hpp>
-#include <nimcp/neuromodulators.hpp>
-#include <nimcp/bcm.hpp>
-
-using namespace nimcp;
-
-// RAII neural network
-auto config = NetworkConfig{
-    .num_inputs = 10,
-    .num_outputs = 5,
-    .num_hidden = 20,
-    .learning_rate = 0.01f
-};
-NeuralNetwork net(config);  // Automatic cleanup via destructor
-
-// Forward pass with std::vector
-std::vector<float> inputs = {0.1f, 0.2f, 0.3f, ...};
-auto outputs = net.forward(inputs);  // Returns std::vector<float>
-
-// Neuromodulator system (thread-safe)
-NeuromodulatorSystem neuro_sys;
-neuro_sys.release(NeuromodulatorType::Dopamine, 0.8f);
-auto effects = neuro_sys.get_effects();
-
-// BCM synapse with RAII
-BCMSynapse synapse(0.5f, 1.0f);  // weight, threshold
-BCMParams params{
-    .learning_rate = 0.01f,
-    .threshold_tau = 1000.0f
-};
-synapse.apply_rule(0.8f, 0.9f, 0.001f, params);
-
-// Exception handling
-try {
-    auto brain = Brain::create(brain_config);
-    brain->process(inputs);
-} catch (const NIMCPException& e) {
-    std::cerr << "Error: " << e.what() << std::endl;
-}
-
-// Smart pointers
-std::unique_ptr<Brain> brain = Brain::create(config);
-std::shared_ptr<P2PNode> node = std::make_shared<P2PNode>("node1", 8080);
-```
-
-#### Features
-- ✅ RAII resource management
-- ✅ Exception-based error handling
-- ✅ STL containers (std::vector, std::string)
-- ✅ Smart pointers (unique_ptr, shared_ptr)
-- ✅ Move semantics
-- ✅ Template methods
-
----
-
-### Java Bindings
-
-**Directory:** `src/bindings/java/`
-**Package:** `com.nimcp`
-**Build:** `mvn package`
-
-JNI-based bindings with Java conventions and automatic resource management.
-
-#### Example Usage
-
-```java
-import com.nimcp.*;
-
-// Neural network with try-with-resources
-try (NeuralNetwork net = new NeuralNetwork(config)) {
-    float[] inputs = {0.1f, 0.2f, 0.3f};
-    float[] outputs = net.forward(inputs);
-
-    // Network statistics
-    NetworkStats stats = net.getStats();
-    System.out.println("Activity: " + stats.getAverageActivity());
-}
-
-// Brain with neuromodulators
-BrainConfig config = new BrainConfig.Builder()
-    .setNumInputs(10)
-    .setNumOutputs(5)
-    .setTaskName("classification")
-    .build();
-
-try (Brain brain = Brain.create(config)) {
-    float[] result = brain.process(inputs);
-    brain.releaseDopamine(0.8f);
-
-    // Get neuromodulator stats
-    NeuromodulatorStats stats = brain.getNeuromodulatorStats();
-}
-
-// BCM Learning
-BCMSynapse synapse = new BCMSynapse(0.5f, 1.0f);
-BCMParams params = new BCMParams.Builder()
-    .setLearningRate(0.01f)
-    .setThresholdTau(1000.0f)
-    .build();
-
-synapse.applyRule(0.8f, 0.9f, 0.001f, params);
-
-// P2P networking
-try (P2PNode node = new P2PNode("node1", 8080)) {
-    node.start();
-    node.connect("192.168.1.100", 8080);
-    node.broadcast(data);
-
-    List<PeerInfo> peers = node.getPeers();
-}
-
-// Exception handling
-try {
-    brain.process(inputs);
-} catch (NIMCPException e) {
-    e.printStackTrace();
-}
-```
-
-#### Features
-- ✅ Builder pattern for configuration
-- ✅ try-with-resources (AutoCloseable)
-- ✅ Java exceptions
-- ✅ JNI performance optimization
-- ✅ Thread-safe operations
-
----
-
-### Rust Bindings
-
-**Directory:** `src/bindings/rust/`
-**Crate:** `nimcp`
-**Build:** `cargo build --release`
-
-Idiomatic Rust bindings with safe FFI, ownership, and zero-cost abstractions.
-
-#### Example Usage
-
-```rust
-use nimcp::{NeuralNetwork, Brain, NeuromodulatorSystem, BCMSynapse};
-use nimcp::config::{NetworkConfig, BrainConfig, BCMParams};
-
-// Neural network with ownership
-let config = NetworkConfig {
-    num_inputs: 10,
-    num_outputs: 5,
-    num_hidden: 20,
-    learning_rate: 0.01,
-    ..Default::default()
-};
-
-let mut net = NeuralNetwork::create(&config)?;  // Returns Result<NeuralNetwork, NIMCPError>
-
-// Forward pass with slices
-let inputs = vec![0.1, 0.2, 0.3];
-let outputs = net.forward(&inputs)?;
-
-// Neuromodulator system (thread-safe)
-let mut neuro_sys = NeuromodulatorSystem::create();
-neuro_sys.release(NeuromodulatorType::Dopamine, 0.8);
-let effects = neuro_sys.get_effects();
-
-// BCM synapse
-let mut synapse = BCMSynapse::new(0.5, 1.0);
-let params = BCMParams {
-    learning_rate: 0.01,
-    threshold_tau: 1000.0,
-    ..Default::default()
-};
-
-synapse.apply_rule(0.8, 0.9, 0.001, &params);
-
-// Brain with Result handling
-let config = BrainConfig::builder()
-    .num_inputs(10)
-    .num_outputs(5)
-    .task_name("classification")
-    .build();
-
-let mut brain = Brain::create(&config)?;
-let result = brain.process(&inputs)?;
-
-// Error handling with ?
-fn run_network() -> Result<(), NIMCPError> {
-    let mut net = NeuralNetwork::create(&config)?;
-    let outputs = net.forward(&inputs)?;
-    Ok(())
-}
-
-// Thread-safe operations with Arc<Mutex<T>>
-use std::sync::{Arc, Mutex};
-use std::thread;
-
-let neuro_sys = Arc::new(Mutex::new(NeuromodulatorSystem::create()));
-let neuro_clone = Arc::clone(&neuro_sys);
-
-thread::spawn(move || {
-    let mut sys = neuro_clone.lock().unwrap();
-    sys.release(NeuromodulatorType::Dopamine, 0.5);
-});
-```
-
-#### Features
-- ✅ Ownership and borrowing
-- ✅ Result<T, E> error handling
-- ✅ Zero-cost abstractions
-- ✅ Safe FFI with bindgen
-- ✅ Thread safety with Arc/Mutex
-- ✅ Traits (Default, Clone, Debug)
-
----
-
-### Go Bindings
-
-**Directory:** `src/bindings/go/`
-**Package:** `github.com/nimcp/nimcp-go`
-**Build:** `go build`
-
-CGO-based bindings with Go conventions, goroutine safety, and channels.
-
-#### Example Usage
-
-```go
-package main
-
-import (
-    "github.com/nimcp/nimcp-go"
-    "fmt"
-    "sync"
+# Training with callbacks
+brain.configure_training(
+    loss='cross_entropy',
+    optimizer='adam',
+    learning_rate=0.001
 )
-
-func main() {
-    // Neural network with defer cleanup
-    config := &nimcp.NetworkConfig{
-        NumInputs:    10,
-        NumOutputs:   5,
-        NumHidden:    20,
-        LearningRate: 0.01,
-    }
-
-    net, err := nimcp.NewNeuralNetwork(config)
-    if err != nil {
-        panic(err)
-    }
-    defer net.Destroy()
-
-    // Forward pass
-    inputs := []float32{0.1, 0.2, 0.3}
-    outputs, err := net.Forward(inputs)
-    if err != nil {
-        panic(err)
-    }
-
-    // Neuromodulator system (goroutine-safe)
-    neuroSys := nimcp.NewNeuromodulatorSystem()
-    defer neuroSys.Destroy()
-
-    neuroSys.Release(nimcp.Dopamine, 0.8)
-    effects := neuroSys.GetEffects()
-
-    // BCM synapse
-    synapse := nimcp.NewBCMSynapse(0.5, 1.0)
-    defer synapse.Destroy()
-
-    params := &nimcp.BCMParams{
-        LearningRate:  0.01,
-        ThresholdTau: 1000.0,
-    }
-
-    synapse.ApplyRule(0.8, 0.9, 0.001, params)
-
-    // Brain with error handling
-    brainConfig := &nimcp.BrainConfig{
-        NumInputs:  10,
-        NumOutputs: 5,
-        TaskName:   "classification",
-    }
-
-    brain, err := nimcp.NewBrain(brainConfig)
-    if err != nil {
-        panic(err)
-    }
-    defer brain.Destroy()
-
-    result, err := brain.Process(inputs)
-    brain.ReleaseDopamine(0.8)
-
-    // Concurrent learning with goroutines
-    var wg sync.WaitGroup
-    neuroSys := nimcp.NewNeuromodulatorSystem()
-
-    for i := 0; i < 4; i++ {
-        wg.Add(1)
-        go func(agent int) {
-            defer wg.Done()
-            neuroSys.Release(nimcp.Dopamine, 0.5)
-            fmt.Printf("Agent %d released dopamine\n", agent)
-        }(i)
-    }
-
-    wg.Wait()
-}
+brain.train_step(features, targets)
 ```
 
-#### Features
-- ✅ defer for cleanup
-- ✅ Error handling with (value, error)
-- ✅ Goroutine-safe operations
-- ✅ Channel-based async
-- ✅ Go naming conventions
-- ✅ Context support
-
----
-
-### Perl Bindings
-
-**Directory:** `src/bindings/perl/`
-**Module:** `NIMCP`
-**Build:** `perl Makefile.PL && make`
-
-XS-based bindings with Perl conventions and CPAN compatibility.
-
-#### Example Usage
-
-```perl
-use NIMCP;
-use strict;
-use warnings;
-
-# Neural network
-my $config = NIMCP::NetworkConfig->new(
-    num_inputs    => 10,
-    num_outputs   => 5,
-    num_hidden    => 20,
-    learning_rate => 0.01
-);
-
-my $net = NIMCP::NeuralNetwork->new($config);
-
-# Forward pass
-my @inputs = (0.1, 0.2, 0.3);
-my @outputs = $net->forward(\@inputs);
-
-# Neuromodulator system
-my $neuro_sys = NIMCP::NeuromodulatorSystem->new();
-$neuro_sys->release('dopamine', 0.8);
-my $effects = $neuro_sys->get_effects();
-
-print "Learning rate multiplier: ", $effects->{learning_rate_multiplier}, "\n";
-
-# BCM synapse
-my $synapse = NIMCP::BCMSynapse->new(0.5, 1.0);  # weight, threshold
-my $params = {
-    learning_rate  => 0.01,
-    threshold_tau => 1000.0
-};
-
-$synapse->apply_rule(0.8, 0.9, 0.001, $params);
-
-# Brain
-my $brain_config = NIMCP::BrainConfig->new(
-    num_inputs  => 10,
-    num_outputs => 5,
-    task_name   => 'classification'
-);
-
-my $brain = NIMCP::Brain->new($brain_config);
-my $result = $brain->process(\@inputs);
-$brain->release_dopamine(0.8);
-
-# Error handling
-eval {
-    $brain->process(\@inputs);
-};
-if ($@) {
-    die "NIMCP error: $@";
-}
-
-# Multithreading with threads
-use threads;
-use threads::shared;
-
-my $neuro_sys = NIMCP::NeuromodulatorSystem->new();
-
-my @threads;
-for my $i (1..4) {
-    push @threads, threads->create(sub {
-        $neuro_sys->release('dopamine', 0.5);
-        print "Thread $i released dopamine\n";
-    });
-}
-
-$_->join() for @threads;
-```
-
-#### Features
-- ✅ XS for performance
-- ✅ Perl OO conventions
-- ✅ Hash refs for config
-- ✅ eval for exceptions
-- ✅ threads support
-- ✅ CPAN compatible
-
----
-
-### C# Bindings
-
-**Directory:** `src/bindings/csharp/`
-**Namespace:** `NIMCP`
-**Build:** `dotnet build`
-
-P/Invoke bindings with .NET conventions, IDisposable, and async/await support.
-
-#### Example Usage
-
-```csharp
-using NIMCP;
-using System;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-
-// Neural network with using statement
-var config = new NetworkConfig
-{
-    NumInputs = 10,
-    NumOutputs = 5,
-    NumHidden = 20,
-    LearningRate = 0.01f
-};
-
-using (var net = new NeuralNetwork(config))
-{
-    float[] inputs = { 0.1f, 0.2f, 0.3f };
-    float[] outputs = net.Forward(inputs);
-
-    // Get stats
-    var stats = net.GetStats();
-    Console.WriteLine($"Activity: {stats.AverageActivity}");
-}
-
-// Neuromodulator system (thread-safe)
-using (var neuroSys = new NeuromodulatorSystem())
-{
-    neuroSys.Release(NeuromodulatorType.Dopamine, 0.8f);
-    var effects = neuroSys.GetEffects();
-
-    Console.WriteLine($"Learning rate: {effects.LearningRateMultiplier}");
-}
-
-// BCM synapse
-using (var synapse = new BCMSynapse(0.5f, 1.0f))
-{
-    var params = new BCMParams
-    {
-        LearningRate = 0.01f,
-        ThresholdTau = 1000.0f
-    };
-
-    synapse.ApplyRule(0.8f, 0.9f, 0.001f, params);
-}
-
-// Brain with LINQ-style API
-var brainConfig = new BrainConfig
-{
-    NumInputs = 10,
-    NumOutputs = 5,
-    TaskName = "classification"
-};
-
-using (var brain = Brain.Create(brainConfig))
-{
-    float[] result = brain.Process(inputs);
-    brain.ReleaseDopamine(0.8f);
-
-    // Get neuromodulator stats
-    var neuroStats = brain.GetNeuromodulatorStats();
-}
-
-// Exception handling
-try
-{
-    brain.Process(inputs);
-}
-catch (NIMCPException ex)
-{
-    Console.WriteLine($"Error: {ex.Message}");
-}
-
-// Async operations
-public async Task<float[]> ProcessAsync(Brain brain, float[] inputs)
-{
-    return await Task.Run(() => brain.Process(inputs));
-}
-
-// Parallel learning with Tasks
-var neuroSys = new NeuromodulatorSystem();
-var tasks = new List<Task>();
-
-for (int i = 0; i < 4; i++)
-{
-    int agent = i;
-    tasks.Add(Task.Run(() =>
-    {
-        neuroSys.Release(NeuromodulatorType.Dopamine, 0.5f);
-        Console.WriteLine($"Agent {agent} released dopamine");
-    }));
-}
-
-await Task.WhenAll(tasks);
-
-// Event-driven updates
-brain.OnLearningComplete += (sender, e) =>
-{
-    Console.WriteLine($"Learning complete: {e.Accuracy}");
-};
-```
-
-#### Features
-- ✅ IDisposable pattern
-- ✅ Properties and indexers
-- ✅ async/await support
-- ✅ Event-driven API
-- ✅ LINQ compatibility
-- ✅ Exception handling
-- ✅ .NET Standard 2.0
-
----
-
-## Language Binding Comparison
+### Language Binding Comparison
 
 | Feature | Python | C++ | Java | Rust | Go | Perl | C# |
 |---------|--------|-----|------|------|----|----|-----|
-| **Memory Mgmt** | GC | RAII | GC | Ownership | GC | RC | GC |
-| **Thread Safety** | GIL | Manual | JVM | Arc/Mutex | Goroutines | threads | Task |
-| **Error Handling** | Exception | Exception | Exception | Result<T,E> | (val, err) | eval | Exception |
-| **Performance** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Build System** | pip/setup.py | CMake | Maven/Gradle | Cargo | go build | CPAN | dotnet |
-| **Best For** | ML/AI | HPC | Enterprise | Systems | Cloud | Scripting | Enterprise |
+| Memory Mgmt | GC | RAII | GC | Ownership | GC | RC | GC |
+| Thread Safety | GIL | Manual | JVM | Arc/Mutex | Goroutines | threads | Task |
+| Error Handling | Exception | Exception | Exception | Result<T,E> | (val, err) | eval | Exception |
+| Performance | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
 
 ---
 
 ## API Conventions
 
-### Error Handling
-
-- **NULL Returns:** Creation functions return NULL on failure
-- **Integer Returns:** Functions return 0 on success, -1 on error
-- **Boolean Returns:** Functions return true/false for status checks
+### Return Value Conventions
+- **FEP bridges:** Return `0` for success, `-1` for errors (not NIMCP_OK/NIMCP_ERROR_*)
+- **Metabolic modulation:** `metabolic_compute_effects()` returns `0` for success, `-1` for errors
+- **Standard NIMCP functions:** Return `nimcp_status_t` codes
 
 ### Thread Safety
-
 - **Creation/Destruction:** Not thread-safe
 - **Forward Pass:** Not thread-safe on same network
 - **Statistics:** Thread-safe (read-only)
 - **Queue Operations:** Thread-safe with internal locking
 
 ### Memory Management
-
 - **Ownership:** Caller owns returned pointers from create functions
 - **Cleanup:** Always call corresponding destroy function
-- **Input Buffers:** Library does not take ownership of input arrays
-- **Output Buffers:** Caller must allocate output buffers
+- **Input Buffers:** Library does not take ownership
 
 ### Naming Conventions
-
 - **Prefix:** All public APIs prefixed with `nimcp_`
 - **Structs:** `*_t` suffix for types
 - **Constants:** UPPERCASE_WITH_UNDERSCORES
@@ -2096,38 +1343,37 @@ brain.OnLearningComplete += (sender, e) =>
 
 ## Version History
 
-### 2.5.0 (Current)
-- **Thread Safety:** Added comprehensive thread safety with rwlocks, spinlocks, and atomics
-- **Neuromodulator System:** Biologically-inspired neuromodulators with concurrent access
-- **BCM Learning:** Bienenstock-Cooper-Munro learning rule with thread-safe updates
-- **Language Bindings:** Added bindings for C++, Java, Rust, Go, Perl, and C#
-- **Performance Optimizations:**
-  - RWLock: ~10x faster than mutex for read-heavy workloads
-  - Spinlock: ~10-20ns overhead for brief critical sections
-  - Atomics: ~50x faster than mutex for counters
-  - Thread-Local Storage: Zero-contention effect buffers
-- **Security Enhancements:**
-  - Phase 3 security hardening complete
-  - Comprehensive stress testing
-  - Enhanced static analysis integration
-  - Dependency vulnerability scanning
-- **Code Quality:**
-  - 85%+ code coverage
-  - TDD implementation for all new features
-  - Explicit WHAT/WHY comments
-  - Design patterns (Monitor, Thread-Local Storage, Factory)
+### 2.6.3 (Current)
+- Training Pipeline API (loss functions, optimizers, LR schedulers)
+- Training Callbacks API (event-driven monitoring)
+- Dynamic Brain Resizing API
+- Brain Snapshots API
+- Copy-on-Write (COW) Cache API (86% memory savings)
+- Working Memory API (Miller's 7±2)
+- Global Workspace API (Baars' GWT)
+- Complex Oscillation API (phase coding, PAC)
+- Brain Immune System API
+- Bio-Async System API
+- Swarm Intelligence API
 
-### 2.4.0
-- Added Phase 2 fuzzing infrastructure
-- Added error injection testing
-- Enhanced security hardening
-- Added SECURITY.md policy
+### 2.6.1
+- Security hardening (strcpy → strncpy)
+- Knowledge module memory corruption fix
 
-### 2.3.0
-- Added Phase 1 sanitizers (ASAN, UBSAN, TSAN)
-- Removed unsafe string functions
-- Added compiler hardening flags
-- Enhanced CI security jobs
+### 2.6.0
+- FFT spectral analysis utilities
+- Brain oscillation analysis module
+- Cognitive state inference
+
+### 2.5.1
+- Knowledge B-tree indexing
+- Confidence-based queries
+
+### 2.5.0
+- Thread safety (rwlocks, spinlocks, atomics)
+- Neuromodulator system
+- BCM learning rule
+- Language bindings (C++, Java, Rust, Go, Perl, C#)
 
 ---
 
@@ -2135,11 +1381,10 @@ brain.OnLearningComplete += (sender, e) =>
 
 - **README.md:** General project overview
 - **SECURITY.md:** Security policy and reporting
-- **SECURITY_AUDIT.md:** Pre-release security checklist
-- **BUILD_SECURITY.md:** Security build instructions
-- **Examples:** See `examples/` directory for usage examples
+- **EXTERNAL_API_GUIDE.md:** External API integration guide
+- **Examples:** See `examples/` directory
 
 ---
 
-**Copyright © 2025 NIMCP Project**
+**Copyright 2025-2026 NIMCP Project**
 **License:** See LICENSE file

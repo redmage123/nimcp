@@ -1,0 +1,31 @@
+# ============================================================================
+# Knowledge Unit Tests (Phase 4: Knowledge COW)
+# ============================================================================
+
+# Helper macro for knowledge tests
+macro(add_knowledge_test TEST_NAME SOURCE_FILE)
+    add_executable(unit_cognitive_knowledge_${TEST_NAME}
+        ${SOURCE_FILE}
+    )
+    target_link_libraries(unit_cognitive_knowledge_${TEST_NAME}
+        PRIVATE
+            GTest::GTest
+            GTest::Main
+            nimcp
+            pthread
+    )
+    target_include_directories(unit_cognitive_knowledge_${TEST_NAME}
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src
+    )
+    add_test(NAME unit_cognitive_knowledge_${TEST_NAME}
+             COMMAND unit_cognitive_knowledge_${TEST_NAME})
+    set_tests_properties(unit_cognitive_knowledge_${TEST_NAME} PROPERTIES LABELS "unit")
+endmacro()
+
+# Test 1: Knowledge COW Wrapper (Phase 4)
+add_knowledge_test(test_knowledge_cow test_knowledge_cow.cpp)
+
+# Test 2: Knowledge Comprehensive (required by test timeout config)
+add_knowledge_test(test_knowledge_comprehensive test_knowledge_comprehensive.cpp)

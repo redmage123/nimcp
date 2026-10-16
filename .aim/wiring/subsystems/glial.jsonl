@@ -1,0 +1,17 @@
+# Glial subsystem wiring - glial cell communication and support
+# Handles astrocytes, microglia, and oligodendrocytes
+{"type":"entity","name":"Astrocyte_Module","entityType":"GlialModule","subsystem":"glial","min_tier":1,"enabled":true}
+{"type":"entity","name":"Microglia_Module","entityType":"GlialModule","subsystem":"glial","min_tier":1,"enabled":true}
+{"type":"entity","name":"Oligodendrocyte_Module","entityType":"GlialModule","subsystem":"glial","min_tier":1,"enabled":true}
+{"type":"relation","from":"Astrocyte_Module","to":"BIO_MSG_ASTROCYTE_CALCIUM_WAVE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ASTROCYTE_CALCIUM_WAVE"}
+{"type":"relation","from":"Astrocyte_Module","to":"BIO_MSG_ASTROCYTE_GLUTAMATE_UPTAKE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ASTROCYTE_GLUTAMATE_UPTAKE"}
+{"type":"relation","from":"Astrocyte_Module","to":"BIO_MSG_METABOLIC_DEMAND","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_METABOLIC_DEMAND"}
+{"type":"relation","from":"Astrocyte_Module","to":"BIO_MSG_GLIAL_SYNC_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_GLIAL_SYNC_REQUEST"}
+{"type":"relation","from":"Microglia_Module","to":"BIO_MSG_MICROGLIA_ALERT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MICROGLIA_ALERT"}
+{"type":"relation","from":"Microglia_Module","to":"BIO_MSG_MICROGLIA_PRUNE_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MICROGLIA_PRUNE_REQUEST"}
+{"type":"relation","from":"Microglia_Module","to":"BIO_MSG_METABOLIC_DEMAND","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_METABOLIC_DEMAND"}
+{"type":"relation","from":"Microglia_Module","to":"BIO_MSG_GLIAL_SYNC_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_GLIAL_SYNC_REQUEST"}
+{"type":"relation","from":"Oligodendrocyte_Module","to":"BIO_MSG_OLIGODENDROCYTE_MYELINATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_OLIGODENDROCYTE_MYELINATE"}
+{"type":"relation","from":"Oligodendrocyte_Module","to":"BIO_MSG_METABOLIC_DEMAND","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_METABOLIC_DEMAND"}
+{"type":"relation","from":"Oligodendrocyte_Module","to":"BIO_MSG_METABOLIC_SUPPLY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_METABOLIC_SUPPLY"}
+{"type":"relation","from":"Oligodendrocyte_Module","to":"BIO_MSG_GLIAL_SYNC_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_GLIAL_SYNC_REQUEST"}

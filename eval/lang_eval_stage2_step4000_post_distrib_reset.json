@@ -1,0 +1,452 @@
+{
+  "prompts": [
+    "What is a tree?",
+    "Describe the sun.",
+    "Tell me about water.",
+    "What is fire?",
+    "What does a rock look like?",
+    "How does the wind feel?",
+    "What is sand?",
+    "Describe a mountain.",
+    "What is a river?",
+    "Describe the ocean.",
+    "What does a cat do?",
+    "How does a bird fly?",
+    "What is a dog?",
+    "Why do fish swim?",
+    "How does a bee work?",
+    "What does an owl do at night?",
+    "Why do horses run?",
+    "How does a snake move?",
+    "What is an elephant?",
+    "What does a wolf eat?",
+    "How do you feel?",
+    "Are you happy?",
+    "What is love?",
+    "What is fear?",
+    "Why do we dream?",
+    "What is memory?",
+    "What does it mean to think?",
+    "What is hope?",
+    "What is silence?",
+    "Why do people laugh?",
+    "What is two plus two?",
+    "What is bigger, three or seven?",
+    "Is one less than ten?",
+    "What comes after five?",
+    "What is the opposite of hot?",
+    "What is half of eight?",
+    "Are circles round?",
+    "Is a square a shape?",
+    "What is zero?",
+    "What is the smallest number you know?",
+    "Tell me a story.",
+    "What is a friend?",
+    "What happens at a birthday?",
+    "Who lives in a family?",
+    "What is a school for?",
+    "Why do people share food?",
+    "What do parents do?",
+    "What is kindness?",
+    "What is a promise?",
+    "Why do people sing?"
+  ],
+  "rounds": [
+    {
+      "label": "stage2_step4000_post_distrib_reset",
+      "n_prompts": 50,
+      "n_unique": 22,
+      "diversity": 0.44,
+      "mean_conf": 0.0131,
+      "median_conf": 0.0077,
+      "mean_ms": 503.4,
+      "median_ms": 487.5,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.028270673006772995,
+          "ms": 522.0
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "pseudophloem reflexive smuggler condensate depravity professionalize mealy stateliness refracted spectrograph petabyte cilantro",
+          "conf": 0.02845284529030323,
+          "ms": 527.2
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "handbag shrewdly 045",
+          "conf": 0.0014059944078326225,
+          "ms": 497.6
+        },
+        {
+          "q": "What is fire?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836680695414543,
+          "ms": 491.9
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "impressiveness atheistic acquaintance",
+          "conf": 0.0014928663149476051,
+          "ms": 487.2
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "airlift strew grouch",
+          "conf": 0.0011257730657234788,
+          "ms": 489.7
+        },
+        {
+          "q": "What is sand?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836680695414543,
+          "ms": 487.5
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.027631200850009918,
+          "ms": 522.0
+        },
+        {
+          "q": "What is a river?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.028270673006772995,
+          "ms": 495.9
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "pseudophloem reflexive smuggler condensate depravity professionalize mealy stateliness refracted spectrograph petabyte cilantro",
+          "conf": 0.02845284529030323,
+          "ms": 499.5
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "impressiveness atheistic acquaintance",
+          "conf": 0.0016380308661609888,
+          "ms": 479.5
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "wailful titi ruffled",
+          "conf": 0.0005120571004226804,
+          "ms": 465.4
+        },
+        {
+          "q": "What is a dog?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.028270674869418144,
+          "ms": 500.7
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "crop useable normalize romantic clause merchandising scorer rhenish",
+          "conf": 0.02116035670042038,
+          "ms": 500.4
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "sc thaw goodwill atheistical embolism aroma conodont interfaith",
+          "conf": 0.015207161195576191,
+          "ms": 486.0
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "rumple whaler clank cancroid reveller antitype sunni timbale magnetisation stentor economize cashew testate",
+          "conf": 0.031109878793358803,
+          "ms": 499.0
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "import concordant tighten divan quizzical fuck mayer pocketful",
+          "conf": 0.016152307391166687,
+          "ms": 490.0
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "sc thaw goodwill atheistical embolism aroma conodont interfaith",
+          "conf": 0.015968725085258484,
+          "ms": 487.5
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.003246134612709284,
+          "ms": 469.1
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.017656458541750908,
+          "ms": 488.2
+        },
+        {
+          "q": "How do you feel?",
+          "a": "modernity costa ruckle vaulting husbandry jerk",
+          "conf": 0.008803406730294228,
+          "ms": 501.2
+        },
+        {
+          "q": "Are you happy?",
+          "a": "unrequited shakily windbag fluidity pique psychopharmacological undertaker prominent",
+          "conf": 0.012076418846845627,
+          "ms": 485.7
+        },
+        {
+          "q": "What is love?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.007669047452509403,
+          "ms": 473.7
+        },
+        {
+          "q": "What is fear?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836681626737118,
+          "ms": 483.7
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "grassfire huckster redoubt",
+          "conf": 0.001218272722326219,
+          "ms": 467.6
+        },
+        {
+          "q": "What is memory?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.00799101497977972,
+          "ms": 472.1
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "sc thaw goodwill",
+          "conf": 0.0010436149314045906,
+          "ms": 461.0
+        },
+        {
+          "q": "What is hope?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836681626737118,
+          "ms": 487.6
+        },
+        {
+          "q": "What is silence?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836681626737118,
+          "ms": 472.0
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "october raises pacifist",
+          "conf": 0.0013776993146166205,
+          "ms": 462.1
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836681626737118,
+          "ms": 477.1
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "committed meiosis mortar",
+          "conf": 0.002878745086491108,
+          "ms": 472.2
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "redheader watertown breakthrough genetically",
+          "conf": 0.0057617067359387875,
+          "ms": 471.8
+        },
+        {
+          "q": "What comes after five?",
+          "a": "impressiveness atheistic acquaintance",
+          "conf": 0.0016997712664306164,
+          "ms": 467.0
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.0358012355864048,
+          "ms": 510.4
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "transvestitism dissolves corchorus",
+          "conf": 0.0028660965617746115,
+          "ms": 461.2
+        },
+        {
+          "q": "Are circles round?",
+          "a": "spiky rationalise artful republican tanga chapman tries unmatched",
+          "conf": 0.016832217574119568,
+          "ms": 491.7
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.026525693014264107,
+          "ms": 505.8
+        },
+        {
+          "q": "What is zero?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.0068366811610758305,
+          "ms": 472.1
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "unrequited shakily windbag fluidity pique psychopharmacological undertaker prominent",
+          "conf": 0.02276049181818962,
+          "ms": 479.5
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "handbag shrewdly 045",
+          "conf": 0.001509818248450756,
+          "ms": 480.2
+        },
+        {
+          "q": "What is a friend?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.03414560481905937,
+          "ms": 494.3
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.03595947101712227,
+          "ms": 499.8
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "vandalism toronto deist dropout humbly wac conglutination masher balustrade annulus dowdy consecration",
+          "conf": 0.025142742320895195,
+          "ms": 515.7
+        },
+        {
+          "q": "What is a school for?",
+          "a": "handbag shrewdly 045",
+          "conf": 0.002201871247962117,
+          "ms": 478.4
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "october raises pacifist",
+          "conf": 0.0013776986161246896,
+          "ms": 463.3
+        },
+        {
+          "q": "What do parents do?",
+          "a": "import concordant tighten divan quizzical fuck mayer pocketful",
+          "conf": 0.017616864293813705,
+          "ms": 479.0
+        },
+        {
+          "q": "What is kindness?",
+          "a": "sepulture sipper benight dampen",
+          "conf": 0.006836680695414543,
+          "ms": 479.0
+        },
+        {
+          "q": "What is a promise?",
+          "a": "newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.028270680457353592,
+          "ms": 925.7
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "october raises pacifist",
+          "conf": 0.001377698383294046,
+          "ms": 892.4
+        }
+      ]
+    }
+  ],
+  "diag_pre": {
+    "vocab_size": 31390,
+    "total_bindings": 795842407,
+    "total_groundings": 77927,
+    "total_comprehensions": 8948,
+    "total_productions": 373,
+    "avg_binding_strength": 0.6333023309707642,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 4,
+    "bridge_avg_word_confidence": 0.018535733222961426,
+    "bridge_avg_binding_weight": 0.3193347752094269,
+    "bridge_active_bindings": 134823,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 119018627,
+    "bridge_total_decode_calls": 34,
+    "bridge_total_stdp_updates": 0,
+    "bridge_total_trigram_updates": 0,
+    "bridge_echo_correct_calls": 0,
+    "bridge_echo_correct_pairs": 0,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 6,
+    "bridge_comprehend_stdp_pairs_fired": 33,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 0
+  },
+  "diag_post": {
+    "vocab_size": 31390,
+    "total_bindings": 795843767,
+    "total_groundings": 77927,
+    "total_comprehensions": 8998,
+    "total_productions": 423,
+    "avg_binding_strength": 0.6333042979240417,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 54,
+    "bridge_avg_word_confidence": 0.01587216928601265,
+    "bridge_avg_binding_weight": 0.31934094429016113,
+    "bridge_active_bindings": 134823,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 1559070380,
+    "bridge_total_decode_calls": 402,
+    "bridge_total_stdp_updates": 0,
+    "bridge_total_trigram_updates": 0,
+    "bridge_echo_correct_calls": 0,
+    "bridge_echo_correct_pairs": 0,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 37,
+    "bridge_comprehend_stdp_pairs_fired": 223,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 0
+  },
+  "meta": {
+    "step": "stage2_step4000",
+    "timestamp": "2026-05-18 15:59:37"
+  }
+}

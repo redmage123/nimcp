@@ -1,0 +1,14 @@
+# Emotion subsystem wiring - affective processing and regulation
+# Implements emotional tagging, valence computation, and mood states
+{"type":"entity","name":"Emotional_System","entityType":"CognitiveModule","observations":["Core emotion processing","Valence and arousal computation","Emotional state machine"],"subsystem":"emotion","tier_min":"CONSTRAINED"}
+{"type":"entity","name":"Emotional_Tagging","entityType":"CognitiveModule","observations":["Tags memories with emotion","Salience computation","Priority modulation"],"subsystem":"emotion","tier_min":"CONSTRAINED"}
+{"type":"entity","name":"Emotion_Tensor","entityType":"CognitiveModule","observations":["Multi-dimensional emotion representation","Blended emotion states","Temporal emotion dynamics"],"subsystem":"emotion","tier_min":"MEDIUM"}
+{"type":"entity","name":"Shadow_Emotions","entityType":"CognitiveModule","observations":["Suppressed emotional content","Unconscious affect processing","Integration with conscious awareness"],"subsystem":"emotion","tier_min":"FULL"}
+{"type":"relation","from":"Emotional_System","to":"Emotional_Tagging","relationType":"HANDLES_MESSAGE","message_type":"EMOTION_TAG_REQUEST"}
+{"type":"relation","from":"Emotion_Tensor","to":"Emotional_System","relationType":"HANDLES_MESSAGE","message_type":"EMOTION_BLEND"}
+{"type":"relation","from":"Shadow_Emotions","to":"Emotion_Tensor","relationType":"HANDLES_MESSAGE","message_type":"SHADOW_INTEGRATION"}
+{"type":"relation","from":"Grief_And_Loss_Module","to":"BIO_MSG_INTROSPECTION_QUERY","relationType":"HANDLES_MESSAGE","message_type":1002}
+{"type":"relation","from":"Joy_Euphoria_Module","to":"BIO_MSG_CURIOSITY_SIGNAL","relationType":"HANDLES_MESSAGE","message_type":4001}
+{"type":"relation","from":"Shadow_Emotions_Module","to":"BIO_MSG_INTROSPECTION_QUERY","relationType":"HANDLES_MESSAGE","message_type":1002}
+{"type":"relation","from":"Remorse_Regret_Module","to":"BIO_MSG_ETHICS_EVALUATION_RESPONSE","relationType":"HANDLES_MESSAGE","message_type":3002}
+{"type":"relation","from":"Emotional_System_Module","to":"BIO_MSG_SALIENCE_QUERY","relationType":"HANDLES_MESSAGE","message_type":1004}

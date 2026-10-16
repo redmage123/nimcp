@@ -1,34 +1,40 @@
 /**
- * TrainingPanel Component
- * =======================
+ * TrainingPanel Component (Dataset-Aware)
+ * ========================================
  *
- * WHAT: Interface for training the NIMCP brain
+ * WHAT: Interface for training the NIMCP brain on any dataset
  * WHY:  Allow users to train on individual or batch examples
- * HOW:  Forms for manual input or quick-train with dataset
+ * HOW:  Dynamic forms that adapt to dataset configuration
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-function TrainingPanel({ onTrain, onTrainBatch, dataset, loading }) {
-  const [sepalLength, setSepalLength] = useState('5.1');
-  const [sepalWidth, setSepalWidth] = useState('3.5');
-  const [petalLength, setPetalLength] = useState('1.4');
-  const [petalWidth, setPetalWidth] = useState('0.2');
-  const [selectedClass, setSelectedClass] = useState('setosa');
+function TrainingPanel({ onTrain, onTrainBatch, dataset, datasetInfo, loading }) {
+  const [featuresInput, setFeaturesInput] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
   const [confidence, setConfidence] = useState('1.0');
   const [trainingStatus, setTrainingStatus] = useState('');
+
+  // Update selected class when dataset changes
+  useEffect(() => {
+    if (datasetInfo && datasetInfo.classes && datasetInfo.classes.length > 0) {
+      setSelectedClass(datasetInfo.classes[0]);
+    }
+  }, [datasetInfo]);
 
   const handleTrain = async (e) => {
     e.preventDefault();
     setTrainingStatus('Training...');
 
     try {
-      const features = [
-        parseFloat(sepalLength),
-        parseFloat(sepalWidth),
-        parseFloat(petalLength),
-        parseFloat(petalWidth)
-      ];
+      // Parse features from input
+      const features = featuresInput.split(',').map(f => parseFloat(f.trim()));
+
+      // Validate feature count
+      if (features.length !== datasetInfo.num_inputs) {
+        setTrainingStatus(`❌ Expected ${datasetInfo.num_inputs} features, got ${features.length}`);
+        return;
+      }
 
       const result = await onTrain(features, selectedClass, parseFloat(confidence));
       setTrainingStatus(`✅ Trained! Loss: ${result.loss.toFixed(4)}`);
@@ -65,16 +71,45 @@ function TrainingPanel({ onTrain, onTrainBatch, dataset, loading }) {
     if (!dataset || !dataset[className]) return;
 
     const example = dataset[className][0];
-    setSepalLength(example[0].toString());
-    setSepalWidth(example[1].toString());
-    setPetalLength(example[2].toString());
-    setPetalWidth(example[3].toString());
+    setFeaturesInput(example.join(', '));
     setSelectedClass(className);
   };
+
+  // Get dataset-specific help text
+  const getDatasetHelp = () => {
+    if (!datasetInfo) return '';
+
+    const exampleCount = dataset ? Object.values(dataset).reduce((sum, arr) => sum + arr.length, 0) : 0;
+
+    return `Train on all ${exampleCount} ${datasetInfo.name.toLowerCase()} examples`;
+  };
+
+  const getInputPlaceholder = () => {
+    if (!datasetInfo) return 'Enter feature values...';
+
+    if (datasetInfo.input_type === 'image') {
+      return `Enter ${datasetInfo.num_inputs} pixel values (0-1), comma-separated`;
+    }
+
+    return `Enter ${datasetInfo.num_inputs} feature values, comma-separated`;
+  };
+
+  if (!datasetInfo) {
+    return (
+      <div className="panel training-panel">
+        <h2>🎓 Training Panel</h2>
+        <p>Loading dataset information...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="panel training-panel">
       <h2>🎓 Training Panel</h2>
+
+      <div className="dataset-badge">
+        <strong>Dataset:</strong> {datasetInfo.name}
+      </div>
 
       <div className="quick-train">
         <button
@@ -85,7 +120,7 @@ function TrainingPanel({ onTrain, onTrainBatch, dataset, loading }) {
           ⚡ Quick Train (All Dataset)
         </button>
         <p className="help-text">
-          Train on all 15 iris examples at once
+          {getDatasetHelp()}
         </p>
       </div>
 
@@ -96,52 +131,29 @@ function TrainingPanel({ onTrain, onTrainBatch, dataset, loading }) {
       <form onSubmit={handleTrain}>
         <h3>Train Single Example</h3>
 
-        <div className="form-row">
-          <div className="form-group">
-            <label>Sepal Length (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={sepalLength}
-              onChange={(e) => setSepalLength(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Sepal Width (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={sepalWidth}
-              onChange={(e) => setSepalWidth(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label>Petal Length (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={petalLength}
-              onChange={(e) => setPetalLength(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Petal Width (cm)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={petalWidth}
-              onChange={(e) => setPetalWidth(e.target.value)}
-              required
-            />
-          </div>
+        <div className="form-group">
+          <label>Feature Values</label>
+          <textarea
+            value={featuresInput}
+            onChange={(e) => setFeaturesInput(e.target.value)}
+            placeholder={getInputPlaceholder()}
+            rows="3"
+            required
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              color: 'var(--text-white)',
+              fontSize: '0.9rem',
+              fontFamily: 'monospace',
+              resize: 'vertical'
+            }}
+          />
+          <small style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
+            Expected: {datasetInfo.num_inputs} {datasetInfo.input_type} values
+          </small>
         </div>
 
         <div className="form-group">
@@ -150,9 +162,11 @@ function TrainingPanel({ onTrain, onTrainBatch, dataset, loading }) {
             value={selectedClass}
             onChange={(e) => setSelectedClass(e.target.value)}
           >
-            <option value="setosa">🌸 Setosa</option>
-            <option value="versicolor">🌺 Versicolor</option>
-            <option value="virginica">🌷 Virginica</option>
+            {datasetInfo.classes.map((cls) => (
+              <option key={cls} value={cls}>
+                {cls}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -180,27 +194,20 @@ function TrainingPanel({ onTrain, onTrainBatch, dataset, loading }) {
         )}
       </form>
 
-      <div className="example-buttons">
-        <p className="help-text">Load example:</p>
-        <button
-          className="btn btn-outline btn-small"
-          onClick={() => loadExample('setosa')}
-        >
-          Setosa
-        </button>
-        <button
-          className="btn btn-outline btn-small"
-          onClick={() => loadExample('versicolor')}
-        >
-          Versicolor
-        </button>
-        <button
-          className="btn btn-outline btn-small"
-          onClick={() => loadExample('virginica')}
-        >
-          Virginica
-        </button>
-      </div>
+      {dataset && Object.keys(dataset).length > 0 && (
+        <div className="example-buttons">
+          <p className="help-text">Load example:</p>
+          {Object.keys(dataset).slice(0, 6).map((className) => (
+            <button
+              key={className}
+              className="btn btn-outline btn-small"
+              onClick={() => loadExample(className)}
+            >
+              {className}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

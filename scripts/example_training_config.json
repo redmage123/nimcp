@@ -1,0 +1,40 @@
+{
+  "brain": {
+    "name": "foundation_model_v1",
+    "size": 2,
+    "task": 0,
+    "num_inputs": 512,
+    "num_outputs": 100
+  },
+  "domains": [
+    {
+      "name": "spam_classification",
+      "description": "Binary spam classification - easy warmup task"
+    },
+    {
+      "name": "imdb_sentiment",
+      "description": "Sentiment analysis - medium difficulty"
+    },
+    {
+      "name": "ag_news",
+      "description": "News categorization - more classes"
+    },
+    {
+      "name": "20newsgroups",
+      "description": "Multi-class newsgroups - hardest task"
+    }
+  ],
+  "training": {
+    "learning_rate": 0.01,
+    "lr_decay": 0.95,
+    "min_lr": 0.0001,
+    "batch_size": 32,
+    "epochs_per_domain": 5,
+    "consolidation_epochs": 2,
+    "early_stop_patience": 3,
+    "checkpoint_interval": 1
+  },
+  "datasets_dir": "../datasets/processed",
+  "output_dir": "../models/foundation_v1",
+  "description": "Progressive training on multiple text classification domains with curriculum learning"
+}

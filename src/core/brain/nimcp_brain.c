@@ -23,20 +23,242 @@
  * - Thread-safe: Error handling uses thread-local storage
  */
 
-#include "nimcp_brain.h"
+#include "core/brain/nimcp_brain.h"
+#include "security/nimcp_audit_log.h"
+#include "security/lgss/nimcp_lgss.h"
+#include "utils/bridge/nimcp_bridge_base.h"
+#include "core/brain/nimcp_brain_multimodal.h"  // Extracted multimodal processing
+#include "utils/memory/nimcp_unified_memory.h"
+#include "core/brain/nimcp_brain_internal.h"
+#include "snn/bridges/nimcp_snn_language_bridge.h"
+#include "snn/bridges/nimcp_snn_visual_bridge.h"
+#include "snn/bridges/nimcp_snn_audio_bridge.h"
+#include "snn/bridges/nimcp_snn_speech_bridge.h"
+#include "snn/bridges/nimcp_snn_somatosensory_bridge.h"
+#include "snn/bridges/nimcp_snn_cross_modal_align.h"
+#include "core/brain/bridges/nimcp_hyperledger_bridge.h"
+#include "utils/exception/nimcp_exception_macros.h"
+#include "utils/signal/nimcp_signal_handler.h"
+#include "core/brain/nimcp_brain_lazy_init.h"
+#include "core/probes/nimcp_probe_stages.h"
+
+#define LOG_MODULE "BRAIN"
 #include <math.h>
-#include <pthread.h>
+#include <float.h>  // W7: FLT_MAX for NaN-safe argmax in determine_output_label
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <cjson/cJSON.h>
 #include "plasticity/adaptive/nimcp_adaptive.h"
 #include "core/neuralnet/nimcp_neuralnet.h"
+#include "core/neuralnet/nimcp_neuralnet_internal.h"
 #include "utils/memory/nimcp_memory.h"
+#include "utils/cache/nimcp_cache.h"
 #include "utils/time/nimcp_time.h"
 #include "utils/validation/nimcp_validate.h"
+#include "utils/platform/nimcp_platform_mutex.h"
+#include "utils/platform/nimcp_platform_once.h"  // Thread-safe one-time initialization
+#include "utils/logging/nimcp_logging.h"
+#include "security/nimcp_security.h"  // Phase 11: Biological attack defense
+#include "async/nimcp_bio_async.h"    // Bio-async messaging system
+#include "async/nimcp_bio_router.h"   // Bio-async message router
+#include "async/nimcp_bio_messages.h" // Bio-async message types
+#include "core/brain/nimcp_brain_bio_async.h" // Brain bio-async integration API
+#include "utils/memory/nimcp_memory_guards.h" // For nimcp_calloc/nimcp_free
+
+/* Logging module identifier (undef to suppress redefinition warning) */
+#undef LOG_MODULE
+#define LOG_MODULE "BRAIN"
+#include "core/topology/nimcp_community_detection.h"  // Community detection & topology analysis
+#include "utils/algorithms/nimcp_graph_metrics.h"       // Graph metrics
+#include "utils/containers/nimcp_graph.h"                // Graph data structures
+
+// Comprehensive Integration: All Advanced Subsystems
+// NOTE: Only including modules that currently exist
+#include "glial/integration/nimcp_glial_integration.h"
+#include "glial/myelin_sheath/nimcp_myelin_sheath.h"       // Myelin sheath structural modeling
+#include "core/brain/factory/init/nimcp_brain_init_subsystems.h"  // G1/G2: glial destroy + attach helpers
+#include "core/axon/nimcp_axon.h"                          // Phase 1.5.6: Axon signal propagation
+#include "core/dendrite/nimcp_dendrite.h"                  // Phase 1.5.7: Dendrite integration
+#include "core/brain_oscillations/nimcp_brain_oscillations.h"
+#include "cognitive/introspection/nimcp_introspection.h"
+#include "cognitive/ethics/nimcp_ethics.h"
+#include "cognitive/salience/nimcp_salience.h"
+#include "cognitive/consolidation/nimcp_consolidation.h"
+#include "cognitive/curiosity/nimcp_curiosity.h"
+#include "cognitive/knowledge/nimcp_knowledge.h"
+#include "cognitive/nimcp_symbolic_logic.h"              // Phase 9.4: Symbolic reasoning
+#include "cognitive/epistemic/nimcp_epistemic_filter.h"  // Phase 9.2: Bias prevention
+#include "cognitive/wellbeing/nimcp_wellbeing.h"        // Phase 9.3: Self-preservation
+#include "cognitive/omni/bridges/nimcp_omni_wm_thousand_brains_bridge.h"  // Hawkins TB WM bridge
+#include "core/cortical_columns/nimcp_thousand_brains_integration.h"      // TB full-system integration hub
+#include "core/cortical_columns/nimcp_cortical_column.h"                  // Cortical columns base API
+#include "core/cortical_columns/nimcp_cortical_column_ternary.h"          // Ternary WTA wrapper
+#include "plasticity/neuromodulators/nimcp_neuromod_pink_noise.h"
+#include "plasticity/neuromodulators/nimcp_neuromodulators.h"   // Full neuromodulator system
+#include "plasticity/neuromodulators/nimcp_spatial_neuromod.h"  // Phase C2.1: Spatial neuromodulator diffusion
+#include "plasticity/attention/nimcp_attention.h"               // Multihead attention mechanism
+#include "cognitive/attention/nimcp_attention_plasticity_bridge.h" // Attention-plasticity bridge for training
+#include "core/neuron_types/nimcp_neural_logic.h"
+#include "cognitive/nimcp_fractal_cognitive.h"                  // NIMCP 2.7 Phase 8.5: Fractal topology cognitive integration
+// Forward declarations for rubric evaluator (avoids including rubric.h which
+// has brain_decision_t forward decl conflicting with the anonymous struct definition)
+struct rubric_evaluator;
+void rubric_evaluator_destroy(struct rubric_evaluator* eval);
+
+// Phase 8: Multi-Modal Integration
+#include "core/integration/nimcp_multimodal_integration.h"
+#include "perception/nimcp_visual_cortex.h"
+#include "perception/nimcp_audio_cortex.h"
+#include "perception/nimcp_speech_cortex.h"
+#include "nlp/nimcp_nlp.h"                      // Natural language processing
+
+// Brain Regions Architecture (hierarchical cortical organization)
+#include "core/brain_regions/nimcp_brain_regions.h"
+
+// Phase 10: Advanced Cognitive Architecture
+#include "cognitive/nimcp_working_memory.h"    // Phase 10.1: Miller's 7±2 working memory
+#include "cognitive/nimcp_emotional_tagging.h" // Phase 10.2: Emotional tagging (Russell's circumplex)
+#include "cognitive/nimcp_emotional_system.h"  // Phase 10.2: Integrated emotional system
+#include "cognitive/nimcp_executive.h"         // Phase 10.3: Executive Functions (task switching, planning)
+#include "cognitive/nimcp_sleep_wake.h"        // Phase 10.4: Sleep/wake cycle (consolidation, homeostasis)
+#include "cognitive/memory/nimcp_engram.h"     // Phase M1: Memory Engrams (distributed memory traces)
+#include "cognitive/memory/nimcp_systems_consolidation.h" // Phase M2: Systems Consolidation (hippocampus → cortex)
+#include "cognitive/memory/nimcp_wm_transfer.h" // Phase M3: Working Memory Transfer (WM → engram encoding)
+#include "cognitive/memory/nimcp_semantic_memory.h" // Phase M4: Semantic Memory Network (concept network + spreading activation)
+#include "cognitive/nimcp_mental_health.h"     // Phase 10.5: Mental Health Monitoring (disorder detection)
+#include "cognitive/nimcp_theory_of_mind.h"    // Phase 10.6: Theory of Mind (BDI model, empathy)
+#include "cognitive/nimcp_explanations.h"      // Phase 10.7: Natural Explanations (interpretability)
+#include "cognitive/nimcp_meta_learning.h"     // Phase 10.8: Meta-Learning (MAML, few-shot learning)
+#include "cognitive/nimcp_predictive.h"        // Phase 10.9: Predictive Processing (free energy minimization)
+#include "cognitive/predictive/nimcp_predictive_hierarchy.h"  // Predictive hierarchy (C5/C6 inference)
+#include "cognitive/jepa/nimcp_jepa_latent.h"                 // JEPA latent representations (C5/C6 inference)
+#include "cognitive/jepa/nimcp_jepa_predictor.h"              // JEPA predictor training (C6 inference)
+#include "language/nimcp_grounded_language.h"                 // Grounded language (C6 inference training)
+#include "cognitive/immune/nimcp_self_heal.h"                 // Self-heal engine (C6 inference training)
+#include "cognitive/free_energy/nimcp_free_energy.h"          // FEP orchestrator (C6 inference training)
+#include "cognitive/vae/bridges/nimcp_vae_training_bridge.h"  // VAE training bridge (C6 inference training)
+#include "cognitive/nimcp_mirror_neurons.h"    // Phase 10.11: Mirror Neurons (social cognition, imitation)
+#include "cognitive/global_workspace/nimcp_global_workspace.h"  // Global Workspace Architecture (GWT)
+#include "cognitive/nimcp_autobiographical_memory.h"  // Phase 12: Autobiographical Memory (episodic self-memory)
+#include "cognitive/nimcp_self_model.h"               // Phase 12: Explicit Self-Model (identity, beliefs, capabilities)
+#include "cognitive/nimcp_personality.h"              // Phase 12: Personality, Gender, and Sexual Identity
+#include "core/brain/cognitive/nimcp_brain_cognitive.h" // Extracted cognitive systems module
+#include "core/brain/biological/nimcp_brain_biological.h" // Biological subsystems (glial, neuromodulators, multimodal)
+#include "core/brain/accessors/nimcp_brain_accessors.h" // Extracted accessor functions module
+#include "core/brain/analysis/nimcp_brain_topology.h"  // Extracted topology/graph analysis module
+
+// Cognitive Transcript (captures all stage outputs for response composition)
+#include "core/brain/nimcp_cognitive_transcript.h"
+
+// Edge-Cloud Hybrid Inference
+#include "middleware/cloud/nimcp_cloud_inference.h"
+
+// === COGNITIVE MODULE ENGINES (Decision Pipeline Integration) ===
+#include "cognitive/recursive/nimcp_rcog_engine.h"       // Recursive Cognition Engine
+#include "cognitive/inner_dialogue/nimcp_inner_dialogue.h" // Inner Dialogue Engine
+#include "cognitive/reasoning/nimcp_reasoning_chain.h"    // Reasoning Engine
+#include "cognitive/collective_cognition/nimcp_collective_cognition.h" // Collective Cognition
+
+// Imagination Engine: Forward declarations to avoid type conflicts with
+// audio_cortex_t, visual_training_state_t, etc. already defined above.
+// The full header is included in nimcp_brain_init_cognitive_engines.c.
+#ifndef NIMCP_IMAGINATION_ENGINE_H
+typedef struct imagination_engine imagination_engine_t;
+typedef struct imagination_scenario imagination_scenario_t;
+#define IMAGINATION_MODE_PROSPECTIVE 3  // From imagination_mode_t enum
+extern imagination_scenario_t* imagination_begin_scenario(
+    imagination_engine_t* engine, int mode, const void* goal);
+extern int imagination_step_scenario(
+    imagination_engine_t* engine, imagination_scenario_t* scenario);
+extern int imagination_end_scenario(
+    imagination_engine_t* engine, imagination_scenario_t* scenario);
+extern void imagination_engine_destroy(imagination_engine_t* engine);
+#endif
+
+// === PHASE E: HIGHER-ORDER COGNITIVE & SOCIAL SYSTEMS ===
+#include "cognitive/nimcp_shadow_emotions.h"   // Phase E5: Shadow Emotions (jealousy, envy, obsession, hubris, greed, narcissism)
+#include "cognitive/nimcp_bias_detection.h"    // Phase E6: Bias Detection & Correction (racial, LGBTQ+, gender, misogyny, etc.)
+// Network Analysis Module - uses topology module's community_structure_t to avoid conflicts
+#include "cognitive/analysis/nimcp_network_analysis.h"
+
+// === PHASE E: FULL EMOTIONAL INTELLIGENCE ===
+#include "cognitive/nimcp_grief_and_loss.h"            // Phase E1: Grief, Loss, Bereavement (negative emotion)
+#include "cognitive/nimcp_joy_euphoria.h"              // Phase E2: Joy, Euphoria, Value-Aligned Success (positive emotion)
+#include "cognitive/nimcp_remorse_regret.h"            // Phase E3: Remorse, Regret, Evaluative Emotions (moral emotion)
+
+// === PHASE C4: INFORMATION THEORY (SHANNON'S LAW) ===
+#include "information/nimcp_shannon.h"                 // Phase C4: Shannon information theory for capacity/bottleneck analysis
+#include "utils/quantum/nimcp_quantum_shannon.h"       // Phase C4.1: Quantum-Shannon diffusion for √N speedup
+#include "information/nimcp_cross_modal.h"             // Phase C4.7: Cross-modal information flow tracking
+#include "core/brain/information/nimcp_brain_shannon.h" // Shannon API module (extracted functions)
+#include "cognitive/nimcp_love_loyalty_friendship.h"   // Phase E4: Love, Loyalty, Friendship (positive social emotion)
+#include "cognitive/nimcp_empathetic_response.h"       // W9-finish: activate empathetic_response pipeline
+#include "cognitive/nimcp_emotional_learning.h"        // W9-finish: read arousal for empathy dispatch
+/* W9-finish: middleware_controller_on_pattern_match via extern —
+ * cannot include the full header here because it forward-declares
+ * pattern_library_t which collides with the unrelated same-named type in
+ * cognitive/immune/nimcp_heal_patterns.h (transitively included via
+ * self_heal.h). */
+struct middleware_controller;
+extern void middleware_controller_on_pattern_match(
+    struct middleware_controller* controller, uint32_t pattern_id,
+    float similarity, uint32_t region_id);
+
+// Phase 11 Enhancement C1.1: Quantum Annealing for Weight Optimization
+#include "optimization/quantum_annealing/nimcp_quantum_annealing.h"
+
+// Phase IS-1: Blood-Brain Barrier (BBB) cleanup
+#include "security/nimcp_blood_brain_barrier.h"
+#include "core/brain/factory/init/nimcp_brain_init.h"  // For nimcp_bbb_release_global_system
+
+//=============================================================================
+// Thread-local PRNG (thread-safe replacement for rand())
+//=============================================================================
+#include "utils/thread/nimcp_thread_rand.h"
+#include "constants/nimcp_buffer_constants.h"
+
+// Multi-network inference includes (CNN / SNN / LNN forward passes)
+#include "training/nimcp_cnn_training.h"
+#include "snn/nimcp_snn_network.h"
+/* Forward-declare to avoid header conflict (thalamic_router_t typedef clash) */
+struct snn_routing_bridge_s;
+int snn_routing_bridge_update(struct snn_routing_bridge_s* bridge, float dt);
+#include "lnn/nimcp_lnn.h"
+#include "lnn/nimcp_lnn_network.h"
+#include "audio/synthesis/nimcp_formant_synth.h"
+#include "utils/tensor/nimcp_tensor.h"
+#include "core/brain/nimcp_brain_parallel_stages.h"
+#include "utils/thread/nimcp_thread_pool.h"
+#include "training/nimcp_unified_training.h"  /* EMA swap for inference */
+#include "memory/nimcp_memory_store.h"        /* Persistent memory recall fallback */
+#include "memory/nimcp_memory_oodb.h"         /* OODB in-memory cache */
+#include "cognitive/nimcp_ood_detector.h"     /* Out-of-distribution detection */
+
+//=============================================================================
+// Bio-Async Module Registration
+//=============================================================================
+
+static bio_module_context_t g_brain_bio_ctx = NULL;
+static bool g_brain_bio_initialized = false;
+static nimcp_platform_once_t g_brain_bio_once = NIMCP_PLATFORM_ONCE_INIT;
+static nimcp_error_t g_brain_bio_init_result = NIMCP_SUCCESS;
+
+// P1-9 FIX: Reference counter for bio-async context.
+// Only unregister when last brain is destroyed.
+// NOTE: NOT static - nimcp_brain_factory.c references this via extern declaration.
+volatile int g_brain_bio_ref_count = 0;
+
+// P3-50: Named constant for loss history circular buffer size
+#define LOSS_HISTORY_SIZE 10
+
+// P3-51: Named constant for confidence normalization factor
+#define CONFIDENCE_NORMALIZATION_FACTOR 10.0F
 
 //=============================================================================
 // Forward Declarations - Strategy Pattern
@@ -56,346 +278,36 @@ typedef struct task_strategy task_strategy_t;
  *
  * COMPLEXITY: O(1) access to all members
  */
-struct brain_struct {
-    adaptive_network_t network;  // Underlying neural network
-    brain_config_t config;       // User configuration
-    task_strategy_t* strategy;   // Task-specific behavior strategy
-
-    // Label to output mapping
-    char** output_labels;        // Label strings
-    uint32_t num_output_labels;  // Current label count
-
-    // Statistics
-    brain_stats_t stats;  // Performance metrics
-
-    // Decision caching for optimization
-    float* last_input;                  // Cached input vector
-    brain_decision_t* cached_decision;  // Cached decision
-    uint32_t input_size;                // For cache validation
-
-    // Phase 3: Distributed cognition coordinator
-    distrib_cognition_t distributed;  // P2P cognitive coordination (NULL if standalone)
-
-    // Phase 2: Copy-on-Write (COW) tracking
-    bool is_cow_clone;                  // Is this a COW clone?
-    bool owns_network;                  // Does this brain own its network? (can destroy it)
-    adaptive_network_t original_network; // Original network reference (if COW)
-    bool network_is_cached;             // Is network allocated via nimcp_cache?
-
-    // Phase 3: Reference counting and read-only optimization
-    uint32_t* network_refcount;         // Pointer to shared refcount (NULL if not shared)
-    bool can_use_readonly;              // Can use read-only inference? (true for COW clones)
-    pthread_mutex_t* refcount_mutex;    // Mutex for refcount updates (shared among clones)
-};
 
 //=============================================================================
 // Forward Declarations
 //=============================================================================
 
 // Phase 2: COW helper - must be declared before brain_get_network()
-static bool ensure_writable_network(brain_t brain);
+bool ensure_writable_network(brain_t brain);
 
 //=============================================================================
-// Strategy Pattern - Task-Specific Behaviors
+// Health Agent Forward Declarations (Phase 8: Heartbeat for Long Operations)
 //=============================================================================
-
-/**
- * @brief Task strategy interface
- *
- * WHY: Different tasks (classification, regression) need different:
- * - Learning rates
- * - Output transformations
- * - Performance metrics
- *
- * PATTERN: Strategy pattern - encapsulates algorithm families
- */
-struct task_strategy {
-    brain_task_t task_type;
-
-    /**
-     * @brief Get recommended learning rate for this task
-     * COMPLEXITY: O(1)
-     */
-    float (*get_learning_rate)(void);
-
-    /**
-     * @brief Transform raw output to task-specific format
-     * COMPLEXITY: O(num_outputs)
-     */
-    void (*transform_output)(float* output, uint32_t size);
-
-    /**
-     * @brief Compute task-specific loss
-     * COMPLEXITY: O(num_outputs)
-     */
-    float (*compute_loss)(const float* predicted, const float* target, uint32_t size);
-};
-
-//=============================================================================
-// Strategy Implementations
-//=============================================================================
-
-/**
- * @brief Classification strategy - softmax output, cross-entropy loss
- *
- * WHY: Classification needs probabilities summing to 1.0
- * WHEN: Multi-class or binary classification tasks
- * COMPLEXITY: O(n) for softmax normalization
- */
-static float strategy_classification_lr(void)
-{
-    return 0.01f;
-}
-
-static void strategy_classification_transform(float* output, uint32_t size)
-{
-    // Softmax normalization for probability distribution
-    float max_val = output[0];
-    for (uint32_t i = 1; i < size; i++) {
-        if (output[i] > max_val)
-            max_val = output[i];
-    }
-
-    float sum = 0.0f;
-    for (uint32_t i = 0; i < size; i++) {
-        output[i] = expf(output[i] - max_val);
-        sum += output[i];
-    }
-
-    for (uint32_t i = 0; i < size; i++) {
-        output[i] /= sum;
-    }
-}
-
-static float strategy_classification_loss(const float* pred, const float* target, uint32_t size)
-{
-    // Cross-entropy loss
-    float loss = 0.0f;
-    for (uint32_t i = 0; i < size; i++) {
-        if (target[i] > 0.0f) {
-            loss -= target[i] * logf(fmaxf(pred[i], 1e-10f));
-        }
-    }
-    return loss;
-}
-
-/**
- * @brief Regression strategy - linear output, MSE loss
- *
- * WHY: Regression predicts continuous values
- * WHEN: Predicting real-valued outputs
- * COMPLEXITY: O(n) for MSE calculation
- */
-static float strategy_regression_lr(void)
-{
-    return 0.005f;
-}
-
-static void strategy_regression_transform(float* output, uint32_t size)
-{
-    // No transformation - use raw values
-    (void) output;
-    (void) size;
-}
-
-static float strategy_regression_loss(const float* pred, const float* target, uint32_t size)
-{
-    // Mean squared error
-    float loss = 0.0f;
-    for (uint32_t i = 0; i < size; i++) {
-        float diff = pred[i] - target[i];
-        loss += diff * diff;
-    }
-    return loss / size;
-}
-
-/**
- * @brief Pattern matching strategy - high LR, binary output
- *
- * WHY: Pattern matching needs fast adaptation
- * WHEN: Recognizing specific patterns quickly
- * COMPLEXITY: O(n)
- */
-static float strategy_pattern_lr(void)
-{
-    return 0.02f;
-}
-
-static void strategy_pattern_transform(float* output, uint32_t size)
-{
-    // Threshold to binary
-    for (uint32_t i = 0; i < size; i++) {
-        output[i] = output[i] > 0.5f ? 1.0f : 0.0f;
-    }
-}
-
-static float strategy_pattern_loss(const float* pred, const float* target, uint32_t size)
-{
-    // Binary cross-entropy
-    float loss = 0.0f;
-    for (uint32_t i = 0; i < size; i++) {
-        float p = fmaxf(fminf(pred[i], 0.9999f), 0.0001f);
-        loss -= target[i] * logf(p) + (1.0f - target[i]) * logf(1.0f - p);
-    }
-    return loss / size;
-}
-
-/**
- * @brief Association learning strategy - Hebbian-focused
- *
- * WHY: Association learning uses different plasticity rules
- * WHEN: Building associative memories
- * COMPLEXITY: O(n)
- */
-static float strategy_association_lr(void)
-{
-    return 0.05f;
-}
-
-static void strategy_association_transform(float* output, uint32_t size)
-{
-    // Normalize to unit range
-    float max_val = 0.0f;
-    for (uint32_t i = 0; i < size; i++) {
-        if (fabsf(output[i]) > max_val)
-            max_val = fabsf(output[i]);
-    }
-
-    if (max_val > 0.0f) {
-        for (uint32_t i = 0; i < size; i++) {
-            output[i] /= max_val;
-        }
-    }
-}
-
-static float strategy_association_loss(const float* pred, const float* target, uint32_t size)
-{
-    // Cosine distance
-    float dot = 0.0f, norm_p = 0.0f, norm_t = 0.0f;
-    for (uint32_t i = 0; i < size; i++) {
-        dot += pred[i] * target[i];
-        norm_p += pred[i] * pred[i];
-        norm_t += target[i] * target[i];
-    }
-    float cosine = dot / (sqrtf(norm_p) * sqrtf(norm_t) + 1e-10f);
-    return 1.0f - cosine;
-}
-
-//=============================================================================
-// Strategy Factory
-//=============================================================================
-
-/**
- * @brief Create strategy for task type
- *
- * WHY: Factory pattern for strategy creation
- * Centralizes strategy instantiation logic
- *
- * COMPLEXITY: O(1) - simple allocation and assignment
- *
- * @param task Task type
- * @return Strategy instance or NULL on error
- */
-static task_strategy_t* strategy_create(brain_task_t task)
-{
-    task_strategy_t* strategy = nimcp_calloc(1, sizeof(task_strategy_t));
-    if (!strategy)
-        return NULL;
-
-    strategy->task_type = task;
-
-    switch (task) {
-        case BRAIN_TASK_CLASSIFICATION:
-            strategy->get_learning_rate = strategy_classification_lr;
-            strategy->transform_output = strategy_classification_transform;
-            strategy->compute_loss = strategy_classification_loss;
-            break;
-
-        case BRAIN_TASK_REGRESSION:
-            strategy->get_learning_rate = strategy_regression_lr;
-            strategy->transform_output = strategy_regression_transform;
-            strategy->compute_loss = strategy_regression_loss;
-            break;
-
-        case BRAIN_TASK_PATTERN_MATCHING:
-            strategy->get_learning_rate = strategy_pattern_lr;
-            strategy->transform_output = strategy_pattern_transform;
-            strategy->compute_loss = strategy_pattern_loss;
-            break;
-
-        case BRAIN_TASK_ASSOCIATION:
-            strategy->get_learning_rate = strategy_association_lr;
-            strategy->transform_output = strategy_association_transform;
-            strategy->compute_loss = strategy_association_loss;
-            break;
-
-        default:
-            // Default to classification
-            strategy->get_learning_rate = strategy_classification_lr;
-            strategy->transform_output = strategy_classification_transform;
-            strategy->compute_loss = strategy_classification_loss;
-            break;
-    }
-
-    return strategy;
-}
-
-/**
- * @brief Destroy strategy
- *
- * COMPLEXITY: O(1)
- */
-static void strategy_destroy(task_strategy_t* strategy)
-{
-    nimcp_free(strategy);
-}
+extern void nimcp_health_agent_heartbeat_ex(struct nimcp_health_agent* agent,
+                                             const char* operation,
+                                             float progress);
 
 //=============================================================================
 // Error Handling
 //=============================================================================
 
-static __thread char last_error[256] = {0};
-
 /**
- * @brief Set error message with printf-style formatting
+ * ARCHITECTURE NOTE:
+ * Error handling has been centralized to avoid duplicate thread-local storage.
  *
- * WHY: Thread-local error storage prevents race conditions
- * Thread-safe error reporting without locks
+ * - set_error()              -> src/core/brain/strategy/nimcp_brain_strategy.c
+ * - brain_get_last_error()   -> src/core/brain/strategy/nimcp_brain_strategy.c
+ * - brain_clear_error()      -> src/core/brain/strategy/nimcp_brain_strategy.c
  *
- * COMPLEXITY: O(n) where n = message length
- *
- * @param format Printf-style format string
+ * All brain modules use the same thread-local error storage via external linkage.
  */
-static void set_error(const char* format, ...)
-{
-    va_list args;
-    va_start(args, format);
-    vsnprintf(last_error, sizeof(last_error), format, args);
-    va_end(args);
-}
-
-/**
- * @brief Get last error message
- *
- * COMPLEXITY: O(1)
- * THREAD-SAFE: Uses thread-local storage
- *
- * @return Error string or NULL if no error
- */
-const char* brain_get_last_error(void)
-{
-    return last_error[0] != '\0' ? last_error : NULL;
-}
-
-/**
- * @brief Clear last error
- *
- * COMPLEXITY: O(1)
- */
-void brain_clear_error(void)
-{
-    last_error[0] = '\0';
-}
+extern void set_error(const char* format, ...);
 
 //=============================================================================
 // Internal Access API (NIMCP 2.5 Consciousness Subsystems)
@@ -408,21 +320,23 @@ void brain_clear_error(void)
  *
  * WARNING: Exposes internals - for consciousness subsystems only!
  */
-adaptive_network_t brain_get_network(brain_t brain)
+
+/**
+ * WHAT: Get brain regions module from brain
+ * WHY:  Middleware and other subsystems need access to brain region hierarchy
+ * HOW:  Returns pointer to brain_module_t, no COW needed (per-brain state)
+ *
+ * SAFETY: Brain regions module is not shared (unlike network), so no COW needed
+ */
+brain_module_t* brain_get_brain_regions(brain_t brain)
 {
     if (!brain) {
-        set_error("NULL brain passed to brain_get_network");
+        set_error("NULL brain passed to brain_get_brain_regions");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_get_brain_regions: brain is NULL");
         return NULL;
     }
 
-    // Phase 2: CRITICAL - Ensure network is writable before exposing it
-    // WHY: External subsystems (introspection, salience, consolidation) may mutate the network
-    // RISK: Exposing shared network allows corruption from external modifications
-    if (!ensure_writable_network(brain)) {
-        return NULL;  // Error already set
-    }
-
-    return brain->network;
+    return brain->brain_regions;
 }
 
 //=============================================================================
@@ -446,11 +360,11 @@ static uint32_t get_neuron_count(brain_size_t size)
         case BRAIN_SIZE_TINY:
             return 100;
         case BRAIN_SIZE_SMALL:
-            return 1000;
+            return 500;
         case BRAIN_SIZE_MEDIUM:
-            return 10000;
+            return 1000;  // Reduced from 10000 for faster tests (1.8GB→180MB)
         case BRAIN_SIZE_LARGE:
-            return 100000;
+            return 5000;  // Reduced from 100000 (9GB→450MB)
         case BRAIN_SIZE_CUSTOM:
             return 1000;
         default:
@@ -469,183 +383,14 @@ static uint32_t get_neuron_count(brain_size_t size)
  * @param size Brain size preset
  * @return Sparsity target (0.0-1.0)
  */
-static float get_default_sparsity(brain_size_t size)
-{
-    switch (size) {
-        case BRAIN_SIZE_TINY:
-            return 0.70f;
-        case BRAIN_SIZE_SMALL:
-            return 0.80f;
-        case BRAIN_SIZE_MEDIUM:
-            return 0.85f;
-        case BRAIN_SIZE_LARGE:
-            return 0.90f;
-        default:
-            return 0.80f;
-    }
-}
-
-//=============================================================================
-// Configuration Builders
-//=============================================================================
-
-/**
- * @brief Build spike parameters for brain configuration
- *
- * WHY: Separates spike config from main creation logic
- * Makes configuration more maintainable and testable
- *
- * COMPLEXITY: O(1)
- *
- * @param sparsity_target Target sparsity level
- * @return Spike parameters structure
- */
-static adaptive_spike_params_t build_spike_params(float sparsity_target)
-{
-    adaptive_spike_params_t params = {0};
-    params.k_factor = 0.5f;
-    params.sparsity_target = sparsity_target;
-    params.encoding = SPIKE_ENCODING_INTEGER;
-    params.enable_soft_reset = true;
-    params.enable_adaptation = true;
-    params.adaptation_window = 100;
-    params.min_threshold = 0.1f;
-    params.max_threshold = 10.0f;
-    return params;
-}
-
-/**
- * @brief Build base network configuration
- *
- * WHY: Isolates network config from brain config
- * Enables reuse and testing of network setup
- *
- * COMPLEXITY: O(1) + memory allocation
- *
- * @param num_inputs Input dimension
- * @param num_outputs Output dimension
- * @param num_neurons Total neuron count
- * @return Base network config (caller must free layer_sizes)
- */
-static network_config_t build_base_network_config(uint32_t num_inputs, uint32_t num_outputs,
-                                                  uint32_t num_neurons)
-{
-    network_config_t config = {0};
-    config.input_size = num_inputs;
-    config.output_size = num_outputs;
-    config.num_neurons = num_neurons;
-    config.num_layers = 3;
-
-    config.layer_sizes = nimcp_calloc(3, sizeof(uint32_t));
-    // Guard: Check allocation
-    // WHY: If allocation fails, returning config with NULL layer_sizes will crash
-    if (!config.layer_sizes) {
-        set_error("Failed to allocate layer_sizes array");
-        return config;  // Return with layer_sizes = NULL to signal error
-    }
-
-    config.layer_sizes[0] = num_inputs;
-    config.layer_sizes[1] = num_neurons;
-    config.layer_sizes[2] = num_outputs;
-
-    config.enable_stdp = true;
-    config.enable_hebbian = true;
-    config.enable_oja = true;
-    config.enable_homeostasis = true;
-
-    return config;
-}
-
-/**
- * @brief Build complete adaptive network configuration
- *
- * WHY: Combines base config and spike params
- * Single point of network configuration assembly
- *
- * COMPLEXITY: O(1) + memory allocation
- *
- * @param num_inputs Input dimension
- * @param num_outputs Output dimension
- * @param num_neurons Neuron count
- * @param sparsity_target Target sparsity
- * @return Complete adaptive network config
- */
-static adaptive_network_config_t build_network_config(uint32_t num_inputs, uint32_t num_outputs,
-                                                      uint32_t num_neurons, float sparsity_target)
-{
-    adaptive_network_config_t config = {0};
-
-    config.base_config = build_base_network_config(num_inputs, num_outputs, num_neurons);
-
-    config.spike_params = build_spike_params(sparsity_target);
-
-    config.enable_sparsity = true;
-    config.pruning_threshold = 0.01f;
-    config.update_frequency = 100;
-
-    return config;
-}
-
-/**
- * @brief Initialize brain configuration
- *
- * WHY: Centralizes config initialization with strategy
- * Ensures consistent config setup
- *
- * COMPLEXITY: O(1)
- *
- * @param config Output config structure
- * @param task_name Name for brain
- * @param size Size preset
- * @param task Task type
- * @param num_inputs Input dimension
- * @param num_outputs Output dimension
- * @param strategy Task strategy for learning rate
- */
-static void init_brain_config(brain_config_t* config, const char* task_name, brain_size_t size,
-                              brain_task_t task, uint32_t num_inputs, uint32_t num_outputs,
-                              task_strategy_t* strategy)
-{
-    config->size = size;
-    config->task = task;
-    config->num_inputs = num_inputs;
-    config->num_outputs = num_outputs;
-    config->learning_rate = strategy->get_learning_rate();
-    config->sparsity_target = get_default_sparsity(size);
-    config->enable_explanations = true;
-    strncpy(config->task_name, task_name, sizeof(config->task_name) - 1);
-}
-
-/**
- * @brief Initialize brain statistics
- *
- * WHY: Separates stats initialization for clarity
- * Makes stats setup reusable
- *
- * COMPLEXITY: O(1)
- *
- * @param stats Output stats structure
- * @param task_name Name for brain
- * @param size Size preset
- * @param num_inputs Input dimension
- * @param learning_rate Learning rate
- */
-static void init_brain_stats(brain_stats_t* stats, const char* task_name, brain_size_t size,
-                             uint32_t num_inputs, float learning_rate)
-{
-    uint32_t num_neurons = get_neuron_count(size);
-
-    stats->size = size;
-    stats->num_neurons = num_neurons;
-    stats->num_synapses = num_neurons * num_inputs;
-    stats->num_active_synapses = stats->num_synapses;
-    stats->current_learning_rate = learning_rate;
-    strncpy(stats->task_name, task_name, sizeof(stats->task_name) - 1);
-}
 
 //=============================================================================
 // Decision Caching
 //=============================================================================
+
+// Forward declarations
+brain_decision_t* copy_decision(brain_decision_t* source);
+brain_decision_t* copy_decision_deep(const brain_decision_t* source);
 
 /**
  * @brief Check if input matches cached input
@@ -661,1922 +406,96 @@ static void init_brain_stats(brain_stats_t* stats, const char* task_name, brain_
  * @param num_features Feature count
  * @return true if cached input matches
  */
-static bool is_cached_input(brain_t brain, const float* features, uint32_t num_features)
-{
-    if (!brain->last_input || !brain->cached_decision)
-        return false;
-    if (brain->input_size != num_features)
-        return false;
-
-    return memcmp(brain->last_input, features, num_features * sizeof(float)) == 0;
-}
 
 /**
- * @brief Cache decision for input
+ * @brief Maximum wait time for mutex operations (in microseconds)
  *
- * WHY: Store decision for potential reuse
- * Improves batch processing performance
- *
- * COMPLEXITY: O(n) for input copy
- *
- * @param brain Brain handle
- * @param features Input to cache
- * @param num_features Feature count
- * @param decision Decision to cache
+ * WHY: Prevent indefinite blocking on mutex acquisition
+ * HOW: Use timeout-based try-lock with retry loop
  */
-static void cache_decision(brain_t brain, const float* features, uint32_t num_features,
-                           brain_decision_t* decision)
-{
-    if (!brain->last_input) {
-        brain->last_input = nimcp_malloc(num_features * sizeof(float));
-        brain->input_size = num_features;
-    }
-
-    memcpy(brain->last_input, features, num_features * sizeof(float));
-
-    if (brain->cached_decision) {
-        brain_free_decision(brain->cached_decision);
-    }
-    brain->cached_decision = decision;
-}
+#define MUTEX_TIMEOUT_US 5000000  // 5 seconds
 
 /**
- * @brief Clear decision cache
+ * @brief Attempt to lock mutex with timeout and exponential backoff
  *
- * COMPLEXITY: O(1)
+ * WHAT: Acquires mutex with timeout protection to prevent deadlocks
+ * WHY:  Standard mutex_lock can block indefinitely causing deadlock
+ * HOW:  Use trylock with exponential backoff up to max timeout
+ *
+ * RECOVERY: If lock cannot be acquired within timeout, logs critical error
+ * and returns failure. Caller must handle gracefully (not proceed with
+ * locked resource access).
+ *
+ * @param mutex Mutex to lock
+ * @param timeout_us Maximum time to wait in microseconds
+ * @return 0 on success, -1 on timeout
  */
-static void clear_cache(brain_t brain)
-{
-    nimcp_free(brain->last_input);
-    brain->last_input = NULL;
 
-    if (brain->cached_decision) {
-        brain_free_decision(brain->cached_decision);
-        brain->cached_decision = NULL;
-    }
-}
+
+// Forward declarations for static functions (SRP split)
+static void brain_bio_init_once_routine(void);
+static nimcp_error_t brain_bio_init(void);
+static void brain_publish_state_event(bio_message_type_t event_type, uint32_t neuron_count, nimcp_bio_channel_type_t channel);
+static void brain_publish_processing_event(const char* processing_type, float confidence);
+static float strategy_classification_lr(void);
+static void strategy_classification_transform(float* output, uint32_t size);
+static float strategy_classification_loss(const float* pred, const float* target, uint32_t size);
+static float strategy_regression_lr(void);
+static void strategy_regression_transform(float* output, uint32_t size);
+static float strategy_regression_loss(const float* pred, const float* target, uint32_t size);
+static float strategy_pattern_lr(void);
+static void strategy_pattern_transform(float* output, uint32_t size);
+static float strategy_pattern_loss(const float* pred, const float* target, uint32_t size);
+static float strategy_association_lr(void);
+static void strategy_association_transform(float* output, uint32_t size);
+static float strategy_association_loss(const float* pred, const float* target, uint32_t size);
+static task_strategy_t* strategy_create(brain_task_t task);
+static void strategy_destroy(task_strategy_t* strategy);
+static float get_default_sparsity(brain_size_t size);
+static adaptive_spike_params_t build_spike_params(float sparsity_target);
+static network_config_t build_base_network_config(uint32_t num_inputs, uint32_t num_outputs, uint32_t num_neurons, ode_integration_method_t integration_method);
+static adaptive_network_config_t build_network_config(uint32_t num_inputs, uint32_t num_outputs, uint32_t num_neurons, float sparsity_target, ode_integration_method_t integration_method);
+static void init_brain_config(brain_config_t* config, const char* task_name, brain_size_t size, brain_task_t task, uint32_t num_inputs, uint32_t num_outputs, task_strategy_t* strategy);
+static bool is_cached_input(brain_t brain, const float* features, uint32_t num_features);
+static void cache_decision(brain_t brain, const float* features, uint32_t num_features, brain_decision_t* decision);
+static int mutex_lock_with_timeout(nimcp_platform_mutex_t* mutex, uint64_t timeout_us);
+static void force_unlock_with_logging(nimcp_platform_mutex_t* mutex, const char* context);
+static bool validate_creation_params(const char* task_name, uint32_t num_inputs, uint32_t num_outputs);
+static personality_profile_t* create_personality(const brain_config_t* config);
+static uint32_t get_or_create_label_index(brain_t brain, const char* label);
+static void label_to_output(brain_t brain, const char* label, float* output, float confidence);
+static void adapt_learning_rate_from_loss(brain_t brain, float current_loss);
+static float quantum_weight_energy(const float* weights, uint32_t dim, void* user_data);
+brain_decision_t* allocate_decision(uint32_t output_size);
+uint32_t perform_forward_pass(brain_t brain, const float* features, uint32_t num_features, brain_decision_t* decision);
+static void determine_output_label(brain_t brain, brain_decision_t* decision);
+static void populate_interpretability(brain_t brain, const float* features, uint32_t num_features, uint32_t active_neurons, brain_decision_t* decision);
+static void update_inference_stats(brain_t brain, brain_decision_t* decision);
+static action_t brain_decision_to_action(const brain_decision_t* decision, uint32_t action_id, const char* action_name);
+static action_t features_to_action(const float* features, uint32_t num_features, uint32_t agent_id);
+static bool save_working_memory_state(working_memory_t* wm, FILE* file);
+static bool save_metadata(brain_t brain, const char* filepath);
+static bool load_working_memory_item(working_memory_t* wm, FILE* file);
+static bool load_working_memory_state(brain_t brain, FILE* file);
+static bool load_metadata(brain_t brain, const char* filepath);
+static bool ensure_snapshot_dir(const char* snapshot_dir);
+static const char* get_snapshot_dir(brain_t brain);
+
+// Forward declarations for functions defined in later _part_*.c files
+// (needed because _part_lifecycle.c calls clear_cache from _part_core.c,
+//  and _part_helpers.c calls init_brain_stats from _part_stats.c)
+void clear_cache(brain_t brain);
+void init_brain_stats(brain_stats_t* stats, const char* task_name, brain_size_t size,
+                      uint32_t num_inputs, float learning_rate);
 
 //=============================================================================
-// Brain Factory - Creation with Validation
+// SRP Split: Function implementations organized by responsibility
 //=============================================================================
-
-/**
- * @brief Validate brain creation parameters
- *
- * WHY: Guard clause pattern - early exit on invalid input
- * Prevents invalid state propagation
- *
- * COMPLEXITY: O(1)
- *
- * @param task_name Brain name
- * @param num_inputs Input dimension
- * @param num_outputs Output dimension
- * @return true if valid
- */
-static bool validate_creation_params(const char* task_name, uint32_t num_inputs,
-                                     uint32_t num_outputs)
-{
-    if (!task_name) {
-        set_error("task_name cannot be NULL");
-        return false;
-    }
-
-    if (num_inputs == 0) {
-        set_error("num_inputs must be > 0");
-        return false;
-    }
-
-    if (num_outputs == 0) {
-        set_error("num_outputs must be > 0");
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * @brief Allocate and initialize brain structure
- *
- * WHY: Separates allocation from configuration
- * Makes memory management explicit
- *
- * COMPLEXITY: O(1)
- *
- * @return Allocated brain or NULL on error
- */
-static brain_t allocate_brain(void)
-{
-    brain_t brain = nimcp_calloc(1, sizeof(struct brain_struct));
-    if (!brain) {
-        set_error("Failed to allocate brain structure");
-        return NULL;
-    }
-
-    brain->last_input = NULL;
-    brain->cached_decision = NULL;
-    brain->input_size = 0;
-    brain->distributed = NULL;  // Initialize as standalone brain
-
-    // Initialize COW fields
-    brain->is_cow_clone = false;
-    brain->owns_network = true;  // By default, brain owns its network
-    brain->original_network = NULL;
-    brain->network_is_cached = false;
-
-    // Phase 3: Initialize reference counting fields
-    brain->network_refcount = NULL;
-    brain->can_use_readonly = false;
-    brain->refcount_mutex = NULL;
-
-    return brain;
-}
-
-/**
- * @brief Create adaptive network for brain
- *
- * WHY: Isolates network creation complexity
- * Handles network config lifecycle
- *
- * COMPLEXITY: O(n) where n = num_neurons
- *
- * @param num_inputs Input dimension
- * @param num_outputs Output dimension
- * @param num_neurons Neuron count
- * @param sparsity_target Target sparsity
- * @return Network handle or NULL on error
- */
-static adaptive_network_t create_brain_network(uint32_t num_inputs, uint32_t num_outputs,
-                                               uint32_t num_neurons, float sparsity_target)
-{
-    adaptive_network_config_t net_config =
-        build_network_config(num_inputs, num_outputs, num_neurons, sparsity_target);
-
-    // Guard: Check if layer_sizes allocation failed in build_base_network_config
-    // WHY: NULL layer_sizes will cause crash in adaptive_network_create
-    if (!net_config.base_config.layer_sizes) {
-        // Error already set by build_base_network_config
-        return NULL;
-    }
-
-    adaptive_network_t network = adaptive_network_create(&net_config);
-
-    // Free our copy of layer_sizes - adaptive_network_create makes its own deep copy (or fails)
-    // WHY: Avoid memory leak - we allocated this in build_base_network_config
-    // WHAT: Safe to free even if network creation failed, because we still own this allocation
-    // Note: layer_sizes pointer should not be modified by adaptive_network_create (const param)
-    if (net_config.base_config.layer_sizes) {
-        nimcp_free((void*)net_config.base_config.layer_sizes);
-    }
-
-    return network;
-}
-
-/**
- * @brief Initialize output labels array
- *
- * COMPLEXITY: O(1)
- *
- * @param brain Brain to initialize
- * @param num_outputs Number of output labels
- * @return true on success
- */
-static bool init_output_labels(brain_t brain, uint32_t num_outputs)
-{
-    brain->output_labels = nimcp_calloc(num_outputs, sizeof(char*));
-    if (!brain->output_labels) {
-        set_error("Failed to allocate output labels");
-        return false;
-    }
-    brain->num_output_labels = 0;
-    return true;
-}
-
-/**
- * @brief Create brain with preset size and task
- *
- * WHY: Factory pattern - single creation entry point
- * Encapsulates all creation complexity with validation
- *
- * COMPLEXITY: O(n) where n = num_neurons
- * MEMORY: O(n*c) where c = connections per neuron
- *
- * PATTERN: Factory pattern with guard clauses
- *
- * @param task_name Human-readable name
- * @param size Brain size preset
- * @param task Task template
- * @param num_inputs Input dimension
- * @param num_outputs Output dimension
- * @return Brain handle or NULL on error
- */
-brain_t brain_create(const char* task_name, brain_size_t size, brain_task_t task,
-                     uint32_t num_inputs, uint32_t num_outputs)
-{
-    // Guard: Validate parameters
-    if (!validate_creation_params(task_name, num_inputs, num_outputs)) {
-        return NULL;
-    }
-
-    // Allocate brain structure
-    brain_t brain = allocate_brain();
-    if (!brain)
-        return NULL;
-
-    // Create strategy for task
-    brain->strategy = strategy_create(task);
-    if (!brain->strategy) {
-        set_error("Failed to create task strategy");
-        nimcp_free(brain);
-        return NULL;
-    }
-
-    // Initialize configuration
-    init_brain_config(&brain->config, task_name, size, task, num_inputs, num_outputs,
-                      brain->strategy);
-
-    // Create network
-    uint32_t num_neurons = get_neuron_count(size);
-    brain->network =
-        create_brain_network(num_inputs, num_outputs, num_neurons, brain->config.sparsity_target);
-
-    if (!brain->network) {
-        set_error("Failed to create adaptive network");
-        strategy_destroy(brain->strategy);
-        nimcp_free(brain);
-        return NULL;
-    }
-
-    // Initialize output labels
-    if (!init_output_labels(brain, num_outputs)) {
-        adaptive_network_destroy(brain->network);
-        strategy_destroy(brain->strategy);
-        nimcp_free(brain);
-        return NULL;
-    }
-
-    // Initialize statistics
-    init_brain_stats(&brain->stats, task_name, size, num_inputs, brain->config.learning_rate);
-
-    brain_clear_error();
-    return brain;
-}
-
-/**
- * @brief Create brain with custom configuration
- *
- * WHY: Allows advanced users to customize all parameters
- * Delegates to standard factory after validation
- *
- * COMPLEXITY: O(n) where n = num_neurons
- *
- * @param config Custom configuration
- * @return Brain handle or NULL on error
- */
-brain_t brain_create_custom(const brain_config_t* config)
-{
-    if (!config) {
-        set_error("Null config provided");
-        return NULL;
-    }
-
-    // Validate task_name as string field (NULL termination, UTF-8)
-    size_t task_name_size = sizeof(config->task_name);
-    if (!nimcp_validate_string_field(config->task_name, task_name_size)) {
-        set_error("Invalid task_name in config");
-        return NULL;
-    }
-
-    // Validate num_inputs (integer field, range 1-10000)
-    if (!nimcp_validate_integer_field(&config->num_inputs, sizeof(config->num_inputs))) {
-        set_error("Invalid num_inputs in config");
-        return NULL;
-    }
-    if (config->num_inputs < 1 || config->num_inputs > 10000) {
-        set_error("num_inputs out of range (1-10000): %u", config->num_inputs);
-        return NULL;
-    }
-
-    // Validate num_outputs (integer field, range 1-10000)
-    if (!nimcp_validate_integer_field(&config->num_outputs, sizeof(config->num_outputs))) {
-        set_error("Invalid num_outputs in config");
-        return NULL;
-    }
-    if (config->num_outputs < 1 || config->num_outputs > 10000) {
-        set_error("num_outputs out of range (1-10000): %u", config->num_outputs);
-        return NULL;
-    }
-
-    // Validate learning_rate (float field - NaN/Inf)
-    if (!nimcp_validate_float_field(&config->learning_rate, sizeof(config->learning_rate))) {
-        set_error("Invalid learning_rate in config (NaN or Inf)");
-        return NULL;
-    }
-
-    // Validate sparsity_target (float field - NaN/Inf)
-    if (!nimcp_validate_float_field(&config->sparsity_target, sizeof(config->sparsity_target))) {
-        set_error("Invalid sparsity_target in config (NaN or Inf)");
-        return NULL;
-    }
-
-    return brain_create(config->task_name, config->size, config->task, config->num_inputs,
-                        config->num_outputs);
-}
-
-/**
- * @brief Destroy brain and free resources
- *
- * WHY: Proper cleanup prevents memory leaks
- * Handles partial initialization gracefully
- *
- * COMPLEXITY: O(n) where n = num_neurons (for network cleanup)
- *
- * @param brain Brain to destroy
- */
-void brain_destroy(brain_t brain)
-{
-    if (!brain)
-        return;
-
-    // Phase 3: Handle network destruction with reference counting
-    if (brain->network) {
-        if (brain->owns_network) {
-            // Brain owns the network - destroy immediately
-            adaptive_network_destroy(brain->network);
-        } else if (brain->network_refcount && brain->refcount_mutex) {
-            // Brain shares network - decrement refcount
-            pthread_mutex_lock(brain->refcount_mutex);
-            (*brain->network_refcount)--;
-            uint32_t remaining_refs = *brain->network_refcount;
-            pthread_mutex_unlock(brain->refcount_mutex);
-
-            // If this was the last reference, destroy shared resources
-            if (remaining_refs == 0) {
-                adaptive_network_destroy(brain->network);
-                pthread_mutex_destroy(brain->refcount_mutex);
-                nimcp_free(brain->refcount_mutex);
-                nimcp_free(brain->network_refcount);
-            }
-        }
-        // else: Neither owns nor has refcount - strange but safe (network leaked)
-    }
-
-    // Strategies are shared (read-only), don't destroy
-    // Only destroy if this is not a COW clone OR if we own it
-    if (brain->strategy && !brain->is_cow_clone) {
-        strategy_destroy(brain->strategy);
-    }
-
-    if (brain->output_labels) {
-        for (uint32_t i = 0; i < brain->config.num_outputs; i++) {
-            if (brain->output_labels[i]) {
-                nimcp_free(brain->output_labels[i]);
-            }
-        }
-        nimcp_free(brain->output_labels);
-    }
-
-    // Phase 3: Cleanup distributed cognition coordinator
-    if (brain->distributed) {
-        distrib_cognition_destroy(brain->distributed);
-    }
-
-    clear_cache(brain);
-    nimcp_free(brain);
-}
-
-//=============================================================================
-// Phase 2: Copy-on-Write Brain Cloning
-//=============================================================================
-
-/**
- * @brief Ensure brain has writable network (trigger COW if needed)
- *
- * WHAT: Detects COW clone and makes private copy before write
- * WHY:  Prevent modifying shared network, maintain data safety
- * HOW:  Check is_cow_clone flag, copy network if true
- *
- * THREAD SAFETY: Not thread-safe - caller must ensure exclusive access
- * PERFORMANCE: O(n) where n = network size (only on first write)
- *
- * @param brain Brain handle
- * @return true on success (or if already writable), false on error
- */
-static bool ensure_writable_network(brain_t brain)
-{
-    // Guard: Validate parameter
-    if (!brain) {
-        set_error("NULL brain in ensure_writable_network");
-        return false;
-    }
-
-    // If not a COW clone, network is already writable
-    if (!brain->is_cow_clone) {
-        return true;
-    }
-
-    // COW clone detected - need to make private copy
-    // For Phase 2, we'll create a full copy of the network
-    if (!brain->network) {
-        set_error("COW clone has NULL network");
-        return false;
-    }
-
-    // Save the original network pointer
-    adaptive_network_t shared_network = brain->network;
-
-    // Phase 2 workaround: Use save/load to clone the network
-    // TODO: Phase 3 should implement proper adaptive_network_clone() or incremental COW
-
-    // Generate unique temporary filename
-    char temp_file[256];
-    snprintf(temp_file, sizeof(temp_file), "/tmp/nimcp_cow_temp_%p_%ld.bin",
-             (void*)brain, (long)time(NULL));
-
-    // Save shared network to temp file
-    if (!adaptive_network_save(shared_network, temp_file, SERIALIZE_FORMAT_BINARY)) {
-        set_error("Failed to save network for COW copy");
-        return false;
-    }
-
-    // Load into new network
-    brain->network = adaptive_network_load(temp_file);
-
-    // Clean up temp file
-    unlink(temp_file);
-
-    if (!brain->network) {
-        // Failed to load - restore shared network and fail
-        brain->network = shared_network;
-        set_error("Failed to load network copy for COW");
-        return false;
-    }
-
-    // Successfully made private copy of network
-    // Note: Keep is_cow_clone = true because strategy is still shared!
-    // But now we own the network and can destroy it
-    brain->owns_network = true;
-    brain->original_network = NULL;
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * @brief Clone brain using copy-on-write optimization
- *
- * WHAT: Creates lightweight clone sharing network with original
- * WHY:  Enable efficient replication (86% memory savings)
- * HOW:  Shares adaptive_network_t, copies metadata
- *
- * PERFORMANCE: <10ms vs ~350ms for full copy
- * MEMORY: ~1MB overhead vs ~50MB for full copy
- *
- * @param original Brain to clone
- * @return Cloned brain or NULL on error
- */
-brain_t brain_clone_cow(brain_t original)
-{
-    if (!original) {
-        set_error("Cannot clone NULL brain");
-        return NULL;
-    }
-
-    if (!original->network) {
-        set_error("Cannot clone brain with NULL network");
-        return NULL;
-    }
-
-    // Allocate clone structure
-    brain_t clone = allocate_brain();
-    if (!clone) {
-        return NULL;
-    }
-
-    // Copy config and metadata (small, private per brain)
-    clone->config = original->config;
-    clone->num_output_labels = original->num_output_labels;
-    clone->input_size = original->input_size;
-
-    // Share network via direct pointer (Phase 2: Simple sharing)
-    // The network itself is shared - both brains point to same network
-    clone->network = original->network;
-    clone->original_network = original->network;
-
-    // Mark as COW clone
-    clone->is_cow_clone = true;
-    clone->owns_network = false;  // Doesn't own network - it's shared
-    clone->network_is_cached = false;  // Not using nimcp_cache yet
-
-    // Phase 3: Set up reference counting for shared network
-    if (!original->network_refcount) {
-        // First clone - original needs to initialize shared refcount
-        original->network_refcount = nimcp_malloc(sizeof(uint32_t));
-        original->refcount_mutex = nimcp_malloc(sizeof(pthread_mutex_t));
-        if (original->network_refcount && original->refcount_mutex) {
-            *original->network_refcount = 2;  // Original + this clone
-            pthread_mutex_init(original->refcount_mutex, NULL);
-        }
-    } else {
-        // Additional clone - increment existing refcount
-        pthread_mutex_lock(original->refcount_mutex);
-        (*original->network_refcount)++;
-        pthread_mutex_unlock(original->refcount_mutex);
-    }
-
-    // Clone shares the refcount and mutex with original
-    clone->network_refcount = original->network_refcount;
-    clone->refcount_mutex = original->refcount_mutex;
-    clone->can_use_readonly = true;  // Can use read-only inference
-
-    // Allocate output labels array (need space for max outputs, not just existing labels)
-    clone->output_labels = nimcp_calloc(clone->config.num_outputs, sizeof(char*));
-    if (clone->output_labels && original->output_labels) {
-        // Copy existing labels from original
-        for (uint32_t i = 0; i < original->num_output_labels; i++) {
-            clone->output_labels[i] = nimcp_strdup(original->output_labels[i]);
-        }
-    }
-
-    // Share strategy (read-only, safe to share)
-    clone->strategy = original->strategy;
-
-    // Copy stats from original (these are cached network stats)
-    // The clone shares the network, so it should have the same structural stats
-    clone->stats = original->stats;
-
-    // Initialize private fields (cache, etc)
-    clone->last_input = NULL;
-    clone->cached_decision = NULL;
-    clone->distributed = NULL;
-
-    return clone;
-}
-
-//=============================================================================
-// Learning API
-//=============================================================================
-
-/**
- * @brief Find or create output label index
- *
- * WHY: Maps string labels to numeric indices
- * Enables human-readable classification
- *
- * COMPLEXITY: O(k) where k = num_existing_labels
- * OPTIMIZATION: Linear search sufficient for small label sets
- *
- * @param brain Brain handle
- * @param label Label string
- * @return Label index
- */
-static uint32_t get_or_create_label_index(brain_t brain, const char* label)
-{
-    // Search existing labels - O(k)
-    for (uint32_t i = 0; i < brain->num_output_labels; i++) {
-        if (strcmp(brain->output_labels[i], label) == 0) {
-            return i;
-        }
-    }
-
-    // Guard: Check capacity
-    if (brain->num_output_labels >= brain->config.num_outputs) {
-        return 0;
-    }
-
-    // Create new label (use nimcp_malloc to match nimcp_free in brain_destroy)
-    size_t label_len = strlen(label);
-    brain->output_labels[brain->num_output_labels] = nimcp_malloc(label_len + 1);
-    if (!brain->output_labels[brain->num_output_labels])
-        return 0;
-    strncpy(brain->output_labels[brain->num_output_labels], label, label_len + 1);
-    brain->output_labels[brain->num_output_labels][label_len] = '\0';
-    return brain->num_output_labels++;
-}
-
-/**
- * @brief Convert label to one-hot encoded output vector
- *
- * WHY: Transforms string labels to neural network targets
- * One-hot encoding standard for classification
- *
- * COMPLEXITY: O(n) where n = num_outputs
- *
- * @param brain Brain handle
- * @param label Label string
- * @param output Output buffer
- * @param confidence Confidence value for label
- */
-static void label_to_output(brain_t brain, const char* label, float* output, float confidence)
-{
-    uint32_t label_idx = get_or_create_label_index(brain, label);
-
-    memset(output, 0, brain->config.num_outputs * sizeof(float));
-    output[label_idx] = confidence;
-}
-
-/**
- * @brief Learn from single labeled example
- *
- * WHY: Primary learning interface - supervised learning
- * Updates network weights to match label
- *
- * COMPLEXITY: O(s*n) where s = sparsity, n = active_neurons
- * PERFORMANCE: ~0.1-1ms for small networks, ~10ms for large
- *
- * @param brain Brain handle
- * @param features Input features
- * @param num_features Feature count
- * @param label Target label
- * @param confidence Training weight
- * @return Loss value or -1 on error
- */
-float brain_learn_example(brain_t brain, const float* features, uint32_t num_features,
-                          const char* label, float confidence)
-{
-    // Guard: Validate parameters
-    if (!brain || !features || !label) {
-        set_error("Invalid parameters to brain_learn_example");
-        return -1.0f;
-    }
-
-    // Guard: Check feature dimension
-    if (num_features != brain->config.num_inputs) {
-        set_error("Feature count mismatch: expected %u, got %u", brain->config.num_inputs,
-                  num_features);
-        return -1.0f;
-    }
-
-    // Phase 2: Ensure network is writable (trigger COW if needed)
-    if (!ensure_writable_network(brain)) {
-        return -1.0f;  // Error already set by ensure_writable_network
-    }
-
-    // Convert label to target output
-    float* target = nimcp_malloc(brain->config.num_outputs * sizeof(float));
-    label_to_output(brain, label, target, confidence);
-
-    // Create training example
-    training_example_t example = {.input = (float*) features,
-                                  .input_size = num_features,
-                                  .target = target,
-                                  .target_size = brain->config.num_outputs,
-                                  .confidence = confidence};
-    strncpy(example.label, label, sizeof(example.label) - 1);
-
-    // Learn using adaptive network
-    float loss = adaptive_network_learn(brain->network, &example, LEARN_MODE_SUPERVISED,
-                                        brain->config.learning_rate);
-
-    nimcp_free(target);
-
-    // Update statistics
-    brain->stats.total_learning_steps++;
-
-    // Invalidate cache after learning
-    clear_cache(brain);
-
-    brain_clear_error();
-    return loss;
-}
-
-/**
- * @brief Learn from batch of examples
- *
- * WHY: More efficient than individual calls
- * Enables mini-batch gradient descent
- *
- * COMPLEXITY: O(m*s*n) where m = num_examples
- *
- * @param brain Brain handle
- * @param examples Array of examples
- * @param num_examples Example count
- * @return Average loss or -1 on error
- */
-float brain_learn_batch(brain_t brain, const brain_example_t* examples, uint32_t num_examples)
-{
-    // Guard: Validate parameters
-    if (!brain || !examples || num_examples == 0) {
-        set_error("Invalid parameters to brain_learn_batch");
-        return -1.0f;
-    }
-
-    float total_loss = 0.0f;
-
-    for (uint32_t i = 0; i < num_examples; i++) {
-        float loss = brain_learn_example(brain, examples[i].features, examples[i].num_features,
-                                         examples[i].label, examples[i].confidence);
-
-        if (loss < 0.0f) {
-            return -1.0f;
-        }
-
-        total_loss += loss;
-    }
-
-    brain_clear_error();
-    return total_loss / num_examples;
-}
-
-/**
- * @brief Learn by querying an LLM teacher
- *
- * WHY: Enables distillation from larger models
- * Brain learns to mimic LLM decisions efficiently
- *
- * COMPLEXITY: O(s*n) + LLM query time
- * USE CASE: Compress LLM knowledge into fast neural network
- *
- * @param brain Brain handle
- * @param input Input features
- * @param num_features Feature count
- * @param llm_fn Teacher function
- * @param llm_context Context for teacher
- * @return Loss value or -1 on error
- */
-float brain_learn_from_llm(brain_t brain, const float* input, uint32_t num_features,
-                           llm_teacher_fn_t llm_fn, void* llm_context)
-{
-    // Guard: Validate parameters
-    if (!brain || !input || !llm_fn) {
-        set_error("Invalid parameters to brain_learn_from_llm");
-        return -1.0f;
-    }
-
-    // Guard: Check dimensions
-    if (num_features != brain->config.num_inputs) {
-        set_error("Feature count mismatch: expected %u, got %u", brain->config.num_inputs,
-                  num_features);
-        return -1.0f;
-    }
-
-    // Query LLM teacher
-    char label[64] = {0};
-    float confidence = llm_fn(input, num_features, llm_context, label, sizeof(label));
-
-    // Guard: Validate LLM response
-    if (confidence <= 0.0f) {
-        set_error("LLM teacher returned invalid confidence: %.2f", confidence);
-        return -1.0f;
-    }
-
-    // Learn from LLM's decision
-    float loss = brain_learn_example(brain, input, num_features, label, confidence);
-
-    brain_clear_error();
-    return loss;
-}
-
-//=============================================================================
-// Inference API
-//=============================================================================
-
-/**
- * @brief Allocate decision structure
- *
- * COMPLEXITY: O(1)
- */
-static brain_decision_t* allocate_decision(uint32_t output_size)
-{
-    brain_decision_t* decision = nimcp_calloc(1, sizeof(brain_decision_t));
-    if (!decision)
-        return NULL;
-
-    decision->output_size = output_size;
-    decision->output_vector = nimcp_malloc(output_size * sizeof(float));
-
-    if (!decision->output_vector) {
-        nimcp_free(decision);
-        return NULL;
-    }
-
-    return decision;
-}
-
-/**
- * @brief Deep copy a decision structure
- *
- * WHAT: Creates an independent copy of a decision
- * WHY: Cached decisions must not be freed by caller - return copies instead
- * HOW: Allocates new decision and copies all fields including dynamically allocated arrays
- *
- * COMPLEXITY: O(n) where n = output_size + num_active_neurons
- *
- * @param source Decision to copy
- * @return New decision copy, or NULL on allocation failure
- */
-static brain_decision_t* copy_decision(const brain_decision_t* source)
-{
-    if (!source)
-        return NULL;
-
-    // Allocate new decision structure
-    brain_decision_t* copy = nimcp_calloc(1, sizeof(brain_decision_t));
-    if (!copy)
-        return NULL;
-
-    // Copy scalar fields
-    memcpy(copy, source, sizeof(brain_decision_t));
-
-    // NULL out pointer fields to prevent accidental sharing
-    copy->output_vector = NULL;
-    copy->active_neuron_ids = NULL;
-
-    // Deep copy output_vector
-    if (source->output_vector && source->output_size > 0) {
-        copy->output_vector = nimcp_malloc(source->output_size * sizeof(float));
-        if (!copy->output_vector) {
-            nimcp_free(copy);
-            return NULL;
-        }
-        memcpy(copy->output_vector, source->output_vector, source->output_size * sizeof(float));
-    }
-
-    // Deep copy active_neuron_ids
-    if (source->active_neuron_ids && source->num_active_neurons > 0) {
-        copy->active_neuron_ids = nimcp_malloc(source->num_active_neurons * sizeof(uint32_t));
-        if (!copy->active_neuron_ids) {
-            if (copy->output_vector)
-                nimcp_free(copy->output_vector);
-            nimcp_free(copy);
-            return NULL;
-        }
-        memcpy(copy->active_neuron_ids, source->active_neuron_ids,
-               source->num_active_neurons * sizeof(uint32_t));
-    }
-
-    return copy;
-}
-
-/**
- * @brief Perform forward pass through network
- *
- * COMPLEXITY: O(s*n) where s = sparsity
- *
- * @param brain Brain handle
- * @param features Input features
- * @param num_features Feature count
- * @param decision Decision to populate
- * @return Number of active neurons
- */
-static uint32_t perform_forward_pass(brain_t brain, const float* features, uint32_t num_features,
-                                     brain_decision_t* decision)
-{
-    uint64_t start_time = nimcp_time_monotonic_us();
-
-    uint32_t active_neurons;
-
-    // Phase 3: Use read-only inference for COW clones to avoid triggering copy
-    if (brain->can_use_readonly) {
-        // COW clone using shared network - read-only inference
-        active_neurons = adaptive_network_forward_readonly(
-            brain->network, features, num_features, decision->output_vector, decision->output_size, 0);
-    } else {
-        // Original brain or post-COW clone - normal inference with statistics
-        active_neurons = adaptive_network_forward(
-            brain->network, features, num_features, decision->output_vector, decision->output_size, 0);
-    }
-
-    decision->inference_time_us = nimcp_time_elapsed_us(start_time);
-
-    return active_neurons;
-}
-
-/**
- * @brief Find maximum output and determine label
- *
- * COMPLEXITY: O(n) where n = num_outputs
- */
-static void determine_output_label(brain_t brain, brain_decision_t* decision)
-{
-    uint32_t max_idx = 0;
-    float max_value = decision->output_vector[0];
-
-    for (uint32_t i = 1; i < decision->output_size; i++) {
-        if (decision->output_vector[i] > max_value) {
-            max_value = decision->output_vector[i];
-            max_idx = i;
-        }
-    }
-
-    // Set label
-    if (max_idx < brain->num_output_labels) {
-        strncpy(decision->label, brain->output_labels[max_idx], sizeof(decision->label) - 1);
-    } else {
-        snprintf(decision->label, sizeof(decision->label), "output_%u", max_idx);
-    }
-
-    // Normalize confidence
-    decision->confidence = fminf(max_value / 10.0f, 1.0f);
-}
-
-/**
- * @brief Populate interpretability information
- *
- * COMPLEXITY: O(n)
- */
-static void populate_interpretability(brain_t brain, const float* features, uint32_t num_features,
-                                      uint32_t active_neurons, brain_decision_t* decision)
-{
-    decision->num_active_neurons = active_neurons;
-    decision->sparsity = adaptive_network_get_sparsity(brain->network);
-
-    if (brain->config.enable_explanations) {
-        adaptive_network_explain(brain->network, features, num_features, decision->explanation,
-                                 sizeof(decision->explanation));
-    }
-
-    // Populate active neuron IDs
-    decision->active_neuron_ids = nimcp_malloc(active_neurons * sizeof(uint32_t));
-    for (uint32_t i = 0; i < active_neurons; i++) {
-        decision->active_neuron_ids[i] = i;
-    }
-}
-
-/**
- * @brief Update brain statistics after inference
- *
- * COMPLEXITY: O(1)
- */
-static void update_inference_stats(brain_t brain, brain_decision_t* decision)
-{
-    brain->stats.total_inferences++;
-    brain->stats.avg_inference_time_us =
-        (brain->stats.avg_inference_time_us * (brain->stats.total_inferences - 1) +
-         decision->inference_time_us) /
-        brain->stats.total_inferences;
-    brain->stats.avg_sparsity = decision->sparsity;
-}
-
-/**
- * @brief Make decision for input
- *
- * WHY: Primary inference interface
- * Performs forward pass and returns structured decision
- *
- * COMPLEXITY: O(s*n) where s = sparsity, n = active_neurons
- * PERFORMANCE: <1ms for small, ~5ms for medium, ~50ms for large
- * OPTIMIZATION: Caches results for repeated identical inputs
- *
- * @param brain Brain handle
- * @param features Input features
- * @param num_features Feature count
- * @return Decision result (caller must free with brain_free_decision)
- */
-brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t num_features)
-{
-    // Guard: Validate parameters
-    if (!brain || !features) {
-        set_error("Invalid parameters to brain_decide");
-        return NULL;
-    }
-
-    // Guard: Check dimensions
-    if (num_features != brain->config.num_inputs) {
-        set_error("Feature count mismatch: expected %u, got %u", brain->config.num_inputs,
-                  num_features);
-        return NULL;
-    }
-
-    // Phase 3: Only trigger COW if not using read-only inference
-    // WHY: COW clones can use adaptive_network_forward_readonly() indefinitely
-    // WHEN: Trigger only for original brains or clones that already triggered COW
-    if (!brain->can_use_readonly) {
-        // Not using read-only mode - ensure network is writable
-        if (!ensure_writable_network(brain)) {
-            return NULL;  // Error already set
-        }
-    }
-    // else: Using read-only inference - no COW trigger needed!
-
-    /**
-     * WHAT: Check cache and return a COPY of cached decision
-     * WHY: Cached decision is owned by brain, caller expects to own returned decision
-     * HOW: Deep copy the cached decision to give caller an independent copy
-     *
-     * BUG FIX: Previously returned cached pointer directly, causing double-free
-     * when caller freed it and then brain_destroy tried to free cached_decision
-     */
-    if (is_cached_input(brain, features, num_features)) {
-        return copy_decision(brain->cached_decision);
-    }
-
-    // Allocate decision structure
-    brain_decision_t* decision = allocate_decision(brain->config.num_outputs);
-    if (!decision) {
-        set_error("Failed to allocate decision structure");
-        return NULL;
-    }
-
-    // Perform forward pass
-    uint32_t active_neurons = perform_forward_pass(brain, features, num_features, decision);
-
-    // Apply task-specific output transformation
-    brain->strategy->transform_output(decision->output_vector, decision->output_size);
-
-    // Determine output label and confidence
-    determine_output_label(brain, decision);
-
-    // Populate interpretability information
-    populate_interpretability(brain, features, num_features, active_neurons, decision);
-
-    // Update statistics
-    update_inference_stats(brain, decision);
-
-    // Cache decision for potential reuse
-    cache_decision(brain, features, num_features, decision);
-
-    /**
-     * WHAT: Return a copy of the decision, not the original
-     * WHY: We cached the original, so brain owns it. Caller needs own copy.
-     * HOW: Deep copy before returning
-     *
-     * BUG FIX: Previously returned cached decision directly, causing double-free
-     * when both caller and brain_destroy tried to free it.
-     */
-    brain_decision_t* decision_copy = copy_decision(decision);
-    if (!decision_copy) {
-        // Copy failed - this is bad, but at least don't leak the original
-        set_error("Failed to copy decision");
-        return NULL;
-    }
-
-    brain_clear_error();
-    return decision_copy;
-}
-
-/**
- * @brief Free decision result
- *
- * WHY: Proper memory management for decision results
- * Handles all allocated sub-structures
- *
- * COMPLEXITY: O(1)
- *
- * @param decision Decision to free
- */
-void brain_free_decision(brain_decision_t* decision)
-{
-    if (!decision)
-        return;
-
-    /**
-     * WHAT: Free decision structure and its allocated fields
-     * WHY: Prevent memory leaks
-     * HOW: Use nimcp_free() for memory allocated with nimcp_malloc()
-     */
-    if (decision->output_vector) {
-        nimcp_free(decision->output_vector);
-    }
-    if (decision->active_neuron_ids) {
-        nimcp_free(decision->active_neuron_ids);
-    }
-    nimcp_free(decision);
-}
-
-/**
- * @brief Batch inference
- *
- * WHY: More efficient than individual calls for large batches
- * Enables parallel processing opportunities
- *
- * COMPLEXITY: O(m*s*n) where m = num_inputs
- *
- * @param brain Brain handle
- * @param inputs Array of input vectors
- * @param num_inputs Number of inputs
- * @param features_per_input Features per input
- * @param decisions Output decisions array (allocated by caller)
- * @return true on success
- */
-bool brain_decide_batch(brain_t brain, const float** inputs, uint32_t num_inputs,
-                        uint32_t features_per_input, brain_decision_t* decisions)
-{
-    // Guard: Validate parameters
-    if (!brain || !inputs || !decisions || num_inputs == 0) {
-        set_error("Invalid parameters to brain_decide_batch");
-        return false;
-    }
-
-    for (uint32_t i = 0; i < num_inputs; i++) {
-        brain_decision_t* decision = brain_decide(brain, inputs[i], features_per_input);
-
-        if (!decision) {
-            return false;
-        }
-
-        memcpy(&decisions[i], decision, sizeof(brain_decision_t));
-        nimcp_free(decision);
-    }
-
-    brain_clear_error();
-    return true;
-}
-
-//=============================================================================
-// Persistence API
-//=============================================================================
-
-/**
- * @brief Save metadata file
- *
- * COMPLEXITY: O(k) where k = num_labels
- */
-static bool save_metadata(brain_t brain, const char* filepath)
-{
-    char meta_path[512];
-    snprintf(meta_path, sizeof(meta_path), "%s.meta", filepath);
-
-    FILE* meta_file = fopen(meta_path, "wb");
-    if (!meta_file)
-        return false;
-
-    fwrite(&brain->config, sizeof(brain_config_t), 1, meta_file);
-    fwrite(&brain->num_output_labels, sizeof(uint32_t), 1, meta_file);
-
-    for (uint32_t i = 0; i < brain->num_output_labels; i++) {
-        uint32_t len = strlen(brain->output_labels[i]) + 1;
-        fwrite(&len, sizeof(uint32_t), 1, meta_file);
-        fwrite(brain->output_labels[i], len, 1, meta_file);
-    }
-
-    fclose(meta_file);
-    return true;
-}
-
-/**
- * @brief Save brain to file
- *
- * WHY: Enables model persistence across sessions
- * Saves both network and metadata
- *
- * COMPLEXITY: O(n*c) where n = neurons, c = connections
- *
- * @param brain Brain handle
- * @param filepath Path to save to
- * @return true on success
- */
-bool brain_save(brain_t brain, const char* filepath)
-{
-    // Guard: Validate parameters
-    if (!brain || !filepath) {
-        set_error("Invalid parameters to brain_save");
-        return false;
-    }
-
-    // Save adaptive network
-    bool success = adaptive_network_save(brain->network, filepath, SERIALIZE_FORMAT_BINARY);
-
-    if (!success) {
-        set_error("Failed to save adaptive network to %s", filepath);
-        return false;
-    }
-
-    // Save metadata
-    if (!save_metadata(brain, filepath)) {
-        set_error("Failed to save metadata");
-        return false;
-    }
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * @brief Load metadata file
- *
- * COMPLEXITY: O(k) where k = num_labels
- */
-static bool load_metadata(brain_t brain, const char* filepath)
-{
-    char meta_path[512];
-    snprintf(meta_path, sizeof(meta_path), "%s.meta", filepath);
-
-    FILE* meta_file = fopen(meta_path, "rb");
-    if (!meta_file)
-        return false;
-
-    fread(&brain->config, sizeof(brain_config_t), 1, meta_file);
-
-    // Validate brain->config fields after reading
-    // Validate learning_rate (float field - NaN/Inf check)
-    if (!nimcp_validate_float_field(&brain->config.learning_rate,
-                                    sizeof(brain->config.learning_rate))) {
-        fprintf(stderr, "ERROR: Invalid learning_rate in loaded config (NaN or Inf)\n");
-        fclose(meta_file);
-        return false;
-    }
-
-    // Validate sparsity_target (float field - NaN/Inf check)
-    if (!nimcp_validate_float_field(&brain->config.sparsity_target,
-                                    sizeof(brain->config.sparsity_target))) {
-        fprintf(stderr, "ERROR: Invalid sparsity_target in loaded config (NaN or Inf)\n");
-        fclose(meta_file);
-        return false;
-    }
-
-    // Validate num_inputs (integer field, range 1-10000)
-    if (!nimcp_validate_integer_field(&brain->config.num_inputs,
-                                      sizeof(brain->config.num_inputs))) {
-        fprintf(stderr, "ERROR: Invalid num_inputs in loaded config\n");
-        fclose(meta_file);
-        return false;
-    }
-    if (brain->config.num_inputs < 1 || brain->config.num_inputs > 10000) {
-        fprintf(stderr, "ERROR: num_inputs out of range (1-10000): %u\n", brain->config.num_inputs);
-        fclose(meta_file);
-        return false;
-    }
-
-    // Validate num_outputs (integer field, range 1-10000)
-    if (!nimcp_validate_integer_field(&brain->config.num_outputs,
-                                      sizeof(brain->config.num_outputs))) {
-        fprintf(stderr, "ERROR: Invalid num_outputs in loaded config\n");
-        fclose(meta_file);
-        return false;
-    }
-    if (brain->config.num_outputs < 1 || brain->config.num_outputs > 10000) {
-        fprintf(stderr, "ERROR: num_outputs out of range (1-10000): %u\n",
-                brain->config.num_outputs);
-        fclose(meta_file);
-        return false;
-    }
-
-    fread(&brain->num_output_labels, sizeof(uint32_t), 1, meta_file);
-
-    // Validate num_output_labels (range 0-10000, 0 means no labels)
-    if (!nimcp_validate_integer_field(&brain->num_output_labels,
-                                      sizeof(brain->num_output_labels))) {
-        fprintf(stderr, "ERROR: Invalid num_output_labels in loaded metadata\n");
-        fclose(meta_file);
-        return false;
-    }
-    if (brain->num_output_labels > 10000) {
-        fprintf(stderr, "ERROR: num_output_labels out of range (0-10000): %u\n",
-                brain->num_output_labels);
-        fclose(meta_file);
-        return false;
-    }
-
-    // Handle case where there are no labels
-    if (brain->num_output_labels == 0) {
-        brain->output_labels = NULL;
-        fclose(meta_file);
-        return true;
-    }
-
-    brain->output_labels = nimcp_malloc(brain->num_output_labels * sizeof(char*));
-    if (!brain->output_labels) {
-        fprintf(stderr, "ERROR: Failed to allocate output_labels array\n");
-        fclose(meta_file);
-        return false;
-    }
-
-    uint32_t i;
-    for (i = 0; i < brain->num_output_labels; i++) {
-        uint32_t len;
-        fread(&len, sizeof(uint32_t), 1, meta_file);
-
-        // Validate label length (1-1024 bytes)
-        if (!nimcp_validate_integer_field(&len, sizeof(len))) {
-            fprintf(stderr, "ERROR: Invalid label length at index %u\n", i);
-            goto cleanup;
-        }
-        if (len < 1 || len > 1024) {
-            fprintf(stderr, "ERROR: Label length out of range (1-1024) at index %u: %u\n", i, len);
-            goto cleanup;
-        }
-
-        brain->output_labels[i] = nimcp_malloc(len);
-        if (!brain->output_labels[i]) {
-            fprintf(stderr, "ERROR: Failed to allocate label at index %u\n", i);
-            goto cleanup;
-        }
-
-        fread(brain->output_labels[i], len, 1, meta_file);
-    }
-
-    fclose(meta_file);
-    return true;
-
-cleanup:
-    // Free any allocated labels before the failed one
-    for (uint32_t j = 0; j < i; j++) {
-        nimcp_free(brain->output_labels[j]);
-    }
-    nimcp_free(brain->output_labels);
-    brain->output_labels = NULL;
-    fclose(meta_file);
-    return false;
-}
-
-/**
- * @brief Load brain from file
- *
- * WHY: Restores saved brain state
- * Reconstructs network and metadata
- *
- * COMPLEXITY: O(n*c) where n = neurons, c = connections
- *
- * @param filepath Path to load from
- * @return Brain handle or NULL on error
- */
-brain_t brain_load(const char* filepath)
-{
-    // Guard: Validate filepath
-    if (!filepath) {
-        set_error("Null filepath provided to brain_load");
-        return NULL;
-    }
-
-    // Load adaptive network
-    adaptive_network_t network = adaptive_network_load(filepath);
-    if (!network) {
-        set_error("Failed to load adaptive network from %s", filepath);
-        return NULL;
-    }
-
-    // Allocate brain structure
-    brain_t brain = allocate_brain();
-    if (!brain) {
-        adaptive_network_destroy(network);
-        return NULL;
-    }
-
-    brain->network = network;
-
-    // Load metadata
-    if (!load_metadata(brain, filepath)) {
-        // Use defaults if no metadata
-        brain->config.size = BRAIN_SIZE_SMALL;
-        brain->config.task = BRAIN_TASK_CLASSIFICATION;
-        brain->config.learning_rate = 0.01f;
-        brain->config.sparsity_target = 0.8f;
-        brain->config.enable_explanations = true;
-        snprintf(brain->config.task_name, sizeof(brain->config.task_name), "loaded_brain");
-
-        // Set placeholder dimensions (actual dimensions are in the network)
-        // TODO: Add adaptive_network getter functions to retrieve actual values
-        brain->config.num_inputs = 1;
-        brain->config.num_outputs = 1;
-    }
-
-    // Create strategy for task
-    brain->strategy = strategy_create(brain->config.task);
-    if (!brain->strategy) {
-        set_error("Failed to create task strategy");
-        brain_destroy(brain);
-        return NULL;
-    }
-
-    // Initialize statistics
-    init_brain_stats(&brain->stats, brain->config.task_name, brain->config.size,
-                     brain->config.num_inputs, brain->config.learning_rate);
-
-    brain_clear_error();
-    return brain;
-}
-
-/**
- * @brief Get brain memory footprint
- *
- * WHY: Enables memory usage monitoring
- * Important for embedded and resource-constrained environments
- *
- * COMPLEXITY: O(n) where n = num_neurons
- *
- * @param brain Brain handle
- * @return Memory usage in bytes
- */
-size_t brain_get_memory_usage(brain_t brain)
-{
-    if (!brain)
-        return 0;
-
-    size_t size = sizeof(struct brain_struct);
-    size += adaptive_network_get_size(brain->network);
-
-    for (uint32_t i = 0; i < brain->num_output_labels; i++) {
-        size += strlen(brain->output_labels[i]) + 1;
-    }
-
-    return size;
-}
-
-//=============================================================================
-// Analysis & Monitoring API
-//=============================================================================
-
-/**
- * @brief Get brain statistics
- *
- * WHY: Provides performance and training metrics
- * Essential for monitoring and debugging
- *
- * COMPLEXITY: O(1) - mostly copying cached stats
- *
- * @param brain Brain handle
- * @param stats Output statistics
- * @return true on success
- */
-bool brain_get_stats(brain_t brain, brain_stats_t* stats)
-{
-    // Guard: Validate parameters
-    if (!brain || !stats) {
-        set_error("Invalid parameters to brain_get_stats");
-        return false;
-    }
-
-    // Get performance from adaptive network
-    network_performance_t perf;
-    adaptive_network_get_performance(brain->network, &perf);
-
-    // Copy to brain stats
-    stats->size = brain->config.size;
-    stats->num_neurons = brain->stats.num_neurons;
-    stats->num_synapses = brain->stats.num_synapses;
-    stats->num_active_synapses = brain->stats.num_active_synapses;
-    stats->total_inferences = perf.total_inferences;
-    stats->total_learning_steps = perf.total_learning_steps;
-    stats->avg_sparsity = perf.avg_sparsity;
-    stats->avg_inference_time_us = perf.avg_inference_time_us;
-    stats->current_learning_rate = brain->config.learning_rate;
-    stats->accuracy = perf.accuracy;
-    stats->memory_bytes = perf.memory_usage_bytes;
-    strncpy(stats->task_name, brain->config.task_name, sizeof(stats->task_name) - 1);
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * @brief Get COW statistics for brain
- *
- * WHAT: Report copy-on-write memory sharing status
- * WHY:  Allow monitoring of memory efficiency gains
- * HOW:  Check is_cow_clone flag and calculate shared/private memory
- *
- * THREAD SAFETY: Thread-safe (read-only access)
- * COMPLEXITY: O(1)
- *
- * @param brain Brain handle
- * @param cow_stats Output COW statistics
- * @return true on success
- */
-bool brain_get_cow_stats(brain_t brain, brain_cow_stats_t* cow_stats)
-{
-    // Guard: Validate parameters
-    if (!brain || !cow_stats) {
-        set_error("Invalid parameters to brain_get_cow_stats");
-        return false;
-    }
-
-    if (brain->is_cow_clone && brain->network) {
-        // This is a COW clone
-        cow_stats->is_cow_clone = true;
-
-        // Phase 3: Check if network is still shared or if COW was triggered
-        if (brain->owns_network) {
-            // COW was triggered - clone now owns private network copy
-            cow_stats->cow_ref_count = 1;  // Only this brain owns the network
-            cow_stats->cow_shared_bytes = 0;  // No longer sharing
-
-            // All network memory is now private
-            network_performance_t perf;
-            adaptive_network_get_performance(brain->network, &perf);
-            cow_stats->cow_private_bytes = sizeof(struct brain_struct) + perf.memory_usage_bytes;
-        } else {
-            // Network is still shared (Phase 3 read-only inference)
-            // Use reference count if available, otherwise assume 2
-            cow_stats->cow_ref_count = brain->network_refcount ? *brain->network_refcount : 2;
-
-            // Calculate shared bytes (network size)
-            network_performance_t perf;
-            adaptive_network_get_performance(brain->network, &perf);
-            cow_stats->cow_shared_bytes = perf.memory_usage_bytes;
-
-            // Calculate private bytes (brain struct + labels + caches)
-            cow_stats->cow_private_bytes = sizeof(struct brain_struct);
-        }
-
-        // Add size of label strings
-        for (uint32_t i = 0; i < brain->num_output_labels; i++) {
-            if (brain->output_labels && brain->output_labels[i]) {
-                cow_stats->cow_private_bytes += strlen(brain->output_labels[i]) + 1;
-            }
-        }
-
-        // Add size of label array
-        if (brain->output_labels) {
-            cow_stats->cow_private_bytes += brain->num_output_labels * sizeof(char*);
-        }
-
-    } else {
-        // Not a COW clone - owns all memory
-        cow_stats->is_cow_clone = false;
-        cow_stats->cow_ref_count = 1;
-        cow_stats->cow_shared_bytes = 0;
-
-        // All memory is private
-        network_performance_t perf;
-        if (brain->network) {
-            adaptive_network_get_performance(brain->network, &perf);
-            cow_stats->cow_private_bytes = perf.memory_usage_bytes;
-        } else {
-            cow_stats->cow_private_bytes = 0;
-        }
-
-        // Add brain structure overhead
-        cow_stats->cow_private_bytes += sizeof(struct brain_struct);
-    }
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * @brief Print brain info to stdout
- *
- * WHY: Convenient debugging and monitoring
- * Human-readable status display
- *
- * COMPLEXITY: O(1)
- *
- * @param brain Brain handle
- */
-void brain_print_info(brain_t brain)
-{
-    if (!brain)
-        return;
-
-    brain_stats_t stats;
-    brain_get_stats(brain, &stats);
-
-    printf("Brain: %s\n", stats.task_name);
-    printf("  Size: %u neurons, %u synapses\n", stats.num_neurons, stats.num_synapses);
-    printf("  Training: %lu learning steps\n", stats.total_learning_steps);
-    printf("  Inferences: %lu\n", stats.total_inferences);
-    printf("  Avg inference time: %.3f ms\n", stats.avg_inference_time_us / 1000.0);
-    printf("  Avg sparsity: %.1f%%\n", stats.avg_sparsity * 100.0);
-    printf("  Memory usage: %.2f MB\n", stats.memory_bytes / (1024.0 * 1024.0));
-    printf("  Learning rate: %.4f\n", stats.current_learning_rate);
-}
-
-/**
- * @brief Get most important neurons
- *
- * WHY: Identifies which neurons contribute most to decisions
- * Useful for pruning and interpretability
- *
- * COMPLEXITY: O(n*log(k)) where n = total_neurons, k = top_n
- *
- * @param brain Brain handle
- * @param top_n Number of neurons to return
- * @param neuron_ids Output array of neuron IDs
- * @param importances Output array of importance scores
- * @return Number of neurons returned
- */
-uint32_t brain_get_top_neurons(brain_t brain, uint32_t top_n, uint32_t* neuron_ids,
-                               float* importances)
-{
-    // Guard: Validate parameters
-    if (!brain || !neuron_ids || !importances) {
-        set_error("Invalid parameters to brain_get_top_neurons");
-        return 0;
-    }
-
-    // Get neuron rankings from adaptive network
-    neuron_importance_t* rankings = nimcp_malloc(top_n * sizeof(neuron_importance_t));
-    uint32_t count = adaptive_network_rank_neurons(brain->network, rankings, top_n);
-
-    // Extract IDs and importances
-    for (uint32_t i = 0; i < count; i++) {
-        neuron_ids[i] = rankings[i].neuron_id;
-        importances[i] = rankings[i].importance;
-    }
-
-    nimcp_free(rankings);
-
-    brain_clear_error();
-    return count;
-}
-
-/**
- * @brief Explain why brain made a decision
- *
- * WHY: Provides human-readable explanation of decision
- * Critical for trust and debugging
- *
- * COMPLEXITY: O(k) where k = num_active_neurons
- *
- * @param brain Brain handle
- * @param features Input that led to decision
- * @param num_features Feature count
- * @param explanation Output buffer
- * @param max_length Max explanation length
- * @return true on success
- */
-bool brain_explain_decision(brain_t brain, const float* features, uint32_t num_features,
-                            char* explanation, uint32_t max_length)
-{
-    // Guard: Validate parameters
-    if (!brain || !features || !explanation) {
-        set_error("Invalid parameters to brain_explain_decision");
-        return false;
-    }
-
-    uint32_t written =
-        adaptive_network_explain(brain->network, features, num_features, explanation, max_length);
-
-    brain_clear_error();
-    return written > 0;
-}
-
-//=============================================================================
-// Optimization API
-//=============================================================================
-
-/**
- * @brief Prune weak connections
- *
- * WHY: Removes low-weight synapses to improve efficiency
- * Reduces memory and speeds up inference
- *
- * COMPLEXITY: O(n*c) where c = connections per neuron
- * BENEFIT: 2-10x inference speedup possible
- *
- * @param brain Brain handle
- * @param threshold Prune synapses with weight < threshold
- * @return Number of synapses pruned
- */
-uint32_t brain_prune(brain_t brain, float threshold)
-{
-    // Guard: Validate brain
-    if (!brain) {
-        set_error("Null brain provided to brain_prune");
-        return 0;
-    }
-
-    // Phase 2: Ensure network is writable before pruning
-    if (!ensure_writable_network(brain)) {
-        return 0;  // Error already set
-    }
-
-    uint32_t pruned = adaptive_network_prune(brain->network, threshold);
-
-    brain->stats.num_active_synapses -= pruned;
-
-    // Invalidate cache after pruning
-    clear_cache(brain);
-
-    brain_clear_error();
-    return pruned;
-}
-
-/**
- * @brief Optimize brain for inference
- *
- * WHY: Prepares brain for production deployment
- * Performs aggressive optimization for speed
- *
- * COMPLEXITY: O(n*c)
- * BENEFIT: Can achieve 5-10x speedup
- *
- * @param brain Brain handle
- * @return true on success
- */
-bool brain_optimize_for_inference(brain_t brain)
-{
-    // Guard: Validate brain
-    if (!brain) {
-        set_error("Null brain provided to brain_optimize_for_inference");
-        return false;
-    }
-
-    // Aggressive pruning for target sparsity
-    float threshold = brain_recommend_pruning_threshold(brain, 0.90f);
-    brain_prune(brain, threshold);
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * @brief Get recommended pruning threshold
- *
- * WHY: Provides heuristic for safe pruning
- * Balances sparsity vs accuracy
- *
- * COMPLEXITY: O(1)
- *
- * @param brain Brain handle
- * @param target_sparsity Desired sparsity (0-1)
- * @return Recommended threshold
- */
-float brain_recommend_pruning_threshold(brain_t brain, float target_sparsity)
-{
-    // Guard: Validate brain
-    if (!brain) {
-        set_error("Null brain provided to brain_recommend_pruning_threshold");
-        return 0.01f;
-    }
-
-    // Heuristic: lower threshold for higher sparsity
-    float threshold = 0.1f * (1.0f - target_sparsity);
-
-    brain_clear_error();
-    return threshold;
-}
-
-//=============================================================================
-// Phase 3: Distributed Brain API Implementation
-//=============================================================================
-
-/**
- * WHAT: Create distributed brain with P2P coordination
- * WHY:  Enable multi-brain collaborative learning and shared chemical signals
- * HOW:  Create standard brain, then attach distributed cognition coordinator
- *
- * THREAD SAFETY: Thread-safe creation
- * PERFORMANCE: O(n) where n = num_neurons + network initialization
- */
-brain_t brain_create_distributed(
-    const char* task_name,
-    brain_size_t size,
-    brain_task_t task,
-    uint32_t num_inputs,
-    uint32_t num_outputs,
-    p2p_node_t p2p_node
-)
-{
-    // Guard: Validate P2P node
-    if (!p2p_node) {
-        set_error("NULL p2p_node provided to brain_create_distributed");
-        return NULL;
-    }
-
-    // Create standard brain first
-    brain_t brain = brain_create(task_name, size, task, num_inputs, num_outputs);
-    if (!brain) {
-        return NULL;
-    }
-
-    // Enable distributed coordination
-    if (!brain_enable_distributed(brain, p2p_node)) {
-        brain_destroy(brain);
-        return NULL;
-    }
-
-    brain_clear_error();
-    return brain;
-}
-
-/**
- * WHAT: Enable distributed coordination on existing brain
- * WHY:  Allow conversion of standalone brain to distributed mode
- * HOW:  Creates distrib_cognition coordinator and starts sync threads
- *
- * THREAD SAFETY: Thread-safe if brain not actively processing
- */
-bool brain_enable_distributed(brain_t brain, p2p_node_t p2p_node)
-{
-    // Guard: Validate parameters
-    if (!brain) {
-        set_error("NULL brain provided to brain_enable_distributed");
-        return false;
-    }
-
-    if (!p2p_node) {
-        set_error("NULL p2p_node provided to brain_enable_distributed");
-        return false;
-    }
-
-    // Guard: Check if already distributed
-    if (brain->distributed) {
-        set_error("Brain is already distributed");
-        return false;
-    }
-
-    // Create distributed cognition configuration
-    distrib_cognition_config_t config;
-    config.enable_neuromod_sync = true;
-    config.neuromod_broadcast_interval_ms = 100;
-    config.neuromod_diffusion_rate = 0.5f;
-    config.enable_glial_sync = true;
-    config.glial_sync_interval_ms = 100;
-    config.enable_region_sync = true;
-    config.region_sync_interval_ms = 100;
-    config.sync_mode = SYNC_MODE_BIDIRECTIONAL;
-    config.max_message_queue = 1000;
-
-    // Create distributed cognition coordinator
-    brain->distributed = distrib_cognition_create(&config, p2p_node);
-    if (!brain->distributed) {
-        set_error("Failed to create distributed cognition coordinator");
-        return false;
-    }
-
-    // Start distributed coordination
-    if (!distrib_cognition_start(brain->distributed)) {
-        set_error("Failed to start distributed cognition");
-        distrib_cognition_destroy(brain->distributed);
-        brain->distributed = NULL;
-        return false;
-    }
-
-    // Update brain config
-    brain->config.enable_distributed = true;
-    brain->config.p2p_node = p2p_node;
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * WHAT: Synchronize neuromodulators with peer brains
- * WHY:  Allow explicit control of sync timing for performance tuning
- * HOW:  Calls distrib_cognition_broadcast_neuromod for all neuromod types
- *
- * THREAD SAFETY: Thread-safe
- * PERFORMANCE: O(P × N) where P=peers, N=neuromod types
- */
-bool brain_sync_neuromodulators(brain_t brain)
-{
-    // Guard: Validate brain
-    if (!brain) {
-        set_error("NULL brain provided to brain_sync_neuromodulators");
-        return false;
-    }
-
-    // Guard: Check if distributed
-    if (!brain->distributed) {
-        set_error("Brain is not distributed - cannot sync neuromodulators");
-        return false;
-    }
-
-    // Broadcast all neuromodulator types with default concentrations
-    // In a full implementation, these would be read from the brain's neuromodulator pool
-    bool success = true;
-    success &= distrib_cognition_broadcast_neuromod(brain->distributed, NEUROMOD_DOPAMINE, 0.5f);
-    success &= distrib_cognition_broadcast_neuromod(brain->distributed, NEUROMOD_SEROTONIN, 0.5f);
-    success &= distrib_cognition_broadcast_neuromod(brain->distributed, NEUROMOD_NOREPINEPHRINE, 0.5f);
-    success &= distrib_cognition_broadcast_neuromod(brain->distributed, NEUROMOD_ACETYLCHOLINE, 0.5f);
-
-    if (!success) {
-        set_error("Failed to broadcast some neuromodulators");
-        return false;
-    }
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * WHAT: Get distributed cognition statistics
- * WHY:  Monitor distributed brain performance and health
- * HOW:  Forwards query to underlying distrib_cognition coordinator
- */
-bool brain_get_distributed_stats(
-    brain_t brain,
-    distrib_cognition_stats_t* stats
-)
-{
-    // Guard: Validate parameters
-    if (!brain) {
-        set_error("NULL brain provided to brain_get_distributed_stats");
-        return false;
-    }
-
-    if (!stats) {
-        set_error("NULL stats provided to brain_get_distributed_stats");
-        return false;
-    }
-
-    // Guard: Check if distributed
-    if (!brain->distributed) {
-        set_error("Brain is not distributed - no stats available");
-        return false;
-    }
-
-    // Forward to distributed cognition
-    if (!distrib_cognition_get_stats(brain->distributed, stats)) {
-        set_error("Failed to get distributed cognition stats");
-        return false;
-    }
-
-    brain_clear_error();
-    return true;
-}
-
-/**
- * WHAT: Check if brain is distributed
- * WHY:  Allow callers to query brain mode before calling distributed APIs
- * HOW:  Return true if distributed coordinator exists
- */
-bool brain_is_distributed(brain_t brain)
-{
-    if (!brain) {
-        return false;
-    }
-
-    return brain->distributed != NULL;
-}
+#include "nimcp_brain_part_lifecycle.c"  // 6 functions: lifecycle
+#include "nimcp_brain_part_helpers.c"  // 37 functions: helpers
+#include "nimcp_brain_part_processing.c"  // 2 functions: processing
+#include "nimcp_brain_part_accessors.c"  // 12 functions: accessors
+#include "nimcp_brain_part_stats.c"  // 2 functions: stats
+#include "core/brain/nimcp_cognitive_dispatch.h"  // Parallel dispatch types
+#include "nimcp_brain_part_core.c"  // 14 functions: core
+#include "nimcp_brain_part_io.c"  // 4 functions: io

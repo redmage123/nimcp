@@ -1,0 +1,12 @@
+# PLATFORM_TIER_MEDIUM configuration - balanced capability systems
+# Most modules enabled, some advanced features disabled for resource efficiency
+{"type":"config","tier":"PLATFORM_TIER_MEDIUM","description":"Medium capability tier - balanced feature set"}
+{"type":"module_enable","module":"Fractal_Cognitive","enabled":false,"notes":"Disabled - high compute cost"}
+{"type":"module_enable","module":"Shadow_Emotions","enabled":false,"notes":"Disabled - requires full tier"}
+{"type":"module_enable","module":"Predictive_Immune","enabled":false,"notes":"Disabled - requires full tier"}
+{"type":"module_enable","module":"RCOG_Orchestrator","enabled":false,"notes":"Disabled - use single-agent mode"}
+{"type":"module_enable","module":"Theory_Of_Mind","enabled":true,"notes":"Enabled for social cognition"}
+{"type":"module_enable","module":"Meta_Learning","enabled":true,"notes":"Enabled for adaptation"}
+{"type":"parameter_override","module":"Working_Memory","parameter":"capacity","value":8,"notes":"Standard working memory slots"}
+{"type":"parameter_override","module":"Global_Workspace","parameter":"broadcast_threshold","value":0.5,"notes":"Standard broadcast threshold"}
+{"type":"parameter_override","module":"RCOG_Engine","parameter":"max_recursion_depth","value":6,"notes":"Moderate recursive depth"}

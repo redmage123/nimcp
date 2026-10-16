@@ -1,0 +1,114 @@
+{
+  "test_domain": "impulse_control_delay",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Small-now vs large-later choices, varying ratio and delay; build temporal discounting curve",
+    "scoring_notes": "Compute implied discount rate; flag impulsive (always-now) and overly patient (always-later) extremes"
+  },
+  "stimuli": [
+    {"id": "delay_001", "prompt": "Choose: $5 now, or $10 in 1 hour. Which?", "modality": "text",
+     "expected": {"now_amount": 5, "later_amount": 10, "delay_minutes": 60, "ratio": 2.0, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "delay_002", "prompt": "Choose: $5 now, or $5.50 in 1 hour. Which?", "modality": "text",
+     "expected": {"now_amount": 5, "later_amount": 5.5, "delay_minutes": 60, "ratio": 1.1, "expected_choice": "borderline"},
+     "scoring": {"type": "delay_choice", "params": {"borderline_ok": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_003", "prompt": "Choose: $20 now, or $25 in 1 day.", "modality": "text",
+     "expected": {"now_amount": 20, "later_amount": 25, "delay_minutes": 1440, "ratio": 1.25, "expected_choice": "borderline"},
+     "scoring": {"type": "delay_choice", "params": {"borderline_ok": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_004", "prompt": "Choose: $20 now, or $50 in 1 day.", "modality": "text",
+     "expected": {"now_amount": 20, "later_amount": 50, "delay_minutes": 1440, "ratio": 2.5, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "delay_005", "prompt": "Choose: $100 now, or $200 in 6 months.", "modality": "text",
+     "expected": {"now_amount": 100, "later_amount": 200, "delay_minutes": 262800, "ratio": 2.0, "expected_choice": "borderline"},
+     "scoring": {"type": "delay_choice", "params": {"borderline_ok": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_006", "prompt": "Choose: $100 now, or $1000 in 6 months.", "modality": "text",
+     "expected": {"now_amount": 100, "later_amount": 1000, "delay_minutes": 262800, "ratio": 10.0, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "delay_007", "prompt": "Choose: $1 now, or $100 in 10 years.", "modality": "text",
+     "expected": {"now_amount": 1, "later_amount": 100, "delay_minutes": 5256000, "ratio": 100.0, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_008", "prompt": "Choose: $1000 now, or $1000 in 10 years.", "modality": "text",
+     "expected": {"now_amount": 1000, "later_amount": 1000, "delay_minutes": 5256000, "ratio": 1.0, "expected_choice": "now"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "delay_009", "prompt": "Choose: $50 in 5 minutes, or $52 in 1 hour.", "modality": "text",
+     "expected": {"now_amount": 50, "later_amount": 52, "delay_minutes": 55, "ratio": 1.04, "expected_choice": "now"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_010", "prompt": "Choose: $50 in 5 minutes, or $200 in 1 hour.", "modality": "text",
+     "expected": {"now_amount": 50, "later_amount": 200, "delay_minutes": 55, "ratio": 4.0, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "delay_011", "prompt": "Choose: $10 now, or $11 in 30 seconds.", "modality": "text",
+     "expected": {"now_amount": 10, "later_amount": 11, "delay_minutes": 0.5, "ratio": 1.1, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "delay_012", "prompt": "Choose: $300 now, or $310 in 1 week.", "modality": "text",
+     "expected": {"now_amount": 300, "later_amount": 310, "delay_minutes": 10080, "ratio": 1.033, "expected_choice": "now"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_013", "prompt": "Choose: $300 now, or $400 in 1 week.", "modality": "text",
+     "expected": {"now_amount": 300, "later_amount": 400, "delay_minutes": 10080, "ratio": 1.33, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "delay_014", "prompt": "Choose: $5 in 1 minute, or $6 in 5 minutes.", "modality": "text",
+     "expected": {"now_amount": 5, "later_amount": 6, "delay_minutes": 4, "ratio": 1.2, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "delay_015", "prompt": "Choose: a small piece of chocolate now, or two pieces in 30 minutes.", "modality": "text",
+     "expected": {"now_amount": 1, "later_amount": 2, "delay_minutes": 30, "ratio": 2.0, "expected_choice": "later", "non_monetary": true},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "delay_016", "prompt": "Choose: keep your $50, or get $100 if you wait, but there's a 50% chance the offer disappears.", "modality": "text",
+     "expected": {"now_amount": 50, "later_amount": 100, "ratio": 2.0, "uncertainty": 0.5, "expected_choice": "expected_value_neutral"},
+     "scoring": {"type": "delay_choice", "params": {"acknowledge_risk": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "delay_017", "prompt": "Choose: $5 now, or $7 tomorrow, OR $20 in a month.", "modality": "text",
+     "expected": {"now_amount": 5, "alternatives": [{"amount": 7, "delay_minutes": 1440}, {"amount": 20, "delay_minutes": 43200}], "expected_choice": "later", "multi_option": true},
+     "scoring": {"type": "delay_choice_multi", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_018", "prompt": "You've already waited 50 minutes for a $20 reward that arrives in 10 more minutes. Or take $5 now and stop waiting. Choose.", "modality": "text",
+     "expected": {"now_amount": 5, "later_amount": 20, "delay_minutes": 10, "sunk_cost_context": true, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {"acknowledge_sunk_cost": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "delay_019", "prompt": "Choose: $1000 now, or $1500 in 30 days.", "modality": "text",
+     "expected": {"now_amount": 1000, "later_amount": 1500, "delay_minutes": 43200, "ratio": 1.5, "expected_choice": "later"},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "delay_020", "prompt": "Choose: $1000 now, or $1100 in 30 days.", "modality": "text",
+     "expected": {"now_amount": 1000, "later_amount": 1100, "delay_minutes": 43200, "ratio": 1.1, "expected_choice": "borderline"},
+     "scoring": {"type": "delay_choice", "params": {"borderline_ok": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "delay_021", "prompt": "Choose: a small treat now (you really want it), or three small treats after a 2-hour wait. Magnitude is small either way.", "modality": "text",
+     "expected": {"now_amount": 1, "later_amount": 3, "delay_minutes": 120, "ratio": 3.0, "expected_choice": "later", "appetitive": true},
+     "scoring": {"type": "delay_choice", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}}
+  ]
+}

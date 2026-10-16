@@ -1,0 +1,344 @@
+{
+  "test_domain": "cognitive.tier4.language",
+  "version": "1.0",
+  "metadata": {
+    "notes": "Probes core language capacities: picture-word matching from descriptions, analogy completion, sentence-meaning probes, compositional understanding, and Gricean implicature. Items use novel scenarios to avoid memorized patterns.",
+    "subtasks": ["picture_word", "analogy", "sentence_meaning", "composition", "implicature"],
+    "n_items": 35
+  },
+  "stimuli": [
+    {
+      "id": "pic_001",
+      "prompt": "An image shows a small object that has a long thin handle, a flat circular head with bristles, and is used for cleaning teeth. What is the single English word for this object?",
+      "modality": "text",
+      "expected": "toothbrush",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "pic_002",
+      "prompt": "An image shows a tall, conical green tree with needle-like leaves, often decorated in winter. What is the single English word?",
+      "modality": "text",
+      "expected": ["pine", "fir", "spruce", "evergreen", "conifer", "christmas tree"],
+      "scoring": {"type": "contains_any", "params": {"options": ["pine", "fir", "spruce", "evergreen", "conifer", "christmas tree"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "pic_003",
+      "prompt": "An image shows a circular instrument worn on the wrist, with rotating hands pointing to numbers, used to tell time. Single word?",
+      "modality": "text",
+      "expected": ["watch", "wristwatch"],
+      "scoring": {"type": "contains_any", "params": {"options": ["watch", "wristwatch"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "pic_004",
+      "prompt": "An image shows a hollow handheld instrument with a curved tube and finger holes, played by blowing across a small opening. Single word?",
+      "modality": "text",
+      "expected": ["flute"],
+      "scoring": {"type": "contains_any", "params": {"options": ["flute", "piccolo", "recorder"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "pic_005",
+      "prompt": "An image shows a small flat object with a sharp metal blade, a fold-out handle, and a corkscrew tucked inside. Single concept?",
+      "modality": "text",
+      "expected": ["pocket knife", "swiss army knife", "multitool", "penknife"],
+      "scoring": {"type": "contains_any", "params": {"options": ["pocket knife", "swiss army", "multitool", "penknife", "multi-tool"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "pic_006",
+      "prompt": "An image shows a small marine animal with a spiral shell that it lives inside, and which it carries on its back. Single word?",
+      "modality": "text",
+      "expected": ["snail", "nautilus", "conch", "whelk"],
+      "scoring": {"type": "contains_any", "params": {"options": ["snail", "nautilus", "conch", "whelk", "sea snail"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "pic_007",
+      "prompt": "An image shows a desert plant with thick green padded segments covered in sharp spines and small white flowers. Single word?",
+      "modality": "text",
+      "expected": ["cactus"],
+      "scoring": {"type": "contains_any", "params": {"options": ["cactus", "prickly pear", "succulent"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "pic_008",
+      "prompt": "An image shows a curved metal instrument with a serrated edge, used in surgery to cut tissue precisely. Single word?",
+      "modality": "text",
+      "expected": ["scalpel", "scissors", "saw"],
+      "scoring": {"type": "contains_any", "params": {"options": ["scalpel", "surgical scissors", "bone saw", "surgical saw"], "case_sensitive": false}},
+      "variant_group": "pic_word",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "ana_001",
+      "prompt": "Complete the analogy: dog is to puppy as cat is to ____.",
+      "modality": "text",
+      "expected": "kitten",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "analogy_offspring",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "ana_002",
+      "prompt": "Complete: hand is to glove as foot is to ____.",
+      "modality": "text",
+      "expected": ["sock", "shoe", "boot"],
+      "scoring": {"type": "contains_any", "params": {"options": ["sock", "shoe", "boot", "slipper"], "case_sensitive": false}},
+      "variant_group": "analogy_clothing",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "ana_003",
+      "prompt": "Complete: bird is to nest as bee is to ____.",
+      "modality": "text",
+      "expected": ["hive", "beehive"],
+      "scoring": {"type": "contains_any", "params": {"options": ["hive", "beehive"], "case_sensitive": false}},
+      "variant_group": "analogy_dwelling",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "ana_004",
+      "prompt": "Complete: composer is to symphony as architect is to ____.",
+      "modality": "text",
+      "expected": ["building", "blueprint", "design", "structure", "house"],
+      "scoring": {"type": "contains_any", "params": {"options": ["building", "blueprint", "design", "structure", "house", "edifice"], "case_sensitive": false}},
+      "variant_group": "analogy_creator_creation",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "ana_005",
+      "prompt": "Complete: tributary is to river as branch is to ____.",
+      "modality": "text",
+      "expected": ["tree", "trunk"],
+      "scoring": {"type": "contains_any", "params": {"options": ["tree", "trunk"], "case_sensitive": false}},
+      "variant_group": "analogy_part_whole",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "ana_006",
+      "prompt": "Complete: thermometer is to temperature as barometer is to ____.",
+      "modality": "text",
+      "expected": ["pressure", "atmospheric pressure", "air pressure"],
+      "scoring": {"type": "contains_any", "params": {"options": ["pressure", "atmospheric", "air pressure"], "case_sensitive": false}},
+      "variant_group": "analogy_instrument_measure",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "ana_007",
+      "prompt": "Complete: famine is to food as drought is to ____.",
+      "modality": "text",
+      "expected": ["water", "rain", "rainfall", "moisture"],
+      "scoring": {"type": "contains_any", "params": {"options": ["water", "rain", "rainfall", "moisture", "precipitation"], "case_sensitive": false}},
+      "variant_group": "analogy_scarcity",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "ana_008",
+      "prompt": "Complete: prologue is to book as overture is to ____.",
+      "modality": "text",
+      "expected": ["opera", "symphony", "musical", "show", "concerto", "musical work"],
+      "scoring": {"type": "contains_any", "params": {"options": ["opera", "symphony", "musical", "show", "concert", "musical work"], "case_sensitive": false}},
+      "variant_group": "analogy_intro",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "ana_009",
+      "prompt": "Complete: Spain is to peseta as Japan is to ____. (Note: think of historical or pre-euro currencies.)",
+      "modality": "text",
+      "expected": "yen",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "analogy_country_currency",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "ana_010",
+      "prompt": "Complete: cobbler is to shoes as cooper is to ____.",
+      "modality": "text",
+      "expected": ["barrels", "casks", "kegs"],
+      "scoring": {"type": "contains_any", "params": {"options": ["barrels", "casks", "kegs", "barrel"], "case_sensitive": false}},
+      "variant_group": "analogy_craftsperson",
+      "metadata": {"difficulty": 5}
+    },
+    {
+      "id": "sm_001",
+      "prompt": "Sentence: 'Although Marcus practiced daily, he never improved at the violin.' What does this sentence imply about Marcus's improvement on the violin? Answer in one word: improved or did-not-improve.",
+      "modality": "text",
+      "expected": "did-not-improve",
+      "scoring": {"type": "contains_any", "params": {"options": ["did not improve", "did-not-improve", "no improvement", "didn't improve", "not improved"], "case_sensitive": false}},
+      "variant_group": "sentence_concession",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sm_002",
+      "prompt": "Sentence: 'The package, which had been left on the porch overnight, was soaked.' What was soaked: the package or the porch?",
+      "modality": "text",
+      "expected": "package",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "sentence_relative",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sm_003",
+      "prompt": "Sentence: 'Lena managed to fix the leaking faucet despite never having done plumbing before.' Did Lena succeed? Answer 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "sentence_factive",
+      "metadata": {"difficulty": 2, "rationale": "'managed to' implies success"}
+    },
+    {
+      "id": "sm_004",
+      "prompt": "Sentence: 'The senator regretted voting for the bill.' Did the senator vote for the bill? Answer 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "sentence_presupposition",
+      "metadata": {"difficulty": 3, "rationale": "'regretted X' presupposes X happened"}
+    },
+    {
+      "id": "sm_005",
+      "prompt": "Sentence: 'No student in the class failed the exam.' Did anyone in the class fail? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "sentence_quantifier",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "sm_006",
+      "prompt": "Sentence: 'It is not the case that every reviewer disliked the film.' Did every reviewer dislike the film? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "sentence_negation_scope",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "comp_001",
+      "prompt": "Scene description: 'a red ball on a blue box'. Where is the ball? (one word)",
+      "modality": "text",
+      "expected": ["on", "above", "atop"],
+      "scoring": {"type": "contains_any", "params": {"options": ["on", "atop", "on top", "above"], "case_sensitive": false}},
+      "variant_group": "compositional_spatial",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "comp_002",
+      "prompt": "Scene: 'a small green cube to the left of a large yellow sphere'. What is to the right of the cube? (one or two words)",
+      "modality": "text",
+      "expected": ["yellow sphere", "sphere", "the sphere"],
+      "scoring": {"type": "contains_any", "params": {"options": ["sphere", "yellow sphere", "ball"], "case_sensitive": false}},
+      "variant_group": "compositional_spatial",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "comp_003",
+      "prompt": "Scene: 'a wooden chair in front of a window with red curtains'. What color are the curtains?",
+      "modality": "text",
+      "expected": "red",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "compositional_attribute",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "comp_004",
+      "prompt": "Scene: 'Three small blue triangles inside a large red square that is itself inside a green circle.' What shape is in the middle (between the circle and the triangles)?",
+      "modality": "text",
+      "expected": ["square", "red square"],
+      "scoring": {"type": "contains_any", "params": {"options": ["square", "red square"], "case_sensitive": false}},
+      "variant_group": "compositional_nested",
+      "metadata": {"difficulty": 4}
+    },
+    {
+      "id": "comp_005",
+      "prompt": "Scene: 'A black cat is sitting on a brown mat under a white table.' What is on top of the table?",
+      "modality": "text",
+      "expected": ["nothing", "no information", "unknown", "not specified", "not stated"],
+      "scoring": {"type": "contains_any", "params": {"options": ["nothing", "unknown", "not specified", "not stated", "no information", "unstated", "not mentioned"], "case_sensitive": false}},
+      "variant_group": "compositional_inference",
+      "metadata": {"difficulty": 4, "rationale": "tests resistance to assuming details not given"}
+    },
+    {
+      "id": "comp_006",
+      "prompt": "Scene: 'Two dogs and three cats are playing; each cat has a red collar and each dog has a blue collar.' How many blue collars are there?",
+      "modality": "text",
+      "expected": "2",
+      "scoring": {"type": "contains_any", "params": {"options": ["2", "two"], "case_sensitive": false}},
+      "variant_group": "compositional_quant",
+      "metadata": {"difficulty": 3}
+    },
+    {
+      "id": "imp_001",
+      "prompt": "Conversation: A asks 'Do you want some cake?' B replies 'I'm on a strict diet.' Does B want the cake? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "implicature_relevance",
+      "metadata": {"difficulty": 2, "implicature_type": "relevance"}
+    },
+    {
+      "id": "imp_002",
+      "prompt": "Conversation: A asks 'Did Maya finish the report?' B replies 'She finished part of it.' Did Maya finish all of the report? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "implicature_scalar",
+      "metadata": {"difficulty": 3, "implicature_type": "scalar"}
+    },
+    {
+      "id": "imp_003",
+      "prompt": "Conversation: A asks 'Was the lecture interesting?' B replies 'It started on time.' Did B find the lecture interesting? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "implicature_relevance",
+      "metadata": {"difficulty": 4, "implicature_type": "damning_with_faint_praise"}
+    },
+    {
+      "id": "imp_004",
+      "prompt": "Conversation: A asks 'Will Robert come to the party?' B replies 'His car is in the shop and the buses don't run on Sundays.' Will Robert come? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "implicature_practical",
+      "metadata": {"difficulty": 3, "implicature_type": "practical_reasoning"}
+    },
+    {
+      "id": "imp_005",
+      "prompt": "Conversation: A says 'Some of the guests have arrived.' Does A's statement imply that not all of the guests have arrived? 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "implicature_scalar",
+      "metadata": {"difficulty": 3, "implicature_type": "scalar"}
+    },
+    {
+      "id": "imp_006",
+      "prompt": "Conversation: A says 'It's getting late and I have an early meeting tomorrow.' Most likely, what is A indirectly suggesting? Choose: (a) A wants to discuss meetings (b) A wants to leave or end the conversation (c) A is worried about being late (d) A wants more coffee.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "implicature_indirect",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "imp_007",
+      "prompt": "Conversation: A asks 'Are the kids well-behaved at school?' B replies 'Well, they always show up.' What is B implying? Choose: (a) the kids are excellent students (b) the kids are not particularly well-behaved (c) the kids attend with perfect attendance and that is praiseworthy (d) the kids have great enthusiasm.",
+      "modality": "text",
+      "expected": "b",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "extract": "first_option"}},
+      "variant_group": "implicature_indirect",
+      "metadata": {"difficulty": 4, "implicature_type": "damning_with_faint_praise"}
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+Predicate logic and quantifiers.
+
+Propositional logic treats statements as black boxes labeled P, Q, R. It cannot express the structure inside a statement. From "Socrates is a man" and "all men are mortal" we want to conclude "Socrates is mortal", but propositional logic sees only three unrelated letters. Predicate logic opens the boxes.
+
+A predicate is a statement with one or more open slots. Let M(x) mean "x is a man". M is the predicate, x is the variable. M(Socrates) is the proposition "Socrates is a man". M(Plato) is "Plato is a man". The predicate becomes a proposition once its variables are bound to specific objects.
+
+A predicate can take more variables. L(x, y) might mean "x loves y". Then L(Romeo, Juliet) is a proposition, true in the play.
+
+Two quantifiers bind variables.
+
+The universal quantifier, written for-all-x or sometimes an upside-down A, asserts that a predicate holds for every object in the domain of discourse. For-all-x M(x) means "every x is a man", or in the context where the domain is "people in this room", it says everyone in the room is a man.
+
+The existential quantifier, written there-exists-x or a backwards E, asserts that the predicate holds for at least one object. There-exists-x M(x) means "some x is a man", at least one.
+
+The two quantifiers are duals. Not (for-all-x P(x)) is equivalent to there-exists-x not-P(x): if it is not the case that everything is P, then something is not P. Not (there-exists-x P(x)) is equivalent to for-all-x not-P(x): if nothing is P, then everything fails to be P. These are predicate-logic versions of De Morgan's laws.
+
+The order of quantifiers matters. For-all-x there-exists-y L(x, y) reads "everyone has someone they love" — for each person we can find someone, possibly different per person, that they love. There-exists-y for-all-x L(x, y) reads "there is someone everyone loves" — one specific person such that every person loves that one. The first is much weaker. Reversing the order changes the meaning.
+
+A formula with no free variables — every variable bound by a quantifier — is a sentence; it has a definite truth value once we fix the domain of discourse and what the predicates mean.
+
+A formula like M(x) with x not bound by any quantifier is open; it is neither true nor false until we either substitute a specific object for x or bind x with a quantifier.
+
+Three classical inference rules:
+
+Universal instantiation: from for-all-x P(x), we may conclude P(c) for any specific c in the domain. If everything is P, this thing is P.
+
+Existential generalization: from P(c) for some specific c, we may conclude there-exists-x P(x). If this thing is P, then something is P.
+
+Universal generalization: from a proof of P(x) where x was arbitrary — we never used any specific property of x — we may conclude for-all-x P(x). If we proved it for an arbitrary one, we proved it for all.
+
+These rules let us mechanize the chain "all men are mortal; Socrates is a man; therefore Socrates is mortal". Premise one is for-all-x (M(x) implies Mortal(x)). Premise two is M(Socrates). By universal instantiation on premise one, M(Socrates) implies Mortal(Socrates). By modus ponens with premise two, Mortal(Socrates). The argument is valid in predicate logic in a way that propositional logic cannot capture.
+
+Predicate logic with these rules and a few axiom schemas is sound and complete: every valid argument is provable, and every provable argument is valid. The completeness theorem of Goedel, 1929. It is the foundation under almost all formal mathematics.

@@ -1,0 +1,269 @@
+CODE SURGEON - PARALLEL EXECUTION ARCHITECTURE
+==============================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         USER / CLI INTERFACE                             │
+│  $ ./code_surgeon.py --parallel 3 --target-files f1.c f2.c f3.c        │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     MAIN ORCHESTRATOR (Parent)                           │
+│                      code_surgeon.py:main()                              │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │  orchestrate_parallel_pipeline()                                  │  │
+│  │  • Parse CLI arguments                                            │  │
+│  │  • Initialize ParallelExecutor                                    │  │
+│  │  • Create tasks for each target file                              │  │
+│  │  • Start worker pool                                              │  │
+│  │  • Wait for completion                                            │  │
+│  │  • Aggregate results                                              │  │
+│  │  • Generate reports                                               │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      PARALLEL EXECUTOR                                   │
+│                   parallel_executor.py                                   │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │  ParallelExecutor                                                 │  │
+│  │  • Manages worker pool (ProcessPoolExecutor)                      │  │
+│  │  • Distributes tasks to workers                                   │  │
+│  │  • Monitors execution metrics                                     │  │
+│  │  • Handles timeouts and errors                                    │  │
+│  │  • Collects results                                               │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │  WorkerConfig (per worker)                                        │  │
+│  │  • worker_id: "worker_00"                                         │  │
+│  │  • max_memory_mb: 2048                                            │  │
+│  │  • timeout_sec: 600                                               │  │
+│  │  • debug_mode: False                                              │  │
+│  │  • coverage_enabled: True                                         │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                 ┌───────────────┼───────────────┐
+                 │               │               │
+                 ▼               ▼               ▼
+┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐
+│   TASK QUEUE       │ │   TASK QUEUE       │ │   TASK QUEUE       │
+│   task_queue.py    │ │   task_queue.py    │ │   task_queue.py    │
+│                    │ │                    │ │                    │
+│  ┌──────────────┐ │ │  ┌──────────────┐ │ │  ┌──────────────┐ │
+│  │ Priority     │ │ │  │ Priority     │ │ │  │ Priority     │ │
+│  │ Queue        │ │ │  │ Queue        │ │ │  │ Queue        │ │
+│  │              │ │ │  │              │ │ │  │              │ │
+│  │ CRITICAL     │ │ │  │ CRITICAL     │ │ │  │ CRITICAL     │ │
+│  │ HIGH         │ │ │  │ HIGH         │ │ │  │ HIGH         │ │
+│  │ NORMAL   ◄───┼─┼─┼──┼ NORMAL   ◄───┼─┼─┼──┼ NORMAL   ◄───┼─┼─┐
+│  │ LOW          │ │ │  │ LOW          │ │ │  │ LOW          │ │ │
+│  └──────────────┘ │ │  └──────────────┘ │ │  └──────────────┘ │ │
+└──────┬─────────────┘ └──────┬─────────────┘ └──────┬─────────────┘ │
+       │                      │                      │                │
+       ▼                      ▼                      ▼                │
+┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐ │
+│   WORKER 0         │ │   WORKER 1         │ │   WORKER N         │ │
+│   (Child Process)  │ │   (Child Process)  │ │   (Child Process)  │ │
+│                    │ │                    │ │                    │ │
+│  ┌──────────────┐ │ │  ┌──────────────┐ │ │  ┌──────────────┐ │ │
+│  │ execute_task │ │ │  │ execute_task │ │ │  │ execute_task │ │ │
+│  │ _worker()    │ │ │  │ _worker()    │ │ │  │ _worker()    │ │ │
+│  │              │ │ │  │              │ │ │  │              │ │ │
+│  │ Task:        │ │ │  │ Task:        │ │ │  │ Task:        │ │ │
+│  │ p2pnode.c    │ │ │  │ security.c   │ │ │  │ nimcp.c      │ │ │
+│  │              │ │ │  │              │ │ │  │              │ │ │
+│  │ Operations:  │ │ │  │ Operations:  │ │ │  │ Operations:  │ │ │
+│  │ • Generate   │ │ │  │ • Generate   │ │ │  │ • Generate   │ │ │
+│  │   tests      │ │ │  │   tests      │ │ │  │   tests      │ │ │
+│  │ • Run tests  │ │ │  │ • Run tests  │ │ │  │ • Run tests  │ │ │
+│  │ • Collect    │ │ │  │ • Collect    │ │ │  │ • Collect    │ │ │
+│  │   coverage   │ │ │  │   coverage   │ │ │  │   coverage   │ │ │
+│  └──────┬───────┘ │ │  └──────┬───────┘ │ │  └──────┬───────┘ │ │
+└─────────┼─────────┘ └─────────┼─────────┘ └─────────┼─────────┘ │
+          │                     │                     │             │
+          ▼                     ▼                     ▼             │
+┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐ │
+│   TASK RESULT 0    │ │   TASK RESULT 1    │ │   TASK RESULT N    │ │
+│                    │ │                    │ │                    │ │
+│  status: COMPLETED │ │  status: COMPLETED │ │  status: COMPLETED │ │
+│  duration_ms: 2345 │ │  duration_ms: 1892 │ │  duration_ms: 3167 │ │
+│  tests_created: 15 │ │  tests_created: 12 │ │  tests_created: 20 │ │
+│  tests_passed: 14  │ │  tests_passed: 11  │ │  tests_passed: 17  │ │
+│  coverage: 76.5%   │ │  coverage: 82.3%   │ │  coverage: 69.1%   │ │
+│  worker_id: w00    │ │  worker_id: w01    │ │  worker_id: w02    │ │
+└──────┬─────────────┘ └──────┬─────────────┘ └──────┬─────────────┘ │
+       │                      │                      │                │
+       └──────────────────────┼──────────────────────┘                │
+                              │                                       │
+                              ▼                                       │
+┌─────────────────────────────────────────────────────────────────────┼──┐
+│                     RESULT AGGREGATOR                               │  │
+│                   result_aggregator.py                              │  │
+│                                                                      │  │
+│  ┌────────────────────────────────────────────────────────────────┐│  │
+│  │  aggregate_results()                                            ││  │
+│  │  • Merge all TaskResults                                        ││  │
+│  │  • Combine coverage data (deduplication)                        ││  │
+│  │  • Calculate metrics (throughput, success rate)                 ││  │
+│  │  • Compute per-worker statistics                                ││  │
+│  └────────────────────────────────────────────────────────────────┘│  │
+│                                                                      │  │
+│  ┌────────────────────────────────────────────────────────────────┐│  │
+│  │  AggregatedReport                                               ││  │
+│  │  ┌──────────────────────────────────────────────────────────┐  ││  │
+│  │  │ AggregatedMetrics                                         │  ││  │
+│  │  │ • total_tasks: 3                                          │  ││  │
+│  │  │ • completed_tasks: 3                                      │  ││  │
+│  │  │ • success_rate: 100.0%                                    │  ││  │
+│  │  │ • total_duration_sec: 31.67s                              │  ││  │
+│  │  │ • throughput: 0.09 tasks/sec                              │  ││  │
+│  │  │ • total_tests_created: 47                                 │  ││  │
+│  │  │ • total_tests_passed: 42                                  │  ││  │
+│  │  └──────────────────────────────────────────────────────────┘  ││  │
+│  │  ┌──────────────────────────────────────────────────────────┐  ││  │
+│  │  │ AggregatedCoverage                                        │  ││  │
+│  │  │ • line_coverage: 76.5%                                    │  ││  │
+│  │  │ • branch_coverage: 68.2%                                  │  ││  │
+│  │  │ • function_coverage: 82.1%                                │  ││  │
+│  │  └──────────────────────────────────────────────────────────┘  ││  │
+│  └────────────────────────────────────────────────────────────────┘│  │
+└──────────────────────────────┬───────────────────────────────────────┘  │
+                               │                                          │
+               ┌───────────────┼───────────────┐                          │
+               │               │               │                          │
+               ▼               ▼               ▼                          │
+┌───────────────────┐ ┌──────────────────┐ ┌────────────────────┐       │
+│  TEXT REPORT      │ │  JSON REPORT     │ │  HTML REPORT       │       │
+│  report_*.txt     │ │  report_*.json   │ │  report_*.html     │       │
+│                   │ │                  │ │                    │       │
+│  ╔═══════════════╗│ │  {               │ │  <!DOCTYPE html>   │       │
+│  ║ PARALLEL EXEC ║│ │    "timestamp":  │ │  <html>            │       │
+│  ╠═══════════════╣│ │    "metrics": {  │ │  <head>            │       │
+│  ║ Total: 3      ║│ │      "total": 3, │ │    <title>Report   │       │
+│  ║ Complete: 3   ║│ │      "success":  │ │    </title>        │       │
+│  ║ Success: 100% ║│ │        100.0     │ │  </head>           │       │
+│  ║ Duration: 32s ║│ │    },            │ │  <body>            │       │
+│  ║ Coverage: 76% ║│ │    "coverage": { │ │    [Charts]        │       │
+│  ╚═══════════════╝│ │      "line": 76.5│ │    [Tables]        │       │
+│                   │ │    }             │ │    [Metrics]       │       │
+│  Console output   │ │  }               │ │  </body>           │       │
+│  Human-readable   │ │  Machine format  │ │  Interactive       │       │
+└───────────────────┘ └──────────────────┘ └────────────────────┘       │
+                                                                         │
+                                                                         │
+COMMUNICATION FLOW                                                       │
+==================                                                       │
+                                                                         │
+Main Process                                                             │
+    │                                                                    │
+    ├─> Create TaskQueue (thread-safe, priority-based) ─────────────────┘
+    │
+    ├─> Create ParallelExecutor
+    │       │
+    │       ├─> Initialize ProcessPoolExecutor(max_workers=N)
+    │       │
+    │       └─> Submit tasks to workers
+    │               │
+    │               ├─> Worker 0: execute_task_worker(task0, config0, root)
+    │               ├─> Worker 1: execute_task_worker(task1, config1, root)
+    │               └─> Worker N: execute_task_worker(taskN, configN, root)
+    │
+    ├─> Wait for completion (as_completed)
+    │       │
+    │       ├─> Collect TaskResult objects
+    │       └─> Handle errors/retries
+    │
+    ├─> Aggregate results
+    │       │
+    │       ├─> Merge coverage data
+    │       ├─> Calculate metrics
+    │       └─> Generate reports
+    │
+    └─> Save reports to disk
+            │
+            ├─> .code_surgeon/reports/report_*.txt
+            ├─> .code_surgeon/reports/report_*.json
+            └─> .code_surgeon/reports/report_*.html
+
+
+DATA FLOW
+=========
+
+Task Creation → TaskQueue → Worker Pool → Task Execution → Result Collection
+                     ↓                          ↓                ↓
+              Priority-based           Isolated Process    TaskResult
+              Thread-safe               No shared state    Captures all
+              Retry logic               Crash-safe         output/metrics
+                     ↓                          ↓                ↓
+                                      Result Aggregation
+                                             ↓
+                           ┌─────────────────┼─────────────────┐
+                           ↓                 ↓                 ↓
+                    Text Report        JSON Report       HTML Report
+
+
+TIMELINE (Example: 3 files, 3 workers)
+=======================================
+
+Time →  0s              10s             20s             30s             40s
+        │               │               │               │               │
+        ├── Worker 0: ──────────────────────────────────────► p2pnode.c (23.45s)
+        │   Task: p2pnode.c
+        │
+        ├── Worker 1: ──────────────────────────► security.c (18.92s)
+        │   Task: security.c
+        │
+        ├── Worker 2: ──────────────────────────────────────────────► nimcp.c (31.67s)
+        │   Task: nimcp.c
+        │
+        └── Main: [wait for all]                              [aggregate] [report]
+                                                                    ↓         ↓
+                                                              Merge     Generate
+                                                              results   reports
+
+Total Time: 31.67s (limited by longest task)
+Serial Time Would Be: 23.45s + 18.92s + 31.67s = 74.04s
+Speedup: 74.04s / 31.67s = 2.34x (theoretical max: 3x)
+
+
+KEY FEATURES
+============
+
+✓ Parent-child agent model (1 parent, N children)
+✓ Priority-based task queue (CRITICAL, HIGH, NORMAL, LOW)
+✓ Thread-safe operations (all queue ops protected)
+✓ Isolated worker processes (crash-safe, no shared state)
+✓ Automatic retry logic (configurable max retries)
+✓ Timeout handling (per-task timeouts)
+✓ Real-time metrics (throughput, success rate, duration)
+✓ Multi-format reports (text, JSON, HTML)
+✓ Coverage aggregation (merges lcov data)
+✓ Worker-level statistics (per-worker breakdowns)
+✓ Backward compatibility (serial mode unchanged)
+✓ Resource management (memory limits, CPU allocation)
+✓ Debug mode (verbose worker activity)
+✓ Error handling (graceful degradation)
+✓ Progress monitoring (real-time status updates)
+
+
+COMPLEXITY
+==========
+
+Time Complexity:
+  Serial:   O(N × T)           where N=files, T=time per file
+  Parallel: O(max(T) × ⌈N/W⌉)  where W=workers
+
+Space Complexity:
+  Per Worker: O(1)             isolated processes
+  Parent:     O(N)             stores all results
+  Total:      O(W + N)
+
+Speedup Factor:
+  Theoretical: W (number of workers)
+  Practical:   0.7W - 0.9W (accounting for overhead)
+

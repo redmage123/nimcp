@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "comment": "Finance + economics curriculum manifest. Hand-authored seed lessons covering money, personal finance, markets, investing, macroeconomics, risk, and ethics. Stage-2 primer on money/budgeting/markets, Stage-3 progression to investing, macro, risk, and the ethical structure of financial life. Companion to the streaming Investopedia drip (CE-16) — this corpus gives Athena a stable on-disk grounding before live chunks arrive. Schema mirrors data/math_corpus/index.json.",
+  "registers": {
+    "money_basics": "what money is, exchange, store of value; Stage 2",
+    "personal_finance": "saving, budgeting, debt, credit, compound interest; Stage 2-3",
+    "markets_intro": "supply, demand, price formation, why prices change; Stage 2-3",
+    "investing_intro": "stocks, bonds, diversification, time horizon; Stage 3",
+    "macro_intro": "GDP, inflation, recession, central banks; Stage 3",
+    "risk_and_uncertainty": "expected value, variance, risk premium intuition; Stage 3",
+    "ethics_finance": "incentives, externalities, fairness, fraud; Stage 3"
+  },
+  "works": [
+    {
+      "id": "seed.money_basics",
+      "register": "money_basics",
+      "title": "What money is, and why people invented it",
+      "files": ["money_basics/money_basics.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.saving_budgeting",
+      "register": "personal_finance",
+      "title": "Saving and budgeting",
+      "files": ["personal_finance/saving_budgeting.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.debt_intro",
+      "register": "personal_finance",
+      "title": "Debt, credit, and the price of trust",
+      "files": ["personal_finance/debt_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.markets_intro",
+      "register": "markets_intro",
+      "title": "An introduction to markets",
+      "files": ["markets_intro/markets_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.prices_explained",
+      "register": "markets_intro",
+      "title": "Why prices change",
+      "files": ["markets_intro/prices_explained.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.investing_intro",
+      "register": "investing_intro",
+      "title": "An introduction to investing",
+      "files": ["investing_intro/investing_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.compound_interest",
+      "register": "personal_finance",
+      "title": "Compound interest, and why time is on your side",
+      "files": ["personal_finance/compound_interest.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.2,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.macroeconomics_intro",
+      "register": "macro_intro",
+      "title": "An introduction to macroeconomics",
+      "files": ["macro_intro/macro_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.inflation_recession",
+      "register": "macro_intro",
+      "title": "Inflation and recession",
+      "files": ["macro_intro/inflation_recession.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.risk_uncertainty",
+      "register": "risk_and_uncertainty",
+      "title": "Risk, uncertainty, and expected value",
+      "files": ["risk_and_uncertainty/risk_uncertainty.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.ethics_in_finance",
+      "register": "ethics_finance",
+      "title": "Ethics in finance",
+      "files": ["ethics_finance/ethics_in_finance.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.1,
+      "source": "hand_authored"
+    }
+  ]
+}

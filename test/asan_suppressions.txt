@@ -1,0 +1,17 @@
+# ASAN/LSAN Suppression file for NIMCP
+# Suppresses known leaks from third-party libraries that we cannot control
+
+# OpenCL runtime leaks (NVIDIA, AMD, Intel drivers)
+# These are internal allocations in the OpenCL ICD loader and drivers
+leak:libOpenCL.so
+leak:libnvidia-opencl.so
+leak:libamdhip64.so
+leak:libIntelOpenCL.so
+
+# CUDA runtime leaks (if any)
+leak:libcuda.so
+leak:libcudart.so
+
+# Generic GPU driver leaks
+leak:libnvidia-glcore.so
+leak:libGLX_nvidia.so

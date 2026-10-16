@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Athena — Neural Avatar</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #0d0d14;
+            --bg-tertiary: #08080c;
+            --bg-input: #111;
+            --border-color: #1a1a2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --text-muted: #666;
+            --text-dim: #555;
+            --accent: #4fc3f7;
+            --accent-bg: #1a3a5a;
+            --accent-hover: #2a4a6a;
+            --msg-user-bg: #1a2a3a;
+            --msg-user-text: #b0d0f0;
+            --msg-athena-bg: #1a1a2e;
+            --msg-athena-text: #d0d0e0;
+            --head-color-r: 0.83;
+            --head-color-g: 0.65;
+            --head-color-b: 0.46;
+        }
+        .light-theme {
+            --bg-primary: #f0f0f5;
+            --bg-secondary: #e8e8f0;
+            --bg-tertiary: #f5f5fa;
+            --bg-input: #fff;
+            --border-color: #c0c0d0;
+            --text-primary: #222;
+            --text-secondary: #555;
+            --text-muted: #777;
+            --text-dim: #999;
+            --accent: #1a7ab5;
+            --accent-bg: #c0ddf0;
+            --accent-hover: #a0cce8;
+            --msg-user-bg: #d0e0f0;
+            --msg-user-text: #1a3050;
+            --msg-athena-bg: #dde0f0;
+            --msg-athena-text: #2a2a40;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+        }
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+        #avatar-panel {
+            flex: 1;
+            position: relative;
+        }
+        #avatar-panel.fullscreen {
+            width: 100vw;
+        }
+        #canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #waveform-strip {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            right: 0;
+            height: 24px;
+            pointer-events: none;
+        }
+        #status-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(10, 10, 15, 0.85);
+            padding: 8px 16px;
+            font-size: 12px;
+            display: flex;
+            gap: 20px;
+            border-top: 1px solid var(--border-color);
+            align-items: center;
+        }
+        .light-theme #status-bar {
+            background: rgba(240, 240, 245, 0.9);
+        }
+        .stat { color: var(--text-secondary); }
+        .stat-value { color: var(--accent); font-weight: 600; }
+        .stat-label { color: var(--text-muted); }
+
+        .status-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 4px;
+        }
+        .status-btn:hover { color: var(--accent); border-color: var(--accent); }
+        .status-spacer { flex: 1; }
+
+        #side-panel {
+            width: 320px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            overflow-y: auto;
+        }
+        #side-panel.hidden { display: none; }
+        h2 { font-size: 14px; color: var(--accent); margin: 12px 0 8px; text-transform: uppercase; letter-spacing: 1px; }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #111;
+        }
+        .light-theme .metric { border-bottom-color: #d0d0d8; }
+        .metric-name { color: var(--text-secondary); }
+        .metric-val { color: var(--text-primary); font-family: monospace; }
+
+        #chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            margin-top: 12px;
+        }
+        #chat-log {
+            flex: 1;
+            overflow-y: auto;
+            font-size: 13px;
+            padding: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        .msg { margin: 6px 0; padding: 6px 10px; border-radius: 8px; }
+        .msg-user { background: var(--msg-user-bg); color: var(--msg-user-text); }
+        .msg-athena { background: var(--msg-athena-bg); color: var(--msg-athena-text); }
+        .msg-system { color: var(--text-dim); font-style: italic; font-size: 11px; }
+
+        #chat-input-area { display: flex; gap: 6px; }
+        #chat-input {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid #2a2a3e;
+            border-radius: 6px;
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 13px;
+            outline: none;
+        }
+        .light-theme #chat-input { border-color: #b0b0c0; }
+        #chat-input:focus { border-color: var(--accent); }
+        #send-btn, #mic-btn {
+            background: var(--accent-bg);
+            border: none;
+            color: var(--accent);
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        #send-btn:hover, #mic-btn:hover { background: var(--accent-hover); }
+        #mic-btn.recording {
+            background: #5a1a1a;
+            color: #f44;
+            animation: pulse-red 1s infinite;
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,68,68,0.4); }
+            50% { box-shadow: 0 0 8px 3px rgba(255,68,68,0.3); }
+        }
+
+        .emotion-bar {
+            height: 4px;
+            background: #111;
+            border-radius: 2px;
+            margin: 2px 0 6px;
+            overflow: hidden;
+        }
+        .light-theme .emotion-bar { background: #d0d0d8; }
+        .emotion-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        .fill-valence { background: linear-gradient(90deg, #f44, #4f4); }
+        .fill-arousal { background: linear-gradient(90deg, #44f, #f84); }
+        .fill-spikes { background: #4fc3f7; }
+
+        #connection-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .connected { background: #4caf50; }
+        .disconnected { background: #f44336; }
+
+        #sparkline-canvas {
+            width: 100%;
+            height: 50px;
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            margin: 4px 0 8px;
+        }
+
+        #modules-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 4px 0 8px;
+        }
+        .module-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            background: #1a2a2a;
+            color: #4fc3f7;
+            border: 1px solid #2a3a3a;
+        }
+        .light-theme .module-badge {
+            background: #d0e8f0;
+            color: #1a5a7a;
+            border-color: #a0c8d8;
+        }
+        .module-badge.active {
+            background: #1a3a3a;
+            color: #6cf;
+            border-color: #4fc3f7;
+            box-shadow: 0 0 4px rgba(79, 195, 247, 0.3);
+        }
+        .light-theme .module-badge.active {
+            background: #a0d8f0;
+            color: #0a3a5a;
+            border-color: #1a7ab5;
+        }
+
+        #training-section .metric-val.loss-good { color: #4caf50; }
+        #training-section .metric-val.loss-ok { color: #ff9800; }
+        #training-section .metric-val.loss-bad { color: #f44336; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="avatar-panel">
+            <canvas id="canvas"></canvas>
+            <canvas id="waveform-strip"></canvas>
+            <div id="status-bar">
+                <span class="stat">
+                    <span id="connection-dot" class="disconnected"></span>
+                    <span id="conn-status">Disconnected</span>
+                </span>
+                <span class="stat"><span class="stat-label">FPS:</span> <span id="fps" class="stat-value">0</span></span>
+                <span class="stat"><span class="stat-label">Spikes:</span> <span id="spikes" class="stat-value">0</span></span>
+                <span class="stat"><span class="stat-label">Emotion:</span> <span id="emotion-label" class="stat-value">neutral</span></span>
+                <span class="stat"><span class="stat-label">Speaking:</span> <span id="speaking" class="stat-value">no</span></span>
+                <span class="status-spacer"></span>
+                <button class="status-btn" id="theme-btn" title="Toggle theme (light/dark)">&#9789;</button>
+                <button class="status-btn" id="screenshot-btn" title="Screenshot (capture canvas)">&#128247;</button>
+                <button class="status-btn" id="fullscreen-btn" title="Fullscreen toggle (F)">&#9974;</button>
+            </div>
+        </div>
+
+        <div id="side-panel">
+            <h2>Neural State</h2>
+            <div class="metric"><span class="metric-name">Valence</span><span id="val-valence" class="metric-val">0.00</span></div>
+            <div class="emotion-bar"><div id="bar-valence" class="emotion-fill fill-valence" style="width:50%"></div></div>
+
+            <div class="metric"><span class="metric-name">Arousal</span><span id="val-arousal" class="metric-val">0.50</span></div>
+            <div class="emotion-bar"><div id="bar-arousal" class="emotion-fill fill-arousal" style="width:50%"></div></div>
+
+            <div class="metric"><span class="metric-name">SNN Spikes</span><span id="val-spikes" class="metric-val">0</span></div>
+            <div class="emotion-bar"><div id="bar-spikes" class="emotion-fill fill-spikes" style="width:0%"></div></div>
+
+            <h2>Emotion History</h2>
+            <canvas id="sparkline-canvas"></canvas>
+
+            <h2>FACS Action Units</h2>
+            <div class="metric"><span class="metric-name">AU12 Smile</span><span id="au12" class="metric-val">0.00</span></div>
+            <div class="metric"><span class="metric-name">AU15 Frown</span><span id="au15" class="metric-val">0.00</span></div>
+            <div class="metric"><span class="metric-name">AU1 Brow Raise</span><span id="au1" class="metric-val">0.00</span></div>
+            <div class="metric"><span class="metric-name">AU4 Brow Lower</span><span id="au4" class="metric-val">0.00</span></div>
+            <div class="metric"><span class="metric-name">AU6 Cheek Raise</span><span id="au6" class="metric-val">0.00</span></div>
+            <div class="metric"><span class="metric-name">AU26 Jaw Drop</span><span id="au26" class="metric-val">0.00</span></div>
+
+            <h2>Active Modules</h2>
+            <div id="modules-container">
+                <span class="module-badge" data-module="perception">perception</span>
+                <span class="module-badge" data-module="reasoning">reasoning</span>
+                <span class="module-badge" data-module="emotion">emotion</span>
+                <span class="module-badge" data-module="memory">memory</span>
+                <span class="module-badge" data-module="language">language</span>
+                <span class="module-badge" data-module="attention">attention</span>
+                <span class="module-badge" data-module="imagination">imagination</span>
+                <span class="module-badge" data-module="introspection">introspection</span>
+                <span class="module-badge" data-module="ethics">ethics</span>
+                <span class="module-badge" data-module="theory_of_mind">theory of mind</span>
+                <span class="module-badge" data-module="creativity">creativity</span>
+                <span class="module-badge" data-module="planning">planning</span>
+            </div>
+
+            <h2>Voice</h2>
+            <div class="metric"><span class="metric-name">Pitch</span><span id="val-pitch" class="metric-val">210 Hz</span></div>
+            <div class="metric"><span class="metric-name">Rate</span><span id="val-rate" class="metric-val">1.0x</span></div>
+            <div class="metric"><span class="metric-name">Quality</span><span id="val-quality" class="metric-val">normal</span></div>
+            <div class="metric"><span class="metric-name">Accent</span><span id="val-accent" class="metric-val">neutral</span></div>
+
+            <h2>Identity</h2>
+            <div class="metric"><span class="metric-name">Personality</span><span id="val-personality" class="metric-val">—</span></div>
+            <div class="metric"><span class="metric-name">Narrative</span><span id="val-narrative" class="metric-val">—</span></div>
+
+            <div id="training-section">
+                <h2>Training Progress</h2>
+                <div class="metric"><span class="metric-name">Step</span><span id="val-train-step" class="metric-val">—</span></div>
+                <div class="metric"><span class="metric-name">Loss</span><span id="val-train-loss" class="metric-val">—</span></div>
+                <div class="metric"><span class="metric-name">Stage</span><span id="val-train-stage" class="metric-val">—</span></div>
+                <div class="metric"><span class="metric-name">LR</span><span id="val-train-lr" class="metric-val">—</span></div>
+            </div>
+
+            <div id="chat-area">
+                <h2>Conversation</h2>
+                <div id="chat-log">
+                    <div class="msg msg-system">Connect to brain daemon to start talking to Athena.</div>
+                </div>
+                <div id="chat-input-area">
+                    <button id="mic-btn" title="Toggle mic (Space)">&#127908;</button>
+                    <input id="chat-input" type="text" placeholder="Talk to Athena..." autocomplete="off">
+                    <button id="send-btn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.169/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // ============================================================
+        // Scene setup
+        // ============================================================
+        const canvas = document.getElementById('canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0f);
+
+        const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+        camera.position.set(0, 0.1, 0.8);
+
+        const controls = new OrbitControls(camera, canvas);
+        controls.target.set(0, 0.05, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 2;
+        controls.minDistance = 0.3;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.8);
+        scene.add(ambientLight);
+
+        const keyLight = new THREE.DirectionalLight(0xddeeff, 1.5);
+        keyLight.position.set(1, 1, 1);
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0x4466aa, 0.5);
+        fillLight.position.set(-1, 0.5, 0.5);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0x4fc3f7, 0.3);
+        rimLight.position.set(0, 0.5, -1);
+        scene.add(rimLight);
+
+        // ============================================================
+        // GLB Model Loader + Procedural Head Fallback
+        // ============================================================
+        let headMesh = null;
+        let leftEye = null, rightEye = null;
+        let jawPivot = null;
+        let glbModel = null;
+        let glbMorphTargets = null;
+        let useGLB = false;
+
+        // ARKit blend shape name -> FACS AU mapping
+        const arkitToFACS = {
+            browInnerUp: { au: 'au1', scale: 1.0 },
+            browOuterUpLeft: { au: 'au2', scale: 1.0 },
+            browOuterUpRight: { au: 'au2', scale: 1.0 },
+            browDownLeft: { au: 'au4', scale: 1.0 },
+            browDownRight: { au: 'au4', scale: 1.0 },
+            eyeSquintLeft: { au: 'au6', scale: 0.7 },
+            eyeSquintRight: { au: 'au6', scale: 0.7 },
+            cheekSquintLeft: { au: 'au6', scale: 0.5 },
+            cheekSquintRight: { au: 'au6', scale: 0.5 },
+            eyeWideLeft: { au: 'au5', scale: 1.0 },
+            eyeWideRight: { au: 'au5', scale: 1.0 },
+            jawOpen: { au: 'au26', scale: 1.0 },
+            mouthSmileLeft: { au: 'au12', scale: 1.0 },
+            mouthSmileRight: { au: 'au12', scale: 1.0 },
+            mouthFrownLeft: { au: 'au15', scale: 1.0 },
+            mouthFrownRight: { au: 'au15', scale: 1.0 },
+            mouthPucker: { au: 'lip_round', scale: 1.0 },
+            mouthFunnel: { au: 'lip_round', scale: 0.7 },
+            mouthOpen: { au: 'au26', scale: 0.5 },
+            mouthShrugUpper: { au: 'au17', scale: 0.5 },
+            jawLeft: { au: 'jaw_lateral', scale: 1.0 },
+            jawRight: { au: 'jaw_lateral', scale: -1.0 },
+            eyeBlinkLeft: { au: 'blink', scale: 1.0 },
+            eyeBlinkRight: { au: 'blink', scale: 1.0 },
+            noseSneerLeft: { au: 'au9', scale: 1.0 },
+            noseSneerRight: { au: 'au9', scale: 1.0 },
+            mouthLeft: { au: 'mouth_lateral', scale: 1.0 },
+            mouthRight: { au: 'mouth_lateral', scale: -1.0 },
+            mouthUpperUpLeft: { au: 'lip_upper', scale: 1.0 },
+            mouthUpperUpRight: { au: 'lip_upper', scale: 1.0 },
+            mouthLowerDownLeft: { au: 'lip_lower', scale: 1.0 },
+            mouthLowerDownRight: { au: 'lip_lower', scale: 1.0 }
+        };
+
+        function applyBlendShapesFromFACS(state) {
+            if (!glbMorphTargets) return;
+            for (const mesh of glbMorphTargets) {
+                const dict = mesh.morphTargetDictionary;
+                const influences = mesh.morphTargetInfluences;
+                if (!dict || !influences) continue;
+                for (const [arkitName, mapping] of Object.entries(arkitToFACS)) {
+                    if (arkitName in dict) {
+                        const idx = dict[arkitName];
+                        const val = state[mapping.au] || 0;
+                        influences[idx] = Math.max(0, Math.min(1, val * mapping.scale));
+                    }
+                }
+            }
+        }
+
+        function tryLoadGLB() {
+            const loader = new GLTFLoader();
+            loader.load(
+                'athena.glb',
+                (gltf) => {
+                    glbModel = gltf.scene;
+                    glbMorphTargets = [];
+                    glbModel.traverse((child) => {
+                        if (child.isMesh && child.morphTargetDictionary) {
+                            glbMorphTargets.push(child);
+                        }
+                    });
+                    // Center and scale model
+                    const box = new THREE.Box3().setFromObject(glbModel);
+                    const size = box.getSize(new THREE.Vector3());
+                    const center = box.getCenter(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scaleFactor = 0.25 / maxDim;
+                    glbModel.scale.setScalar(scaleFactor);
+                    glbModel.position.sub(center.multiplyScalar(scaleFactor));
+                    // Remove procedural head
+                    scene.remove(headGroup);
+                    scene.add(glbModel);
+                    useGLB = true;
+                    console.log('GLB model loaded with', glbMorphTargets.length, 'morph target meshes');
+                },
+                undefined,
+                (err) => {
+                    console.log('No GLB model found, using procedural head. (' + err.message + ')');
+                }
+            );
+        }
+
+        function createProceduralHead() {
+            const headGroup = new THREE.Group();
+
+            // Head
+            const headGeom = new THREE.SphereGeometry(0.12, 32, 32);
+            headGeom.scale(0.85, 1.0, 0.9);
+            const headMat = new THREE.MeshStandardMaterial({
+                color: 0xd4a574,
+                roughness: 0.6,
+                metalness: 0.05
+            });
+            headMesh = new THREE.Mesh(headGeom, headMat);
+            headGroup.add(headMesh);
+
+            // Eyes
+            const eyeGeom = new THREE.SphereGeometry(0.015, 16, 16);
+            const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+            const irisMat = new THREE.MeshStandardMaterial({ color: 0x2a6e3f, roughness: 0.3 });
+            const irisGeom = new THREE.SphereGeometry(0.008, 12, 12);
+            const pupilMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            const pupilGeom = new THREE.SphereGeometry(0.004, 8, 8);
+
+            leftEye = new THREE.Group();
+            const le = new THREE.Mesh(eyeGeom, eyeMat);
+            const li = new THREE.Mesh(irisGeom, irisMat);
+            const lp = new THREE.Mesh(pupilGeom, pupilMat);
+            li.position.z = 0.012;
+            lp.position.z = 0.014;
+            leftEye.add(le, li, lp);
+            leftEye.position.set(-0.04, 0.02, 0.09);
+            headGroup.add(leftEye);
+
+            rightEye = new THREE.Group();
+            const re = new THREE.Mesh(eyeGeom, eyeMat);
+            const ri = new THREE.Mesh(irisGeom, irisMat);
+            const rp = new THREE.Mesh(pupilGeom, pupilMat);
+            ri.position.z = 0.012;
+            rp.position.z = 0.014;
+            rightEye.add(re, ri, rp);
+            rightEye.position.set(0.04, 0.02, 0.09);
+            headGroup.add(rightEye);
+
+            // Mouth/jaw
+            jawPivot = new THREE.Group();
+            jawPivot.position.set(0, -0.04, 0.07);
+            const jawGeom = new THREE.BoxGeometry(0.06, 0.01, 0.03);
+            const jawMat = new THREE.MeshStandardMaterial({ color: 0xc08060, roughness: 0.7 });
+            const jaw = new THREE.Mesh(jawGeom, jawMat);
+            jaw.position.y = -0.005;
+            jawPivot.add(jaw);
+            headGroup.add(jawPivot);
+
+            // Upper lip (for viseme shaping)
+            const upperLipGeom = new THREE.BoxGeometry(0.05, 0.005, 0.015);
+            const lipMat = new THREE.MeshStandardMaterial({ color: 0xb87060, roughness: 0.5 });
+            const upperLip = new THREE.Mesh(upperLipGeom, lipMat);
+            upperLip.position.set(0, -0.035, 0.085);
+            upperLip.name = 'upperLip';
+            headGroup.add(upperLip);
+
+            // Lower lip (on jaw pivot)
+            const lowerLipGeom = new THREE.BoxGeometry(0.05, 0.005, 0.015);
+            const lowerLip = new THREE.Mesh(lowerLipGeom, lipMat);
+            lowerLip.position.set(0, 0.003, 0.015);
+            lowerLip.name = 'lowerLip';
+            jawPivot.add(lowerLip);
+
+            // Nose
+            const noseGeom = new THREE.ConeGeometry(0.008, 0.025, 8);
+            const noseMat = new THREE.MeshStandardMaterial({ color: 0xc89e7a, roughness: 0.6 });
+            const nose = new THREE.Mesh(noseGeom, noseMat);
+            nose.position.set(0, 0, 0.1);
+            nose.rotation.x = Math.PI / 2;
+            headGroup.add(nose);
+
+            // Eyebrows (thin boxes)
+            const browGeom = new THREE.BoxGeometry(0.04, 0.004, 0.005);
+            const browMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a });
+            const lBrow = new THREE.Mesh(browGeom, browMat);
+            lBrow.position.set(-0.04, 0.045, 0.085);
+            lBrow.name = 'leftBrow';
+            headGroup.add(lBrow);
+            const rBrow = new THREE.Mesh(browGeom, browMat);
+            rBrow.position.set(0.04, 0.045, 0.085);
+            rBrow.name = 'rightBrow';
+            headGroup.add(rBrow);
+
+            scene.add(headGroup);
+            return headGroup;
+        }
+
+        const headGroup = createProceduralHead();
+        tryLoadGLB();
+
+        // ============================================================
+        // Spike Particle Aura
+        // ============================================================
+        const PARTICLE_COUNT = 2000;
+        const particlePositions = new Float32Array(PARTICLE_COUNT * 3);
+        const particleBrightness = new Float32Array(PARTICLE_COUNT);
+        const particleBasePositions = new Float32Array(PARTICLE_COUNT * 3);
+        const particleVelocities = new Float32Array(PARTICLE_COUNT * 3);
+
+        // Initialize particles in a sphere behind the head
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const r = 0.15 + Math.random() * 0.15;
+            const x = r * Math.sin(phi) * Math.cos(theta);
+            const y = r * Math.sin(phi) * Math.sin(theta);
+            const z = -Math.abs(r * Math.cos(phi)) - 0.05; // Behind head
+            particlePositions[i * 3] = x;
+            particlePositions[i * 3 + 1] = y;
+            particlePositions[i * 3 + 2] = z;
+            particleBasePositions[i * 3] = x;
+            particleBasePositions[i * 3 + 1] = y;
+            particleBasePositions[i * 3 + 2] = z;
+            particleBrightness[i] = 0.05 + Math.random() * 0.05;
+            // Slow orbit velocity
+            particleVelocities[i * 3] = (Math.random() - 0.5) * 0.02;
+            particleVelocities[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
+            particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.01;
+        }
+
+        const particleGeometry = new THREE.BufferGeometry();
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        particleGeometry.setAttribute('brightness', new THREE.BufferAttribute(particleBrightness, 1));
+
+        const particleMaterial = new THREE.ShaderMaterial({
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            uniforms: {
+                time: { value: 0 },
+                spikeRate: { value: 0 }
+            },
+            vertexShader: `
+                attribute float brightness;
+                varying float vBrightness;
+                uniform float time;
+                void main() {
+                    vBrightness = brightness;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = max(1.0, brightness * 8.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying float vBrightness;
+                uniform float spikeRate;
+                void main() {
+                    float dist = length(gl_PointCoord - vec2(0.5));
+                    if (dist > 0.5) discard;
+                    float alpha = smoothstep(0.5, 0.0, dist) * vBrightness;
+                    vec3 color = mix(vec3(0.1, 0.3, 0.6), vec3(0.3, 0.8, 1.0), vBrightness);
+                    gl_FragColor = vec4(color, alpha);
+                }
+            `
+        });
+
+        const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+        scene.add(particleSystem);
+
+        let currentSpikeRate = 0;
+        let spikeFlashQueue = [];
+
+        function triggerSpikeParticles(spikeCount) {
+            const flashCount = Math.min(spikeCount, PARTICLE_COUNT / 4);
+            for (let i = 0; i < flashCount; i++) {
+                const idx = Math.floor(Math.random() * PARTICLE_COUNT);
+                spikeFlashQueue.push({ idx, brightness: 1.0 });
+            }
+        }
+
+        function updateParticles(dt, time) {
+            particleMaterial.uniforms.time.value = time;
+            particleMaterial.uniforms.spikeRate.value = currentSpikeRate;
+
+            // Process flash queue
+            for (const flash of spikeFlashQueue) {
+                particleBrightness[flash.idx] = Math.max(particleBrightness[flash.idx], flash.brightness);
+            }
+            spikeFlashQueue = [];
+
+            const baseBrightness = 0.03 + currentSpikeRate * 0.002;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // Fade brightness
+                particleBrightness[i] *= 0.96;
+                if (particleBrightness[i] < baseBrightness) {
+                    particleBrightness[i] = baseBrightness;
+                }
+
+                // Slow orbit
+                const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
+                particlePositions[ix] += particleVelocities[ix] * dt;
+                particlePositions[iy] += particleVelocities[iy] * dt;
+                particlePositions[iz] += particleVelocities[iz] * dt;
+
+                // Pull back toward base position
+                particlePositions[ix] += (particleBasePositions[ix] - particlePositions[ix]) * 0.5 * dt;
+                particlePositions[iy] += (particleBasePositions[iy] - particlePositions[iy]) * 0.5 * dt;
+                particlePositions[iz] += (particleBasePositions[iz] - particlePositions[iz]) * 0.5 * dt;
+            }
+
+            particleGeometry.attributes.position.needsUpdate = true;
+            particleGeometry.attributes.brightness.needsUpdate = true;
+        }
+
+        // ============================================================
+        // Viseme Lip Sync (Preston Blair 22 visemes)
+        // ============================================================
+        // Viseme ID -> mouth shape params: [jaw_open, lip_round, lip_upper, lip_lower, tongue_fwd]
+        const visemeMap = {
+            0:  [0.0, 0.0, 0.0, 0.0, 0.0],   // silence / rest
+            1:  [0.15, 0.0, 0.1, 0.1, 0.0],   // ae (cat)
+            2:  [0.3, 0.0, 0.2, 0.2, 0.0],    // ah (father)
+            3:  [0.2, 0.5, 0.0, 0.0, 0.0],    // ao (law)
+            4:  [0.1, 0.0, 0.3, 0.0, 0.0],    // aw (cow) start
+            5:  [0.2, 0.0, 0.1, 0.2, 0.0],    // ay (say)
+            6:  [0.0, 0.0, 0.0, 0.0, 0.0],    // b/m/p (lips together)
+            7:  [0.1, 0.0, 0.1, 0.1, 0.4],    // ch/j/sh
+            8:  [0.1, 0.0, 0.1, 0.1, 0.6],    // d/t/n
+            9:  [0.15, 0.0, 0.15, 0.1, 0.0],  // eh (pet)
+            10: [0.1, 0.0, 0.2, 0.1, 0.0],    // er (bird)
+            11: [0.1, 0.0, 0.25, 0.0, 0.0],   // ey (bait)
+            12: [0.1, 0.0, 0.0, 0.3, 0.7],    // f/v (lip under teeth)
+            13: [0.15, 0.0, 0.1, 0.1, 0.3],   // g/k/ng
+            14: [0.15, 0.0, 0.05, 0.05, 0.0], // ih (bit)
+            15: [0.05, 0.0, 0.3, 0.0, 0.0],   // iy (beet)
+            16: [0.15, 0.0, 0.1, 0.1, 0.5],   // l
+            17: [0.2, 0.7, 0.0, 0.0, 0.0],    // ow (boat)
+            18: [0.15, 0.8, 0.0, 0.0, 0.0],   // oo (boot)
+            19: [0.05, 0.0, 0.1, 0.1, 0.3],   // r
+            20: [0.05, 0.0, 0.1, 0.1, 0.5],   // s/z
+            21: [0.1, 0.0, 0.0, 0.2, 0.8]     // th
+        };
+
+        let currentViseme = 0;
+        let targetViseme = 0;
+        let visemeBlend = [0, 0, 0, 0, 0];
+
+        function updateViseme(dt) {
+            const target = visemeMap[targetViseme] || visemeMap[0];
+            const speed = 12.0; // Fast blend
+            for (let i = 0; i < 5; i++) {
+                visemeBlend[i] += (target[i] - visemeBlend[i]) * speed * dt;
+            }
+        }
+
+        function applyVisemeToProceduralHead() {
+            if (!jawPivot) return;
+            const [jawOpen, lipRound, lipUpper, lipLower, tongueFwd] = visemeBlend;
+
+            // Jaw rotation
+            jawPivot.rotation.x = jawOpen * 0.4;
+
+            // Lip shaping via scale
+            const upperLip = headGroup.getObjectByName('upperLip');
+            const lowerLip = jawPivot.getObjectByName('lowerLip');
+            if (upperLip) {
+                upperLip.scale.x = 1.0 - lipRound * 0.3;
+                upperLip.position.y = -0.035 + lipUpper * 0.005;
+            }
+            if (lowerLip) {
+                lowerLip.scale.x = 1.0 - lipRound * 0.3;
+                lowerLip.position.y = 0.003 - lipLower * 0.005;
+            }
+        }
+
+        // ============================================================
+        // Audio Playback + Waveform Visualizer
+        // ============================================================
+        let audioContext = null;
+        let audioAnalyser = null;
+        let audioDataArray = null;
+        let isAudioPlaying = false;
+        const audioQueue = [];
+
+        function initAudioContext() {
+            if (audioContext) return;
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioAnalyser = audioContext.createAnalyser();
+            audioAnalyser.fftSize = 256;
+            audioAnalyser.connect(audioContext.destination);
+            audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+        }
+
+        function playAudioData(arrayBuffer) {
+            initAudioContext();
+            audioContext.decodeAudioData(arrayBuffer.slice(0), (buffer) => {
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioAnalyser);
+                source.onended = () => {
+                    isAudioPlaying = false;
+                    avatarState.is_speaking = false;
+                    // Play next queued audio
+                    if (audioQueue.length > 0) {
+                        playAudioData(audioQueue.shift());
+                    }
+                };
+                source.start(0);
+                isAudioPlaying = true;
+                avatarState.is_speaking = true;
+            }, (err) => {
+                console.error('Audio decode error:', err);
+                isAudioPlaying = false;
+                avatarState.is_speaking = false;
+            });
+        }
+
+        // Waveform visualizer
+        const waveformCanvas = document.getElementById('waveform-strip');
+        const waveCtx = waveformCanvas.getContext('2d');
+
+        function drawWaveform() {
+            const w = waveformCanvas.width;
+            const h = waveformCanvas.height;
+            waveCtx.clearRect(0, 0, w, h);
+
+            if (!audioAnalyser || !isAudioPlaying) return;
+
+            audioAnalyser.getByteTimeDomainData(audioDataArray);
+            waveCtx.strokeStyle = '#4fc3f7';
+            waveCtx.lineWidth = 1.5;
+            waveCtx.beginPath();
+
+            const sliceWidth = w / audioDataArray.length;
+            let x = 0;
+            for (let i = 0; i < audioDataArray.length; i++) {
+                const v = audioDataArray[i] / 128.0;
+                const y = (v * h) / 2;
+                if (i === 0) waveCtx.moveTo(x, y);
+                else waveCtx.lineTo(x, y);
+                x += sliceWidth;
+            }
+            waveCtx.lineTo(w, h / 2);
+            waveCtx.stroke();
+        }
+
+        // ============================================================
+        // Emotion History Sparkline
+        // ============================================================
+        const SPARKLINE_SECONDS = 60;
+        const SPARKLINE_SAMPLES_PER_SEC = 2;
+        const sparklineLength = SPARKLINE_SECONDS * SPARKLINE_SAMPLES_PER_SEC;
+        const valenceHistory = new Float32Array(sparklineLength).fill(0);
+        const arousalHistory = new Float32Array(sparklineLength).fill(0.5);
+        let sparklineCursor = 0;
+        let sparklineTimer = 0;
+
+        const sparklineCanvas = document.getElementById('sparkline-canvas');
+        const sparkCtx = sparklineCanvas.getContext('2d');
+
+        function recordSparkline(dt) {
+            sparklineTimer += dt;
+            if (sparklineTimer >= 1.0 / SPARKLINE_SAMPLES_PER_SEC) {
+                sparklineTimer = 0;
+                valenceHistory[sparklineCursor % sparklineLength] = avatarState.valence || 0;
+                arousalHistory[sparklineCursor % sparklineLength] = avatarState.arousal || 0.5;
+                sparklineCursor++;
+            }
+        }
+
+        function drawSparkline() {
+            const w = sparklineCanvas.width;
+            const h = sparklineCanvas.height;
+            sparkCtx.clearRect(0, 0, w, h);
+
+            const total = Math.min(sparklineCursor, sparklineLength);
+            if (total < 2) return;
+
+            // Center line
+            sparkCtx.strokeStyle = '#333';
+            sparkCtx.lineWidth = 0.5;
+            sparkCtx.beginPath();
+            sparkCtx.moveTo(0, h / 2);
+            sparkCtx.lineTo(w, h / 2);
+            sparkCtx.stroke();
+
+            // Arousal (blue)
+            sparkCtx.strokeStyle = '#4488ff';
+            sparkCtx.lineWidth = 1.5;
+            sparkCtx.beginPath();
+            for (let i = 0; i < total; i++) {
+                const idx = (sparklineCursor - total + i) % sparklineLength;
+                if (idx < 0) continue;
+                const x = (i / total) * w;
+                const y = h - arousalHistory[idx] * h;
+                if (i === 0) sparkCtx.moveTo(x, y);
+                else sparkCtx.lineTo(x, y);
+            }
+            sparkCtx.stroke();
+
+            // Valence (green-to-red gradient line, drawn segment by segment)
+            sparkCtx.lineWidth = 1.5;
+            for (let i = 1; i < total; i++) {
+                const idx0 = (sparklineCursor - total + i - 1) % sparklineLength;
+                const idx1 = (sparklineCursor - total + i) % sparklineLength;
+                if (idx0 < 0 || idx1 < 0) continue;
+                const v = valenceHistory[idx1];
+                // Map valence -1..1 to red..green
+                const r = Math.max(0, Math.min(255, Math.round(255 * (1 - (v + 1) / 2))));
+                const g = Math.max(0, Math.min(255, Math.round(255 * ((v + 1) / 2))));
+                sparkCtx.strokeStyle = `rgb(${r},${g},80)`;
+                sparkCtx.beginPath();
+                const x0 = ((i - 1) / total) * w;
+                const y0 = h / 2 - valenceHistory[idx0] * (h / 2);
+                const x1 = (i / total) * w;
+                const y1 = h / 2 - v * (h / 2);
+                sparkCtx.moveTo(x0, y0);
+                sparkCtx.lineTo(x1, y1);
+                sparkCtx.stroke();
+            }
+        }
+
+        // ============================================================
+        // Active Modules Visualization
+        // ============================================================
+        let activeModules = new Set();
+
+        function updateModulesUI(modules) {
+            if (!modules) return;
+            activeModules = new Set(Array.isArray(modules) ? modules : Object.keys(modules).filter(k => modules[k]));
+            const badges = document.querySelectorAll('.module-badge');
+            badges.forEach(badge => {
+                const mod = badge.dataset.module;
+                if (activeModules.has(mod)) {
+                    badge.classList.add('active');
+                } else {
+                    badge.classList.remove('active');
+                }
+            });
+        }
+
+        // ============================================================
+        // Training Progress
+        // ============================================================
+        function updateTrainingUI(data) {
+            if (data.step !== undefined) {
+                document.getElementById('val-train-step').textContent = data.step.toLocaleString();
+            }
+            if (data.loss !== undefined) {
+                const lossEl = document.getElementById('val-train-loss');
+                lossEl.textContent = data.loss.toFixed(6);
+                lossEl.className = 'metric-val ' + (data.loss < 0.01 ? 'loss-good' : data.loss < 0.1 ? 'loss-ok' : 'loss-bad');
+            }
+            if (data.stage !== undefined) {
+                document.getElementById('val-train-stage').textContent = data.stage;
+            }
+            if (data.lr !== undefined) {
+                document.getElementById('val-train-lr').textContent = data.lr.toExponential(3);
+            }
+        }
+
+        // ============================================================
+        // Microphone Input + Speech Recognition
+        // ============================================================
+        let isRecording = false;
+        let recognition = null;
+
+        function toggleMic() {
+            const micBtn = document.getElementById('mic-btn');
+
+            if (isRecording) {
+                stopRecording();
+                return;
+            }
+
+            // Start recording
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                addChatMessage('system', 'Speech recognition not supported in this browser.');
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+
+                recognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    let interimTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        if (event.results[i].isFinal) {
+                            finalTranscript += event.results[i][0].transcript;
+                        } else {
+                            interimTranscript += event.results[i][0].transcript;
+                        }
+                    }
+                    if (finalTranscript) {
+                        document.getElementById('chat-input').value = finalTranscript;
+                        sendChat();
+                        stopRecording();
+                    } else if (interimTranscript) {
+                        document.getElementById('chat-input').value = interimTranscript;
+                    }
+                };
+
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    addChatMessage('system', 'Mic error: ' + event.error);
+                    stopRecording();
+                };
+
+                recognition.onend = () => {
+                    stopRecording();
+                };
+
+                recognition.start();
+                isRecording = true;
+                micBtn.classList.add('recording');
+                micBtn.title = 'Stop recording';
+
+                // Keep stream reference to stop tracks later
+                recognition._stream = stream;
+
+            }).catch((err) => {
+                addChatMessage('system', 'Microphone access denied: ' + err.message);
+            });
+        }
+
+        function stopRecording() {
+            const micBtn = document.getElementById('mic-btn');
+            if (recognition) {
+                try { recognition.stop(); } catch (e) { /* ignore */ }
+                if (recognition._stream) {
+                    recognition._stream.getTracks().forEach(t => t.stop());
+                }
+                recognition = null;
+            }
+            isRecording = false;
+            micBtn.classList.remove('recording');
+            micBtn.title = 'Toggle mic (Space)';
+        }
+
+        document.getElementById('mic-btn').addEventListener('click', toggleMic);
+
+        // ============================================================
+        // Fullscreen Toggle
+        // ============================================================
+        let isFullscreen = false;
+
+        function toggleFullscreen() {
+            const sidePanel = document.getElementById('side-panel');
+            const avatarPanel = document.getElementById('avatar-panel');
+            isFullscreen = !isFullscreen;
+            if (isFullscreen) {
+                sidePanel.classList.add('hidden');
+                avatarPanel.classList.add('fullscreen');
+                document.getElementById('fullscreen-btn').innerHTML = '&#9638;';
+            } else {
+                sidePanel.classList.remove('hidden');
+                avatarPanel.classList.remove('fullscreen');
+                document.getElementById('fullscreen-btn').innerHTML = '&#9974;';
+            }
+            // Trigger resize after layout change
+            setTimeout(resize, 50);
+        }
+
+        document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
+
+        // ============================================================
+        // Screenshot Export
+        // ============================================================
+        function takeScreenshot() {
+            renderer.render(scene, camera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = 'athena-avatar-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png';
+            link.href = dataURL;
+            link.click();
+        }
+
+        document.getElementById('screenshot-btn').addEventListener('click', takeScreenshot);
+
+        // ============================================================
+        // Theme Toggle
+        // ============================================================
+        let isDarkTheme = true;
+
+        function toggleTheme() {
+            isDarkTheme = !isDarkTheme;
+            if (isDarkTheme) {
+                document.body.classList.remove('light-theme');
+                scene.background = new THREE.Color(0x0a0a0f);
+                document.getElementById('theme-btn').innerHTML = '&#9789;';
+            } else {
+                document.body.classList.add('light-theme');
+                scene.background = new THREE.Color(0xf0f0f5);
+                document.getElementById('theme-btn').innerHTML = '&#9788;';
+            }
+        }
+
+        document.getElementById('theme-btn').addEventListener('click', toggleTheme);
+
+        // ============================================================
+        // Keyboard Shortcuts
+        // ============================================================
+        document.addEventListener('keydown', (e) => {
+            // Don't intercept when typing in input
+            const activeEl = document.activeElement;
+            const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
+            if (e.key === 'Escape') {
+                if (isFullscreen) toggleFullscreen();
+                if (isInput) activeEl.blur();
+                return;
+            }
+
+            if (isInput) return;
+
+            if (e.key === ' ' || e.code === 'Space') {
+                e.preventDefault();
+                toggleMic();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('chat-input').focus();
+            } else if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                toggleFullscreen();
+            }
+        });
+
+        // ============================================================
+        // Avatar state from brain
+        // ============================================================
+        let avatarState = {
+            valence: 0, arousal: 0.5, dominance: 0,
+            au1: 0, au2: 0, au4: 0, au5: 0, au6: 0,
+            au12: 0, au15: 0, au17: 0, au26: 0,
+            gaze_x: 0, gaze_y: 0,
+            head_pitch: 0, head_yaw: 0, head_roll: 0,
+            blink: 0, is_speaking: false,
+            pitch_hz: 210, speaking_rate: 1.0,
+            current_viseme: 0
+        };
+
+        function applyAvatarState(state) {
+            if (useGLB && glbModel) {
+                // Apply head pose to GLB model
+                glbModel.rotation.x = (state.head_pitch || 0) * 0.3;
+                glbModel.rotation.y = (state.head_yaw || 0) * 0.4;
+                glbModel.rotation.z = (state.head_roll || 0) * 0.2;
+                // Apply blend shapes from FACS
+                applyBlendShapesFromFACS(state);
+                return;
+            }
+
+            if (!headGroup) return;
+
+            // Head pose
+            headGroup.rotation.x = (state.head_pitch || 0) * 0.3;
+            headGroup.rotation.y = (state.head_yaw || 0) * 0.4;
+            headGroup.rotation.z = (state.head_roll || 0) * 0.2;
+
+            // Gaze
+            if (leftEye && rightEye) {
+                const gx = (state.gaze_x || 0) * 0.15;
+                const gy = (state.gaze_y || 0) * 0.1;
+                leftEye.rotation.y = gx;
+                leftEye.rotation.x = -gy;
+                rightEye.rotation.y = gx;
+                rightEye.rotation.x = -gy;
+
+                // Blink
+                const blinkScale = 1.0 - (state.blink || 0) * 0.9;
+                leftEye.scale.y = blinkScale;
+                rightEye.scale.y = blinkScale;
+            }
+
+            // Jaw (AU26 + speaking + viseme)
+            if (jawPivot) {
+                let jawOpen = state.au26 || 0;
+                if (state.is_speaking) {
+                    jawOpen = Math.max(jawOpen, 0.3 + Math.sin(Date.now() * 0.015) * 0.2);
+                }
+                // Viseme overrides jaw when speaking
+                if (state.is_speaking && visemeBlend[0] > 0.01) {
+                    jawOpen = Math.max(jawOpen, visemeBlend[0]);
+                }
+                jawPivot.rotation.x = jawOpen * 0.3;
+            }
+
+            // Apply viseme lip shapes
+            applyVisemeToProceduralHead();
+
+            // Eyebrows (AU1, AU4)
+            const lBrow = headGroup.getObjectByName('leftBrow');
+            const rBrow = headGroup.getObjectByName('rightBrow');
+            if (lBrow && rBrow) {
+                const raise = (state.au1 || 0) * 0.015;
+                const lower = (state.au4 || 0) * 0.01;
+                lBrow.position.y = 0.045 + raise - lower;
+                rBrow.position.y = 0.045 + raise - lower;
+            }
+
+            // Smile/frown via color shift
+            if (headMesh) {
+                const smile = state.au12 || 0;
+                const frown = state.au15 || 0;
+                const warmth = 0.83 + smile * 0.07 - frown * 0.05;
+                headMesh.material.color.setRGB(warmth, warmth * 0.78, warmth * 0.56);
+            }
+        }
+
+        // ============================================================
+        // Idle animation (breathing, micro-movements)
+        // ============================================================
+        let idleTime = 0;
+        let blinkTimer = 0;
+        let nextBlink = 3 + Math.random() * 4;
+
+        function updateIdle(dt) {
+            idleTime += dt;
+            blinkTimer += dt;
+
+            const target = useGLB ? glbModel : headGroup;
+            if (!target) return;
+
+            // Subtle breathing
+            target.position.y = Math.sin(idleTime * 1.2) * 0.002;
+
+            // Micro head movement
+            target.rotation.y += Math.sin(idleTime * 0.3) * 0.0003;
+            target.rotation.x += Math.sin(idleTime * 0.5) * 0.0002;
+
+            // Blink
+            if (blinkTimer > nextBlink) {
+                avatarState.blink = 1.0;
+                setTimeout(() => { avatarState.blink = 0; }, 150);
+                blinkTimer = 0;
+                nextBlink = 2 + Math.random() * 5;
+            }
+
+            // Idle gaze drift
+            if (!avatarState.is_speaking) {
+                avatarState.gaze_x = Math.sin(idleTime * 0.2) * 0.3;
+                avatarState.gaze_y = Math.sin(idleTime * 0.15) * 0.15;
+            }
+        }
+
+        // ============================================================
+        // WebSocket connection to brain daemon
+        // ============================================================
+        let ws = null;
+        const WS_URL = `ws://${window.location.hostname || 'localhost'}:8765`;
+
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(WS_URL);
+                ws.binaryType = 'arraybuffer';
+                ws.onopen = () => {
+                    document.getElementById('connection-dot').className = 'connected';
+                    document.getElementById('conn-status').textContent = 'Connected';
+                    addChatMessage('system', 'Connected to Athena brain daemon.');
+                };
+                ws.onmessage = (event) => {
+                    // Binary message = audio data
+                    if (event.data instanceof ArrayBuffer) {
+                        if (isAudioPlaying) {
+                            audioQueue.push(event.data);
+                        } else {
+                            playAudioData(event.data);
+                        }
+                        return;
+                    }
+
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'avatar_state') {
+                            Object.assign(avatarState, data.state);
+                            if (data.state && data.state.current_viseme !== undefined) {
+                                targetViseme = data.state.current_viseme;
+                            }
+                            updateUI(data);
+                            // Update active modules if present
+                            if (data.state && data.state.active_modules) {
+                                updateModulesUI(data.state.active_modules);
+                            }
+                            // Update spike particles
+                            if (data.snn_spikes !== undefined) {
+                                currentSpikeRate = data.snn_spikes;
+                                triggerSpikeParticles(Math.floor(data.snn_spikes));
+                            }
+                        } else if (data.type === 'chat_response') {
+                            addChatMessage('athena', data.text);
+                        } else if (data.type === 'identity') {
+                            updateIdentityUI(data);
+                            if (data.active_modules) {
+                                updateModulesUI(data.active_modules);
+                            }
+                        } else if (data.type === 'training_progress') {
+                            updateTrainingUI(data);
+                        } else if (data.type === 'modules') {
+                            updateModulesUI(data.modules);
+                        } else if (data.type === 'viseme') {
+                            targetViseme = data.viseme_id || 0;
+                        }
+                    } catch (e) { console.error('Parse error:', e); }
+                };
+                ws.onclose = () => {
+                    document.getElementById('connection-dot').className = 'disconnected';
+                    document.getElementById('conn-status').textContent = 'Disconnected';
+                    setTimeout(connectWebSocket, 3000);
+                };
+                ws.onerror = () => {
+                    ws.close();
+                };
+            } catch (e) {
+                setTimeout(connectWebSocket, 3000);
+            }
+        }
+
+        function updateUI(data) {
+            const s = data.state || {};
+            document.getElementById('val-valence').textContent = (s.valence || 0).toFixed(2);
+            document.getElementById('val-arousal').textContent = (s.arousal || 0.5).toFixed(2);
+            document.getElementById('bar-valence').style.width = ((s.valence || 0) * 50 + 50) + '%';
+            document.getElementById('bar-arousal').style.width = ((s.arousal || 0.5) * 100) + '%';
+
+            if (data.snn_spikes !== undefined) {
+                document.getElementById('val-spikes').textContent = data.snn_spikes;
+                document.getElementById('spikes').textContent = data.snn_spikes;
+                document.getElementById('bar-spikes').style.width = Math.min(100, data.snn_spikes / 20) + '%';
+            }
+
+            document.getElementById('au12').textContent = (s.au12_lip_corner_pull || s.au12 || 0).toFixed(2);
+            document.getElementById('au15').textContent = (s.au15_lip_corner_drop || s.au15 || 0).toFixed(2);
+            document.getElementById('au1').textContent = (s.au1_inner_brow_raise || s.au1 || 0).toFixed(2);
+            document.getElementById('au4').textContent = (s.au4_brow_lower || s.au4 || 0).toFixed(2);
+            document.getElementById('au6').textContent = (s.au6_cheek_raise || s.au6 || 0).toFixed(2);
+            document.getElementById('au26').textContent = (s.au26_jaw_drop || s.au26 || 0).toFixed(2);
+
+            document.getElementById('speaking').textContent = s.is_speaking ? 'yes' : 'no';
+            document.getElementById('emotion-label').textContent = getEmotionName(s.emotion_id || 0);
+        }
+
+        function updateIdentityUI(data) {
+            if (data.personality) document.getElementById('val-personality').textContent = data.personality;
+            if (data.accent) document.getElementById('val-accent').textContent = data.accent;
+            if (data.voice_quality) document.getElementById('val-quality').textContent = data.voice_quality;
+            if (data.narrative) document.getElementById('val-narrative').textContent = data.narrative.substring(0, 60);
+            if (data.pitch_hz) document.getElementById('val-pitch').textContent = data.pitch_hz.toFixed(0) + ' Hz';
+            if (data.speed) document.getElementById('val-rate').textContent = data.speed.toFixed(2) + 'x';
+        }
+
+        function getEmotionName(id) {
+            const names = ['neutral', 'happy', 'sad', 'angry', 'fearful', 'surprised',
+                          'disgusted', 'contemptuous', 'curious', 'confused', 'excited',
+                          'bored', 'proud', 'ashamed', 'grateful', 'hopeful', 'anxious',
+                          'calm', 'loving'];
+            return names[id] || 'neutral';
+        }
+
+        // ============================================================
+        // Chat
+        // ============================================================
+        function addChatMessage(role, text) {
+            const log = document.getElementById('chat-log');
+            const div = document.createElement('div');
+            div.className = `msg msg-${role}`;
+            div.textContent = role === 'user' ? `You: ${text}` :
+                             role === 'athena' ? `Athena: ${text}` : text;
+            log.appendChild(div);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            addChatMessage('user', text);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'chat', text: text }));
+            } else {
+                addChatMessage('system', 'Not connected to brain daemon.');
+            }
+        }
+
+        document.getElementById('send-btn').addEventListener('click', sendChat);
+        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendChat();
+        });
+
+        // ============================================================
+        // Render loop
+        // ============================================================
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let fpsTimer = 0;
+        let sparklineDrawTimer = 0;
+
+        function resize() {
+            const panel = document.getElementById('avatar-panel');
+            const w = panel.clientWidth;
+            const h = panel.clientHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+
+            // Resize waveform canvas
+            waveformCanvas.width = w;
+            waveformCanvas.height = 24;
+
+            // Resize sparkline canvas
+            const sc = document.getElementById('sparkline-canvas');
+            sc.width = sc.clientWidth * (window.devicePixelRatio || 1);
+            sc.height = sc.clientHeight * (window.devicePixelRatio || 1);
+            sparkCtx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const now = performance.now();
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+
+            // FPS counter
+            frameCount++;
+            fpsTimer += dt;
+            if (fpsTimer >= 1.0) {
+                document.getElementById('fps').textContent = frameCount;
+                frameCount = 0;
+                fpsTimer = 0;
+            }
+
+            updateIdle(dt);
+            updateViseme(dt);
+            applyAvatarState(avatarState);
+            updateParticles(dt, now / 1000);
+            controls.update();
+            renderer.render(scene, camera);
+
+            // Draw waveform
+            drawWaveform();
+
+            // Sparkline (lower frequency)
+            recordSparkline(dt);
+            sparklineDrawTimer += dt;
+            if (sparklineDrawTimer >= 0.5) {
+                sparklineDrawTimer = 0;
+                drawSparkline();
+            }
+        }
+
+        animate();
+        connectWebSocket();
+    </script>
+</body>
+</html>

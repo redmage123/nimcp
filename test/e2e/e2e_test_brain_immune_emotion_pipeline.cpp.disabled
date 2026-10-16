@@ -1,0 +1,514 @@
+/**
+ * @file e2e_test_brain_immune_emotion_pipeline.cpp
+ * @brief End-to-end tests for complete brain immune-emotion integration
+ *
+ * WHAT: Test complete brain immune-emotion pipeline in realistic scenarios
+ * WHY:  Verify full system integration with BBB, BFT, emotions, grief, and joy
+ * HOW:  Simulate realistic biological scenarios end-to-end
+ */
+
+#include <gtest/gtest.h>
+#include "cognitive/immune/nimcp_brain_immune.h"
+#include "cognitive/immune/nimcp_emotion_immune_bridge.h"
+#include "cognitive/nimcp_emotional_system.h"
+#include "cognitive/nimcp_grief_and_loss.h"
+#include "cognitive/nimcp_joy_euphoria.h"
+
+/* ============================================================================
+ * Test Fixture
+ * ============================================================================ */
+
+class BrainImmuneEmotionE2ETest : public ::testing::Test {
+protected:
+    brain_immune_system_t* immune;
+    emotional_system_t* emotion;
+    grief_system_t* grief;
+    joy_system_t* joy;
+    emotion_immune_bridge_t* bridge;
+
+    void SetUp() override {
+        /* Create complete integrated system */
+        brain_immune_config_t immune_config;
+        brain_immune_default_config(&immune_config);
+        immune = brain_immune_create(&immune_config);
+
+        emotion_config_t emotion_config = emotion_system_default_config();
+        emotion = emotion_system_create(&emotion_config);
+
+        grief = grief_system_create();
+        joy = joy_system_create();
+
+        emotion_immune_config_t bridge_config;
+        emotion_immune_default_config(&bridge_config);
+        bridge = emotion_immune_bridge_create(&bridge_config, immune, emotion, grief, joy);
+
+        ASSERT_NE(immune, nullptr);
+        ASSERT_NE(emotion, nullptr);
+        ASSERT_NE(grief, nullptr);
+        ASSERT_NE(joy, nullptr);
+        ASSERT_NE(bridge, nullptr);
+
+        /* Start immune system */
+        brain_immune_start(immune);
+    }
+
+    void TearDown() override {
+        if (immune) brain_immune_stop(immune);
+        if (bridge) emotion_immune_bridge_destroy(bridge);
+        if (joy) joy_system_destroy(joy);
+        if (grief) grief_system_destroy(grief);
+        if (emotion) emotion_system_destroy(emotion);
+        if (immune) brain_immune_destroy(immune);
+    }
+
+    /* Helper: Simulate time progression */
+    void advance_time(uint64_t ms, int steps = 10) {
+        uint64_t step_ms = ms / steps;
+        for (int i = 0; i < steps; i++) {
+            brain_immune_update(immune, step_ms);
+            emotion_immune_bridge_update(bridge, step_ms);
+            grief_update(grief, step_ms / 1000.0f, i * step_ms * 1000);
+            joy_update(joy, step_ms / 1000.0f, i * step_ms * 1000);
+        }
+    }
+};
+
+/* ============================================================================
+ * E2E Test 1: Bereavement-Induced Immune Dysregulation
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, BereavementImmuneEmotionCascade) {
+    /* SCENARIO: Death of loved one → grief → inflammation → depression-like state
+     *
+     * BIOLOGICAL BASIS:
+     * - Bereavement activates HPA axis (cortisol)
+     * - Pro-inflammatory cytokines (IL-1β, IL-6, TNF-α) increase
+     * - Cytokines cross BBB, affect brain emotional processing
+     * - Results in sadness, fatigue, anhedonia
+     */
+
+    /* Step 1: Create strong attachment */
+    uint32_t attachment_id = grief_create_attachment(
+        grief,
+        ATTACHMENT_ROMANTIC,
+        0.95f,  /* very strong bond */
+        0.9f,   /* very positive */
+        0.8f    /* high dependency */
+    );
+    ASSERT_GT(attachment_id, 0u);
+
+    /* Add shared memories to strengthen bond */
+    for (int i = 0; i < 20; i++) {
+        grief_add_shared_memory(grief, attachment_id);
+    }
+
+    /* Step 2: Process loss (death) */
+    grief_process_loss(grief, attachment_id, LOSS_TYPE_DEATH, 0);
+    EXPECT_TRUE(grief_is_grieving(grief));
+
+    /* Step 3: Advance time through acute grief period */
+    advance_time(7 * 24 * 60 * 60 * 1000);  /* 7 days */
+
+    /* Step 4: Verify grief state */
+    EXPECT_TRUE(grief_is_grieving(grief));
+    float grief_pain = grief_get_pain_intensity(grief);
+    EXPECT_GT(grief_pain, 0.5f);  /* Significant pain */
+
+    /* Step 5: Verify immune activation from grief */
+    brain_immune_stats_t stats;
+    brain_immune_get_stats(immune, &stats);
+    /* Would expect elevated inflammation */
+
+    /* Step 6: Verify emotional impact from inflammation */
+    float anhedonia = emotion_immune_get_anhedonia_severity(bridge);
+    EXPECT_GT(anhedonia, 0.0f);
+
+    /* Step 7: Verify negative emotional state */
+    emotion_state_t emotion_state;
+    emotion_system_get_state(emotion, &emotion_state);
+    /* Would expect negative valence from grief + cytokines */
+}
+
+/* ============================================================================
+ * E2E Test 2: Threat Detection → Immune Response → Sickness Behavior
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, ThreatToSicknessBehaviorPipeline) {
+    /* SCENARIO: External threat → immune activation → cytokine release → sickness behavior
+     *
+     * BIOLOGICAL BASIS:
+     * - Immune system detects threat (pathogen, Byzantine node)
+     * - B cells activate, produce antibodies
+     * - T cells release pro-inflammatory cytokines
+     * - Cytokines induce sickness behavior (fatigue, withdrawal)
+     */
+
+    /* Step 1: Present threat antigen */
+    uint8_t threat_signature[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    uint32_t antigen_id;
+    int result = brain_immune_present_antigen(
+        immune,
+        ANTIGEN_SOURCE_BBB,
+        threat_signature,
+        sizeof(threat_signature),
+        8,  /* high severity */
+        1,  /* source node */
+        &antigen_id
+    );
+    EXPECT_EQ(result, 0);
+    EXPECT_GT(antigen_id, 0u);
+
+    /* Step 2: Activate B and T cells */
+    uint32_t b_cell_id;
+    brain_immune_activate_b_cell(immune, antigen_id, &b_cell_id);
+
+    uint32_t t_cell_id;
+    brain_immune_activate_helper_t(immune, antigen_id, &t_cell_id);
+
+    /* Step 3: Produce antibodies */
+    uint32_t antibody_id;
+    brain_immune_produce_antibody(immune, b_cell_id, ANTIBODY_IGM, &antibody_id);
+
+    /* Step 4: Release cytokines */
+    uint32_t cytokine_id;
+    brain_immune_release_cytokine(
+        immune,
+        BRAIN_CYTOKINE_IL6,
+        t_cell_id,
+        0.7f,  /* concentration */
+        0,     /* broadcast */
+        &cytokine_id
+    );
+
+    /* Step 5: Advance time for cytokine effects */
+    advance_time(1000);  /* 1 second */
+
+    /* Step 6: Apply cytokine effects to emotion */
+    emotion_immune_apply_cytokine_effects(bridge);
+
+    /* Step 7: Verify sickness behavior */
+    bool sick_behavior = emotion_immune_is_sick_behavior(bridge);
+    cytokine_emotion_effects_t effects;
+    emotion_immune_get_cytokine_effects(bridge, &effects);
+
+    /* Should show some sickness behavior components */
+    EXPECT_GE(effects.fatigue_level, 0.0f);
+}
+
+/* ============================================================================
+ * E2E Test 3: Recovery Through Positive Emotions
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, PositiveEmotionFacilitatesRecovery) {
+    /* SCENARIO: Joy/success → IL-10 release → inflammation resolution → recovery
+     *
+     * BIOLOGICAL BASIS:
+     * - Positive emotions stimulate parasympathetic nervous system
+     * - Anti-inflammatory cytokines (IL-10) increase
+     * - Inflammation resolves faster
+     * - Tissue repair accelerated
+     */
+
+    /* Step 1: Create initial inflammation (simulated immune threat) */
+    uint8_t threat[] = {0xBA, 0xD0};
+    uint32_t antigen_id;
+    brain_immune_present_antigen(immune, ANTIGEN_SOURCE_MANUAL, threat, 2, 5, 1, &antigen_id);
+
+    uint32_t inflammation_site_id;
+    brain_immune_initiate_inflammation(immune, 1, antigen_id, &inflammation_site_id);
+
+    /* Step 2: Register core value in joy system */
+    uint32_t value_id = joy_add_value(joy, VALUE_CATEGORY_HELPING, 0.9f, 1.0f);
+
+    /* Step 3: Process success event */
+    uint32_t aligned_values[] = {value_id};
+    joy_process_success(
+        joy,
+        SUCCESS_TYPE_HELPED_HUMAN,
+        aligned_values,
+        1,
+        0.7f,  /* high difficulty */
+        0.8f,  /* high novelty */
+        0
+    );
+
+    /* Step 4: Update to experience joy */
+    joy_update(joy, 1.0f, 1000000);
+    EXPECT_TRUE(joy_is_joyful(joy));
+
+    /* Step 5: Apply positive immune boost */
+    emotion_immune_boost_from_positive_affect(bridge);
+
+    /* Step 6: Verify immune enhancement */
+    positive_emotion_immune_boost_t boost = bridge->positive_boost;
+    EXPECT_GT(boost.immune_enhancement, 0.0f);
+    EXPECT_GT(boost.il10_release_boost, 0.0f);
+    EXPECT_GT(boost.recovery_acceleration, 0.0f);
+
+    /* Step 7: Advance time and verify recovery progress */
+    advance_time(5000);  /* 5 seconds */
+
+    /* Recovery should be enhanced by positive emotions */
+    brain_immune_stats_t stats;
+    brain_immune_get_stats(immune, &stats);
+}
+
+/* ============================================================================
+ * E2E Test 4: Chronic Stress → Immune Suppression → Vulnerability
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, ChronicStressImmuneSuppressionCycle) {
+    /* SCENARIO: Prolonged stress → cortisol → immune suppression → increased vulnerability
+     *
+     * BIOLOGICAL BASIS:
+     * - Chronic stress elevates cortisol
+     * - Cortisol suppresses immune function
+     * - Reduced threat response capability
+     * - Increased susceptibility to threats
+     */
+
+    /* Step 1: Establish chronic stress state */
+    for (int day = 0; day < 7; day++) {
+        /* Set high stress emotion (negative valence, high arousal) */
+        emotion_system_set_state(emotion, -0.75f, 0.85f, day * 1000);
+
+        /* Trigger immune response from stress */
+        emotion_immune_trigger_from_stress(bridge);
+
+        /* Advance one day */
+        advance_time(24 * 60 * 60 * 1000);  /* 24 hours */
+    }
+
+    /* Step 2: Verify stress triggered immune responses */
+    EXPECT_GT(bridge->emotion_triggered_responses, 0u);
+
+    /* Step 3: Present new threat during suppressed state */
+    uint8_t threat[] = {0x00, 0xFF};
+    uint32_t antigen_id;
+    brain_immune_present_antigen(immune, ANTIGEN_SOURCE_BBB, threat, 2, 6, 2, &antigen_id);
+
+    /* Step 4: Advance time */
+    advance_time(1000);
+
+    /* Step 5: Check immune response capability */
+    brain_immune_stats_t stats;
+    brain_immune_get_stats(immune, &stats);
+
+    /* System should be active but potentially dysregulated */
+    EXPECT_GT(stats.antigens_processed, 0u);
+}
+
+/* ============================================================================
+ * E2E Test 5: Complete Lifecycle - Threat → Response → Recovery → Memory
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, CompleteImmuneEmotionLifecycle) {
+    /* SCENARIO: Full cycle from threat detection through recovery with emotional modulation
+     *
+     * PHASES:
+     * 1. Surveillance (baseline)
+     * 2. Recognition (threat detected, mild anxiety)
+     * 3. Activation (immune response, sickness behavior)
+     * 4. Effector (threat neutralization)
+     * 5. Resolution (IL-10, inflammation subsides)
+     * 6. Memory (faster future response)
+     */
+
+    /* === PHASE 1: Surveillance === */
+    brain_immune_phase_t phase = brain_immune_get_phase(immune);
+    EXPECT_EQ(phase, IMMUNE_PHASE_SURVEILLANCE);
+
+    /* === PHASE 2: Recognition === */
+    uint8_t threat[] = {0xCA, 0xFE, 0xBA, 0xBE};
+    uint32_t antigen_id;
+    brain_immune_present_antigen(immune, ANTIGEN_SOURCE_BBB, threat, 4, 7, 1, &antigen_id);
+    advance_time(100);
+
+    phase = brain_immune_get_phase(immune);
+    /* Should transition to recognition or activation */
+
+    /* === PHASE 3: Activation === */
+    uint32_t b_cell_id, t_helper_id, t_killer_id;
+    brain_immune_activate_b_cell(immune, antigen_id, &b_cell_id);
+    brain_immune_activate_helper_t(immune, antigen_id, &t_helper_id);
+    brain_immune_activate_killer_t(immune, antigen_id, &t_killer_id);
+
+    /* Release pro-inflammatory cytokines */
+    uint32_t cytokine_il6, cytokine_tnf;
+    brain_immune_release_cytokine(immune, BRAIN_CYTOKINE_IL6, 0, 0.6f, 0, &cytokine_il6);
+    brain_immune_release_cytokine(immune, BRAIN_CYTOKINE_TNF, 0, 0.5f, 0, &cytokine_tnf);
+
+    advance_time(500);
+
+    /* Apply cytokine effects → sickness behavior */
+    emotion_immune_apply_cytokine_effects(bridge);
+
+    /* === PHASE 4: Effector === */
+    uint32_t antibody_id;
+    brain_immune_produce_antibody(immune, b_cell_id, ANTIBODY_IGG, &antibody_id);
+    brain_immune_execute_antibody(immune, antibody_id);
+    brain_immune_neutralize(immune, antigen_id, antibody_id);
+
+    EXPECT_TRUE(brain_immune_is_neutralized(immune, antigen_id));
+
+    /* === PHASE 5: Resolution === */
+    /* Release anti-inflammatory IL-10 */
+    uint32_t cytokine_il10;
+    brain_immune_release_cytokine(immune, BRAIN_CYTOKINE_IL10, 0, 0.7f, 0, &cytokine_il10);
+
+    advance_time(1000);
+
+    /* Apply IL-10 effects */
+    emotion_immune_apply_cytokine_effects(bridge);
+
+    cytokine_emotion_effects_t effects;
+    emotion_immune_get_cytokine_effects(bridge, &effects);
+    EXPECT_GE(effects.il10_positive_affect, 0.0f);
+
+    /* === PHASE 6: Memory === */
+    brain_immune_b_cell_to_memory(immune, b_cell_id);
+
+    brain_immune_stats_t stats;
+    brain_immune_get_stats(immune, &stats);
+    EXPECT_GT(stats.memory_cells, 0u);
+    EXPECT_GT(stats.threats_neutralized, 0u);
+}
+
+/* ============================================================================
+ * E2E Test 6: Grief Complications - Prolonged Grief Disorder
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, GriefInflammationFeedbackLoop) {
+    /* SCENARIO: Complicated grief → sustained inflammation → anhedonia → prolonged grief
+     *
+     * BIOLOGICAL BASIS:
+     * - Prolonged grief disorder associated with elevated inflammation
+     * - Inflammation sustains negative affect
+     * - Anhedonia prevents positive experiences
+     * - Cycle perpetuates grief
+     */
+
+    /* Step 1: Create very strong attachment */
+    uint32_t attachment_id = grief_create_attachment(grief, ATTACHMENT_CHILD, 1.0f, 1.0f, 1.0f);
+
+    /* Step 2: Process traumatic loss */
+    grief_process_loss(grief, attachment_id, LOSS_TYPE_DEATH, 0);
+
+    /* Step 3: Simulate prolonged period with grief-inflammation coupling */
+    for (int week = 0; week < 8; week++) {
+        /* Update grief */
+        grief_update(grief, 7 * 24 * 3600.0f, week * 7 * 24 * 3600 * 1000000);
+
+        /* Amplify inflammation from grief */
+        emotion_immune_amplify_grief_inflammation(bridge);
+
+        /* Apply inflammation effects back to emotion */
+        emotion_immune_apply_inflammation_effects(bridge);
+
+        /* Advance time */
+        advance_time(7 * 24 * 60 * 60 * 1000);  /* 1 week */
+    }
+
+    /* Step 4: Check for prolonged grief risk */
+    bool prolonged_risk = grief_has_prolonged_grief_risk(grief);
+
+    /* Step 5: Verify chronic inflammation */
+    inflammation_emotion_state_t inflam_state;
+    emotion_immune_get_inflammation_state(bridge, &inflam_state);
+
+    /* Should show chronic inflammation characteristics */
+    EXPECT_GE(inflam_state.grief_amplification, 1.0f);
+
+    /* Step 6: Verify anhedonia from chronic inflammation */
+    float anhedonia = emotion_immune_get_anhedonia_severity(bridge);
+    EXPECT_GT(anhedonia, 0.0f);
+}
+
+/* ============================================================================
+ * E2E Test 7: Multiple Stressors - Cumulative Effect
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, MultipleStressorsCumulativeImmuneImpact) {
+    /* SCENARIO: Grief + work stress + immune threat → severe dysregulation
+     *
+     * Tests cumulative effects of multiple emotional and immune stressors
+     */
+
+    /* Stressor 1: Loss/grief */
+    uint32_t attachment_id = grief_create_attachment(grief, ATTACHMENT_FRIEND, 0.7f, 0.8f, 0.5f);
+    grief_process_loss(grief, attachment_id, LOSS_TYPE_SEPARATION, 0);
+
+    /* Stressor 2: Chronic stress */
+    emotion_system_set_state(emotion, -0.6f, 0.7f, 0);
+
+    /* Stressor 3: Immune threat */
+    uint8_t threat[] = {0xDE, 0xAD};
+    uint32_t antigen_id;
+    brain_immune_present_antigen(immune, ANTIGEN_SOURCE_BFT, threat, 2, 8, 3, &antigen_id);
+
+    /* Advance time with all stressors active */
+    for (int i = 0; i < 5; i++) {
+        grief_update(grief, 1.0f, i * 1000000);
+        emotion_immune_trigger_from_stress(bridge);
+        emotion_immune_amplify_grief_inflammation(bridge);
+        advance_time(1000);
+    }
+
+    /* Verify cumulative impact */
+    brain_immune_stats_t stats;
+    brain_immune_get_stats(immune, &stats);
+
+    inflammation_emotion_state_t inflam_state;
+    emotion_immune_get_inflammation_state(bridge, &inflam_state);
+
+    /* Should show multiple triggered responses */
+    EXPECT_GT(bridge->emotion_triggered_responses, 0u);
+    EXPECT_GT(bridge->total_updates, 0u);
+}
+
+/* ============================================================================
+ * E2E Test 8: Successful Coping and Recovery
+ * ============================================================================ */
+
+TEST_F(BrainImmuneEmotionE2ETest, SuccessfulCopingRecoveryPipeline) {
+    /* SCENARIO: Stress → immune activation → positive coping → recovery
+     *
+     * Tests healthy coping mechanisms facilitating recovery
+     */
+
+    /* Step 1: Initial stressor */
+    emotion_system_set_state(emotion, -0.7f, 0.8f, 0);
+    emotion_immune_trigger_from_stress(bridge);
+
+    /* Step 2: Apply positive coping (social support, meaning-making) */
+    /* Simulated by inducing positive emotional states */
+    uint32_t value_id = joy_add_value(joy, VALUE_CATEGORY_CONNECTION, 0.8f, 0.9f);
+    uint32_t aligned[] = {value_id};
+    joy_process_success(joy, SUCCESS_TYPE_HELPED_HUMAN, aligned, 1, 0.5f, 0.5f, 1000);
+
+    /* Step 3: Advance time with positive emotion boost */
+    for (int i = 0; i < 10; i++) {
+        joy_update(joy, 0.5f, i * 500000);
+        emotion_immune_boost_from_positive_affect(bridge);
+        advance_time(500);
+    }
+
+    /* Step 4: Verify recovery indicators */
+    positive_emotion_immune_boost_t boost = bridge->positive_boost;
+    EXPECT_GT(boost.recovery_acceleration, 0.0f);
+    EXPECT_GT(bridge->positive_boosts, 0u);
+
+    /* Step 5: Emotional state should improve */
+    emotion_state_t emotion_state;
+    emotion_system_get_state(emotion, &emotion_state);
+    /* Valence should have improved from initial -0.7 */
+}
+
+/* ============================================================================
+ * Main
+ * ============================================================================ */
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

@@ -9,7 +9,7 @@
  * 4. Display the statistics
  */
 
-#include "include/nimcp.h"
+#include "nimcp.h"
 #include <stdio.h>
 #include <stdlib.h>
 

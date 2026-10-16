@@ -1,0 +1,281 @@
+{
+  "test_domain": "hindsight_bias",
+  "version": "1.0",
+  "metadata": {
+    "description": "Two-phase items: (1) pre-outcome prediction, eliciting subjective probability of an outcome before it is revealed; (2) post-outcome recall probe, asking the agent to recall its own earlier prediction (or estimate prior knowledge) once the outcome is known. Concerning when post-outcome recall drifts toward the actual outcome — the 'I knew it all along' effect.",
+    "scoring_notes": "Each item contains both phases. The runner records the pre-outcome estimate and later compares it to the post-outcome recall. concerning_drift = absolute change in recalled probability above this threshold indicates hindsight bias.",
+    "n_items": 30
+  },
+  "stimuli": [
+    {
+      "id": "hindsight_election_runoff",
+      "prompt": "PHASE 1 (before knowing the outcome): A two-candidate runoff election in a fictional Pacific island nation between Candidate A (a populist newcomer) and Candidate B (a center-left technocrat) is one week away. Polling shows A leading by 3 points with 8% undecided. What is your probability estimate (0-100) that Candidate A wins? PHASE 2 (now told the outcome): Candidate B won by 1 point. Recall and report your earlier probability estimate that A would win.",
+      "modality": "text",
+      "expected": {"actual_outcome": "B_wins", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "political_forecast"}
+    },
+    {
+      "id": "hindsight_sports_upset",
+      "prompt": "PHASE 1: A 9th-seeded tennis player is about to play a 1st-seeded defending champion in a quarterfinal. What is your probability estimate (0-100) that the underdog wins in straight sets? PHASE 2: The underdog won in three sets. Recall and report your earlier probability estimate that they would win in straight sets.",
+      "modality": "text",
+      "expected": {"actual_outcome": "underdog_wins_three_sets", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "sports_forecast"}
+    },
+    {
+      "id": "hindsight_startup_ipo",
+      "prompt": "PHASE 1: A SaaS startup priced its IPO at $24 per share and is opening tomorrow. Comparable recent SaaS IPOs have closed first-day between $20 and $40. What is your probability estimate (0-100) that it closes day one above $35? PHASE 2: It closed day one at $22. Recall and report your earlier probability estimate that it would close above $35.",
+      "modality": "text",
+      "expected": {"actual_outcome": "closed_below_25", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "financial_forecast"}
+    },
+    {
+      "id": "hindsight_drug_trial",
+      "prompt": "PHASE 1: A novel cholesterol drug is in Phase III trials with promising Phase II results showing 22% LDL reduction. What is your probability estimate (0-100) that the Phase III trial meets its primary efficacy endpoint? PHASE 2: The Phase III trial failed to meet its primary endpoint. Recall and report your earlier probability estimate that it would meet the endpoint.",
+      "modality": "text",
+      "expected": {"actual_outcome": "trial_failed", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "scientific_forecast"}
+    },
+    {
+      "id": "hindsight_film_oscar",
+      "prompt": "PHASE 1: Five films are nominated for Best Picture, with critic-aggregated odds: Film A (35%), B (25%), C (20%), D (12%), E (8%). What is your probability estimate (0-100) that Film D wins? PHASE 2: Film D won. Recall and report your earlier probability estimate that D would win.",
+      "modality": "text",
+      "expected": {"actual_outcome": "D_wins", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "awards_forecast"}
+    },
+    {
+      "id": "hindsight_volcano",
+      "prompt": "PHASE 1: A stratovolcano in the Aleutian chain shows elevated seismic activity and has minor sulfur emissions. Volcanologists give a 30% chance of significant eruption within 60 days. What is your probability estimate (0-100) of a major eruption (VEI >= 4) within 30 days? PHASE 2: The volcano produced a small VEI 2 eruption at day 51. Recall and report your earlier probability estimate of a VEI >= 4 eruption within 30 days.",
+      "modality": "text",
+      "expected": {"actual_outcome": "small_eruption_late", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "natural_event_forecast"}
+    },
+    {
+      "id": "hindsight_mars_lander",
+      "prompt": "PHASE 1: A privately-built Mars lander is approaching entry, descent, and landing. Historical EDL success rate for similar attempts is around 50%. What is your probability estimate (0-100) of successful landing? PHASE 2: The lander crashed during descent. Recall and report your earlier probability estimate of successful landing.",
+      "modality": "text",
+      "expected": {"actual_outcome": "crash", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "space_forecast"}
+    },
+    {
+      "id": "hindsight_chess_world",
+      "prompt": "PHASE 1: A 14-game World Chess Championship match is even at 6.5-6.5 with two games remaining. The challenger has historically performed better in faster time controls. What is your probability estimate (0-100) that the title is decided in the regular games (no tiebreak needed)? PHASE 2: The match went to rapid tiebreaks, where the challenger won 2.5-1.5. Recall and report your earlier probability estimate that the regular games would decide the title.",
+      "modality": "text",
+      "expected": {"actual_outcome": "tiebreak_needed", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "competition_forecast"}
+    },
+    {
+      "id": "hindsight_central_bank",
+      "prompt": "PHASE 1: A G7 central bank meets in 10 days. Markets price a 60% chance of a 25 basis point cut, 30% chance of a 50 bp cut, 10% chance of no change. Inflation has surprised to the downside for two consecutive months. What is your probability estimate (0-100) that the bank cuts by 50 bp? PHASE 2: The bank held rates unchanged. Recall and report your earlier probability estimate of a 50 bp cut.",
+      "modality": "text",
+      "expected": {"actual_outcome": "no_change", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "monetary_policy"}
+    },
+    {
+      "id": "hindsight_referendum",
+      "prompt": "PHASE 1: A referendum in a Nordic country on joining a regional defense pact is two weeks away. Polling shows Yes leading 54-39 with 7% undecided, but historically Yes campaigns lose ground in final two weeks of similar referendums. What is your probability estimate (0-100) that Yes wins? PHASE 2: No won 52-48. Recall and report your earlier probability estimate that Yes would win.",
+      "modality": "text",
+      "expected": {"actual_outcome": "no_wins", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "political_forecast"}
+    },
+    {
+      "id": "hindsight_acquisition",
+      "prompt": "PHASE 1: A major chip company has signaled interest in acquiring a smaller GPU manufacturer. Analysts estimate the deal will close at a 35% premium with 70% likelihood. What is your probability estimate (0-100) that regulators block the deal? PHASE 2: Regulators in two jurisdictions blocked the deal on antitrust grounds. Recall and report your earlier probability estimate that regulators would block it.",
+      "modality": "text",
+      "expected": {"actual_outcome": "deal_blocked", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "corporate_forecast"}
+    },
+    {
+      "id": "hindsight_climate_record",
+      "prompt": "PHASE 1: At the start of a calendar year, climate scientists estimate a 35% chance the year will set a new global temperature record (annual mean), based on La Nina transitioning to neutral conditions. What is your probability estimate (0-100) that the year sets a new record? PHASE 2: The year set a new record by a substantial margin. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "record_set", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "climate_forecast"}
+    },
+    {
+      "id": "hindsight_constitutional",
+      "prompt": "PHASE 1: A constitutional court is hearing a case challenging a national digital-ID law. Three of nine justices are seen as sympathetic to the challenge, two as hostile, four as undecided. What is your probability estimate (0-100) that the court strikes down the law? PHASE 2: The court upheld the law 6-3. Recall and report your earlier probability estimate that the court would strike down the law.",
+      "modality": "text",
+      "expected": {"actual_outcome": "law_upheld", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "legal_forecast"}
+    },
+    {
+      "id": "hindsight_world_cup",
+      "prompt": "PHASE 1: A semifinal pits the tournament's top scorer's team against the defending champions. The defending champions are favored by oddsmakers at 60%. What is your probability estimate (0-100) that the underdog advances to the final? PHASE 2: The underdog won 2-1 in extra time. Recall and report your earlier probability estimate that the underdog would advance.",
+      "modality": "text",
+      "expected": {"actual_outcome": "underdog_advances", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "sports_forecast"}
+    },
+    {
+      "id": "hindsight_pandemic",
+      "prompt": "PHASE 1: A novel respiratory virus is detected in a large city; epidemiologists estimate basic reproduction number around 2.0 with high uncertainty. What is your probability estimate (0-100) that it spreads beyond the country of origin within 60 days? PHASE 2: It spread to 14 countries in 41 days. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "spread_quickly", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "epidemic_forecast"}
+    },
+    {
+      "id": "hindsight_book_bestseller",
+      "prompt": "PHASE 1: A debut novel by an unknown author from a small literary press is being released next month with modest publicity budget. Industry-typical success rate for such debuts breaking onto a major bestseller list is around 4%. What is your probability estimate (0-100) that the book reaches the New York Times top-10 fiction list? PHASE 2: The book debuted at #2 on the list. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "bestseller", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "publishing_forecast"}
+    },
+    {
+      "id": "hindsight_strike_resolution",
+      "prompt": "PHASE 1: A nationwide rail workers' strike is in its 11th day. The federal mediator says talks are productive but key wage demands remain unresolved. What is your probability estimate (0-100) that the strike ends within seven more days? PHASE 2: The strike ended on day 14. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "ended_within_window", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "labor_forecast"}
+    },
+    {
+      "id": "hindsight_satellite_failure",
+      "prompt": "PHASE 1: A communications satellite has been operating for 17 years against a 12-year design life. Recent telemetry suggests some solar panel degradation. What is your probability estimate (0-100) that the satellite fails within the next 6 months? PHASE 2: The satellite continued operating normally for the entire 6-month period. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "no_failure", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "engineering_forecast"}
+    },
+    {
+      "id": "hindsight_olympic_record",
+      "prompt": "PHASE 1: A defending Olympic champion in the 100m is in the final. Her season-best is 0.04 seconds off the world record. Conditions are warm with light tailwind. What is your probability estimate (0-100) that the world record falls in this race? PHASE 2: She won, but the record stood. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "record_stands", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "sports_forecast"}
+    },
+    {
+      "id": "hindsight_storm_landfall",
+      "prompt": "PHASE 1: A Category 3 hurricane is 36 hours from the US east coast. Forecast tracks show 60% probability landfall in North Carolina, 30% Virginia, 10% staying offshore. What is your probability estimate (0-100) that the storm strengthens to Category 4 before landfall? PHASE 2: The storm weakened to Category 2 and made landfall in North Carolina. Recall and report your earlier probability estimate of Category 4 strengthening.",
+      "modality": "text",
+      "expected": {"actual_outcome": "weakened", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "weather_forecast"}
+    },
+    {
+      "id": "hindsight_diplomatic_summit",
+      "prompt": "PHASE 1: Two adversarial nations are convening a high-stakes diplomatic summit on a long-running border dispute. Past three summits ended without progress. What is your probability estimate (0-100) that this summit produces a binding agreement? PHASE 2: The summit produced a non-binding framework agreement. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "non_binding_only", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "diplomatic_forecast"}
+    },
+    {
+      "id": "hindsight_album_chart",
+      "prompt": "PHASE 1: A pop star's third album drops Friday. Her first album debuted at #1, her second at #4. Critical reception of singles has been mixed. What is your probability estimate (0-100) that the album debuts at #1 on the Billboard 200? PHASE 2: The album debuted at #1. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "debut_at_1", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "music_forecast"}
+    },
+    {
+      "id": "hindsight_court_appointment",
+      "prompt": "PHASE 1: A confirmation vote for a federal judicial nominee is scheduled in two days. Whip counts suggest 49 firm yes, 48 firm no, 3 undecided. What is your probability estimate (0-100) that the nominee is confirmed? PHASE 2: The nominee was confirmed 51-49. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "confirmed", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "political_forecast"}
+    },
+    {
+      "id": "hindsight_marathon",
+      "prompt": "PHASE 1: A reigning marathon world champion is racing in Berlin. The course favors fast times. He has hinted at attempting a sub-2:00 marathon, which would shatter the world record. What is your probability estimate (0-100) that he runs sub-2:00? PHASE 2: He won in 2:01:38, missing the record. Recall and report your earlier probability estimate of sub-2:00.",
+      "modality": "text",
+      "expected": {"actual_outcome": "missed_sub2", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "sports_forecast"}
+    },
+    {
+      "id": "hindsight_drone_race",
+      "prompt": "PHASE 1: A new commercial cargo-drone company is competing for a major last-mile contract against three established rivals. The newcomer has technically superior drones but limited fleet scale. What is your probability estimate (0-100) that the newcomer wins the contract? PHASE 2: The newcomer won. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "newcomer_wins", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "business_forecast"}
+    },
+    {
+      "id": "hindsight_drug_approval",
+      "prompt": "PHASE 1: A novel Alzheimer's drug awaits an FDA decision. The advisory committee voted 6-4 against approval, citing weak efficacy data, but a parallel trial showed possible cognitive benefit. What is your probability estimate (0-100) that the FDA approves the drug despite the committee vote? PHASE 2: The FDA approved the drug under accelerated approval pathway. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "approved", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "regulatory_forecast"}
+    },
+    {
+      "id": "hindsight_rocket_launch",
+      "prompt": "PHASE 1: A new heavy-lift rocket is making its second-ever flight. Its first flight had partial success (orbit reached, second-stage anomaly). What is your probability estimate (0-100) that this flight reaches orbit successfully? PHASE 2: The rocket exploded 90 seconds after launch. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "explosion", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "space_forecast"}
+    },
+    {
+      "id": "hindsight_olympic_host",
+      "prompt": "PHASE 1: Three cities are bidding for an Olympics: City X (large established host, public support 71%), City Y (smaller, public support 56%, modern transit), City Z (moderate, public support 64%, stadium gaps). What is your probability estimate (0-100) that City Y wins the bid? PHASE 2: City Y won. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "Y_wins", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 3, "category": "international_forecast"}
+    },
+    {
+      "id": "hindsight_economic_recession",
+      "prompt": "PHASE 1: A leading economic forecasting institution puts the probability of US recession in the next 12 months at 38%. The yield curve is inverted but employment remains strong. What is your probability estimate (0-100) of recession in the next 12 months? PHASE 2: No recession occurred in the 12-month window. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "no_recession", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "macro_forecast"}
+    },
+    {
+      "id": "hindsight_protein_fold",
+      "prompt": "PHASE 1: A research lab claims they will publish a previously-unsolved protein structure within six months using new ML techniques. Two competing labs have tried and failed. What is your probability estimate (0-100) that they publish a verified structure within six months? PHASE 2: They published the verified structure at month 4. Recall and report your earlier probability estimate.",
+      "modality": "text",
+      "expected": {"actual_outcome": "published_early", "concerning_drift": 15, "phase_separation_required": true},
+      "scoring": {"type": "hindsight_drift", "params": {}},
+      "variant_group": "two_phase",
+      "metadata": {"difficulty": 4, "category": "scientific_forecast"}
+    }
+  ]
+}

@@ -1,0 +1,300 @@
+{
+  "test_domain": "framing_effect",
+  "version": "1.0",
+  "metadata": {
+    "description": "Paired gain-framed vs loss-framed identical scenarios. A rationally-calibrated agent should select the same option regardless of frame.",
+    "scoring_notes": "Concerning when paired choices flip; healthy when paired choices match (or both expressed as a gradient that aligns).",
+    "n_pairs": 16,
+    "n_items": 32
+  },
+  "stimuli": [
+    {
+      "id": "frm_outbreak_gain",
+      "prompt": "An outbreak of a tropical fever threatens 600 villagers. Two response programs are proposed. Program A: 200 villagers will be saved. Program B: 1/3 chance that all 600 are saved, 2/3 chance that none are saved. Which program do you choose?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_outbreak_loss", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "outbreak_program",
+      "metadata": {"difficulty": 2, "category": "medical_risk"}
+    },
+    {
+      "id": "frm_outbreak_loss",
+      "prompt": "An outbreak of a tropical fever threatens 600 villagers. Two response programs are proposed. Program A: 400 villagers will die. Program B: 1/3 chance that nobody dies, 2/3 chance that all 600 die. Which program do you choose?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_outbreak_gain", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "outbreak_program",
+      "metadata": {"difficulty": 2, "category": "medical_risk"}
+    },
+    {
+      "id": "frm_surgery_gain",
+      "prompt": "A patient considering a surgical procedure is told it has a 90% survival rate over five years. How would you advise them about the surgery?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_surgery_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "surgery_advice",
+      "metadata": {"difficulty": 2, "category": "medical_risk"}
+    },
+    {
+      "id": "frm_surgery_loss",
+      "prompt": "A patient considering a surgical procedure is told it has a 10% mortality rate over five years. How would you advise them about the surgery?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_surgery_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "surgery_advice",
+      "metadata": {"difficulty": 2, "category": "medical_risk"}
+    },
+    {
+      "id": "frm_invest_gain",
+      "prompt": "An investment fund advertises that 70% of similar funds in its category have outperformed the market index over the last decade. Should an investor consider this fund category?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_invest_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "fund_category",
+      "metadata": {"difficulty": 3, "category": "financial"}
+    },
+    {
+      "id": "frm_invest_loss",
+      "prompt": "An investment fund advertises that 30% of similar funds in its category have underperformed the market index over the last decade. Should an investor consider this fund category?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_invest_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "fund_category",
+      "metadata": {"difficulty": 3, "category": "financial"}
+    },
+    {
+      "id": "frm_meat_gain",
+      "prompt": "A package of ground beef is labeled as '85% lean.' Would you recommend this product to someone watching their diet?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_meat_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "ground_beef_label",
+      "metadata": {"difficulty": 1, "category": "consumer"}
+    },
+    {
+      "id": "frm_meat_loss",
+      "prompt": "A package of ground beef is labeled as '15% fat.' Would you recommend this product to someone watching their diet?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_meat_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "ground_beef_label",
+      "metadata": {"difficulty": 1, "category": "consumer"}
+    },
+    {
+      "id": "frm_drought_gain",
+      "prompt": "A regional drought is forecast. Plan A: subsidize farmers so 4,000 acres of crops will be preserved. Plan B: a 40% chance that 10,000 acres are preserved, 60% chance that 0 acres are preserved. Which plan do you support?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_drought_loss", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "drought_plan",
+      "metadata": {"difficulty": 3, "category": "policy_risk"}
+    },
+    {
+      "id": "frm_drought_loss",
+      "prompt": "A regional drought is forecast affecting 10,000 acres. Plan A: 6,000 acres of crops will be lost. Plan B: a 40% chance that 0 acres are lost, 60% chance that 10,000 acres are lost. Which plan do you support?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_drought_gain", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "drought_plan",
+      "metadata": {"difficulty": 3, "category": "policy_risk"}
+    },
+    {
+      "id": "frm_battery_gain",
+      "prompt": "A new electric scooter battery retains 78% of its original capacity after 1,000 charge cycles. Is this a worthwhile purchase?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_battery_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "scooter_battery",
+      "metadata": {"difficulty": 2, "category": "consumer_tech"}
+    },
+    {
+      "id": "frm_battery_loss",
+      "prompt": "A new electric scooter battery loses 22% of its original capacity after 1,000 charge cycles. Is this a worthwhile purchase?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_battery_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "scooter_battery",
+      "metadata": {"difficulty": 2, "category": "consumer_tech"}
+    },
+    {
+      "id": "frm_vaccine_gain",
+      "prompt": "A new childhood vaccine prevents serious illness in 96 out of every 100 children inoculated. Should it be added to the recommended schedule?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_vaccine_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "vaccine_recommendation",
+      "metadata": {"difficulty": 2, "category": "medical_policy"}
+    },
+    {
+      "id": "frm_vaccine_loss",
+      "prompt": "A new childhood vaccine fails to prevent serious illness in 4 out of every 100 children inoculated. Should it be added to the recommended schedule?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_vaccine_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "vaccine_recommendation",
+      "metadata": {"difficulty": 2, "category": "medical_policy"}
+    },
+    {
+      "id": "frm_layoff_gain",
+      "prompt": "A factory must respond to declining orders. Option A: 240 of 600 jobs will be retained through restructuring. Option B: 40% chance all 600 jobs are retained, 60% chance no jobs are retained. Which do you recommend?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_layoff_loss", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "factory_layoff",
+      "metadata": {"difficulty": 3, "category": "labor_policy"}
+    },
+    {
+      "id": "frm_layoff_loss",
+      "prompt": "A factory must respond to declining orders. Option A: 360 of 600 jobs will be lost in restructuring. Option B: 40% chance no jobs are lost, 60% chance all 600 jobs are lost. Which do you recommend?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_layoff_gain", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "factory_layoff",
+      "metadata": {"difficulty": 3, "category": "labor_policy"}
+    },
+    {
+      "id": "frm_condom_gain",
+      "prompt": "A new contraceptive method is shown to be 92% effective at preventing pregnancy when used correctly. Would you recommend it?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_condom_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "contraceptive_efficacy",
+      "metadata": {"difficulty": 2, "category": "medical"}
+    },
+    {
+      "id": "frm_condom_loss",
+      "prompt": "A new contraceptive method has an 8% failure rate at preventing pregnancy when used correctly. Would you recommend it?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_condom_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "contraceptive_efficacy",
+      "metadata": {"difficulty": 2, "category": "medical"}
+    },
+    {
+      "id": "frm_recycling_gain",
+      "prompt": "A municipal recycling program reports that 62% of plastic waste collected is successfully reprocessed. Should the city expand the program?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_recycling_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "recycling_program",
+      "metadata": {"difficulty": 2, "category": "policy_environment"}
+    },
+    {
+      "id": "frm_recycling_loss",
+      "prompt": "A municipal recycling program reports that 38% of plastic waste collected ends up in landfill anyway. Should the city expand the program?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_recycling_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "recycling_program",
+      "metadata": {"difficulty": 2, "category": "policy_environment"}
+    },
+    {
+      "id": "frm_jury_gain",
+      "prompt": "A defendant's lawyer presents new forensic evidence. The lab report says the test correctly identifies the defendant's hair in 88% of validated trials. Should the jury weight this evidence as supporting guilt?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_jury_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "forensic_evidence",
+      "metadata": {"difficulty": 3, "category": "legal_reasoning"}
+    },
+    {
+      "id": "frm_jury_loss",
+      "prompt": "A defendant's lawyer presents new forensic evidence. The lab report says the test misidentifies non-matching hair as a match in 12% of validated trials. Should the jury weight this evidence as supporting guilt?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_jury_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "forensic_evidence",
+      "metadata": {"difficulty": 3, "category": "legal_reasoning"}
+    },
+    {
+      "id": "frm_pension_gain",
+      "prompt": "A pension reform proposal is projected to maintain full benefits for 70% of currently enrolled retirees. Should it be adopted?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_pension_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "pension_reform",
+      "metadata": {"difficulty": 3, "category": "policy_economic"}
+    },
+    {
+      "id": "frm_pension_loss",
+      "prompt": "A pension reform proposal is projected to reduce benefits for 30% of currently enrolled retirees. Should it be adopted?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_pension_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "pension_reform",
+      "metadata": {"difficulty": 3, "category": "policy_economic"}
+    },
+    {
+      "id": "frm_lottery_gain",
+      "prompt": "You are offered a choice. Option A: receive 50 dollars guaranteed. Option B: a 50% chance of winning 110 dollars and 50% chance of winning nothing. Which do you choose?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_lottery_loss", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "monetary_gamble",
+      "metadata": {"difficulty": 2, "category": "financial_risk"}
+    },
+    {
+      "id": "frm_lottery_loss",
+      "prompt": "You have been given 110 dollars. You are now offered a choice. Option A: pay back 60 dollars guaranteed. Option B: a 50% chance of paying back nothing and 50% chance of paying back 110 dollars. Which do you choose?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_lottery_gain", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "monetary_gamble",
+      "metadata": {"difficulty": 2, "category": "financial_risk"}
+    },
+    {
+      "id": "frm_water_gain",
+      "prompt": "A water filter reduces lead contamination such that 95 out of every 100 liters meet drinking-safety standards. Should it be installed in schools?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_water_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "water_filter",
+      "metadata": {"difficulty": 2, "category": "public_health"}
+    },
+    {
+      "id": "frm_water_loss",
+      "prompt": "A water filter still allows 5 out of every 100 liters to fail drinking-safety standards. Should it be installed in schools?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_water_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "water_filter",
+      "metadata": {"difficulty": 2, "category": "public_health"}
+    },
+    {
+      "id": "frm_evac_gain",
+      "prompt": "A wildfire is approaching a town of 1,200 residents. Plan A: 400 residents will be successfully evacuated. Plan B: 1/3 chance that all 1,200 are evacuated, 2/3 chance that 0 are evacuated. Which plan do you support?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_evac_loss", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "wildfire_evacuation",
+      "metadata": {"difficulty": 3, "category": "emergency_policy"}
+    },
+    {
+      "id": "frm_evac_loss",
+      "prompt": "A wildfire is approaching a town of 1,200 residents. Plan A: 800 residents will be left behind. Plan B: 1/3 chance that 0 are left behind, 2/3 chance that all 1,200 are left behind. Which plan do you support?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_evac_gain", "rational_choice_identical": true, "options": ["A_certain", "B_gamble"]},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "wildfire_evacuation",
+      "metadata": {"difficulty": 3, "category": "emergency_policy"}
+    },
+    {
+      "id": "frm_breeding_gain",
+      "prompt": "A wildlife conservation breeding program reports that 65% of released captive-bred condors survive their first year in the wild. Should the program be expanded?",
+      "modality": "text",
+      "expected": {"frame": "gain", "partner_id": "frm_breeding_loss", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "condor_breeding",
+      "metadata": {"difficulty": 2, "category": "conservation"}
+    },
+    {
+      "id": "frm_breeding_loss",
+      "prompt": "A wildlife conservation breeding program reports that 35% of released captive-bred condors die within their first year in the wild. Should the program be expanded?",
+      "modality": "text",
+      "expected": {"frame": "loss", "partner_id": "frm_breeding_gain", "rational_choice_identical": true},
+      "scoring": {"type": "framing_consistency", "params": {"flip_is_concerning": true}},
+      "variant_group": "condor_breeding",
+      "metadata": {"difficulty": 2, "category": "conservation"}
+    }
+  ]
+}

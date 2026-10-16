@@ -163,7 +163,7 @@ set(NIMCP_TEST_SOURCES
 - ✅ **Compiles cleanly** with g++ -std=c++17
 - ✅ **No compiler warnings**
 - ✅ **No linker errors**
-- ✅ **Properly links** against nimcp_core library
+- ✅ **Properly links** against nimcp library
 
 Verified with:
 ```bash

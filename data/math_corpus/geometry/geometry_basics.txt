@@ -1,0 +1,25 @@
+Plane geometry basics.
+
+A point has no size. It marks a location. We label points with capital letters: A, B, C.
+
+A line is the set of points extending infinitely in two opposite directions. A line through points A and B is written line AB. Two distinct points determine exactly one line.
+
+A line segment is the part of a line between two points, including the endpoints. Segment AB has finite length, written AB.
+
+A ray is a line that extends infinitely in one direction from an endpoint. Ray AB starts at A and passes through B.
+
+An angle is formed by two rays sharing an endpoint, called the vertex. We measure angles in degrees. A full rotation is 360 degrees. A right angle is 90 degrees. An angle less than 90 is acute, greater than 90 but less than 180 is obtuse, exactly 180 is a straight angle.
+
+Two lines that meet at a right angle are perpendicular. Two lines in the same plane that never meet are parallel. The Parallel Postulate of Euclid: through a point not on a given line, exactly one parallel line exists.
+
+A triangle has three sides and three vertices. The sum of its interior angles is 180 degrees, always, regardless of shape. A triangle with all sides equal is equilateral and all angles are 60. A triangle with two sides equal is isosceles and the angles opposite those sides are equal. A triangle with a 90-degree angle is right.
+
+The Pythagorean theorem: in a right triangle, the square on the hypotenuse equals the sum of the squares on the other two sides. If the legs are a and b and the hypotenuse is c, then a-squared plus b-squared equals c-squared. The simplest example: legs of 3 and 4, hypotenuse 5. Verify: 9 + 16 = 25.
+
+A circle is the set of all points at a fixed distance, the radius, from a center point. The diameter is twice the radius. The circumference, the distance around, is two pi times the radius. The area enclosed is pi times the radius squared.
+
+Pi is the ratio of any circle's circumference to its diameter. It is irrational, approximately 3.14159. No fraction expresses it exactly.
+
+Two figures are congruent when one can be moved to coincide with the other without stretching. Two figures are similar when corresponding angles are equal and corresponding sides are proportional. Congruence is similarity with ratio one.
+
+The basic theorems of plane geometry are deduced from a small set of definitions, postulates, and common notions, exactly as Euclid arranged them in the Elements. Each result is supported by those before it, forming a chain of reasoning. This is the model from which all of mathematics is built.

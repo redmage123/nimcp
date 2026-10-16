@@ -1,0 +1,11 @@
+{
+  "admin": {
+    "password_hash": "$2b$12$7uRaoI47W4/iRTeIqtXBsuh86P6.426Y2V54JjUk95Wfg7HwpNsC."
+  },
+  "bbrelin": {
+    "password_hash": "$2b$12$7eZXRD.GgrAfYhn96gARx.tzfp4xO0Ph5KAs7XsgpsCcM./R5ssl."
+  },
+  "mikeb": {
+    "password_hash": "$2b$12$QYzIycWifeQPuL9kONfCeewmr1VMM7gNW/6DULzHx6qp9aHEHJ8YO"
+  }
+}

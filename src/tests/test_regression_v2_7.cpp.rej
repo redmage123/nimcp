@@ -1,0 +1,14 @@
+--- src/tests/test_regression_v2_7.cpp
++++ src/tests/test_regression_v2_7.cpp
+@@ -133,7 +133,10 @@ TEST_F(RegressionV27Test, NetworkCreateDestroy) {
+ TEST_F(RegressionV27Test, NetworkCreateDestroy) {
+     // Neural network creation should still work
+ 
+-    neural_network_t network = [&]() { network_config_t cfg = {0}; cfg.input_size = 10; cfg.output_size = 5; return neural_network_create(&cfg); }();
++    network_config_t config = {0};
++    config.input_size = 10;
++    config.output_size = 5;
++    neural_network_t network = neural_network_create(&config);
+ 
+     ASSERT_NE(network, nullptr);
+ 

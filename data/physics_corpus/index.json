@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "comment": "Physics curriculum manifest. Hand-authored seed lessons + Project Gutenberg references (metadata-only). Companion to data/math_corpus/ for the symbolic-reasoning register; this seeds Athena's physical-intuition register, ranging from Newtonian mechanics through electromagnetism, thermodynamics, relativity, and an introduction to quantum behavior.",
+  "registers": {
+    "mechanics_intro": "motion, force, mass, acceleration; Newton's laws and gravity; Stage 2",
+    "energy_work": "kinetic and potential energy, work, conservation laws; Stage 2",
+    "waves_sound_light": "wavelength, frequency, refraction, sound, electromagnetic spectrum; Stage 2-3",
+    "electricity_magnetism": "charge, current, electric and magnetic fields, induction; Stage 3",
+    "thermo_kinetic": "temperature, heat, gas laws, entropy, kinetic theory; Stage 3",
+    "relativity_intro": "frames of reference, invariance of c, time dilation, mass-energy; Stage 3",
+    "quantum_intro": "discreteness, photons, wave-particle duality, uncertainty; Stage 3"
+  },
+  "works": [
+    {
+      "id": "seed.mechanics_basics",
+      "register": "mechanics_intro",
+      "title": "Motion, mass, and acceleration",
+      "files": ["mechanics_intro/mechanics_basics.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.forces_newton",
+      "register": "mechanics_intro",
+      "title": "Forces and Newton's three laws",
+      "files": ["mechanics_intro/forces_newton.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.gravity_intro",
+      "register": "mechanics_intro",
+      "title": "Gravity, weight, and free fall",
+      "files": ["mechanics_intro/gravity_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.95,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.energy_intro",
+      "register": "energy_work",
+      "title": "Work, kinetic energy, potential energy",
+      "files": ["energy_work/energy_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.waves_intro",
+      "register": "waves_sound_light",
+      "title": "Waves, sound, and light",
+      "files": ["waves_sound_light/waves_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.electromagnetism_intro",
+      "register": "electricity_magnetism",
+      "title": "Charge, current, and the electromagnetic field",
+      "files": ["electricity_magnetism/em_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.1,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.fields_and_forces",
+      "register": "electricity_magnetism",
+      "title": "Fields and the way forces reach across space",
+      "files": ["electricity_magnetism/fields_and_forces.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.thermodynamics_intro",
+      "register": "thermo_kinetic",
+      "title": "Heat, temperature, and the laws of thermodynamics",
+      "files": ["thermo_kinetic/thermo_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.conservation_laws",
+      "register": "energy_work",
+      "title": "Conservation laws and why they matter",
+      "files": ["energy_work/conservation_laws.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.2,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.relativity_intro",
+      "register": "relativity_intro",
+      "title": "Frames of reference and Einstein's relativity",
+      "files": ["relativity_intro/relativity_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.quantum_intro",
+      "register": "quantum_intro",
+      "title": "Quanta, photons, and the strangeness of the very small",
+      "files": ["quantum_intro/quantum_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "tyndall.six_lectures_on_light",
+      "register": "waves_sound_light",
+      "title": "Six Lectures on Light",
+      "files": [],
+      "language": "en",
+      "year": 1873,
+      "author": "John Tyndall",
+      "public_domain": true,
+      "source": "gutenberg:14725",
+      "stage": 3,
+      "weight": 0.8,
+      "comment": "Metadata-only reference; no local file. The loader skips empty file lists. Reserved for a future fetch pass that respects Gutenberg ToS."
+    },
+    {
+      "id": "faraday.on_the_origin_of_force",
+      "register": "energy_work",
+      "title": "On the Origin of Force (Faraday lectures)",
+      "files": [],
+      "language": "en",
+      "year": 1853,
+      "author": "Michael Faraday",
+      "public_domain": true,
+      "source": "gutenberg:14894",
+      "stage": 3,
+      "weight": 0.7,
+      "comment": "Metadata-only reference; no local file. The loader skips empty file lists. Reserved for a future fetch pass that respects Gutenberg ToS."
+    }
+  ]
+}

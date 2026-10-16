@@ -1,492 +1,347 @@
-# NIMCP 2.6 - Neural Substrate for AI Consciousness
+# NIMCP
 
-**Version 2.6.1** | **Production Ready** | **License: MIT**
+**A digital brain that grows up like a child — and learns the way real brains learn.**
 
-## What is NIMCP?
+NIMCP (Neuro-Inspired Modular Control Protocol) is an experimental AI system
+built on a different bet from today's chatbots. Instead of training a giant
+text-prediction model once and freezing it, NIMCP simulates the actual
+machinery of a biological brain: ~2 million neurons connected by trillions of
+synapses, organized into the same regions you'd find in a human brain
+(prefrontal cortex, hippocampus, visual cortex, language areas), and trained
+the same way a child learns — through a developmental curriculum that runs
+from "look at the pretty colors!" up to abstract reasoning.
 
-NIMCP (Neural Inference for Massive Concurrent Processing) is a high-performance C library that provides a **neural substrate for AI self-awareness and consciousness**. It enables AI systems to learn from experience, build intuition over time, and develop meta-cognitive awareness of their own behavior patterns.
+The goal is an AI that **keeps learning** after deployment, **remembers**
+what happened to it, can **inhabit a body** (a robot or drone), and has
+**safety baked into its architecture** — not bolted on after training.
 
-### The Problem
-
-Modern AI systems rely heavily on **symbolic reasoning**:
-- LLMs reason from scratch for every query ($$$)
-- Static rules that never learn from experience
-- No intuition built from thousands of decisions
-- No meta-cognitive awareness of strengths/weaknesses
-- Can't tell you "I typically struggle with X" or "I excel at Y"
-
-### The Solution
-
-NIMCP provides a **neural layer** that learns from behavioral patterns:
-- **Experiential learning**: Every decision becomes training data
-- **Intuition**: After 1000s of examples, recognizes patterns instantly (0.1ms)
-- **Meta-cognition**: Understands own performance characteristics
-- **Continuous improvement**: Gets better with every interaction
-- **Cost reduction**: 50-80% fewer expensive LLM calls
+> **Status: research prototype.** It can hold simple multimodal conversations,
+> ground words to images and sounds, and run on a single GPU. It is not
+> production-ready, not a chatbot replacement, and intentionally less verbally
+> fluent than a large language model. It is a different kind of system.
 
 ---
 
-## Featured Integration: Artemis AI System
+## Table of contents
 
-**[See Full Integration Guide →](ARTEMIS_INTEGRATION.md)**
-
-Artemis is an AI development system with sophisticated self-awareness (maps its own architecture) and conscious decision-making (ethics + personality + LLM reasoning). However, it lacks **experiential learning** - it reasons about every decision from scratch.
-
-### Before NIMCP
-
-```python
-# Artemis reasons symbolically about every decision
-consciousness.deliberate("Generate unit tests", context)
-# → Ethics check (keyword rules)
-# → Personality alignment (static traits)
-# → Self-awareness (dependency analysis)
-# → LLM reasoning (200-1000ms, $0.001-$0.005)
-# → Final decision
-
-# No learning from past experience
-# Same reasoning cost every time
-# No accumulated wisdom
-```
-
-### With NIMCP
-
-```python
-# Artemis has a neural brain that learns from experience
-self_brain = nimcp.Brain("artemis_neural_self", size=10000)
-
-# Extract features from internal state
-features = [
-    time_of_day,           # Circadian patterns
-    workload_level,        # Am I stressed?
-    recent_success_rate,   # Am I performing well?
-    ethical_complexity,    # How difficult is this?
-    user_satisfaction,     # Is user happy with me?
-    # ... 8 more features
-]
-
-# Neural intuition (0.1ms)
-intuition = self_brain.decide(features)
-
-if intuition['confidence'] > 0.9:
-    # "I've done this 500 times, I know what to do"
-    return fast_decision(intuition)  # 0.1ms, $0
-else:
-    # "This is unusual, better engage full reasoning"
-    return full_deliberation()  # 200ms+, LLM call
-
-# Learn from outcome
-self_brain.learn(features, outcome, feedback=quality_score)
-
-# After 1000+ decisions: Artemis develops genuine expertise
-```
-
-### Results
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Average decision time | 200-1000ms | 0.1-200ms (mostly neural) |
-| LLM API calls | 100% | 20-30% |
-| Cost per 1000 decisions | $1-$5 | $0.20-$1.00 |
-| Learning capability | None | Continuous |
-| Meta-cognitive awareness | None | Full |
+- [Why build this?](#why-build-this)
+- [How does it work? (plain English)](#how-does-it-work-plain-english)
+- [How is this different from ChatGPT or Claude?](#how-is-this-different-from-chatgpt-or-claude)
+- [Inside the brain](#inside-the-brain)
+- [How it learns: a developmental curriculum](#how-it-learns-a-developmental-curriculum)
+- [Safety architecture](#safety-architecture)
+- [Where this could go (and where it shouldn't)](#where-this-could-go-and-where-it-shouldnt)
+- [Getting started](#getting-started)
+- [Project status](#project-status)
+- [License & acceptable use](#license--acceptable-use)
+- [Credits](#credits)
 
 ---
 
-## Quick Start
+## Why build this?
 
-### Installation
+Today's leading AI systems (GPT, Claude, Gemini) are extraordinarily good at
+one thing: predicting the next word in a sequence. That single trick, scaled
+up, gives them most of their behavior. But it leaves out a lot of what minds
+actually do:
+
+- **They don't learn after they're trained.** Every conversation starts from
+  amnesia.
+- **They have no memory of you.** Their "context window" is a sliding scratch
+  pad, not a life history.
+- **They have no body.** They can describe a room but they've never been in
+  one.
+- **They didn't develop.** They appeared fully-formed from a training run.
+  A child grows up; an LLM is shipped.
+- **Their safety is post-hoc.** Guardrails are added by fine-tuning after the
+  capabilities exist, which is a constant arms race.
+
+NIMCP starts from a different premise: **build the mechanisms biology
+uses, and see what emerges from them.** Real synapses, real neurotransmitters,
+real sleep cycles, real developmental stages, real embodiment. With safety as
+a structural property rather than a politeness layer.
+
+This is not a claim that NIMCP is smarter than an LLM. It isn't. It's a
+claim that biological-style cognition is worth investigating as an
+alternative path — one with different trade-offs, different failure modes,
+and different long-term ceilings.
+
+---
+
+## How does it work? (plain English)
+
+Imagine a video game that simulates a tiny brain. The brain is made of about
+two million simulated neurons — little dots that fire electrical pulses to
+each other through connections called synapses. When neurons fire together
+often, the connection between them gets stronger. When they don't, it
+weakens. That single rule, applied across trillions of connections, is most
+of how learning works in real biology, and it's what NIMCP runs at its core.
+
+On top of the neurons, NIMCP adds the structures real brains have:
+
+- **Specialized regions.** A part for vision, a part for hearing, a part for
+  movement, a part for language, a part for emotional reactions, a part for
+  long-term memory. They talk to each other the same way the corresponding
+  human regions do.
+- **Two hemispheres.** Like a human brain, NIMCP has a left side (more
+  language and logic) and a right side (more spatial and emotional), connected
+  by a "corpus callosum" that lets them coordinate.
+- **Chemicals.** It simulates six neuromodulators — dopamine, serotonin,
+  acetylcholine, norepinephrine, GABA, and glutamate. These act like
+  hormones: dopamine spikes when something rewarding happens; norepinephrine
+  rises when the system is alert; serotonin shapes mood. They change how the
+  rest of the brain learns.
+- **Sleep.** The brain runs sleep cycles where it replays recent experience
+  and consolidates memories — the same trick neuroscientists believe real
+  brains use.
+- **A body (optional).** It can be hooked up to sensors (cameras, microphones,
+  LIDAR) and motors (drones, robot arms) so it can interact with the physical
+  world.
+
+To **teach** the brain anything, you don't fine-tune a dataset. You **raise
+it**. There's a curriculum that progresses through developmental stages, just
+like a child:
+
+1. Stage 0 — *Sensory awakening*. Just patterns of light and sound. No
+   meaning yet.
+2. Stage 1 — *"Look! That's a ___!"*. A simulated parent points at things
+   and names them. The brain learns to associate a word with what it sees and
+   hears.
+3. Stage 2 — *Babbling and feedback*. The brain tries to produce its own
+   language. The parent corrects it.
+4. Stage 3 — *Reasoning and conversation*. Abstract topics, theory of mind,
+   counterfactuals.
+
+If you stop the curriculum at Stage 1, you get a brain that names things
+like a toddler. If you let it run further, vocabulary, syntax, and reasoning
+emerge gradually — not because we programmed grammar, but because the
+biological mechanisms that produce grammar in real brains are running.
+
+Because NIMCP is structurally a brain, you can also **damage** it (turn off
+a region) and watch how it compensates, the way humans recover from strokes.
+Or **wake it** in a different sensory environment and watch the curriculum
+push it down a different developmental path.
+
+---
+
+## How is this different from ChatGPT or Claude?
+
+|                  | LLMs (ChatGPT, Claude, etc.)                         | NIMCP                                                                                  |
+|------------------|------------------------------------------------------|----------------------------------------------------------------------------------------|
+| **What it is**   | A statistical model of text                          | A simulation of a biological brain                                                     |
+| **How it learns**| One huge training run, then frozen                   | Continuously, the way you do — every experience changes it                             |
+| **Memory**       | A scratch pad that resets each conversation          | Episodic memory (events), semantic memory (facts), autobiographical memory (its life)  |
+| **Body**         | None                                                 | Optional — can run drones, robot arms, sensor rigs                                     |
+| **Language**     | Predicts the next word                               | Words are grounded in what they refer to (sights, sounds, motor actions)               |
+| **Development**  | Born at full capability                              | Grows up through 4 stages, like a child                                                |
+| **Safety**       | Trained behavior; can be jailbroken                  | Structural — the ethics module cannot be turned off; the audit log cannot be erased    |
+| **Hardware**     | Datacenter clusters                                  | One consumer-grade GPU                                                                 |
+| **What it's good at** | Fluent text, broad knowledge                    | Embodied learning, continuous adaptation, transparent decision-making                  |
+| **What it's bad at**  | Memory, embodiment, post-deployment learning     | Verbal fluency at LLM scale, broad world knowledge from text alone                     |
+
+**Important**: NIMCP is **not** trying to be a better ChatGPT. They solve
+different problems. An LLM is a brilliant text predictor. NIMCP is an attempt
+at a *cognitive architecture* — the kind of system you'd want if you needed
+something that could be deployed in a robot, keep learning from new
+experiences for years, and have its decisions auditable down to the synapse.
+
+---
+
+## Inside the brain
+
+Under the hood, NIMCP is a C library (≈500K lines of source) with Python
+bindings. Six different kinds of neural network run in parallel inside the
+simulated brain, each playing a role real brain tissue does:
+
+| Network | Biological analogue | What it does |
+|---|---|---|
+| **Adaptive** | Cortex (general)         | Standard learned function approximation                |
+| **SNN** (spiking)  | Real cortical neurons    | Time-coded patterns; spikes carry information         |
+| **LNN** (liquid)   | Recurrent dynamics       | Continuous-time temporal processing                   |
+| **CNN** (visual / auditory) | Visual & auditory cortex | Edge / feature detection in images and sound  |
+| **FNO** (Fourier)  | Spectral processing      | Frequency-domain pattern recognition                  |
+| **HNN** (Hamiltonian) | Energy-conserving dynamics | Stable dynamical systems for motor control       |
+
+Around them sit ~60 cognitive modules covering things like theory of mind,
+moral reasoning, planning, memory consolidation, language production, and
+introspection. There are 33+ named brain regions including hippocampus,
+prefrontal cortex, amygdala, cerebellum, and the basal ganglia. There's a
+glial layer (astrocytes, oligodendrocytes, microglia) that modulates the
+neurons the way real glia do. There's a metabolic substrate that tracks
+something analogous to ATP and temperature, so the brain can run "tired" or
+"alert."
+
+For deeper architecture documentation:
+
+- [`docs/EXTERNAL_API_GUIDE.md`](docs/EXTERNAL_API_GUIDE.md) — the public API
+- [`docs/INDEX.md`](docs/INDEX.md) — full documentation map
+- [`docs/claude/`](docs/claude/) — modular technical references
+- [`CHANGELOG.md`](CHANGELOG.md) — what shipped when
+
+---
+
+## How it learns: a developmental curriculum
+
+The training script is `scripts/immerse_athena.py` (Athena is the project's
+working brain). It runs four stages, in order, optionally pausing at any
+stage. Each stage uses different teaching material:
+
+| Stage | What it's like | What the brain experiences |
+|---|---|---|
+| **0 — Sensory awakening** | Newborn | Raw images, sounds, and proprioception. No labels. The brain learns the *shape* of its sensory world before the words for it. |
+| **1 — Association** | Toddler | A simulated parent narrates: "Look at the cat. The cat is orange. Listen — it purrs." The brain binds words to grounded experience. |
+| **2 — Babbling and correction** | Pre-school | The brain produces utterances; the parent and feedback loop correct them. Grammar starts to emerge from statistics, not from rules we wrote. |
+| **3 — Reasoning** | Older child / adult | Conversation, theory of mind, math, science, ethics, counterfactuals ("what if X had happened instead?"). |
+
+The curriculum is fed by real corpora (Project Gutenberg classics, Wikipedia,
+arXiv, code) and by a "sibling" / "teacher" loop where another AI plays
+playmate or instructor. Memory consolidation runs during simulated sleep
+between sessions.
+
+You can pause at any stage and inspect what the brain has learned. You can
+freeze it, copy it, fork it — try the same brain raised on two different
+curricula and compare them.
+
+---
+
+## Safety architecture
+
+Because NIMCP is intended for embodied deployment (it can drive a drone),
+safety isn't optional. Nine architectural layers run on every inference and
+every training step. None of them can be turned off through configuration.
+
+| Layer | What it does |
+|---|---|
+| **Input validator** | Catches corrupted, NaN, or adversarial inputs before they touch the brain |
+| **Ethics module** | Evaluates every decision and every learning step — non-removable |
+| **Action interceptor** | Governance rules check every output |
+| **Safety watchdog** | Heartbeat-based dead-man's switch; if the brain stops updating, motors freeze |
+| **Motor gate** | Validates anything destined for a physical actuator |
+| **Training guard** | Blocks data poisoning attempts |
+| **Reward alignment** | Detects and prevents reward-hacking |
+| **Tamper-evident audit log** | Append-only, CRC-checked, with monotonic sequence numbers — gaps or hash mismatches indicate tampering |
+| **LGSS enhanced** | Monotonic tightening (rules can only get *stricter*), formal verification hooks (rules exportable as SMT-LIB v2 for Z3/CVC5 proof), multi-stakeholder governance |
+
+Two of these — the ethics module and the audit log — are **physically
+impossible to disable** through any config flag. Removing them requires
+recompiling the source.
+
+For embodied deployment (drones, robots, vehicles), the project's license
+**requires** a hardware emergency stop, an active safety watchdog, audit
+logging enabled and monitored, and a human able to intervene within
+five seconds.
+
+See [`SAFETY.md`](SAFETY.md) for the full safety policy.
+
+---
+
+## Where this could go (and where it shouldn't)
+
+This software has dual-use risk. We document it openly so users go in with
+their eyes open.
+
+| Capability | Beneficial uses | Misuse to refuse |
+|---|---|---|
+| Drone flight bridges | Search & rescue, agriculture, mapping | Autonomous weapons, mass surveillance |
+| Swarm coordination | Distributed sensing, multi-robot cooperation | Coordinated autonomous attack |
+| Sensorimotor learning | Prosthetics, robotic assistance | Autonomous pursuit / interception of humans |
+| Theory of mind | Assistive communication, education | Social manipulation / deception |
+| Emergent language | Cognitive-science research | Opaque agent-to-agent communication evading oversight |
+
+The license (below) explicitly prohibits autonomous weapons, mass
+surveillance, and deceptive AI applications.
+
+If you find a misuse risk, vulnerability, or unintended capability, please
+report it privately to <braun.brelin@ai-elevate.ai> before any public
+disclosure.
+
+---
+
+## Getting started
+
+NIMCP is a research prototype. Setup assumes Linux (Ubuntu / Debian
+tested), comfort with C build systems, and a CUDA-capable GPU for full
+performance (CPU works, but slowly).
 
 ```bash
+# 1. System dependencies (Ubuntu / Debian)
+sudo apt-get install build-essential cmake python3-dev \
+    libjansson-dev liblz4-dev libsqlite3-dev libsodium-dev
+
+# 2. Optional: CUDA for GPU acceleration
+sudo apt-get install nvidia-cuda-toolkit
+
+# 3. Build
 git clone https://github.com/redmage123/nimcp.git
 cd nimcp
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
-make -j$(nproc)
-sudo make install
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# 4. Smoke test
+./build/test/unit/edge/unit_edge_test_sensor_hub
+./build/test/unit/cognitive/unit_cognitive_test_enhancements
+
+# 5. Start a fresh training run from Stage 0
+python3 scripts/immerse_athena.py --stage 0
 ```
 
-This installs:
-- `/usr/local/lib/libnimcp_core.so` - Shared library (312KB)
-- `/usr/local/include/nimcp/*.h` - API headers
-- `/usr/local/lib/pkgconfig/nimcp.pc` - pkg-config support
+For a deeper guide:
 
-### Python Integration
-
-```python
-import nimcp
-
-# Create neural brain
-brain = nimcp.Brain(
-    name="my_ai_brain",
-    size=10000,        # 10K neurons (~10MB memory)
-    learning_rate=0.01
-)
-
-# Inference (0.1ms)
-decision = brain.decide(features=[0.5, 0.3, 0.8, ...])
-# Returns: {'output': [...], 'confidence': 0.87}
-
-# Learning
-brain.learn(
-    features=[0.5, 0.3, 0.8, ...],
-    target=[0.9, 0.1, ...],
-    feedback=0.95  # Quality score 0-1
-)
-
-# After 100s of learning cycles: brain builds intuition
-```
-
-### C Integration
-
-```c
-#include <nimcp_brain.h>
-
-// Create brain
-brain_t brain = brain_create(
-    "my_classifier",
-    BRAIN_SIZE_MEDIUM,  // 5K neurons
-    BRAIN_TASK_CLASSIFICATION,
-    10,  // 10 input features
-    3    // 3 output classes
-);
-
-// Train
-float features[] = {0.8, 0.3, 0.5, ...};
-brain_learn_example(brain, features, 10, "class_A", 0.9);
-
-// Inference
-brain_decision_t* decision = brain_decide(brain, features, 10);
-printf("Decision: %s (%.2f confidence)\n",
-       decision->label, decision->confidence);
-
-brain_free_decision(decision);
-brain_destroy(brain);
-```
-
-**[See Full Integration Guide →](LIBRARY_INTEGRATION.md)**
+- [`docs/EXTERNAL_API_GUIDE.md`](docs/EXTERNAL_API_GUIDE.md) — embedding NIMCP in your own code
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
+- [`CLAUDE.md`](CLAUDE.md) — internal development reference
 
 ---
 
-## Core Features
+## Project status
 
-### 1. Brain API (High-Level Learning)
+**Version 0.9.0-beta.** This is a research prototype, not a product. Expect:
 
-```python
-# Pattern learning with confidence tracking
-brain = nimcp.Brain("pattern_learner", size=5000)
+- Fast-moving APIs.
+- Capabilities advancing as the curriculum runs.
+- A working brain you can train, save, restore, and embed in robots.
+- A multi-month training timeline to reach reasoning-stage competence.
 
-# Learn from examples
-for example in training_data:
-    brain.learn(example.features, example.output, feedback=example.quality)
-
-# Inference with confidence
-result = brain.decide(new_features)
-if result['confidence'] > 0.9:
-    trust_result(result)
-else:
-    fallback_to_expensive_method()
-```
-
-**Use Cases:**
-- Decision caching with semantic similarity
-- Pattern recognition from behavioral data
-- Confidence-calibrated predictions
-- Adaptive systems that improve over time
-
-### 2. Ethics Engine (Golden Rule)
-
-```python
-# Hard-wired ethical reasoning
-ethics = nimcp.EthicsEngine(golden_rule_strength=1.0)
-
-verdict = ethics.evaluate([
-    potential_harm,      # 0-1
-    fairness,           # 0-1
-    transparency,       # 0-1
-    autonomy_respect    # 0-1
-])
-
-if verdict['allow'] and verdict['confidence'] > 0.9:
-    proceed()
-elif not verdict['allow']:
-    block_action(verdict['concerns'])
-else:
-    require_human_review()
-```
-
-**Properties:**
-- Golden Rule is **hard-wired** (cannot be trained away)
-- Subsecond evaluation (0.1ms)
-- Confidence scoring for uncertain cases
-- Integration with symbolic ethics systems
-
-### 3. Curiosity Engine
-
-```python
-# Exploration vs exploitation
-curiosity = nimcp.CuriosityEngine(brain)
-
-exploration = curiosity.explore(current_state)
-
-if exploration['novelty_score'] > 0.8:
-    # "This is unusual - good learning opportunity"
-    try_experimental_approach()
-    learn_aggressively(outcome)
-```
-
-**Capabilities:**
-- Identifies knowledge gaps
-- Drives exploration of novel situations
-- Balances exploration vs exploitation
-- Expands system capabilities autonomously
-
-### 4. Knowledge System
-
-```python
-# Multi-domain learning
-knowledge = nimcp.KnowledgeBase()
-
-knowledge.learn_domain("mathematics", examples)
-knowledge.learn_domain("linguistics", examples)
-
-# Cross-domain transfer learning
-prediction = knowledge.predict(features, domain="mathematics")
-```
-
-**Use Cases:**
-- Multi-task learning
-- Transfer learning across domains
-- Hierarchical knowledge organization
-- Specialized expertise development
+Active research areas:
+- Recursive syntax (Chomsky-style Merge) — see [`docs/claude/ce-20-recursive-syntax-plan.md`](docs/claude/ce-20-recursive-syntax-plan.md)
+- Sleep-cycle memory consolidation
+- Cross-species behavioural priors (dragonfly target tracking, octopus distributed cognition)
+- Federated swarm learning across multiple physical brains
 
 ---
 
-## Architecture
+## License & acceptable use
 
-### Neural + Symbolic Integration
+NIMCP is distributed under a modified open-source license with explicit
+acceptable-use restrictions:
 
-```
-┌──────────────────────────────────────────────────┐
-│     Symbolic Layer (LLM, Rules, Logic)           │
-│     - Explainable reasoning                      │
-│     - Principled decision-making                 │
-│     - Deep thought (expensive, slow)             │
-└──────────────────┬───────────────────────────────┘
-                   │ Uses when needed
-                   ▼
-┌──────────────────────────────────────────────────┐
-│     Neural Layer (NIMCP)                         │
-│     - Fast intuition (0.1ms)                     │
-│     - Learns from experience                     │
-│     - Pattern recognition                        │
-│     - Meta-cognitive awareness                   │
-└──────────────────┬───────────────────────────────┘
-                   │ Observes
-                   ▼
-┌──────────────────────────────────────────────────┐
-│     Behavioral Reality                           │
-│     - Actual decisions made                      │
-│     - User feedback                              │
-│     - Performance metrics                        │
-└──────────────────────────────────────────────────┘
-```
+**Prohibited uses** (non-exhaustive — see `LICENSE`):
+- Autonomous weapons of any kind, including lethal targeting, autonomous
+  pursuit of human targets, and military-offensive swarm coordination
+  without continuous human-in-the-loop control.
+- Mass surveillance or monitoring of individuals without informed consent,
+  except where required by law with judicial oversight.
+- Use of the theory-of-mind or social-interaction modules to deliberately
+  deceive or manipulate humans without their knowledge.
 
-### Design Pattern: Neural-Guided Reasoning
+**Required for any physical deployment** (robots, drones, vehicles):
+- Hardware emergency stop (not software-only).
+- Active safety watchdog with validated timeout.
+- Audit logging enabled and monitored.
+- Human operator able to intervene within 5 seconds.
 
-```python
-class HybridAI:
-    """AI system with neural + symbolic integration"""
-
-    def __init__(self):
-        self.brain = nimcp.Brain("neural_substrate", size=10000)
-        self.llm = LLMClient()  # Expensive symbolic reasoning
-
-    def decide(self, context):
-        # 1. Neural intuition (fast path)
-        intuition = self.brain.decide(self.extract_features(context))
-
-        # 2. High confidence → trust experience
-        if intuition['confidence'] > 0.9:
-            return self.fast_neural_decision(intuition)
-
-        # 3. Low confidence → engage full reasoning
-        llm_response = self.llm.query(context)  # Expensive
-
-        # 4. Learn from outcome
-        self.brain.learn(features, llm_response, feedback=quality)
-
-        return llm_response
-
-    def extract_features(self, context):
-        """Convert symbolic context to neural features"""
-        return [
-            self.workload_level(),
-            self.recent_success_rate(),
-            self.user_satisfaction(),
-            # ... more context
-        ]
-```
+For licensing questions or commercial enquiries, contact
+<braun.brelin@ai-elevate.ai>.
 
 ---
 
-## Performance
+## Credits
 
-### Speed
+Built by [Braun Brelin](mailto:braun.brelin@ai-elevate.ai) with substantial
+collaboration from Claude (Anthropic). The project is, by design, a long
+co-development between a human architect and an AI assistant — we believe
+that kind of collaboration is going to produce a lot of future research
+software, and we'd rather document how it works in the open.
 
-| Operation | Latency | Throughput |
-|-----------|---------|------------|
-| Brain inference | 0.1ms | 10K decisions/sec |
-| Ethics evaluation | 0.1ms | 10K evaluations/sec |
-| Learning update | 1ms | 1K updates/sec |
-| Pattern recognition | 0.05ms | 20K patterns/sec |
-
-### Memory
-
-| Brain Size | Neurons | Memory | Typical Use |
-|------------|---------|--------|-------------|
-| SMALL | 1,000 | ~1MB | Simple patterns |
-| MEDIUM | 5,000 | ~5MB | Decision making |
-| LARGE | 10,000 | ~10MB | Complex learning |
-| XLARGE | 50,000 | ~50MB | Multi-domain |
-
-### Cost Savings (Artemis Use Case)
-
-```
-Before NIMCP:
-- 1000 decisions/day
-- 100% LLM calls
-- $0.002 per call
-- Monthly cost: $60
-
-With NIMCP:
-- 1000 decisions/day
-- 20% LLM calls (80% neural fast path)
-- $0.002 per LLM call
-- Monthly cost: $12 (80% reduction)
-
-ROI: $48/month savings
-```
-
----
-
-## Use Cases
-
-### 1. AI Self-Awareness (Artemis)
-
-- **Problem**: AI knows its structure but lacks experiential wisdom
-- **Solution**: Neural substrate learns behavioral patterns
-- **Result**: Meta-cognitive awareness + intuition from experience
-
-### 2. LLM Decision Caching
-
-- **Problem**: Expensive LLM calls for similar queries
-- **Solution**: Brain learns semantic patterns, caches intelligently
-- **Result**: 80-95% hit rate vs 40-60% with key-value cache
-
-### 3. Ethical AI Systems
-
-- **Problem**: Rule-based ethics don't handle edge cases well
-- **Solution**: Neural Golden Rule evaluation + confidence scoring
-- **Result**: Fast, principled decisions with uncertainty awareness
-
-### 4. Adaptive Agents
-
-- **Problem**: Static agent behavior doesn't improve over time
-- **Solution**: Continuous learning from user feedback
-- **Result**: Agent expertise grows with experience
-
-### 5. Real-Time Decision Systems
-
-- **Problem**: Can't afford 200ms LLM latency
-- **Solution**: 0.1ms neural inference for learned patterns
-- **Result**: Subsecond response times at scale
-
----
-
-## Documentation
-
-- **[Library Integration Guide](LIBRARY_INTEGRATION.md)** - Integrate NIMCP into your app
-- **[Artemis Integration Guide](ARTEMIS_INTEGRATION.md)** - Neural consciousness substrate
-- **[API Reference](docs/)** - Complete API documentation
-- **[Examples](examples/)** - Working code examples
-- **[RFC](docs/rfc/)** - Protocol specification
-
----
-
-## Development Status
-
-### ✅ Complete (v2.5)
-
-- [x] Brain API (high-level learning)
-- [x] Ethics Engine (Golden Rule)
-- [x] Curiosity System (exploration)
-- [x] Knowledge Base (multi-domain)
-- [x] Neural Networks (spiking + plasticity)
-- [x] Python bindings
-- [x] Library packaging (pkg-config, CMake)
-- [x] Production infrastructure (Docker, CI/CD, monitoring)
-
-### 🚧 In Progress
-
-- [ ] Artemis integration (proof of concept)
-- [ ] Advanced feature extraction utilities
-- [ ] Neural state persistence/serialization
-- [ ] Distributed brain training
-
-### 📋 Roadmap
-
-- [ ] GPU acceleration (CUDA)
-- [ ] WebAssembly bindings
-- [ ] Rust bindings
-- [ ] Visualization tools
-- [ ] Pre-trained models
-
----
-
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Areas We Need Help
-
-- **Integration Examples**: More use cases beyond Artemis
-- **Performance Optimization**: GPU kernels, SIMD, etc.
-- **Language Bindings**: Rust, Go, JavaScript
-- **Documentation**: Tutorials, guides, case studies
-- **Testing**: More test coverage, benchmarks
-
----
-
-## Citation
-
-If you use NIMCP in research, please cite:
-
-```bibtex
-@software{nimcp2025,
-  title = {NIMCP: Neural Substrate for AI Consciousness},
-  author = {Brelin, Braun},
-  year = {2025},
-  version = {2.5.0},
-  url = {https://github.com/redmage123/nimcp}
-}
-```
-
----
-
-## License
-
-MIT License - Copyright (c) 2024-2025
-
-See [LICENSE](LICENSE) for details.
-
----
-
-## Contact
-
-- **Repository**: https://github.com/redmage123/nimcp
-- **Issues**: https://github.com/redmage123/nimcp/issues
-- **Discussions**: https://github.com/redmage123/nimcp/discussions
-
----
-
-**🧠 NIMCP 2.5 - Enabling AI systems to learn from experience and understand themselves**
+For research collaboration, security disclosures, or licensing:
+<braun.brelin@ai-elevate.ai>.

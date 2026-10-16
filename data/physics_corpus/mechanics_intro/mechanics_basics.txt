@@ -1,0 +1,19 @@
+Motion, mass, and acceleration.
+
+Physics begins with motion. Everything you see — a ball rolling across a floor, a leaf falling from a tree, a child running across a yard — is motion of some kind. Before we can explain why things move, we need careful words for describing how they move.
+
+Position is where something is. To say where something is, you need a reference point. The cup is on the table. The cup is two feet from the edge. The cup is between the lamp and the book. None of these statements has meaning by itself; each one depends on something else you have already chosen as a starting place. In physics we call that starting place the origin, and we measure position from it.
+
+Distance is how far something has moved along its path. If you walk from the kitchen to the bedroom and back, the distance you have walked is the full length of the trip — both legs added together. Displacement, on the other hand, is the straight-line shift from where you started to where you ended up. After your kitchen-to-bedroom round trip, your displacement is zero, even though the distance is large. Distance and displacement are different ideas, and you will need both.
+
+Speed is how fast you are going: distance divided by time. If you walk twelve feet in three seconds, your speed is four feet per second. Velocity is similar but it also has a direction. A car going thirty miles per hour north has a different velocity from a car going thirty miles per hour south, even though both have the same speed. Whenever direction matters, you want velocity, not speed.
+
+Acceleration is the rate at which velocity changes. If a car speeds up from rest to twenty feet per second over four seconds, its acceleration is five feet per second per second — every second, the velocity grows by five more feet per second. Acceleration is also a directional quantity. A car slowing down has acceleration pointing backward against its motion. A car turning a corner at constant speed is still accelerating, because its direction is changing even though the speed is not.
+
+Now imagine you and a friend are pushing two carts down a hallway, side by side. One cart is empty; the other is full of books. You both push exactly as hard. The empty cart leaps forward; the loaded cart barely creeps. The difference between them is mass. Mass is a measure of how much matter an object contains and, just as importantly, how stubborn that object is about changing its motion. The full cart resists your push because it has more mass.
+
+This stubbornness has a name: inertia. An object at rest tends to remain at rest. An object in motion tends to remain in motion in a straight line at constant speed. Without something to push or pull on it, an object's velocity does not change. Galileo discovered this by sliding a ball down one ramp and watching it climb up another; the ball climbed back almost to the height it started from, and the only thing stopping it from climbing all the way was friction. Without friction, motion would simply continue.
+
+You feel inertia every day. When the bus you are riding stops suddenly, your body keeps moving forward — that is your inertia. When the bus starts up suddenly, your body lurches backward against the seat — again, your inertia. Your body wants to keep doing whatever it was doing, and it takes a force to change that.
+
+The connection among mass, force, and acceleration is the heart of mechanics. We will write it as F = m × a, and we will spend a long time exploring what this little equation actually means. For now, hold on to this picture: motion is described by position, velocity, and acceleration; matter has mass, which is its resistance to having its motion changed; and a force is whatever changes that motion. Everything that follows builds on these few words.

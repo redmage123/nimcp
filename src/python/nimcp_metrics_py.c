@@ -7,7 +7,23 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-#include "../utils/metrics/nimcp_metrics.h"
+#include <stddef.h>  /* for NULL */
+#include <string.h>  // For strdup
+
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_router.h"
+
+#include "utils/metrics/nimcp_metrics.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/exception/nimcp_exception_macros.h"
+#include "utils/memory/nimcp_memory.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+#include "constants/nimcp_buffer_constants.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(metrics_py)
 
 //=============================================================================
 // MetricsCollector Type
@@ -41,6 +57,7 @@ static int MetricsCollector_init(MetricsCollectorObject* self, PyObject* args, P
     static char* kwlist[] = {"directory", "format", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|si", kwlist, &directory, &format)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "MetricsCollector_init: PyArg_ParseTupleAndKeywords is NULL");
         return -1;
     }
 
@@ -56,6 +73,7 @@ static int MetricsCollector_init(MetricsCollectorObject* self, PyObject* args, P
 
     if (!self->collector) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to create metrics collector");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_init: self->collector is NULL");
         return -1;
     }
 
@@ -74,6 +92,7 @@ static PyObject* MetricsCollector_record_counter(MetricsCollectorObject* self, P
     static char* kwlist[] = {"name", "value", "category", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "sK|i", kwlist, &name, &value, &category)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_record_counter: PyArg_ParseTupleAndKeywords is NULL");
         return NULL;
     }
 
@@ -82,6 +101,9 @@ static PyObject* MetricsCollector_record_counter(MetricsCollectorObject* self, P
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to record counter");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -96,6 +118,7 @@ static PyObject* MetricsCollector_record_gauge(MetricsCollectorObject* self, PyO
     static char* kwlist[] = {"name", "value", "category", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "sd|i", kwlist, &name, &value, &category)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_record_gauge: PyArg_ParseTupleAndKeywords is NULL");
         return NULL;
     }
 
@@ -104,6 +127,9 @@ static PyObject* MetricsCollector_record_gauge(MetricsCollectorObject* self, PyO
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to record gauge");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -118,6 +144,7 @@ static PyObject* MetricsCollector_record_timer(MetricsCollectorObject* self, PyO
     static char* kwlist[] = {"name", "duration_ms", "category", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "sd|i", kwlist, &name, &duration_ms, &category)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_record_timer: PyArg_ParseTupleAndKeywords is NULL");
         return NULL;
     }
 
@@ -126,6 +153,9 @@ static PyObject* MetricsCollector_record_timer(MetricsCollectorObject* self, PyO
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to record timer");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -140,6 +170,7 @@ static PyObject* MetricsCollector_record_event(MetricsCollectorObject* self, PyO
     static char* kwlist[] = {"name", "labels", "category", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|si", kwlist, &name, &labels, &category)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_record_event: PyArg_ParseTupleAndKeywords is NULL");
         return NULL;
     }
 
@@ -148,6 +179,9 @@ static PyObject* MetricsCollector_record_event(MetricsCollectorObject* self, PyO
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to record event");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -158,6 +192,7 @@ static PyObject* MetricsCollector_timer_start(MetricsCollectorObject* self, PyOb
     const char* name;
 
     if (!PyArg_ParseTuple(args, "s", &name)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_timer_start: PyArg_ParseTuple is NULL");
         return NULL;
     }
 
@@ -174,6 +209,7 @@ static PyObject* MetricsCollector_timer_stop(MetricsCollectorObject* self, PyObj
     static char* kwlist[] = {"name", "start_time", "category", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "sK|i", kwlist, &name, &start_time, &category)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_timer_stop: PyArg_ParseTupleAndKeywords is NULL");
         return NULL;
     }
 
@@ -182,6 +218,9 @@ static PyObject* MetricsCollector_timer_stop(MetricsCollectorObject* self, PyObj
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to stop timer");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -189,10 +228,15 @@ static PyObject* MetricsCollector_timer_stop(MetricsCollectorObject* self, PyObj
 }
 
 static PyObject* MetricsCollector_flush(MetricsCollectorObject* self, PyObject* Py_UNUSED(ignored)) {
-    int32_t count = nimcp_metrics_flush(self->collector);
+    // Release GIL during potentially long disk I/O
+    int32_t count;
+    Py_BEGIN_ALLOW_THREADS
+    count = nimcp_metrics_flush(self->collector);
+    Py_END_ALLOW_THREADS
 
     if (count < 0) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to flush metrics");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_flush: validation failed");
         return NULL;
     }
 
@@ -203,13 +247,29 @@ static PyObject* MetricsCollector_export_tableau_csv(MetricsCollectorObject* sel
     const char* filename;
 
     if (!PyArg_ParseTuple(args, "s", &filename)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "MetricsCollector_export_tableau_csv: PyArg_ParseTuple is NULL");
         return NULL;
     }
 
-    bool success = nimcp_metrics_export_tableau_csv(self->collector, filename);
+    // Copy filename since we release GIL
+    char* filename_copy = strdup(filename);
+    if (!filename_copy) {
+        return PyErr_NoMemory();
+    }
+
+    // Release GIL during file I/O
+    bool success;
+    Py_BEGIN_ALLOW_THREADS
+    success = nimcp_metrics_export_tableau_csv(self->collector, filename_copy);
+    Py_END_ALLOW_THREADS
+
+    nimcp_free(filename_copy);
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to export Tableau CSV");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -220,13 +280,29 @@ static PyObject* MetricsCollector_export_powerbi_json(MetricsCollectorObject* se
     const char* filename;
 
     if (!PyArg_ParseTuple(args, "s", &filename)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "MetricsCollector_export_powerbi_json: PyArg_ParseTuple is NULL");
         return NULL;
     }
 
-    bool success = nimcp_metrics_export_powerbi_json(self->collector, filename);
+    // Copy filename since we release GIL
+    char* filename_copy = strdup(filename);
+    if (!filename_copy) {
+        return PyErr_NoMemory();
+    }
+
+    // Release GIL during file I/O
+    bool success;
+    Py_BEGIN_ALLOW_THREADS
+    success = nimcp_metrics_export_powerbi_json(self->collector, filename_copy);
+    Py_END_ALLOW_THREADS
+
+    nimcp_free(filename_copy);
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to export PowerBI JSON");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -234,11 +310,12 @@ static PyObject* MetricsCollector_export_powerbi_json(MetricsCollectorObject* se
 }
 
 static PyObject* MetricsCollector_get_stats(MetricsCollectorObject* self, PyObject* Py_UNUSED(ignored)) {
-    char stats_json[4096];
+    char stats_json[NIMCP_PATH_BUFFER_SIZE];
     int32_t written = nimcp_metrics_get_stats(self->collector, stats_json, sizeof(stats_json));
 
     if (written < 0) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to get stats");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_get_stats: validation failed");
         return NULL;
     }
 
@@ -249,6 +326,7 @@ static PyObject* MetricsCollector_set_directory(MetricsCollectorObject* self, Py
     const char* directory;
 
     if (!PyArg_ParseTuple(args, "s", &directory)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "MetricsCollector_set_directory: PyArg_ParseTuple is NULL");
         return NULL;
     }
 
@@ -256,6 +334,9 @@ static PyObject* MetricsCollector_set_directory(MetricsCollectorObject* self, Py
 
     if (!success) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to set directory");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "success is NULL");
+
+
         return NULL;
     }
 
@@ -359,13 +440,18 @@ static PyTypeObject MetricsCollectorType = {
 //=============================================================================
 
 int init_metrics_module(PyObject* module) {
+    LOG_MODULE_DEBUG("bindings.python.metrics", "Initializing metrics Python module");
+
     if (PyType_Ready(&MetricsCollectorType) < 0) {
+        LOG_MODULE_ERROR("bindings.python.metrics", "Failed to initialize MetricsCollector type");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "init_metrics_module: validation failed");
         return -1;
     }
 
     Py_INCREF(&MetricsCollectorType);
     if (PyModule_AddObject(module, "MetricsCollector", (PyObject*)&MetricsCollectorType) < 0) {
         Py_DECREF(&MetricsCollectorType);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "init_metrics_module: validation failed");
         return -1;
     }
 

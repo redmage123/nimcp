@@ -1,0 +1,10 @@
+# Ethics subsystem wiring - moral reasoning and value alignment
+# Implements Asimov-inspired ethical constraints with learned refinement
+{"type":"entity","name":"Ethics_Core_Directives","entityType":"CognitiveModule","observations":["Asimov-inspired core directives","Immutable ethical constraints","Priority-ordered harm prevention"],"subsystem":"ethics","tier_min":"MINIMAL"}
+{"type":"entity","name":"Ethics_Evaluation","entityType":"CognitiveModule","observations":["Evaluates action proposals","Computes ethical scores","Veto authority on harmful actions"],"subsystem":"ethics","tier_min":"MINIMAL"}
+{"type":"entity","name":"Ethics_Learning","entityType":"CognitiveModule","observations":["Learns ethical nuances","Updates from feedback","Refines edge case handling"],"subsystem":"ethics","tier_min":"MEDIUM"}
+{"type":"entity","name":"Combinatorial_Harm","entityType":"CognitiveModule","observations":["Detects multi-step harm patterns","Prevents harm through indirection","Analyzes action sequences"],"subsystem":"ethics","tier_min":"CONSTRAINED"}
+{"type":"relation","from":"Ethics_Evaluation","to":"Ethics_Core_Directives","relationType":"HANDLES_MESSAGE","message_type":"ETHICS_CHECK_REQUEST"}
+{"type":"relation","from":"Ethics_Learning","to":"Ethics_Evaluation","relationType":"HANDLES_MESSAGE","message_type":"ETHICS_FEEDBACK"}
+{"type":"relation","from":"Combinatorial_Harm","to":"Ethics_Evaluation","relationType":"HANDLES_MESSAGE","message_type":"ACTION_SEQUENCE_CHECK"}
+{"type":"relation","from":"Ethics_Module","to":"BIO_MSG_ETHICS_EVALUATION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":3001}

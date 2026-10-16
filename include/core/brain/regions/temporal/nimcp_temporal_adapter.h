@@ -1,0 +1,849 @@
+/**
+ * @file nimcp_temporal_adapter.h
+ * @brief Brain adapter for temporal cortex integration
+ *
+ * WHAT: Unified adapter connecting temporal cortex sub-modules to the brain system
+ * WHY:  Enable seamless integration of auditory processing, object recognition, and semantic memory
+ * HOW:  Orchestrates auditory cortex (A1, A2), inferotemporal cortex, and semantic memory
+ *
+ * ARCHITECTURE:
+ * - Wraps three temporal sub-modules (auditory, object recognition, semantic memory)
+ * - Provides high-level API for auditory-visual integration and semantic retrieval
+ * - Integrates with working memory for conceptual access
+ * - Connects to event bus for inter-module communication
+ * - Supports training through backpropagation adapters
+ *
+ * BIOLOGICAL BASIS:
+ * - Models Superior Temporal Gyrus (STG) for auditory processing
+ * - Brodmann areas 41/42 (A1/A2) for primary/secondary auditory cortex
+ * - Inferotemporal cortex (IT) for object/face recognition
+ * - Anterior temporal lobe for semantic memory/concepts
+ *
+ * @version Phase T1: Temporal Cortex Brain Integration
+ * @date 2025-12-30
+ */
+
+#ifndef NIMCP_TEMPORAL_ADAPTER_H
+#define NIMCP_TEMPORAL_ADAPTER_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+/* Bio-async communication system */
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_bio_messages.h"
+
+/* Logging system */
+#include "utils/logging/nimcp_logging.h"
+
+/* Unified memory system */
+#include "utils/memory/nimcp_unified_memory.h"
+
+/* Forward declarations for sub-modules */
+typedef struct auditory_processor auditory_processor_t;
+typedef struct object_recognition object_recognition_t;
+typedef struct semantic_memory_core semantic_memory_core_t;
+
+/* Forward declaration for opaque adapter type */
+typedef struct temporal_adapter temporal_adapter_t;
+
+/*=============================================================================
+ * CONFIGURATION
+ *===========================================================================*/
+
+/**
+ * @brief Default configuration values
+ */
+#define TEMPORAL_DEFAULT_MAX_AUDIO_FRAMES      256
+#define TEMPORAL_DEFAULT_MAX_OBJECTS           64
+#define TEMPORAL_DEFAULT_MAX_CONCEPTS          1024
+#define TEMPORAL_DEFAULT_WORKING_MEMORY_SLOTS  7
+#define TEMPORAL_DEFAULT_CONCEPT_DIM           128
+#define TEMPORAL_DEFAULT_PROCESSING_WINDOW_MS  100.0f
+#define TEMPORAL_DEFAULT_TONOTOPIC_BANDS       64
+#define TEMPORAL_DEFAULT_FFT_SIZE              512
+
+/**
+ * @brief Temporal cortex adapter configuration
+ */
+typedef struct {
+    /* Capacity limits */
+    uint32_t max_audio_frames;           /**< Maximum audio frames in buffer */
+    uint32_t max_objects;                /**< Maximum objects in recognition buffer */
+    uint32_t max_concepts;               /**< Maximum concepts in semantic memory */
+
+    /* Working memory integration */
+    uint32_t working_memory_slots;       /**< Slots for conceptual retrieval */
+    bool enable_working_memory;          /**< Enable WM integration */
+
+    /* Auditory processing */
+    uint32_t sample_rate;                /**< Audio sample rate (Hz) */
+    uint32_t fft_size;                   /**< FFT window size */
+    uint32_t tonotopic_bands;            /**< Number of frequency bands */
+    bool enable_spectral_analysis;       /**< Enable FFT-based analysis */
+    bool enable_pitch_tracking;          /**< Enable fundamental frequency tracking */
+    bool enable_rhythm_analysis;         /**< Enable temporal pattern analysis */
+
+    /* Object recognition */
+    uint32_t feature_dim;                /**< Object feature vector dimension */
+    bool enable_face_recognition;        /**< Enable face-specific processing */
+    bool enable_invariant_recognition;   /**< Enable view-invariant object ID */
+
+    /* Semantic memory */
+    uint32_t concept_dim;                /**< Concept embedding dimension */
+    bool enable_spreading_activation;    /**< Enable semantic spreading */
+    bool enable_priming;                 /**< Enable semantic priming */
+
+    /* Event system */
+    bool enable_events;                  /**< Enable event bus integration */
+
+    /* Training */
+    bool enable_training;                /**< Enable learning capabilities */
+    float learning_rate;                 /**< Base learning rate */
+
+    /* Timing */
+    float processing_window_ms;          /**< Processing window duration */
+
+    /* Bio-async communication */
+    bool enable_bio_async;               /**< Enable bio-async messaging */
+    nimcp_bio_channel_type_t default_channel; /**< Default neuromodulator channel */
+} temporal_config_t;
+
+/*=============================================================================
+ * STATUS AND STATE
+ *===========================================================================*/
+
+/**
+ * @brief Processing status of the adapter
+ */
+typedef enum {
+    TEMPORAL_STATUS_IDLE = 0,            /**< Ready for input */
+    TEMPORAL_STATUS_AUDITORY_PROCESSING, /**< Processing audio stream */
+    TEMPORAL_STATUS_OBJECT_RECOGNITION,  /**< Recognizing visual objects */
+    TEMPORAL_STATUS_SEMANTIC_RETRIEVAL,  /**< Retrieving semantic concepts */
+    TEMPORAL_STATUS_INTEGRATION,         /**< Integrating multimodal info */
+    TEMPORAL_STATUS_READY,               /**< Output ready for retrieval */
+    TEMPORAL_STATUS_ERROR                /**< Error state */
+} temporal_status_t;
+
+/**
+ * @brief Error codes for temporal cortex operations
+ */
+typedef enum {
+    TEMPORAL_ERROR_NONE = 0,
+    TEMPORAL_ERROR_INVALID_INPUT,
+    TEMPORAL_ERROR_AUDITORY_FAILURE,
+    TEMPORAL_ERROR_RECOGNITION_FAILURE,
+    TEMPORAL_ERROR_SEMANTIC_FAILURE,
+    TEMPORAL_ERROR_WORKING_MEMORY_FULL,
+    TEMPORAL_ERROR_CONCEPT_NOT_FOUND,
+    TEMPORAL_ERROR_BUFFER_OVERFLOW,
+    TEMPORAL_ERROR_INTERNAL
+} temporal_error_t;
+
+/*=============================================================================
+ * INPUT/OUTPUT STRUCTURES
+ *===========================================================================*/
+
+/**
+ * @brief Auditory input frame
+ */
+typedef struct {
+    float* samples;                      /**< Audio sample buffer */
+    uint32_t num_samples;                /**< Number of samples */
+    uint32_t sample_rate;                /**< Sample rate (Hz) */
+    double timestamp_ms;                 /**< Frame timestamp */
+    uint8_t channels;                    /**< Number of channels (1=mono, 2=stereo) */
+} temporal_audio_frame_t;
+
+/**
+ * @brief Auditory processing result
+ */
+typedef struct {
+    float* spectral_power;               /**< Power spectrum (tonotopic_bands floats) */
+    uint32_t num_bands;                  /**< Number of frequency bands */
+    float fundamental_freq;              /**< Detected F0 (Hz) or 0 if unvoiced */
+    float loudness;                      /**< Perceived loudness [0, 1] */
+    float spectral_centroid;             /**< Spectral centroid (brightness) */
+    float spectral_flux;                 /**< Spectral change rate */
+    float onset_strength;                /**< Note/event onset detection */
+    bool is_speech;                      /**< Speech detection flag */
+    bool is_music;                       /**< Music detection flag */
+    double timestamp_ms;                 /**< Result timestamp */
+} temporal_auditory_result_t;
+
+/**
+ * @brief Visual object input for recognition
+ */
+typedef struct {
+    float* features;                     /**< Feature vector from visual cortex */
+    uint32_t feature_dim;                /**< Feature dimension */
+    float x, y;                          /**< Object center position (normalized) */
+    float width, height;                 /**< Bounding box (normalized) */
+    float confidence;                    /**< Detection confidence [0, 1] */
+} temporal_visual_input_t;
+
+/**
+ * @brief Object recognition result
+ */
+typedef struct {
+    uint32_t object_id;                  /**< Recognized object ID */
+    char object_name[64];                /**< Object category name */
+    float confidence;                    /**< Recognition confidence [0, 1] */
+    bool is_face;                        /**< Face detection flag */
+    uint32_t face_id;                    /**< Recognized face ID (if applicable) */
+    float viewpoint_invariance;          /**< View-invariance score [0, 1] */
+    float* prototype_match;              /**< Match scores to stored prototypes */
+    uint32_t num_prototypes;             /**< Number of prototype matches */
+} temporal_recognition_result_t;
+
+/**
+ * @brief Semantic concept entry
+ */
+typedef struct {
+    uint32_t concept_id;                 /**< Unique concept identifier */
+    char name[64];                       /**< Concept name */
+    float* embedding;                    /**< Concept embedding vector */
+    uint32_t embedding_dim;              /**< Embedding dimension */
+    float activation;                    /**< Current activation level [0, 1] */
+    uint8_t modality;                    /**< Primary modality (visual, auditory, abstract) */
+    uint32_t* related_concepts;          /**< IDs of related concepts */
+    uint32_t num_related;                /**< Number of related concepts */
+} temporal_concept_t;
+
+/**
+ * @brief Semantic retrieval result
+ */
+typedef struct {
+    temporal_concept_t* concepts;        /**< Retrieved concepts */
+    uint32_t num_concepts;               /**< Number of concepts retrieved */
+    float total_activation;              /**< Sum of activations */
+    float spreading_depth;               /**< How far activation spread */
+    bool priming_active;                 /**< Priming effects observed */
+} temporal_semantic_result_t;
+
+/*=============================================================================
+ * STATISTICS
+ *===========================================================================*/
+
+/**
+ * @brief Adapter statistics
+ */
+typedef struct {
+    /* Processing counts */
+    uint64_t audio_frames_processed;     /**< Total audio frames */
+    uint64_t objects_recognized;         /**< Total objects recognized */
+    uint64_t concepts_retrieved;         /**< Total concepts retrieved */
+    uint64_t semantic_queries;           /**< Total semantic queries */
+
+    /* Success/failure */
+    uint64_t successful_recognitions;    /**< Successful object recognitions */
+    uint64_t auditory_errors;            /**< Auditory processing failures */
+    uint64_t recognition_errors;         /**< Recognition failures */
+    uint64_t semantic_errors;            /**< Semantic retrieval failures */
+
+    /* Timing */
+    float avg_auditory_latency_ms;       /**< Average audio processing latency */
+    float avg_recognition_latency_ms;    /**< Average recognition latency */
+    float avg_semantic_latency_ms;       /**< Average semantic retrieval latency */
+    float max_latency_ms;                /**< Maximum latency observed */
+
+    /* Training */
+    uint64_t training_iterations;        /**< Training updates */
+    float training_loss;                 /**< Current training loss */
+} temporal_stats_t;
+
+/*=============================================================================
+ * CALLBACK TYPES
+ *===========================================================================*/
+
+/**
+ * @brief Callback for auditory event detection
+ */
+typedef void (*temporal_auditory_callback_t)(
+    const temporal_auditory_result_t* result,
+    void* user_data
+);
+
+/**
+ * @brief Callback for object recognition
+ */
+typedef void (*temporal_recognition_callback_t)(
+    const temporal_recognition_result_t* result,
+    void* user_data
+);
+
+/**
+ * @brief Callback for semantic activation events
+ */
+typedef void (*temporal_semantic_callback_t)(
+    const temporal_concept_t* activated,
+    uint32_t num_activated,
+    void* user_data
+);
+
+/**
+ * @brief Callback for event notification
+ */
+typedef void (*temporal_event_callback_t)(
+    uint32_t event_type,
+    const void* event_data,
+    void* user_data
+);
+
+/*=============================================================================
+ * LIFECYCLE FUNCTIONS
+ *===========================================================================*/
+
+/**
+ * @brief Get default configuration
+ *
+ * WHAT: Returns default configuration for temporal cortex adapter
+ * WHY:  Provide sensible defaults for common use cases
+ * HOW:  Initialize all fields with biologically-motivated values
+ *
+ * @return Default configuration structure
+ */
+temporal_config_t temporal_default_config(void);
+
+/**
+ * @brief Create temporal cortex adapter
+ *
+ * WHAT: Allocate and initialize the adapter with all sub-modules
+ * WHY:  Central point for temporal processing initialization
+ * HOW:  Create auditory, object, and semantic processors; initialize state
+ *
+ * @param config Configuration (NULL for defaults)
+ * @return New adapter instance, or NULL on failure
+ */
+temporal_adapter_t* temporal_create(const temporal_config_t* config);
+
+/**
+ * @brief Destroy temporal cortex adapter
+ *
+ * WHAT: Free all resources associated with the adapter
+ * WHY:  Prevent memory leaks
+ * HOW:  Destroy sub-modules, free buffers and concepts
+ *
+ * @param adapter Adapter to destroy
+ */
+void temporal_destroy(temporal_adapter_t* adapter);
+
+/**
+ * @brief Reset adapter state
+ *
+ * WHAT: Clear buffers and reset to idle state
+ * WHY:  Prepare for new processing without full reinitialization
+ * HOW:  Reset all sub-modules, clear activations
+ *
+ * @param adapter Adapter instance
+ * @return true on success, false on failure
+ */
+bool temporal_reset(temporal_adapter_t* adapter);
+
+/*=============================================================================
+ * AUDITORY PROCESSING API
+ *===========================================================================*/
+
+/**
+ * @brief Process audio frame through auditory cortex (A1/A2)
+ *
+ * WHAT: Analyze audio frame for spectral and temporal features
+ * WHY:  Extract auditory features for perception and recognition
+ * HOW:  FFT-based spectral analysis, pitch tracking, onset detection
+ *
+ * @param adapter Adapter instance
+ * @param frame Input audio frame
+ * @param result Output processing result (optional, can be NULL)
+ * @return true on success, false on failure
+ */
+bool temporal_process_audio(
+    temporal_adapter_t* adapter,
+    const temporal_audio_frame_t* frame,
+    temporal_auditory_result_t* result
+);
+
+/**
+ * @brief Get current auditory state
+ *
+ * WHAT: Retrieve current spectral representation
+ * WHY:  Allow access to tonotopic map state
+ * HOW:  Copy current spectral buffer
+ *
+ * @param adapter Adapter instance
+ * @param spectral_power Output buffer for power spectrum
+ * @param buffer_size Buffer size (must be >= tonotopic_bands)
+ * @return Number of bands copied, or 0 on error
+ */
+uint32_t temporal_get_spectral_state(
+    const temporal_adapter_t* adapter,
+    float* spectral_power,
+    uint32_t buffer_size
+);
+
+/**
+ * @brief Detect speech in audio stream
+ *
+ * WHAT: Identify speech vs non-speech audio
+ * WHY:  Route speech to language processing (Wernicke's)
+ * HOW:  Voice activity detection, formant analysis
+ *
+ * @param adapter Adapter instance
+ * @param confidence Output confidence score [0, 1]
+ * @return true if speech detected, false otherwise
+ */
+bool temporal_detect_speech(
+    temporal_adapter_t* adapter,
+    float* confidence
+);
+
+/*=============================================================================
+ * OBJECT RECOGNITION API (INFEROTEMPORAL CORTEX)
+ *===========================================================================*/
+
+/**
+ * @brief Recognize visual object
+ *
+ * WHAT: Identify object from visual features
+ * WHY:  Object/face recognition is IT cortex function
+ * HOW:  Compare features to stored prototypes, hierarchical matching
+ *
+ * @param adapter Adapter instance
+ * @param input Visual input features
+ * @param result Output recognition result
+ * @return true on successful recognition, false on failure
+ */
+bool temporal_recognize_object(
+    temporal_adapter_t* adapter,
+    const temporal_visual_input_t* input,
+    temporal_recognition_result_t* result
+);
+
+/**
+ * @brief Add object prototype to recognition memory
+ *
+ * WHAT: Store new object exemplar for recognition
+ * WHY:  Expand object vocabulary through learning
+ * HOW:  Add features to prototype library with category label
+ *
+ * @param adapter Adapter instance
+ * @param object_id Unique object ID
+ * @param name Object category name
+ * @param features Feature vector
+ * @param feature_dim Feature dimension
+ * @return true on success, false if memory full
+ */
+bool temporal_add_object_prototype(
+    temporal_adapter_t* adapter,
+    uint32_t object_id,
+    const char* name,
+    const float* features,
+    uint32_t feature_dim
+);
+
+/**
+ * @brief Recognize face (specialized IT region)
+ *
+ * WHAT: Identify face from visual features
+ * WHY:  Face recognition is specialized IT function
+ * HOW:  Face-specific processing with holistic features
+ *
+ * @param adapter Adapter instance
+ * @param features Face feature vector
+ * @param feature_dim Feature dimension
+ * @param face_id Output recognized face ID (or 0 if unknown)
+ * @param confidence Output confidence score [0, 1]
+ * @return true on successful recognition, false on failure
+ */
+bool temporal_recognize_face(
+    temporal_adapter_t* adapter,
+    const float* features,
+    uint32_t feature_dim,
+    uint32_t* face_id,
+    float* confidence
+);
+
+/*=============================================================================
+ * SEMANTIC MEMORY API
+ *===========================================================================*/
+
+/**
+ * @brief Add concept to semantic memory
+ *
+ * WHAT: Store concept with embedding and relations
+ * WHY:  Build semantic knowledge network
+ * HOW:  Store embedding, link to related concepts
+ *
+ * @param adapter Adapter instance
+ * @param concept Concept to add
+ * @return true on success, false if memory full
+ */
+bool temporal_add_concept(
+    temporal_adapter_t* adapter,
+    const temporal_concept_t* concept_entry
+);
+
+/**
+ * @brief Retrieve concept by ID
+ *
+ * WHAT: Look up specific concept
+ * WHY:  Direct access to semantic memory
+ * HOW:  Hash lookup by concept ID
+ *
+ * @param adapter Adapter instance
+ * @param concept_id Concept ID to retrieve
+ * @param concept Output concept (filled on success)
+ * @return true if found, false if not in memory
+ */
+bool temporal_get_concept(
+    const temporal_adapter_t* adapter,
+    uint32_t concept_id,
+    temporal_concept_t* concept_out
+);
+
+/**
+ * @brief Search semantic memory by name
+ *
+ * WHAT: Find concept by name similarity
+ * WHY:  Natural language access to concepts
+ * HOW:  String matching with fuzzy search
+ *
+ * @param adapter Adapter instance
+ * @param query Search query string
+ * @param results Output array of matching concepts
+ * @param max_results Maximum results to return
+ * @return Number of matches found
+ */
+uint32_t temporal_search_concepts(
+    temporal_adapter_t* adapter,
+    const char* query,
+    temporal_concept_t* results,
+    uint32_t max_results
+);
+
+/**
+ * @brief Retrieve semantically related concepts
+ *
+ * WHAT: Get concepts related to given concept
+ * WHY:  Semantic spreading activation
+ * HOW:  Follow relation links, apply spreading activation
+ *
+ * @param adapter Adapter instance
+ * @param concept_id Source concept ID
+ * @param result Output semantic result with related concepts
+ * @param max_depth Maximum spreading depth
+ * @return true on success, false on failure
+ */
+bool temporal_get_related(
+    temporal_adapter_t* adapter,
+    uint32_t concept_id,
+    temporal_semantic_result_t* result,
+    uint32_t max_depth
+);
+
+/**
+ * @brief Apply semantic priming
+ *
+ * WHAT: Pre-activate related concepts for faster retrieval
+ * WHY:  Model semantic priming effects
+ * HOW:  Boost activation of semantically related concepts
+ *
+ * @param adapter Adapter instance
+ * @param concept_id Prime concept ID
+ * @param strength Priming strength [0, 1]
+ * @return true on success, false on failure
+ */
+bool temporal_apply_priming(
+    temporal_adapter_t* adapter,
+    uint32_t concept_id,
+    float strength
+);
+
+/*=============================================================================
+ * WORKING MEMORY INTEGRATION
+ *===========================================================================*/
+
+/**
+ * @brief Push concept to working memory
+ *
+ * WHAT: Store concept in active working memory
+ * WHY:  Enable concept manipulation and reasoning
+ * HOW:  Add to circular buffer with decay
+ *
+ * @param adapter Adapter instance
+ * @param concept_id Concept to remember
+ * @return true on success, false if WM full
+ */
+bool temporal_wm_push(temporal_adapter_t* adapter, uint32_t concept_id);
+
+/**
+ * @brief Pop concept from working memory
+ *
+ * WHAT: Retrieve and remove concept from WM
+ * WHY:  Serial processing of concepts
+ * HOW:  Remove from buffer
+ *
+ * @param adapter Adapter instance
+ * @param concept_id Output concept ID
+ * @return true if concept available, false if empty
+ */
+bool temporal_wm_pop(temporal_adapter_t* adapter, uint32_t* concept_id);
+
+/**
+ * @brief Get working memory contents
+ *
+ * WHAT: Retrieve current WM buffer
+ * WHY:  Inspection, debugging
+ * HOW:  Copy buffer to output
+ *
+ * @param adapter Adapter instance
+ * @param concept_ids Output buffer
+ * @param count Input: buffer capacity; Output: actual count
+ * @return true on success, false on failure
+ */
+bool temporal_wm_get_contents(
+    const temporal_adapter_t* adapter,
+    uint32_t* concept_ids,
+    uint32_t* count
+);
+
+/*=============================================================================
+ * EVENT INTEGRATION
+ *===========================================================================*/
+
+/**
+ * @brief Set event callback
+ *
+ * @param adapter Adapter instance
+ * @param callback Event handler function
+ * @param user_data User context passed to callback
+ * @return true on success
+ */
+bool temporal_set_event_callback(
+    temporal_adapter_t* adapter,
+    temporal_event_callback_t callback,
+    void* user_data
+);
+
+/**
+ * @brief Set auditory event callback
+ *
+ * @param adapter Adapter instance
+ * @param callback Auditory event handler
+ * @param user_data User context
+ * @return true on success
+ */
+bool temporal_set_auditory_callback(
+    temporal_adapter_t* adapter,
+    temporal_auditory_callback_t callback,
+    void* user_data
+);
+
+/**
+ * @brief Set recognition callback
+ *
+ * @param adapter Adapter instance
+ * @param callback Recognition event handler
+ * @param user_data User context
+ * @return true on success
+ */
+bool temporal_set_recognition_callback(
+    temporal_adapter_t* adapter,
+    temporal_recognition_callback_t callback,
+    void* user_data
+);
+
+/*=============================================================================
+ * TRAINING INTERFACE
+ *===========================================================================*/
+
+/**
+ * @brief Train object recognition
+ *
+ * WHAT: Update recognition weights from labeled example
+ * WHY:  Learn to recognize new objects
+ * HOW:  Backpropagation on recognition network
+ *
+ * @param adapter Adapter instance
+ * @param input Visual input
+ * @param target_id Correct object ID
+ * @param learning_rate Learning rate (0 = use config default)
+ * @return true on success
+ */
+bool temporal_train_recognition(
+    temporal_adapter_t* adapter,
+    const temporal_visual_input_t* input,
+    uint32_t target_id,
+    float learning_rate
+);
+
+/**
+ * @brief Train semantic associations
+ *
+ * WHAT: Strengthen link between concepts
+ * WHY:  Learn semantic relationships
+ * HOW:  Hebbian update on concept embeddings
+ *
+ * @param adapter Adapter instance
+ * @param concept_a First concept ID
+ * @param concept_b Second concept ID
+ * @param strength Association strength [0, 1]
+ * @return true on success
+ */
+bool temporal_train_association(
+    temporal_adapter_t* adapter,
+    uint32_t concept_a,
+    uint32_t concept_b,
+    float strength
+);
+
+/*=============================================================================
+ * STATUS AND DIAGNOSTICS
+ *===========================================================================*/
+
+/**
+ * @brief Get current processing status
+ *
+ * @param adapter Adapter instance
+ * @return Current status
+ */
+temporal_status_t temporal_get_status(const temporal_adapter_t* adapter);
+
+/**
+ * @brief Get last error code
+ *
+ * @param adapter Adapter instance
+ * @return Last error, or TEMPORAL_ERROR_NONE
+ */
+temporal_error_t temporal_get_last_error(const temporal_adapter_t* adapter);
+
+/**
+ * @brief Get error description string
+ *
+ * @param error Error code
+ * @return Human-readable error description
+ */
+const char* temporal_error_string(temporal_error_t error);
+
+/**
+ * @brief Get status description string
+ *
+ * @param status Status code
+ * @return Human-readable status description
+ */
+const char* temporal_status_string(temporal_status_t status);
+
+/**
+ * @brief Get adapter statistics
+ *
+ * @param adapter Adapter instance
+ * @param stats Output statistics structure
+ * @return true on success
+ */
+bool temporal_get_stats(const temporal_adapter_t* adapter, temporal_stats_t* stats);
+
+/**
+ * @brief Get adapter configuration
+ *
+ * @param adapter Adapter instance
+ * @param config Output configuration structure
+ * @return true on success
+ */
+bool temporal_get_config(const temporal_adapter_t* adapter, temporal_config_t* config);
+
+/*=============================================================================
+ * SUB-MODULE ACCESS (Advanced)
+ *===========================================================================*/
+
+/**
+ * @brief Get auditory processor handle
+ *
+ * @param adapter Adapter instance
+ * @return Auditory processor, or NULL
+ */
+auditory_processor_t* temporal_get_auditory_processor(temporal_adapter_t* adapter);
+
+/**
+ * @brief Get object recognition handle
+ *
+ * @param adapter Adapter instance
+ * @return Object recognition, or NULL
+ */
+object_recognition_t* temporal_get_object_recognition(temporal_adapter_t* adapter);
+
+/**
+ * @brief Get semantic memory core handle
+ *
+ * @param adapter Adapter instance
+ * @return Semantic memory core, or NULL
+ */
+semantic_memory_core_t* temporal_get_semantic_memory(temporal_adapter_t* adapter);
+
+/*=============================================================================
+ * BIO-ASYNC COMMUNICATION
+ *===========================================================================*/
+
+/**
+ * @brief Get bio-async module context
+ *
+ * @param adapter Adapter instance
+ * @return Bio-async module context, or NULL if not enabled
+ */
+bio_module_context_t temporal_get_bio_context(temporal_adapter_t* adapter);
+
+/**
+ * @brief Process pending bio-async messages
+ *
+ * @param adapter Adapter instance
+ * @param max_messages Maximum messages to process (0 = all)
+ * @return Number of messages processed
+ */
+uint32_t temporal_process_bio_messages(temporal_adapter_t* adapter, uint32_t max_messages);
+
+/**
+ * @brief Request semantic retrieval asynchronously
+ *
+ * @param adapter Adapter instance
+ * @param concept_id Concept to retrieve
+ * @return Future for semantic response, or NULL on failure
+ */
+nimcp_bio_future_t temporal_request_semantic_async(
+    temporal_adapter_t* adapter,
+    uint32_t concept_id
+);
+
+/**
+ * @brief Broadcast auditory event
+ *
+ * @param adapter Adapter instance
+ * @param result Auditory result to broadcast
+ * @return NIMCP_SUCCESS or error code
+ */
+nimcp_error_t temporal_broadcast_auditory_event(
+    temporal_adapter_t* adapter,
+    const temporal_auditory_result_t* result
+);
+
+/**
+ * @brief Broadcast object recognition event
+ *
+ * @param adapter Adapter instance
+ * @param result Recognition result to broadcast
+ * @return NIMCP_SUCCESS or error code
+ */
+nimcp_error_t temporal_broadcast_recognition_event(
+    temporal_adapter_t* adapter,
+    const temporal_recognition_result_t* result
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NIMCP_TEMPORAL_ADAPTER_H */

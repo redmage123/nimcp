@@ -1,0 +1,7 @@
+{
+  "dataset_config": "example_datasets_config.json",
+  "preprocess_config": "example_preprocess_config.json",
+  "training_config": "example_training_config.json",
+  "output_dir": "models/foundation_v1",
+  "description": "Complete pipeline: download -> preprocess -> train foundation model on multiple text classification domains"
+}

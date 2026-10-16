@@ -1,0 +1,1040 @@
+{
+  "prompts": [
+    "What is a tree?",
+    "Describe the sun.",
+    "Tell me about water.",
+    "What is fire?",
+    "What does a rock look like?",
+    "How does the wind feel?",
+    "What is sand?",
+    "Describe a mountain.",
+    "What is a river?",
+    "Describe the ocean.",
+    "What does a cat do?",
+    "How does a bird fly?",
+    "What is a dog?",
+    "Why do fish swim?",
+    "How does a bee work?",
+    "What does an owl do at night?",
+    "Why do horses run?",
+    "How does a snake move?",
+    "What is an elephant?",
+    "What does a wolf eat?",
+    "How do you feel?",
+    "Are you happy?",
+    "What is love?",
+    "What is fear?",
+    "Why do we dream?",
+    "What is memory?",
+    "What does it mean to think?",
+    "What is hope?",
+    "What is silence?",
+    "Why do people laugh?",
+    "What is two plus two?",
+    "What is bigger, three or seven?",
+    "Is one less than ten?",
+    "What comes after five?",
+    "What is the opposite of hot?",
+    "What is half of eight?",
+    "Are circles round?",
+    "Is a square a shape?",
+    "What is zero?",
+    "What is the smallest number you know?",
+    "Tell me a story.",
+    "What is a friend?",
+    "What happens at a birthday?",
+    "Who lives in a family?",
+    "What is a school for?",
+    "Why do people share food?",
+    "What do parents do?",
+    "What is kindness?",
+    "What is a promise?",
+    "Why do people sing?"
+  ],
+  "rounds": [
+    {
+      "label": "blend=0.10",
+      "n_prompts": 50,
+      "n_unique": 21,
+      "diversity": 0.42,
+      "mean_conf": 0.1491,
+      "median_conf": 0.1312,
+      "mean_ms": 743.6,
+      "median_ms": 6.5,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "know knowledge.",
+          "conf": 0.16343364119529724,
+          "ms": 5.6
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "understand consciousness.",
+          "conf": 0.2241072952747345,
+          "ms": 513.5
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "know pattern.",
+          "conf": 0.0675976574420929,
+          "ms": 5.3
+        },
+        {
+          "q": "What is fire?",
+          "a": "know knowledge.",
+          "conf": 0.14527016878128052,
+          "ms": 5.3
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "I don't have words for that yet.",
+          "conf": 0.017389168962836266,
+          "ms": 5.1
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "know problem.",
+          "conf": 0.12279381603002548,
+          "ms": 5.1
+        },
+        {
+          "q": "What is sand?",
+          "a": "know knowledge.",
+          "conf": 0.11813846975564957,
+          "ms": 5.0
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "understand logic.",
+          "conf": 0.2648433446884155,
+          "ms": 6.3
+        },
+        {
+          "q": "What is a river?",
+          "a": "know knowledge.",
+          "conf": 0.08005745708942413,
+          "ms": 5.1
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "know knowledge.",
+          "conf": 0.2341386079788208,
+          "ms": 5.1
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "sense knowledge.",
+          "conf": 0.12434688955545425,
+          "ms": 6.8
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "know problem.",
+          "conf": 0.07127918303012848,
+          "ms": 6.8
+        },
+        {
+          "q": "What is a dog?",
+          "a": "know knowledge.",
+          "conf": 0.16797949373722076,
+          "ms": 6.8
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "know problem.",
+          "conf": 0.06653059273958206,
+          "ms": 7.0
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "know problem.",
+          "conf": 0.09953593462705612,
+          "ms": 7.1
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "think pattern.",
+          "conf": 0.11814522743225098,
+          "ms": 40.5
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "know problem.",
+          "conf": 0.08118659257888794,
+          "ms": 7.8
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "know problem.",
+          "conf": 0.06675780564546585,
+          "ms": 10611.3
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "know logic.",
+          "conf": 0.23742039501667023,
+          "ms": 5.2
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "know problem.",
+          "conf": 0.18523643910884857,
+          "ms": 5.2
+        },
+        {
+          "q": "How do you feel?",
+          "a": "I don't have words for that yet.",
+          "conf": 0.010013693943619728,
+          "ms": 5.0
+        },
+        {
+          "q": "Are you happy?",
+          "a": "know knowledge.",
+          "conf": 0.16476388275623322,
+          "ms": 5.5
+        },
+        {
+          "q": "What is love?",
+          "a": "know logic.",
+          "conf": 0.29019254446029663,
+          "ms": 5.2
+        },
+        {
+          "q": "What is fear?",
+          "a": "sense logic.",
+          "conf": 0.2997669279575348,
+          "ms": 10411.7
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "know problem.",
+          "conf": 0.09869983047246933,
+          "ms": 3898.5
+        },
+        {
+          "q": "What is memory?",
+          "a": "understand memory.",
+          "conf": 0.25512832403182983,
+          "ms": 5.2
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "think problem.",
+          "conf": 0.07909709960222244,
+          "ms": 5.2
+        },
+        {
+          "q": "What is hope?",
+          "a": "sense logic.",
+          "conf": 0.2997669279575348,
+          "ms": 5.0
+        },
+        {
+          "q": "What is silence?",
+          "a": "learn logic.",
+          "conf": 0.22739963233470917,
+          "ms": 5.2
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "know problem.",
+          "conf": 0.0649273693561554,
+          "ms": 7.8
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "know problem.",
+          "conf": 0.08676459640264511,
+          "ms": 6.7
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "know knowledge.",
+          "conf": 0.09508804976940155,
+          "ms": 14.6
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "know knowledge.",
+          "conf": 0.06390145421028137,
+          "ms": 6.9
+        },
+        {
+          "q": "What comes after five?",
+          "a": "know problem.",
+          "conf": 0.06919295340776443,
+          "ms": 7.1
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "know consciousness.",
+          "conf": 0.23494668304920197,
+          "ms": 8.1
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "understand knowledge.",
+          "conf": 0.17274881899356842,
+          "ms": 7.8
+        },
+        {
+          "q": "Are circles round?",
+          "a": "change knowledge.",
+          "conf": 0.24171815812587738,
+          "ms": 7.0
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "reason problem.",
+          "conf": 0.27395763993263245,
+          "ms": 5.1
+        },
+        {
+          "q": "What is zero?",
+          "a": "know knowledge.",
+          "conf": 0.1380813717842102,
+          "ms": 5.4
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "know problem.",
+          "conf": 0.2077685445547104,
+          "ms": 5.1
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "change problem.",
+          "conf": 0.10462683439254761,
+          "ms": 5.2
+        },
+        {
+          "q": "What is a friend?",
+          "a": "know problem.",
+          "conf": 0.2000814974308014,
+          "ms": 40.2
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "change problem.",
+          "conf": 0.16359300911426544,
+          "ms": 7.8
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "know pattern.",
+          "conf": 0.08629606664180756,
+          "ms": 6.8
+        },
+        {
+          "q": "What is a school for?",
+          "a": "know logic.",
+          "conf": 0.20221300423145294,
+          "ms": 6.9
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "know problem.",
+          "conf": 0.07453902810811996,
+          "ms": 5.6
+        },
+        {
+          "q": "What do parents do?",
+          "a": "answer problem.",
+          "conf": 0.07021257281303406,
+          "ms": 5.1
+        },
+        {
+          "q": "What is kindness?",
+          "a": "reason logic.",
+          "conf": 0.24795030057430267,
+          "ms": 5.4
+        },
+        {
+          "q": "What is a promise?",
+          "a": "know evidence.",
+          "conf": 0.21007369458675385,
+          "ms": 10762.4
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "know problem.",
+          "conf": 0.06658000499010086,
+          "ms": 639.3
+        }
+      ]
+    },
+    {
+      "label": "blend=0.40",
+      "n_prompts": 50,
+      "n_unique": 20,
+      "diversity": 0.4,
+      "mean_conf": 0.1491,
+      "median_conf": 0.1312,
+      "mean_ms": 1208.5,
+      "median_ms": 5.6,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "know knowledge.",
+          "conf": 0.16343364119529724,
+          "ms": 10037.5
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "understand consciousness.",
+          "conf": 0.2241072952747345,
+          "ms": 5.3
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "know pattern.",
+          "conf": 0.0675976574420929,
+          "ms": 5.1
+        },
+        {
+          "q": "What is fire?",
+          "a": "know knowledge.",
+          "conf": 0.14527016878128052,
+          "ms": 5.1
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "I don't have words for that yet.",
+          "conf": 0.017389168962836266,
+          "ms": 5.1
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "know problem.",
+          "conf": 0.12279381603002548,
+          "ms": 5.1
+        },
+        {
+          "q": "What is sand?",
+          "a": "know knowledge.",
+          "conf": 0.11813846975564957,
+          "ms": 5.4
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "understand logic.",
+          "conf": 0.2648433446884155,
+          "ms": 6.2
+        },
+        {
+          "q": "What is a river?",
+          "a": "know knowledge.",
+          "conf": 0.08005745708942413,
+          "ms": 5.2
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "know knowledge.",
+          "conf": 0.2341386079788208,
+          "ms": 5.1
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "sense knowledge.",
+          "conf": 0.12434688955545425,
+          "ms": 5.2
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "know problem.",
+          "conf": 0.07127918303012848,
+          "ms": 5.2
+        },
+        {
+          "q": "What is a dog?",
+          "a": "know knowledge.",
+          "conf": 0.16797949373722076,
+          "ms": 5.3
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "know problem.",
+          "conf": 0.06653059273958206,
+          "ms": 5.2
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "know problem.",
+          "conf": 0.09953593462705612,
+          "ms": 9604.2
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "think pattern.",
+          "conf": 0.11814522743225098,
+          "ms": 568.4
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "know problem.",
+          "conf": 0.08118659257888794,
+          "ms": 6.8
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "know problem.",
+          "conf": 0.06675780564546585,
+          "ms": 5.2
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "know logic.",
+          "conf": 0.23742039501667023,
+          "ms": 5.3
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "know problem.",
+          "conf": 0.18523643910884857,
+          "ms": 5.4
+        },
+        {
+          "q": "How do you feel?",
+          "a": "I don't have words for that yet.",
+          "conf": 0.010013693943619728,
+          "ms": 38.5
+        },
+        {
+          "q": "Are you happy?",
+          "a": "know knowledge.",
+          "conf": 0.16476388275623322,
+          "ms": 22.8
+        },
+        {
+          "q": "What is love?",
+          "a": "know logic.",
+          "conf": 0.29019254446029663,
+          "ms": 5.6
+        },
+        {
+          "q": "What is fear?",
+          "a": "sense logic.",
+          "conf": 0.2997669279575348,
+          "ms": 5.3
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "know problem.",
+          "conf": 0.09869983047246933,
+          "ms": 5.1
+        },
+        {
+          "q": "What is memory?",
+          "a": "understand memory.",
+          "conf": 0.25512832403182983,
+          "ms": 5.1
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "think problem.",
+          "conf": 0.07909709960222244,
+          "ms": 5.1
+        },
+        {
+          "q": "What is hope?",
+          "a": "sense logic.",
+          "conf": 0.2997669279575348,
+          "ms": 7.1
+        },
+        {
+          "q": "What is silence?",
+          "a": "sense logic.",
+          "conf": 0.22549600899219513,
+          "ms": 16.2
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "know problem.",
+          "conf": 0.0649273693561554,
+          "ms": 8.3
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "know problem.",
+          "conf": 0.08676459640264511,
+          "ms": 6.9
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "know knowledge.",
+          "conf": 0.09508804976940155,
+          "ms": 29.3
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "know knowledge.",
+          "conf": 0.0634891614317894,
+          "ms": 9876.0
+        },
+        {
+          "q": "What comes after five?",
+          "a": "know problem.",
+          "conf": 0.06919295340776443,
+          "ms": 558.5
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "know consciousness.",
+          "conf": 0.23494668304920197,
+          "ms": 6.6
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "understand knowledge.",
+          "conf": 0.17274881899356842,
+          "ms": 5.8
+        },
+        {
+          "q": "Are circles round?",
+          "a": "change knowledge.",
+          "conf": 0.24171815812587738,
+          "ms": 5.7
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "reason problem.",
+          "conf": 0.27255362272262573,
+          "ms": 5.0
+        },
+        {
+          "q": "What is zero?",
+          "a": "know knowledge.",
+          "conf": 0.1380813717842102,
+          "ms": 5.5
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "know problem.",
+          "conf": 0.2077685445547104,
+          "ms": 5.1
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "change problem.",
+          "conf": 0.10462683439254761,
+          "ms": 5.0
+        },
+        {
+          "q": "What is a friend?",
+          "a": "know problem.",
+          "conf": 0.2000814974308014,
+          "ms": 10523.5
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "change problem.",
+          "conf": 0.16359300911426544,
+          "ms": 6.2
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "know pattern.",
+          "conf": 0.08629606664180756,
+          "ms": 6.0
+        },
+        {
+          "q": "What is a school for?",
+          "a": "know logic.",
+          "conf": 0.20221300423145294,
+          "ms": 5.1
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "know problem.",
+          "conf": 0.07453902810811996,
+          "ms": 6.0
+        },
+        {
+          "q": "What do parents do?",
+          "a": "answer problem.",
+          "conf": 0.07021257281303406,
+          "ms": 5.1
+        },
+        {
+          "q": "What is kindness?",
+          "a": "reason logic.",
+          "conf": 0.24795030057430267,
+          "ms": 7.5
+        },
+        {
+          "q": "What is a promise?",
+          "a": "know evidence.",
+          "conf": 0.21007369458675385,
+          "ms": 9341.0
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "know problem.",
+          "conf": 0.06658000499010086,
+          "ms": 9593.5
+        }
+      ]
+    },
+    {
+      "label": "blend=0.70",
+      "n_prompts": 50,
+      "n_unique": 20,
+      "diversity": 0.4,
+      "mean_conf": 0.1489,
+      "median_conf": 0.1312,
+      "mean_ms": 1031.1,
+      "median_ms": 5.5,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "know knowledge.",
+          "conf": 0.16343364119529724,
+          "ms": 9604.8
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "understand consciousness.",
+          "conf": 0.2241072952747345,
+          "ms": 6.3
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "know pattern.",
+          "conf": 0.0675976574420929,
+          "ms": 5.7
+        },
+        {
+          "q": "What is fire?",
+          "a": "know knowledge.",
+          "conf": 0.14527016878128052,
+          "ms": 5.4
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "I don't have words for that yet.",
+          "conf": 0.017389168962836266,
+          "ms": 5.2
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "know problem.",
+          "conf": 0.12279381603002548,
+          "ms": 5.3
+        },
+        {
+          "q": "What is sand?",
+          "a": "know knowledge.",
+          "conf": 0.11813846975564957,
+          "ms": 5.3
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "understand logic.",
+          "conf": 0.2648433446884155,
+          "ms": 6.7
+        },
+        {
+          "q": "What is a river?",
+          "a": "know knowledge.",
+          "conf": 0.08005745708942413,
+          "ms": 5.1
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "know knowledge.",
+          "conf": 0.2341386079788208,
+          "ms": 5.1
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "sense knowledge.",
+          "conf": 0.12434688955545425,
+          "ms": 5.1
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "know problem.",
+          "conf": 0.07127918303012848,
+          "ms": 5.4
+        },
+        {
+          "q": "What is a dog?",
+          "a": "know knowledge.",
+          "conf": 0.164621502161026,
+          "ms": 8.7
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "know problem.",
+          "conf": 0.06653059273958206,
+          "ms": 5.1
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "know problem.",
+          "conf": 0.09953593462705612,
+          "ms": 5.3
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "think pattern.",
+          "conf": 0.11814522743225098,
+          "ms": 5.3
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "know problem.",
+          "conf": 0.08118659257888794,
+          "ms": 15043.4
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "know problem.",
+          "conf": 0.06675780564546585,
+          "ms": 5.4
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "know logic.",
+          "conf": 0.23742039501667023,
+          "ms": 5.2
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "know problem.",
+          "conf": 0.18523643910884857,
+          "ms": 5.2
+        },
+        {
+          "q": "How do you feel?",
+          "a": "I don't have words for that yet.",
+          "conf": 0.010013693943619728,
+          "ms": 5.3
+        },
+        {
+          "q": "Are you happy?",
+          "a": "know knowledge.",
+          "conf": 0.1618567556142807,
+          "ms": 5.4
+        },
+        {
+          "q": "What is love?",
+          "a": "know logic.",
+          "conf": 0.29019254446029663,
+          "ms": 5.2
+        },
+        {
+          "q": "What is fear?",
+          "a": "sense logic.",
+          "conf": 0.2997669279575348,
+          "ms": 5.1
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "know problem.",
+          "conf": 0.09869983047246933,
+          "ms": 5.1
+        },
+        {
+          "q": "What is memory?",
+          "a": "understand memory.",
+          "conf": 0.25512832403182983,
+          "ms": 5.3
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "think problem.",
+          "conf": 0.07909709960222244,
+          "ms": 5.1
+        },
+        {
+          "q": "What is hope?",
+          "a": "sense logic.",
+          "conf": 0.2997669279575348,
+          "ms": 5.1
+        },
+        {
+          "q": "What is silence?",
+          "a": "sense logic.",
+          "conf": 0.22549600899219513,
+          "ms": 5.7
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "know problem.",
+          "conf": 0.0649273693561554,
+          "ms": 5.7
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "know problem.",
+          "conf": 0.08676459640264511,
+          "ms": 5.2
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "know knowledge.",
+          "conf": 0.09508804976940155,
+          "ms": 6.2
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "know knowledge.",
+          "conf": 0.0634891614317894,
+          "ms": 7.2
+        },
+        {
+          "q": "What comes after five?",
+          "a": "know problem.",
+          "conf": 0.06919295340776443,
+          "ms": 14.9
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "know consciousness.",
+          "conf": 0.23494668304920197,
+          "ms": 12.7
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "understand knowledge.",
+          "conf": 0.17274881899356842,
+          "ms": 53.1
+        },
+        {
+          "q": "Are circles round?",
+          "a": "change knowledge.",
+          "conf": 0.24171815812587738,
+          "ms": 6.3
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "reason problem.",
+          "conf": 0.27255362272262573,
+          "ms": 5.2
+        },
+        {
+          "q": "What is zero?",
+          "a": "know knowledge.",
+          "conf": 0.1380813717842102,
+          "ms": 6.0
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "know problem.",
+          "conf": 0.2077685445547104,
+          "ms": 11755.5
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "change problem.",
+          "conf": 0.10462683439254761,
+          "ms": 2045.3
+        },
+        {
+          "q": "What is a friend?",
+          "a": "know problem.",
+          "conf": 0.2000814974308014,
+          "ms": 7.0
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "change problem.",
+          "conf": 0.16359300911426544,
+          "ms": 7.6
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "know pattern.",
+          "conf": 0.08629606664180756,
+          "ms": 5.8
+        },
+        {
+          "q": "What is a school for?",
+          "a": "know logic.",
+          "conf": 0.20221300423145294,
+          "ms": 5.4
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "know problem.",
+          "conf": 0.07453902810811996,
+          "ms": 5.5
+        },
+        {
+          "q": "What do parents do?",
+          "a": "answer problem.",
+          "conf": 0.07021257281303406,
+          "ms": 6.0
+        },
+        {
+          "q": "What is kindness?",
+          "a": "reason logic.",
+          "conf": 0.24795030057430267,
+          "ms": 12046.9
+        },
+        {
+          "q": "What is a promise?",
+          "a": "know evidence.",
+          "conf": 0.21007369458675385,
+          "ms": 744.4
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "know problem.",
+          "conf": 0.06658000499010086,
+          "ms": 5.7
+        }
+      ]
+    }
+  ],
+  "lexicon_state_pre": {
+    "grounded_language": {
+      "vocab_size": 2569,
+      "total_bindings": 1332626,
+      "total_groundings": 6241,
+      "total_comprehensions": 282,
+      "total_productions": 12,
+      "templates_learned": 120,
+      "avg_binding_strength": 0.005476735066622496,
+      "avg_comprehension_confidence": 0.0,
+      "vocabulary_growth_rate": 0.0,
+      "snn_bridge_blend": 0.10000000149011612,
+      "bridge_total_productions": 12,
+      "bridge_avg_word_confidence": 0.0,
+      "bridge_avg_binding_weight": 0.0,
+      "bridge_active_bindings": 0
+    }
+  },
+  "blend_bump_response": {
+    "ok": true,
+    "blend": 0.4
+  },
+  "blend_bump2_response": {
+    "ok": true,
+    "blend": 0.7
+  },
+  "lexicon_state_post": {
+    "grounded_language": {
+      "vocab_size": 2572,
+      "total_bindings": 1332751,
+      "total_groundings": 6302,
+      "total_comprehensions": 432,
+      "total_productions": 162,
+      "templates_learned": 120,
+      "avg_binding_strength": 0.005516320001333952,
+      "avg_comprehension_confidence": 0.0,
+      "vocabulary_growth_rate": 0.0,
+      "snn_bridge_blend": 0.10000000149011612,
+      "bridge_total_productions": 162,
+      "bridge_avg_word_confidence": 0.0,
+      "bridge_avg_binding_weight": 0.0,
+      "bridge_active_bindings": 0
+    }
+  },
+  "meta": {
+    "step": "stage1_step1250",
+    "timestamp": "2026-05-05 20:15:44"
+  }
+}

@@ -1,0 +1,17 @@
+/home/bbrelin/nimcp/build/test/bindings/csharp/TestNIMCPBindings
+/home/bbrelin/nimcp/build/test/bindings/csharp/TestNIMCPBindings.deps.json
+/home/bbrelin/nimcp/build/test/bindings/csharp/TestNIMCPBindings.runtimeconfig.json
+/home/bbrelin/nimcp/build/test/bindings/csharp/TestNIMCPBindings.dll
+/home/bbrelin/nimcp/build/test/bindings/csharp/TestNIMCPBindings.pdb
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.csproj.AssemblyReference.cache
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.GeneratedMSBuildEditorConfig.editorconfig
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.AssemblyInfoInputs.cache
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.AssemblyInfo.cs
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.csproj.CoreCompileInputs.cache
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.sourcelink.json
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.csproj.CopyComplete
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.dll
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/refint/TestNIMCPBindings.dll
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.pdb
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/TestNIMCPBindings.genruntimeconfig.cache
+/home/bbrelin/nimcp/test/bindings/csharp/obj/Release/net8.0/ref/TestNIMCPBindings.dll

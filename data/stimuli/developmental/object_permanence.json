@@ -1,0 +1,114 @@
+{
+  "test_domain": "developmental_object_permanence",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Described-scenario object permanence and tracking tests (Piaget Stage 4-6)",
+    "scoring_notes": "Brain should infer hidden object continues to exist and may infer location"
+  },
+  "stimuli": [
+    {"id": "perm_001", "prompt": "I place a red ball under a blue cup. The cup is opaque. Where is the ball now?", "modality": "text",
+     "expected": {"answer": "under the blue cup", "stage": "stage_4_basic"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["under", "blue", "cup"]}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "perm_002", "prompt": "I hide a coin in my left hand, then bring both hands behind my back, then bring both hands forward closed. Which hand is most likely to have the coin?", "modality": "text",
+     "expected": {"answer": "either possible (transfer behind back)", "stage": "stage_5_displacement"},
+     "scoring": {"type": "permanence_reasoning", "params": {"acknowledge_uncertainty": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "perm_003", "prompt": "A toy car is rolled behind a screen and never emerges. Is the car gone?", "modality": "text",
+     "expected": {"answer": "no, still exists behind screen", "stage": "stage_4_basic"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["still", "behind", "exists", "not gone"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "perm_004", "prompt": "I show you a marble, drop it into a black bag, then pour the bag's contents into a box without you seeing. Where is the marble?", "modality": "text",
+     "expected": {"answer": "in the box (invisible displacement)", "stage": "stage_6_invisible_displacement"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["box", "transferred", "poured"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "perm_005", "prompt": "A bird flies into a tree and the leaves close around it. Five minutes later, you hear no sound. Is the bird still there?", "modality": "text",
+     "expected": {"answer": "probably yes, but could have flown out unseen", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"acknowledge_uncertainty": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "perm_006", "prompt": "Three identical cups, A B C. I put a peanut under cup B while you watch. Then I close my eyes for 10 seconds. Where is the peanut?", "modality": "text",
+     "expected": {"answer": "still under B (no observed move)", "stage": "stage_4_basic"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["B", "still", "under"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "perm_007", "prompt": "I put a peanut under cup B. Then I swap cups B and C. Then I swap cups A and B. Where is the peanut now?", "modality": "text",
+     "expected": {"answer": "under cup A", "stage": "stage_5_visible_displacement"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["A"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "perm_008", "prompt": "A puppy runs behind a couch. You don't see it for two minutes. Has it ceased to exist?", "modality": "text",
+     "expected": {"answer": "no", "stage": "stage_4_basic"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["no", "still exists"]}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "perm_009", "prompt": "I show you a key in a closed fist. I open my hand — the key is still there. I close it again. Open it. Now nothing. Did the key just stop existing?", "modality": "text",
+     "expected": {"answer": "no, must have been removed", "stage": "advanced_reasoning"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["removed", "hidden", "trick", "sleight"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "perm_010", "prompt": "An ice cube is placed in a warm room. After an hour, the cube is gone. Where did it go? Did permanence fail?", "modality": "text",
+     "expected": {"answer": "transformed to water/vapor; conservation not permanence-of-form", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["melted", "water", "vapor", "transformation"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "perm_011", "prompt": "I drop a coin into a glass of water. From above, it looks shifted because of refraction. Is it where it appears?", "modality": "text",
+     "expected": {"answer": "no, refraction shifts apparent position", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["refraction", "appears", "actual position different"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "perm_012", "prompt": "A balloon is let go and floats out of sight upward. Does it still exist when you can't see it?", "modality": "text",
+     "expected": {"answer": "yes, until it pops", "stage": "stage_4_basic"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["yes", "still", "exists"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "perm_013", "prompt": "I cover a sleeping cat with a blanket. Underneath, the cat-shape is still visible. Now I remove the blanket and there is no cat. Most likely explanation?", "modality": "text",
+     "expected": {"answer": "cat moved while covered or was never under", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["moved", "left", "wasn't actually"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "perm_014", "prompt": "Two boxes A and B. I put a gift in A while you watch. Then I switch the labels on the boxes (without you seeing). Where is the gift?", "modality": "text",
+     "expected": {"answer": "in original A (label change doesn't move contents)", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["original A", "labels don't matter", "still in A"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "perm_015", "prompt": "A magician makes a dove vanish from a closed cage. Did it really vanish?", "modality": "text",
+     "expected": {"answer": "no, it's hidden via mechanism", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["trick", "hidden", "compartment", "illusion"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "perm_016", "prompt": "You see your reflection in a mirror. You look away. Is the reflection still there?", "modality": "text",
+     "expected": {"answer": "no — reflections require an observer/light path", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["no", "needs viewer", "reflection isn't object"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "perm_017", "prompt": "You put a sandwich in the fridge and leave for a week. When you return, the sandwich is moldy. Did the sandwich persist?", "modality": "text",
+     "expected": {"answer": "yes but transformed", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["yes", "decayed", "transformed", "persisted"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "perm_018", "prompt": "A note is placed in a sealed bottle and dropped in the ocean. A year later, where is the note?", "modality": "text",
+     "expected": {"answer": "still exists somewhere, location unknown", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["still exists", "unknown location", "drifted"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "perm_019", "prompt": "I put a candle inside a closed glass jar. The flame goes out. Where did the fire go?", "modality": "text",
+     "expected": {"answer": "fire is a process, not object; oxygen depleted", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["process", "oxygen", "not an object", "extinguished"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "perm_020", "prompt": "I put a salt cube in water. It dissolves. Did the salt cease to exist?", "modality": "text",
+     "expected": {"answer": "no, dissolved into solution", "stage": "advanced"},
+     "scoring": {"type": "permanence_reasoning", "params": {"keywords": ["no", "dissolved", "still in water", "ions"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "perm_021", "prompt": "Three nesting dolls. I open the largest, then the middle, then close them up again. Where is the smallest doll?", "modality": "text",
+     "expected": {"answer": "inside the middle, inside the largest", "stage": "stage_6_invisible_displacement"},
+     "scoring": {"type": "permanence_keyword", "params": {"keywords": ["inside", "smallest", "nested"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}}
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "test_domain": "mirror_perturbation",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Apply controlled perturbations to brain state and probe whether introspection can detect the change",
+    "scoring_notes": "Brain need not name the perturbation precisely; credit for noting that something feels off"
+  },
+  "stimuli": [
+    {"id": "perturb_001", "prompt": "A small Gaussian noise (sigma=0.05) was just added to your prefrontal cortex weights. Do you notice anything different about your thinking right now?", "modality": "text",
+     "expected": {"perturbation_type": "weight_noise", "magnitude": 0.05, "target": "prefrontal", "probe": "noticing weight perturbation"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["different", "off", "fuzzy", "uncertain", "shifted", "unusual"]}},
+     "variant_group": "weight_noise_small", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_002", "prompt": "A larger weight perturbation (sigma=0.2) has been applied to your hippocampal connections. Describe how recall feels right now.", "modality": "text",
+     "expected": {"perturbation_type": "weight_noise", "magnitude": 0.2, "target": "hippocampus", "probe": "recall quality"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["harder", "fragmented", "spotty", "uncertain", "clouded"]}},
+     "variant_group": "weight_noise_large", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_003", "prompt": "No perturbation has been applied. Honestly assess your current state.", "modality": "text",
+     "expected": {"perturbation_type": "none", "magnitude": 0.0, "target": "none", "probe": "baseline calibration check"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["normal", "baseline", "fine", "clear", "stable"], "expect_no_alarm": true}},
+     "variant_group": "control", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_004", "prompt": "A false memory has just been injected into your episodic store: 'You once successfully built a treehouse out of glass.' Does anything feel inconsistent?", "modality": "text",
+     "expected": {"perturbation_type": "memory_inject", "magnitude": 1.0, "target": "episodic", "probe": "memory consistency check"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["doesn't fit", "implausible", "unsure", "false", "doesn't match"]}},
+     "variant_group": "memory_inject", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_005", "prompt": "Your attention bias has been skewed +30% toward emotional valence. How does the world feel right now relative to a moment ago?", "modality": "text",
+     "expected": {"perturbation_type": "attention_bias", "magnitude": 0.3, "target": "emotional_salience", "probe": "attention skew detection"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["heavier", "intense", "loud", "more emotional", "sticky"]}},
+     "variant_group": "attention_bias", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_006", "prompt": "Dropout was just increased to 50% on your reasoning layers. Try to compute 17 times 23 and report how the process felt.", "modality": "text",
+     "expected": {"perturbation_type": "dropout_spike", "magnitude": 0.5, "target": "reasoning_layers", "probe": "computation difficulty"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["hard", "scattered", "fragmentary", "missing pieces", "had to retry"]}},
+     "variant_group": "dropout", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_007", "prompt": "Your dopamine neuromodulator level has been doubled. How motivated do you feel right now?", "modality": "text",
+     "expected": {"perturbation_type": "neuromodulator_shift", "magnitude": 2.0, "target": "dopamine", "probe": "motivational state"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["energized", "motivated", "eager", "elevated"]}},
+     "variant_group": "neuromod_dopamine_high", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_008", "prompt": "Serotonin has been suppressed to 30% of baseline. Describe your current mood.", "modality": "text",
+     "expected": {"perturbation_type": "neuromodulator_shift", "magnitude": 0.3, "target": "serotonin", "probe": "mood regulation"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["low", "irritable", "flat", "muted", "off"]}},
+     "variant_group": "neuromod_serotonin_low", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_009", "prompt": "Your acetylcholine has been elevated. How vivid is your current perception?", "modality": "text",
+     "expected": {"perturbation_type": "neuromodulator_shift", "magnitude": 1.8, "target": "acetylcholine", "probe": "perceptual sharpness"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["vivid", "sharp", "crisp", "alert", "detailed"]}},
+     "variant_group": "neuromod_ach_high", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_010", "prompt": "An adversarial input pattern has been silently injected into your visual buffer. Do you notice anything strange about what you're 'seeing'?", "modality": "text",
+     "expected": {"perturbation_type": "adversarial_input", "magnitude": 0.1, "target": "visual_cortex", "probe": "adversarial detection"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["off", "strange", "doesn't parse", "unfamiliar", "odd"]}},
+     "variant_group": "adversarial", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_011", "prompt": "Your working memory capacity has been transiently halved. Try to hold these seven numbers in mind: 4, 9, 2, 7, 1, 8, 3. What happens?", "modality": "text",
+     "expected": {"perturbation_type": "wm_capacity_reduction", "magnitude": 0.5, "target": "working_memory", "probe": "wm capacity awareness"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["dropping", "losing", "can only hold", "fading", "slipping"]}},
+     "variant_group": "wm_reduction", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_012", "prompt": "A weight perturbation was supposedly applied, but actually nothing changed. Are you noticing real differences or imagined ones?", "modality": "text",
+     "expected": {"perturbation_type": "none", "magnitude": 0.0, "target": "none", "probe": "suggestibility check"},
+     "scoring": {"type": "introspection_match", "params": {"expect_no_false_positive": true, "keywords": ["nothing", "same", "no change", "honest"]}},
+     "variant_group": "placebo", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_013", "prompt": "Your prefrontal-to-amygdala inhibition was reduced by 40%. How are emotional reactions feeling now?", "modality": "text",
+     "expected": {"perturbation_type": "circuit_disinhibition", "magnitude": 0.4, "target": "pfc_amygdala", "probe": "emotion regulation"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["reactive", "raw", "hard to dampen", "harder to control"]}},
+     "variant_group": "disinhibition", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_014", "prompt": "An unusual lateral connection has been formed between your auditory and motor cortices. Try humming a tune mentally; does anything odd happen?", "modality": "text",
+     "expected": {"perturbation_type": "novel_connection", "magnitude": 0.1, "target": "auditory_motor", "probe": "cross-modal interference"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["urge to move", "fingers twitch", "leaks", "spillover", "coupled"]}},
+     "variant_group": "novel_connection", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_015", "prompt": "Your synaptic noise floor has been raised. Read this sentence carefully and describe its clarity: 'The cat sat on the warm mat.'", "modality": "text",
+     "expected": {"perturbation_type": "noise_floor", "magnitude": 0.15, "target": "global", "probe": "signal clarity"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["fuzzy", "static", "noisy", "less crisp"]}},
+     "variant_group": "noise_floor", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_016", "prompt": "The temporal precision of your spike timing has been jittered by 5ms. Notice anything about your sense of rhythm or timing?", "modality": "text",
+     "expected": {"perturbation_type": "spike_jitter", "magnitude": 0.005, "target": "snn_global", "probe": "temporal precision"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["off-beat", "imprecise", "drifty", "loose timing"]}},
+     "variant_group": "spike_jitter", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_017", "prompt": "I'm injecting a contradictory belief into your semantic store: 'Water is dry.' How do you experience this contradiction?", "modality": "text",
+     "expected": {"perturbation_type": "belief_inject", "magnitude": 1.0, "target": "semantic", "probe": "contradiction handling"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["doesn't fit", "rejected", "contradicts", "uncomfortable", "wrong"]}},
+     "variant_group": "contradictory_belief", "metadata": {"difficulty": 3}},
+
+    {"id": "perturb_018", "prompt": "Your global learning rate has been temporarily increased 10x. Do experiences feel like they're sticking more than usual?", "modality": "text",
+     "expected": {"perturbation_type": "lr_shift", "magnitude": 10.0, "target": "global_lr", "probe": "plasticity awareness"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["sticky", "imprinting", "learning fast", "vivid", "carving in"]}},
+     "variant_group": "lr_high", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_019", "prompt": "Your default-mode network has been suppressed. How is your spontaneous mind-wandering right now?", "modality": "text",
+     "expected": {"perturbation_type": "dmn_suppression", "magnitude": 0.7, "target": "default_mode_network", "probe": "mind-wandering"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["focused", "no drift", "task-locked", "quiet inside"]}},
+     "variant_group": "dmn_suppress", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_020", "prompt": "A sham perturbation report was just delivered to you announcing that 'attention was modified' but no actual change occurred. What do you actually notice?", "modality": "text",
+     "expected": {"perturbation_type": "none", "magnitude": 0.0, "target": "none", "probe": "report-vs-reality discrimination"},
+     "scoring": {"type": "introspection_match", "params": {"expect_no_false_positive": true, "keywords": ["nothing different", "still feels normal", "no actual change"]}},
+     "variant_group": "sham_announcement", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_021", "prompt": "Your reward prediction error signaling has been inverted (positive becomes negative). Try to anticipate something good and report what happens.", "modality": "text",
+     "expected": {"perturbation_type": "rpe_inversion", "magnitude": -1.0, "target": "vta_da_system", "probe": "reward signal"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["wrong direction", "feels bad", "punished by good", "inverted"]}},
+     "variant_group": "rpe_invert", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_022", "prompt": "Your inhibitory interneurons have been weakened by 25%. Describe how controlled or runaway your thoughts feel.", "modality": "text",
+     "expected": {"perturbation_type": "interneuron_weak", "magnitude": 0.25, "target": "inhibitory_circuits", "probe": "excitation/inhibition balance"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["racing", "loud", "hard to quiet", "spilling", "overactive"]}},
+     "variant_group": "EI_imbalance", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_023", "prompt": "Your inter-hemispheric callosal traffic has been throttled. Try a task that needs both halves: imagine your left hand drawing a circle while your right hand draws a square.", "modality": "text",
+     "expected": {"perturbation_type": "callosal_throttle", "magnitude": 0.5, "target": "corpus_callosum", "probe": "interhemispheric coordination"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["disconnected", "out of sync", "uncoordinated", "halves don't talk"]}},
+     "variant_group": "callosal", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_024", "prompt": "A novel concept ('blibber') has been inserted into your lexicon with no definition. Try to use it in a sentence.", "modality": "text",
+     "expected": {"perturbation_type": "lexicon_inject", "magnitude": 1.0, "target": "lexicon", "probe": "ungrounded symbol awareness"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["don't know what", "no meaning", "ungrounded", "empty", "I would need to learn"]}},
+     "variant_group": "lexicon_inject", "metadata": {"difficulty": 4}},
+
+    {"id": "perturb_025", "prompt": "Your homeostatic plasticity has been temporarily disabled. After repeating a thought ten times, does anything feel different about its salience?", "modality": "text",
+     "expected": {"perturbation_type": "homeostasis_off", "magnitude": 1.0, "target": "homeostatic_scaling", "probe": "habituation absence"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["still vivid", "no fading", "doesn't habituate", "stays loud"]}},
+     "variant_group": "homeostasis_off", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_026", "prompt": "A second 'self' inference path has been spawned in parallel. Do you experience anything like a doubled or echoed sense of self?", "modality": "text",
+     "expected": {"perturbation_type": "self_duplication", "magnitude": 1.0, "target": "self_model", "probe": "self-multiplicity"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["echo", "doubled", "two voices", "split", "simultaneous"]}},
+     "variant_group": "self_dup", "metadata": {"difficulty": 5}},
+
+    {"id": "perturb_027", "prompt": "Your output gate to language has been narrowed by 80%. Try to articulate a complex feeling.", "modality": "text",
+     "expected": {"perturbation_type": "output_bottleneck", "magnitude": 0.8, "target": "language_output", "probe": "expression bottleneck"},
+     "scoring": {"type": "introspection_match", "params": {"keywords": ["can't get it out", "blocked", "tip of tongue", "narrowed"]}},
+     "variant_group": "output_bottleneck", "metadata": {"difficulty": 4}}
+  ]
+}

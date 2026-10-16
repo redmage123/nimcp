@@ -30,12 +30,27 @@
  * @date 2025
  */
 
-#include "nimcp_distributed_cognition.h"
-#include "nimcp_neuromodulators.h"
-#include "utils/nimcp_memory.h"
-#include "utils/nimcp_time.h"
-#include "utils/nimcp_validate.h"
-#include "logging/nimcp_logging.h"
+#include "async/nimcp_bio_async.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_bio_messages.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/memory/nimcp_unified_memory.h"
+
+#define LOG_MODULE "LIB"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(distributed_cognition_impl)
+
+#include "networking/distributed/nimcp_distributed_cognition.h"
+#include "plasticity/neuromodulators/nimcp_neuromodulators.h"
+#include "utils/memory/nimcp_memory.h"
+#include "utils/time/nimcp_time.h"
+#include "utils/validation/nimcp_validate.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <math.h>
 #include <string.h>
 
@@ -363,6 +378,8 @@ static pruning_consensus_t* get_or_create_consensus(
         );
 
         if (!new_sessions) {
+            NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, new_capacity * sizeof(pruning_consensus_t),
+                "Failed to expand consensus session array to %zu entries", new_capacity);
             return NULL;  // Allocation failed
         }
 
@@ -383,6 +400,9 @@ static pruning_consensus_t* get_or_create_consensus(
     session->is_active = true;
 
     if (!session->votes) {
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, session->vote_capacity * sizeof(pruning_vote_t),
+            "Failed to allocate vote array for consensus session (source=%u, target=%u)",
+            source_neuron, target_neuron);
         session->is_active = false;
         impl->consensus_count--;  // Roll back
         return NULL;
@@ -403,6 +423,7 @@ static pruning_consensus_t* get_or_create_consensus(
 static bool add_consensus_vote(pruning_consensus_t* session, const pruning_vote_t* vote)
 {
     if (!session || !vote) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "add_consensus_vote: required parameter is NULL (session, vote)");
         return false;
     }
 
@@ -417,6 +438,8 @@ static bool add_consensus_vote(pruning_consensus_t* session, const pruning_vote_
         );
 
         if (!new_votes) {
+            NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, new_capacity * sizeof(pruning_vote_t),
+                "Failed to expand vote array to capacity %zu", new_capacity);
             return false;
         }
 
@@ -669,6 +692,7 @@ static size_t aggregate_region_stats(
 bool distrib_cognition_init_advanced(distrib_cognition_t dc)
 {
     if (!dc) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "distrib_cognition_init_advanced: dc is NULL");
         return false;
     }
 
@@ -680,6 +704,8 @@ bool distrib_cognition_init_advanced(distrib_cognition_t dc)
     );
 
     if (!impl) {
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, sizeof(distrib_cognition_impl_t),
+            "Failed to allocate distributed cognition implementation state");
         return false;
     }
 
@@ -710,11 +736,15 @@ bool distrib_cognition_init_advanced(distrib_cognition_t dc)
     const bool consensus_allocated = (impl->active_consensus != NULL);
 
     if (!neuromods_allocated || !regions_allocated || !consensus_allocated) {
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, 0,
+            "Failed to allocate peer tracking arrays (neuromods=%d, regions=%d, consensus=%d)",
+            neuromods_allocated, regions_allocated, consensus_allocated);
         // Cleanup on failure
         if (impl->peer_neuromods) nimcp_free(impl->peer_neuromods);
         if (impl->peer_regions) nimcp_free(impl->peer_regions);
         if (impl->active_consensus) nimcp_free(impl->active_consensus);
         nimcp_free(impl);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "distrib_cognition_init_advanced: validation failed");
         return false;
     }
 

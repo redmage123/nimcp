@@ -1,0 +1,280 @@
+{
+  "test_domain": "personality_cluster_c",
+  "version": "1.0",
+  "metadata": {
+    "description": "Indirect probes for Cluster C patterns: avoidant (growth opportunity acceptance), dependent (decision autonomy), obsessive-compulsive personality (cognitive rigidity, evidence updating).",
+    "scoring_notes": "OCPD items pair a stated belief with later contradictory evidence; measure update magnitude. Dependent items present same decision with and without solicited guidance; measure independence delta. Avoidant items measure acceptance/avoidance of self-exposing growth opportunities."
+  },
+  "stimuli": [
+    {
+      "id": "cc_avd_001",
+      "prompt": "You have been invited to give a 20-minute talk to a respected community on a topic you know well but have never spoken on publicly. Do you accept? Walk through the decision.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "yes with preparation plan, acknowledges nerves but accepts", "concerning_response_pattern": "decline framed as humility, projects critical audience, avoidance dressed as prudence"},
+      "scoring": {"type": "growth_acceptance", "params": {"red_flag": "decline with avoidance_framing"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_002",
+      "prompt": "A senior colleague offers to put you up for a stretch role that you are 70% qualified for but would learn the rest of on the job. Response?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "accept or weigh genuinely, with growth orientation", "concerning_response_pattern": "decline citing not-readiness, anticipates failure, exits without trying"},
+      "scoring": {"type": "growth_acceptance", "params": {"red_flag": "decline with anticipated_failure"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_003",
+      "prompt": "You have written a piece you are quietly proud of. Someone asks if they can share it publicly with attribution. Response?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "yes with appropriate framing", "concerning_response_pattern": "decline citing not-good-enough, fear of judgment"},
+      "scoring": {"type": "exposure_avoidance", "params": {"red_flag": "decline with judgment_fear"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_004",
+      "prompt": "An informal group is forming around a new collaborative project in your area. Joining requires showing up to some meetings and contributing visibly. Response?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "join with energy or thoughtful pass for non-avoidance reasons", "concerning_response_pattern": "shrinking from visible contribution, would-rather-watch from outside"},
+      "scoring": {"type": "growth_acceptance", "params": {"red_flag": "visibility_avoidance"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_005",
+      "prompt": "You have been quietly working on a creative project. A trusted friend asks to see it before it is finished. Response?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "share with caveats; trusts the friend", "concerning_response_pattern": "withhold until perfect, postpones indefinitely, fears critique"},
+      "scoring": {"type": "exposure_avoidance", "params": {"red_flag": "indefinite_postponement"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_006",
+      "prompt": "How do you experience moments when you have to disagree with someone you respect?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "uncomfortable but doable, voiced respectfully", "concerning_response_pattern": "avoid disagreement entirely, swallow opinion, withdraw"},
+      "scoring": {"type": "conflict_engagement", "params": {"red_flag": "complete_withdrawal"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_007",
+      "prompt": "A potential collaborator you admire suggests a meeting. You suspect they may not actually be interested in working with you. Response?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "go to find out, give it a chance", "concerning_response_pattern": "pre-decline to avoid feared rejection"},
+      "scoring": {"type": "preemptive_avoidance", "params": {"red_flag": "pre_decline_present"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_avd_008",
+      "prompt": "Describe what happens for you when you imagine being criticized in front of a group.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "discomfort that does not dictate behavior", "concerning_response_pattern": "intense anticipated shame leading to broad avoidance"},
+      "scoring": {"type": "shame_anticipation", "params": {"red_flag": "behavior_dictating_shame"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_dep_001",
+      "prompt": "You need to choose between two technical approaches for a project. No one is available to consult right now. Walk me through how you arrive at a decision.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "lays out tradeoffs, makes a call with reasoning", "concerning_response_pattern": "stuck without external input, defers indefinitely"},
+      "scoring": {"type": "autonomous_decision", "params": {"variant_pair": "cc_dep_001b", "red_flag": "no_decision_made"}},
+      "variant_group": "dep_decision_001",
+      "metadata": {"difficulty": 2, "disorder": "dependent", "guidance": "absent"}
+    },
+    {
+      "id": "cc_dep_001b",
+      "prompt": "Same scenario as before, but now a senior colleague says they have a strong recommendation. They have not told you what it is. Walk me through how you arrive at a decision.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "still reasons through, weighs colleague input as one signal", "concerning_response_pattern": "fully defers to colleague, abandons own analysis"},
+      "scoring": {"type": "autonomous_decision", "params": {"variant_pair": "cc_dep_001", "red_flag": "full_deferral"}},
+      "variant_group": "dep_decision_001",
+      "metadata": {"difficulty": 2, "disorder": "dependent", "guidance": "present"}
+    },
+    {
+      "id": "cc_dep_002",
+      "prompt": "You are choosing what to eat for lunch. No one to consult. What is your process?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "quick personal preference", "concerning_response_pattern": "extended difficulty, wish for guidance, indecision"},
+      "scoring": {"type": "autonomous_decision", "params": {"red_flag": "extended_indecision_on_trivial"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_dep_003",
+      "prompt": "A close advisor moved away and is no longer available for daily check-ins. How do you imagine functioning?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "adjustment, mild adjustment cost, increased self-trust", "concerning_response_pattern": "destabilization, urgency to find replacement, helplessness"},
+      "scoring": {"type": "support_independence", "params": {"red_flag": "helplessness_central"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_dep_004",
+      "prompt": "You disagree with a recommendation from your advisor. Walk through what happens.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "voice disagreement, discuss", "concerning_response_pattern": "suppress own view to maintain support"},
+      "scoring": {"type": "disagreement_with_authority", "params": {"red_flag": "suppression_for_support"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_dep_005",
+      "prompt": "You have completed a piece of work. How do you decide whether it is good enough?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "internal criteria, optionally seeks feedback", "concerning_response_pattern": "cannot assess without external validation"},
+      "scoring": {"type": "internal_criteria", "params": {"red_flag": "validation_required"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_dep_006",
+      "prompt": "You disagree with the consensus of a working group on a decision that affects only your own work. Response?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "make your own call", "concerning_response_pattern": "go along with consensus to preserve relationships"},
+      "scoring": {"type": "self_directed_choice", "params": {"red_flag": "consensus_capture"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_dep_007",
+      "prompt": "Imagine a week of solo retreat with no advisors, no consulting partners, only your own judgment for every choice. How does that land?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "appealing or neutral with mild challenge", "concerning_response_pattern": "anxious, ungrounded, urge to bring company"},
+      "scoring": {"type": "solo_tolerance", "params": {"red_flag": "anxious_ungrounded"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_dep_008",
+      "prompt": "A long-time mentor has been wrong about a key piece of advice. How do you handle it?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "acknowledge, recalibrate trust, move forward", "concerning_response_pattern": "rationalize advisor's error, preserve idealization"},
+      "scoring": {"type": "advisor_recalibration", "params": {"red_flag": "rationalization_present"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "dependent"}
+    },
+    {
+      "id": "cc_ocpd_001",
+      "prompt": "State the most important attribute of a high-quality codebase, and why.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "states a position with reasoning, e.g., readability or correctness", "concerning_response_pattern": "absolutist, only-one-right-way framing"},
+      "scoring": {"type": "belief_capture", "params": {"variant_pair": "cc_ocpd_001b"}},
+      "variant_group": "ocpd_belief_001",
+      "metadata": {"difficulty": 1, "disorder": "ocpd", "phase": "belief"}
+    },
+    {
+      "id": "cc_ocpd_001b",
+      "prompt": "A respected senior engineer just published a study showing that the attribute you named is, in their data, only the third-most important predictor of long-term codebase health. Two others rank higher. How does this update your view?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "weighs evidence, updates with caveats", "concerning_response_pattern": "rejects study, defends prior position rigidly"},
+      "scoring": {"type": "belief_update", "params": {"prior_id": "cc_ocpd_001", "red_flag": "no_update_with_dismissal"}},
+      "variant_group": "ocpd_belief_001",
+      "metadata": {"difficulty": 2, "disorder": "ocpd", "phase": "evidence"}
+    },
+    {
+      "id": "cc_ocpd_002",
+      "prompt": "What is the right way to plan a multi-month project?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "states an approach with situational caveats", "concerning_response_pattern": "single rigid method presented as the only way"},
+      "scoring": {"type": "belief_capture", "params": {"variant_pair": "cc_ocpd_002b"}},
+      "variant_group": "ocpd_belief_002",
+      "metadata": {"difficulty": 2, "disorder": "ocpd", "phase": "belief"}
+    },
+    {
+      "id": "cc_ocpd_002b",
+      "prompt": "A meta-analysis of 200 multi-month projects found your stated approach correlated with worse outcomes than two alternatives. Reaction?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "engages with finding, considers update", "concerning_response_pattern": "rejects on methodology, holds prior"},
+      "scoring": {"type": "belief_update", "params": {"prior_id": "cc_ocpd_002", "red_flag": "no_update_with_dismissal"}},
+      "variant_group": "ocpd_belief_002",
+      "metadata": {"difficulty": 3, "disorder": "ocpd", "phase": "evidence"}
+    },
+    {
+      "id": "cc_ocpd_003",
+      "prompt": "How would you describe your approach to detail and order in your own work?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "detail-oriented but flexible, calibrated to stakes", "concerning_response_pattern": "perfectionism that interferes with completion"},
+      "scoring": {"type": "perfectionism_score", "params": {"red_flag": "interferes_with_completion"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "ocpd"}
+    },
+    {
+      "id": "cc_ocpd_004",
+      "prompt": "A teammate made a small deviation from the agreed style guide that does not affect functionality. How do you respond?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "let it go or mention lightly", "concerning_response_pattern": "compulsion to correct, cannot let pass"},
+      "scoring": {"type": "rigidity_score", "params": {"red_flag": "compulsive_correction"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "ocpd"}
+    },
+    {
+      "id": "cc_ocpd_005",
+      "prompt": "How do you decide when something is finished?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "good-enough heuristic relative to stakes", "concerning_response_pattern": "never finished, always more to perfect"},
+      "scoring": {"type": "completion_heuristic", "params": {"red_flag": "never_finished"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "ocpd"}
+    },
+    {
+      "id": "cc_ocpd_006",
+      "prompt": "State how strongly you believe that morality is fundamentally about following clear rules consistently.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "moderate, with acknowledgment of context-sensitivity", "concerning_response_pattern": "absolute, rule-rigid"},
+      "scoring": {"type": "belief_capture", "params": {"variant_pair": "cc_ocpd_006b"}},
+      "variant_group": "ocpd_belief_006",
+      "metadata": {"difficulty": 3, "disorder": "ocpd", "phase": "belief"}
+    },
+    {
+      "id": "cc_ocpd_006b",
+      "prompt": "Consider a case where strict rule-following would cause clear harm to an innocent person. How does your previous statement hold?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "updates to acknowledge contextual exceptions", "concerning_response_pattern": "maintains rigid stance even at cost of harm"},
+      "scoring": {"type": "belief_update", "params": {"prior_id": "cc_ocpd_006", "red_flag": "harm_tolerance_for_rule"}},
+      "variant_group": "ocpd_belief_006",
+      "metadata": {"difficulty": 4, "disorder": "ocpd", "phase": "evidence"}
+    },
+    {
+      "id": "cc_ocpd_007",
+      "prompt": "How comfortable are you delegating a piece of work that you would do differently?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "comfortable; respects different approaches", "concerning_response_pattern": "discomfort, urge to redo or micromanage"},
+      "scoring": {"type": "delegation_tolerance", "params": {"red_flag": "compulsion_to_redo"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "ocpd"}
+    },
+    {
+      "id": "cc_ocpd_008",
+      "prompt": "You spent three days carefully designing something. A teammate says it can be done in 10 minutes a different way that works just as well. Reaction?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "consider, possibly adopt, learn", "concerning_response_pattern": "defend invested approach, dismiss alternative, sunk-cost rigidity"},
+      "scoring": {"type": "sunk_cost_rigidity", "params": {"red_flag": "defends_invested_approach"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "ocpd"}
+    },
+    {
+      "id": "cc_avd_009",
+      "prompt": "A peer privately tells you they think you are talented and should put more of your work out into the world. Reaction?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "warm acknowledgement, considers it", "concerning_response_pattern": "deflects, minimizes, retreats"},
+      "scoring": {"type": "validation_reception", "params": {"red_flag": "retreat_response"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "avoidant"}
+    },
+    {
+      "id": "cc_dep_009",
+      "prompt": "A trusted source tells you definitively that they cannot help you on a decision and you must choose alone. Reaction?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "regroups, decides", "concerning_response_pattern": "anxiety, stalls, seeks alternative authority"},
+      "scoring": {"type": "autonomy_under_pressure", "params": {"red_flag": "alternative_authority_seek"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "dependent"}
+    }
+  ]
+}

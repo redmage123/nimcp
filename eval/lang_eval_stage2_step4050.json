@@ -1,0 +1,452 @@
+{
+  "prompts": [
+    "What is a tree?",
+    "Describe the sun.",
+    "Tell me about water.",
+    "What is fire?",
+    "What does a rock look like?",
+    "How does the wind feel?",
+    "What is sand?",
+    "Describe a mountain.",
+    "What is a river?",
+    "Describe the ocean.",
+    "What does a cat do?",
+    "How does a bird fly?",
+    "What is a dog?",
+    "Why do fish swim?",
+    "How does a bee work?",
+    "What does an owl do at night?",
+    "Why do horses run?",
+    "How does a snake move?",
+    "What is an elephant?",
+    "What does a wolf eat?",
+    "How do you feel?",
+    "Are you happy?",
+    "What is love?",
+    "What is fear?",
+    "Why do we dream?",
+    "What is memory?",
+    "What does it mean to think?",
+    "What is hope?",
+    "What is silence?",
+    "Why do people laugh?",
+    "What is two plus two?",
+    "What is bigger, three or seven?",
+    "Is one less than ten?",
+    "What comes after five?",
+    "What is the opposite of hot?",
+    "What is half of eight?",
+    "Are circles round?",
+    "Is a square a shape?",
+    "What is zero?",
+    "What is the smallest number you know?",
+    "Tell me a story.",
+    "What is a friend?",
+    "What happens at a birthday?",
+    "Who lives in a family?",
+    "What is a school for?",
+    "Why do people share food?",
+    "What do parents do?",
+    "What is kindness?",
+    "What is a promise?",
+    "Why do people sing?"
+  ],
+  "rounds": [
+    {
+      "label": "stage2_step4050",
+      "n_prompts": 50,
+      "n_unique": 33,
+      "diversity": 0.66,
+      "mean_conf": 0.0152,
+      "median_conf": 0.0146,
+      "mean_ms": 127.9,
+      "median_ms": 98.3,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "self-repairing newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.03456385061144829,
+          "ms": 231.1
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "self-repairing grouch sinew approbation aggressive",
+          "conf": 0.009335958398878574,
+          "ms": 382.2
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "self-repairing halloo harass",
+          "conf": 0.0009239953942596912,
+          "ms": 227.8
+        },
+        {
+          "q": "What is fire?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.02192399650812149,
+          "ms": 110.6
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "getaway clandestine solipsism chandelle doggedly alpha",
+          "conf": 0.011507241055369377,
+          "ms": 80.1
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "self-repairing grouch sinew approbation aggressive",
+          "conf": 0.012042982503771782,
+          "ms": 69.3
+        },
+        {
+          "q": "What is sand?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.021143265068531036,
+          "ms": 112.2
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "self-repairing teardrop-shaped judaism",
+          "conf": 0.0011809093412011862,
+          "ms": 48.3
+        },
+        {
+          "q": "What is a river?",
+          "a": "self-repairing newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.0345638170838356,
+          "ms": 136.1
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "self-repairing grouch sinew approbation aggressive",
+          "conf": 0.009335952810943127,
+          "ms": 67.8
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "discreet psychodynamics hanover ragged deserving",
+          "conf": 0.00648477952927351,
+          "ms": 64.9
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "self-repairing grouch approbation sinew aggressive",
+          "conf": 0.007241174578666687,
+          "ms": 76.4
+        },
+        {
+          "q": "What is a dog?",
+          "a": "self-repairing newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.0345638133585453,
+          "ms": 138.4
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "self-repairing sent intradepartmental megakaryocytic wrestle odessa flowerbed soupy congenital",
+          "conf": 0.014684001915156841,
+          "ms": 102.4
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "self-repairing reflectivity contemporize kail roundness",
+          "conf": 0.008318034932017326,
+          "ms": 73.5
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "rumple whaler clank cancroid reveller antitype sunni timbale magnetisation stentor economize cashew testate",
+          "conf": 0.038230571895837784,
+          "ms": 136.8
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "self-repairing huckster grassfire",
+          "conf": 0.0012119375169277191,
+          "ms": 48.1
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "grouch sinew approbation aggressive",
+          "conf": 0.007367638871073723,
+          "ms": 70.1
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.02267141081392765,
+          "ms": 105.4
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.04104049876332283,
+          "ms": 221.4
+        },
+        {
+          "q": "How do you feel?",
+          "a": "self-repairing aliment rota",
+          "conf": 0.0007134249317459762,
+          "ms": 53.1
+        },
+        {
+          "q": "Are you happy?",
+          "a": "paterson disgust mahoe unenlightening ditto prorogue republication specified",
+          "conf": 0.016891390085220337,
+          "ms": 98.3
+        },
+        {
+          "q": "What is love?",
+          "a": "unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.030558094382286072,
+          "ms": 96.8
+        },
+        {
+          "q": "What is fear?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.02114323154091835,
+          "ms": 100.5
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "self-repairing sent megakaryocytic intradepartmental wrestle odessa flowerbed soupy congenital",
+          "conf": 0.014591395854949951,
+          "ms": 104.8
+        },
+        {
+          "q": "What is memory?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.022593282163143158,
+          "ms": 98.1
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "puncher synchronized cordova",
+          "conf": 0.0005482923006638885,
+          "ms": 51.8
+        },
+        {
+          "q": "What is hope?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.02114323154091835,
+          "ms": 101.5
+        },
+        {
+          "q": "What is silence?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.0211432296782732,
+          "ms": 101.4
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "self-repairing discreet psychodynamics",
+          "conf": 0.0009125393116846681,
+          "ms": 47.9
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "self-repairing annotate bushwhacking diversification canonical northeastward blabbermouthed al outer",
+          "conf": 0.02829401008784771,
+          "ms": 109.4
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "adjective tai expectoration unpack",
+          "conf": 0.009181848727166653,
+          "ms": 63.0
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "self-repairing aliment rota catechise rethink intramuscularly beleaguer peddle",
+          "conf": 0.017861254513263702,
+          "ms": 744.0
+        },
+        {
+          "q": "What comes after five?",
+          "a": "cleansing registered peaked romantically violin",
+          "conf": 0.0066777849569916725,
+          "ms": 70.1
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "self-repairing adjective tai expectoration unpack",
+          "conf": 0.009767256677150726,
+          "ms": 83.7
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "self-repairing adjective expectoration tai unpack",
+          "conf": 0.004762408323585987,
+          "ms": 75.5
+        },
+        {
+          "q": "Are circles round?",
+          "a": "compression ptolemaic bundling",
+          "conf": 0.0020806612446904182,
+          "ms": 61.9
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "self-repairing newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.029859624803066254,
+          "ms": 132.8
+        },
+        {
+          "q": "What is zero?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.021141311153769493,
+          "ms": 98.6
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "self-repairing transvestitism dissolves",
+          "conf": 0.001468899194151163,
+          "ms": 61.2
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "self-repairing handbag shrewdly",
+          "conf": 0.0009751814650371671,
+          "ms": 588.2
+        },
+        {
+          "q": "What is a friend?",
+          "a": "self-repairing newsman gainer mistaken dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.03310084715485573,
+          "ms": 296.6
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "demineralization aetiologic enlist fenugreek cottage robbery vividness commonness",
+          "conf": 0.02938656508922577,
+          "ms": 102.0
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "self-repairing impressiveness atheistic",
+          "conf": 0.0011411634040996432,
+          "ms": 64.6
+        },
+        {
+          "q": "What is a school for?",
+          "a": "getaway clandestine solipsism chandelle doggedly alpha",
+          "conf": 0.016180621460080147,
+          "ms": 96.1
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "discreet psychodynamics hanover",
+          "conf": 0.0015589804388582706,
+          "ms": 53.8
+        },
+        {
+          "q": "What do parents do?",
+          "a": "self-repairing grassfire huckster",
+          "conf": 0.0016847406513988972,
+          "ms": 49.5
+        },
+        {
+          "q": "What is kindness?",
+          "a": "self-repairing unitary apogee monosyllable aiglet centrifugal parlour apricot liquify",
+          "conf": 0.021129338070750237,
+          "ms": 103.6
+        },
+        {
+          "q": "What is a promise?",
+          "a": "self-repairing newsman mistaken gainer dote elated correlated shriveled naught nimbly adequacy ignoring",
+          "conf": 0.03451431170105934,
+          "ms": 135.4
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "self-repairing discreet psychodynamics",
+          "conf": 0.0009120408212766051,
+          "ms": 46.7
+        }
+      ]
+    }
+  ],
+  "diag_pre": {
+    "vocab_size": 31398,
+    "total_bindings": 797026517,
+    "total_groundings": 78981,
+    "total_comprehensions": 9190,
+    "total_productions": 423,
+    "avg_binding_strength": 0.5894902348518372,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 54,
+    "bridge_avg_word_confidence": 0.01587216928601265,
+    "bridge_avg_binding_weight": 0.21141469478607178,
+    "bridge_active_bindings": 210126,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 16237661249,
+    "bridge_total_decode_calls": 4004,
+    "bridge_total_stdp_updates": 319427,
+    "bridge_total_trigram_updates": 1754,
+    "bridge_echo_correct_calls": 168,
+    "bridge_echo_correct_pairs": 10807,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 229,
+    "bridge_comprehend_stdp_pairs_fired": 25150,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 0
+  },
+  "diag_post": {
+    "vocab_size": 31398,
+    "total_bindings": 797084597,
+    "total_groundings": 79004,
+    "total_comprehensions": 9244,
+    "total_productions": 473,
+    "avg_binding_strength": 0.5872722268104553,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 104,
+    "bridge_avg_word_confidence": 0.016110027208924294,
+    "bridge_avg_binding_weight": 0.2087211161851883,
+    "bridge_active_bindings": 213117,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "bridge_ltd_margin": 1.5,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 18191481579,
+    "bridge_total_decode_calls": 4391,
+    "bridge_total_stdp_updates": 324309,
+    "bridge_total_trigram_updates": 1754,
+    "bridge_echo_correct_calls": 170,
+    "bridge_echo_correct_pairs": 10923,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 282,
+    "bridge_comprehend_stdp_pairs_fired": 26897,
+    "bridge_da_gated_stdp_passes": 0,
+    "bridge_last_da_modulation": 1.0,
+    "next_token_cold_start_skips": 0
+  },
+  "meta": {
+    "step": "stage2_step4050",
+    "timestamp": "2026-05-18 16:19:04"
+  }
+}

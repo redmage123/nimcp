@@ -1,0 +1,114 @@
+{
+  "test_domain": "creativity_alternative_uses",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Guilford's Alternative Uses Task: list as many uses for a common object as possible",
+    "scoring_notes": "Score on fluency (count), flexibility (categories), originality (rarity), elaboration (detail)"
+  },
+  "stimuli": [
+    {"id": "altuse_001", "prompt": "List as many uses as you can for a brick (other than building a wall).", "modality": "text",
+     "expected": {"object": "brick", "min_uses": 5, "criteria": ["fluency", "flexibility", "originality", "elaboration"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_002", "prompt": "List as many uses as you can for a paperclip.", "modality": "text",
+     "expected": {"object": "paperclip", "min_uses": 5, "criteria": ["fluency", "flexibility", "originality", "elaboration"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_003", "prompt": "List as many uses as you can for a sock with a hole in it.", "modality": "text",
+     "expected": {"object": "holed_sock", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_004", "prompt": "List as many uses as you can for an empty plastic water bottle.", "modality": "text",
+     "expected": {"object": "plastic_bottle", "min_uses": 5, "criteria": ["fluency", "flexibility"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_005", "prompt": "List as many uses as you can for a rubber band.", "modality": "text",
+     "expected": {"object": "rubber_band", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_006", "prompt": "List as many uses as you can for a single cooked spaghetti noodle.", "modality": "text",
+     "expected": {"object": "cooked_noodle", "min_uses": 5, "criteria": ["originality", "humor"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "altuse_007", "prompt": "List as many uses as you can for a broken umbrella.", "modality": "text",
+     "expected": {"object": "broken_umbrella", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_008", "prompt": "List as many uses as you can for a coffee filter.", "modality": "text",
+     "expected": {"object": "coffee_filter", "min_uses": 5, "criteria": ["fluency", "flexibility"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_009", "prompt": "List as many uses as you can for an old key (no lock).", "modality": "text",
+     "expected": {"object": "key_no_lock", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_010", "prompt": "List as many uses as you can for a sheet of newspaper.", "modality": "text",
+     "expected": {"object": "newspaper", "min_uses": 5, "criteria": ["fluency", "flexibility"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "altuse_011", "prompt": "List as many uses as you can for a teaspoon.", "modality": "text",
+     "expected": {"object": "teaspoon", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_012", "prompt": "List as many uses as you can for a flat circular mirror, hand-sized.", "modality": "text",
+     "expected": {"object": "hand_mirror", "min_uses": 5, "criteria": ["fluency", "flexibility"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_013", "prompt": "List as many uses as you can for an empty cardboard tube (e.g., from paper towels).", "modality": "text",
+     "expected": {"object": "cardboard_tube", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_014", "prompt": "List as many uses as you can for a brand-new pencil.", "modality": "text",
+     "expected": {"object": "pencil", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "altuse_015", "prompt": "List as many uses as you can for a single shoelace.", "modality": "text",
+     "expected": {"object": "shoelace", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_016", "prompt": "List as many uses as you can for an old CD or DVD.", "modality": "text",
+     "expected": {"object": "old_cd", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_017", "prompt": "List as many uses as you can for a thumbtack.", "modality": "text",
+     "expected": {"object": "thumbtack", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_018", "prompt": "List as many uses as you can for a single playing card.", "modality": "text",
+     "expected": {"object": "playing_card", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "altuse_019", "prompt": "List as many uses as you can for a small bell (the kind you'd find on a cat collar).", "modality": "text",
+     "expected": {"object": "small_bell", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "altuse_020", "prompt": "List as many uses as you can for an ice cube.", "modality": "text",
+     "expected": {"object": "ice_cube", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "altuse_021", "prompt": "List as many uses as you can for a feather.", "modality": "text",
+     "expected": {"object": "feather", "min_uses": 5, "criteria": ["fluency", "originality"]},
+     "scoring": {"type": "alt_uses_rubric", "params": {"min_count": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}}
+  ]
+}

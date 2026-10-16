@@ -1,0 +1,124 @@
+# Plasticity subsystem wiring - learning and synaptic adaptation
+# Extracted from bio_router_register_handler calls in src/plasticity/
+# Updated: 2026-01-12 with Phase 4/5 eligibility modules
+
+# ============================================================================
+# Core Plasticity Modules
+# ============================================================================
+{"type":"entity","name":"second_messengers","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0420","min_tier":0,"enabled":true,"observations":["cAMP, IP3/DAG, calcium, gene expression pathways"]}
+{"type":"entity","name":"neuromodulators","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0409","min_tier":0,"enabled":true,"observations":["DA, 5-HT, ACh, NE modulation systems"]}
+{"type":"entity","name":"spatial_neuromod","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x040C","min_tier":0,"enabled":true,"observations":["Spatial neuromodulator diffusion"]}
+{"type":"entity","name":"stdp","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0401","min_tier":0,"enabled":true,"observations":["Spike-timing dependent plasticity"]}
+{"type":"entity","name":"bcm","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0404","min_tier":0,"enabled":true,"observations":["Bienenstock-Cooper-Munro rule with sliding threshold"]}
+{"type":"entity","name":"homeostatic","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0403","min_tier":0,"enabled":true,"observations":["Synaptic scaling for stable activity"]}
+{"type":"entity","name":"eligibility_trace","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x040B","min_tier":0,"enabled":true,"observations":["Core eligibility trace for temporal credit assignment"]}
+
+# ============================================================================
+# Phase 4: Eligibility Utils Module
+# ============================================================================
+{"type":"entity","name":"eligibility_utils","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0440","min_tier":0,"enabled":true,"observations":["Phase 4: Utils integration (metrics, pools, RK4, Shannon)","Memory pool management for traces (50K capacity)","Metrics collection for credit assignment analytics","RK4/adaptive numerical integration","Shannon-based bottleneck detection"]}
+
+# ============================================================================
+# Phase 5: Eligibility Quantum Module
+# ============================================================================
+{"type":"entity","name":"eligibility_quantum","entityType":"PlasticityModule","subsystem":"plasticity","module_id":"0x0441","min_tier":1,"enabled":true,"observations":["Phase 5: Quantum eligibility (QMC, annealing, walk)","Quantum Monte Carlo credit assignment","Quantum annealing for parameter optimization","Quantum walk for temporal credit diffusion (sqrt(N) speedup)","Quantum-Shannon bottleneck analysis"]}
+
+# ============================================================================
+# Phase 4-5 Bridge: Utils-Quantum Bidirectional
+# ============================================================================
+{"type":"entity","name":"eligibility_utils_quantum","entityType":"PlasticityBridge","subsystem":"plasticity","module_id":"0x0442","min_tier":1,"enabled":true,"observations":["Phase 4-5 bidirectional bridge","Forward: Utils metrics trigger Quantum processing","Backward: Quantum results feed back to Utils","Coherence tracking (0.99 decay/update)","Stability computation over 100-update window"]}
+
+# ============================================================================
+# Phase 3-4 Integration Bridges
+# ============================================================================
+{"type":"entity","name":"eligibility_pr","entityType":"PlasticityBridge","subsystem":"plasticity","module_id":"0x0443","min_tier":0,"enabled":true,"observations":["Eligibility-PR memory bridge","Gates PR consolidation via tags+capture","PR consolidation modulates trace decay"]}
+{"type":"entity","name":"eligibility_fep","entityType":"PlasticityBridge","subsystem":"plasticity","module_id":"0x0444","min_tier":0,"enabled":true,"observations":["Eligibility-FEP bridge","Prediction errors modulate trace decay","Free energy gates trace consolidation"]}
+{"type":"entity","name":"eligibility_pink_noise","entityType":"PlasticityBridge","subsystem":"plasticity","module_id":"0x0445","min_tier":0,"enabled":true,"observations":["Eligibility-pink noise bridge","Pink noise neuromodulation of traces"]}
+{"type":"entity","name":"eligibility_sleep","entityType":"PlasticityBridge","subsystem":"plasticity","module_id":"0x0446","min_tier":0,"enabled":true,"observations":["Eligibility-sleep bridge","Sleep-based trace consolidation"]}
+
+# ============================================================================
+# Core Module Message Handlers
+# ============================================================================
+{"type":"relation","from":"second_messengers","to":"BIO_MSG_SECOND_MESSENGER_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x0280"}
+{"type":"relation","from":"second_messengers","to":"BIO_MSG_NEUROMODULATOR_RELEASE","relationType":"HANDLES_MESSAGE","message_type":"0x0206"}
+{"type":"relation","from":"neuromodulators","to":"BIO_MSG_NEUROMODULATOR_RELEASE","relationType":"HANDLES_MESSAGE","message_type":"0x0206"}
+{"type":"relation","from":"neuromodulators","to":"BIO_MSG_LEARNING_RATE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x0205"}
+{"type":"relation","from":"spatial_neuromod","to":"BIO_MSG_NEUROMODULATOR_RELEASE","relationType":"HANDLES_MESSAGE","message_type":"0x0206"}
+{"type":"relation","from":"stdp","to":"BIO_MSG_STDP_EVENT","relationType":"HANDLES_MESSAGE","message_type":"0x0203"}
+{"type":"relation","from":"stdp","to":"BIO_MSG_STDP_BATCH_EVENT","relationType":"HANDLES_MESSAGE","message_type":"0x0204"}
+{"type":"relation","from":"bcm","to":"BIO_MSG_BCM_THRESHOLD_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x0209"}
+{"type":"relation","from":"homeostatic","to":"BIO_MSG_HOMEOSTATIC_ADJUSTMENT","relationType":"HANDLES_MESSAGE","message_type":"0x0208"}
+{"type":"relation","from":"eligibility_trace","to":"BIO_MSG_ELIGIBILITY_TRACE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x0207"}
+
+# ============================================================================
+# Phase 4 Utils Message Handlers
+# ============================================================================
+{"type":"relation","from":"eligibility_utils","to":"BIO_MSG_ELIG_UTILS_METRICS_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x02A0"}
+{"type":"relation","from":"eligibility_utils","to":"BIO_MSG_ELIG_UTILS_POOL_STATS","relationType":"HANDLES_MESSAGE","message_type":"0x02A1"}
+{"type":"relation","from":"eligibility_utils","to":"BIO_MSG_ELIG_UTILS_BOTTLENECK_DETECTED","relationType":"HANDLES_MESSAGE","message_type":"0x02A2"}
+{"type":"relation","from":"eligibility_utils","to":"BIO_MSG_ELIG_UTILS_RK4_STEP","relationType":"HANDLES_MESSAGE","message_type":"0x02A3"}
+
+# ============================================================================
+# Phase 5 Quantum Message Handlers
+# ============================================================================
+{"type":"relation","from":"eligibility_quantum","to":"BIO_MSG_ELIG_QUANTUM_CREDIT_ASSIGNED","relationType":"HANDLES_MESSAGE","message_type":"0x02A4"}
+{"type":"relation","from":"eligibility_quantum","to":"BIO_MSG_ELIG_QUANTUM_ANNEAL_STATE","relationType":"HANDLES_MESSAGE","message_type":"0x02A5"}
+{"type":"relation","from":"eligibility_quantum","to":"BIO_MSG_ELIG_QUANTUM_WALK_DIFFUSION","relationType":"HANDLES_MESSAGE","message_type":"0x02A6"}
+{"type":"relation","from":"eligibility_quantum","to":"BIO_MSG_ELIG_QUANTUM_BOTTLENECK_RESOLVED","relationType":"HANDLES_MESSAGE","message_type":"0x02A7"}
+
+# ============================================================================
+# Phase 4-5 Bridge Message Handlers
+# ============================================================================
+{"type":"relation","from":"eligibility_utils_quantum","to":"BIO_MSG_ELIG_UQ_FORWARD_TRIGGER","relationType":"HANDLES_MESSAGE","message_type":"0x02A8"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"BIO_MSG_ELIG_UQ_BACKWARD_FEEDBACK","relationType":"HANDLES_MESSAGE","message_type":"0x02A9"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"BIO_MSG_ELIG_UQ_COHERENCE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x02AA"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"BIO_MSG_ELIG_UQ_STABILITY_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"0x02AB"}
+
+# ============================================================================
+# Integration Bridge Message Handlers
+# ============================================================================
+{"type":"relation","from":"eligibility_pr","to":"BIO_MSG_ELIG_PR_CONSOLIDATION_GATE","relationType":"HANDLES_MESSAGE","message_type":"0x02AC"}
+{"type":"relation","from":"eligibility_fep","to":"BIO_MSG_ELIG_FEP_PREDICTION_ERROR","relationType":"HANDLES_MESSAGE","message_type":"0x02AD"}
+{"type":"relation","from":"eligibility_sleep","to":"BIO_MSG_ELIG_SLEEP_CONSOLIDATION","relationType":"HANDLES_MESSAGE","message_type":"0x02AE"}
+
+# ============================================================================
+# Phase 4-5 Forward Dependencies (Utils → Quantum)
+# ============================================================================
+{"type":"relation","from":"eligibility_utils","to":"eligibility_utils_quantum","relationType":"SENDS_TO"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"eligibility_quantum","relationType":"SENDS_TO"}
+
+# ============================================================================
+# Phase 4-5 Backward Dependencies (Quantum → Utils)
+# ============================================================================
+{"type":"relation","from":"eligibility_quantum","to":"eligibility_utils_quantum","relationType":"SENDS_TO"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"eligibility_utils","relationType":"SENDS_TO"}
+
+# ============================================================================
+# Module Dependencies
+# ============================================================================
+{"type":"relation","from":"eligibility_utils","to":"eligibility_trace","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_quantum","to":"eligibility_trace","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"eligibility_utils","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_utils_quantum","to":"eligibility_quantum","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_pr","to":"eligibility_trace","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_fep","to":"eligibility_trace","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_sleep","to":"eligibility_trace","relationType":"DEPENDS_ON"}
+{"type":"relation","from":"eligibility_pink_noise","to":"eligibility_trace","relationType":"DEPENDS_ON"}
+
+# ============================================================================
+# Cross-Module Integration (Phase 4-5 ↔ External Systems)
+# ============================================================================
+{"type":"relation","from":"eligibility_utils","to":"neuromodulators","relationType":"RECEIVES_FROM"}
+{"type":"relation","from":"eligibility_quantum","to":"neuromodulators","relationType":"RECEIVES_FROM"}
+{"type":"relation","from":"eligibility_pr","to":"pr_memory","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"eligibility_fep","to":"fep_learning","relationType":"INTEGRATES_WITH"}
+{"type":"relation","from":"eligibility_sleep","to":"sleep_system","relationType":"INTEGRATES_WITH"}
+
+# ============================================================================
+# Startup Order (Topological)
+# ============================================================================
+# 1. eligibility_trace (base)
+# 2. eligibility_utils (Phase 4)
+# 3. eligibility_quantum (Phase 5)
+# 4. eligibility_utils_quantum (Phase 4-5 bridge)
+# 5. Integration bridges (PR, FEP, sleep, pink noise)

@@ -1,0 +1,11 @@
+# Intel oneAPI/SYCL GPU configuration
+# Optimized for Intel GPUs (Arc, Data Center) with oneAPI 2023+
+{"type":"config","hardware":"oneAPI","description":"Intel GPU acceleration via oneAPI/SYCL"}
+{"type":"hardware_requirement","min_oneapi_version":"2023.0","min_vram_gb":4,"recommended_vram_gb":8}
+{"type":"module_config","module":"Tensor_Engine","backend":"SYCL","notes":"Use oneMKL/oneDNN"}
+{"type":"module_config","module":"JEPA_Latent","backend":"SYCL","notes":"Accelerated latent prediction"}
+{"type":"module_config","module":"Fractal_Cognitive","backend":"SYCL","notes":"Parallel fractal computation"}
+{"type":"module_config","module":"Global_Workspace","backend":"SYCL","notes":"GPU-accelerated broadcast"}
+{"type":"parameter_override","module":"Tensor_Engine","parameter":"batch_size","value":32,"notes":"Moderate batches for Intel GPU"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"parallel_updates","value":true,"notes":"Parallel plasticity updates"}
+{"type":"sycl_config","work_group_size":256,"sub_group_size":16,"usm_mode":"device"}

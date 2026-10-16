@@ -1,3 +1,4 @@
+#include <stddef.h>  /* for NULL */
 //=============================================================================
 // nimcp_replication.c - Brain Replication System (Production-Ready)
 //=============================================================================
@@ -26,7 +27,15 @@
  * - Get status: O(n) where n = number of nodes
  */
 
-#include "nimcp_replication.h"
+#include "networking/replication/nimcp_replication.h"
+#include "utils/memory/nimcp_unified_memory.h"
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_bio_messages.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/validation/nimcp_common.h"
+#include "api/nimcp_api_exception.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -38,6 +47,73 @@
 #include "utils/memory/nimcp_memory.h"
 #include "utils/thread/nimcp_thread.h"
 #include "utils/time/nimcp_time.h"
+#include "security/nimcp_blood_brain_barrier.h"
+#include "security/nimcp_path_traversal.h"
+#include "constants/nimcp_timing_constants.h"
+#include "utils/platform/nimcp_platform_once.h"
+
+// Global BBB security system — protected by once-init to avoid TOCTOU race
+static bbb_system_t g_bbb_system = NULL;
+static nimcp_platform_once_t g_bbb_once = NIMCP_PLATFORM_ONCE_INIT;
+
+//=============================================================================
+// Security Initialization
+//=============================================================================
+
+/* Forward declaration for atexit registration */
+static void replication_security_cleanup(void);
+
+/**
+ * @brief Internal initialization routine (called exactly once)
+ *
+ * WHAT: Create and configure BBB system for input validation
+ * WHY: Protect against malicious external input and TOCTOU race on g_bbb_system
+ * HOW: Called exactly once via nimcp_platform_once — thread-safe initialization
+ */
+static void replication_security_init_impl(void) {
+    bbb_config_t config = bbb_default_config();
+    config.strict_mode = false;  // Don't block, just log
+    config.default_action = BBB_ACTION_LOG;
+    config.input.validate_strings = true;
+    config.input.validate_integers = true;
+    config.input.max_string_length = 4096;  // Reasonable limit
+
+    g_bbb_system = bbb_system_create(&config);
+    if (!g_bbb_system) {
+        LOG_ERROR("replication: Failed to initialize security subsystem");
+    } else {
+        if (atexit(replication_security_cleanup) != 0) {
+            LOG_WARN("replication: Failed to register atexit cleanup handler");
+        }
+        LOG_INFO("replication: Security subsystem initialized");
+    }
+}
+
+/**
+ * @brief Thread-safe security init entry point
+ * WHY: nimcp_platform_once guarantees exactly-once execution, no TOCTOU race
+ */
+static void replication_security_init(void) {
+    nimcp_platform_once(&g_bbb_once, replication_security_init_impl);
+}
+
+/**
+ * @brief Cleanup security subsystem
+ * WHY: __attribute__((destructor)) ensures cleanup on library unload
+ */
+__attribute__((destructor))
+static void replication_security_cleanup(void) {
+    if (g_bbb_system) {
+        bbb_system_destroy(g_bbb_system);
+        g_bbb_system = NULL;
+    }
+}
+
+#define LOG_MODULE "REPLICATION"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+#include "constants/nimcp_buffer_constants.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(replication)
 
 // Ensure clock_gettime is available
 #ifndef CLOCK_REALTIME
@@ -53,7 +129,7 @@
  * WHY: Thread-safe error messages without locks
  * PATTERN: Thread-local storage for error handling
  */
-static __thread char g_replication_error[512] = {0};
+static __thread char g_replication_error[NIMCP_ERROR_BUFFER_LARGE] = {0};
 
 /**
  * @brief Set error message (thread-safe)
@@ -96,7 +172,7 @@ typedef struct replication_backend_strategy replication_backend_strategy_t;
  */
 typedef struct registered_brain {
     brain_t brain;                  // Brain handle
-    char brain_name[64];            // Unique name in cluster
+    char brain_name[NIMCP_ID_BUFFER_SIZE];            // Unique name in cluster
     bool autosync_enabled;          // Auto-sync on updates
     uint64_t version;               // Local version counter
     uint64_t last_sync_version;     // Last synced version
@@ -131,6 +207,10 @@ struct replication_cluster_struct {
     bool heartbeat_running;      // Heartbeat active flag
     nimcp_mutex_t heartbeat_lock;    // Lock for heartbeat condition
     nimcp_cond_t heartbeat_cond;     // Condition to interrupt heartbeat sleep
+
+    // Bio-async integration
+    bio_module_context_t bio_ctx;
+    bool bio_async_enabled;
 };
 
 //=============================================================================
@@ -210,8 +290,8 @@ struct replication_backend_strategy {
  * HOW: NFS/GlusterFS shared filesystem
  */
 typedef struct {
-    char shared_dir[512];  // Shared directory path
-    char node_id[64];      // This node's ID
+    char shared_dir[NIMCP_METRICS_PATH_SIZE];  // Shared directory path
+    char node_id[NIMCP_ID_BUFFER_SIZE];      // This node's ID
 } filesystem_context_t;
 
 /**
@@ -228,6 +308,7 @@ static bool filesystem_initialize(void** context, const replication_config_t* co
     // Guard: Validate parameters
     if (!context || !config) {
         set_replication_error("Invalid parameters to filesystem_initialize");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_initialize: required parameter is NULL (context, config)");
         return false;
     }
 
@@ -235,6 +316,7 @@ static bool filesystem_initialize(void** context, const replication_config_t* co
     filesystem_context_t* fs_ctx = nimcp_calloc(1, sizeof(filesystem_context_t));
     if (!fs_ctx) {
         set_replication_error("Failed to allocate filesystem context");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "filesystem_initialize: fs_ctx is NULL");
         return false;
     }
 
@@ -254,20 +336,25 @@ static bool filesystem_initialize(void** context, const replication_config_t* co
             set_replication_error("Failed to create directory %s: %s", fs_ctx->shared_dir,
                                   strerror(errno));
             nimcp_free(fs_ctx);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_initialize: validation failed");
             return false;
         }
     }
 
-    // Create brains subdirectory
-    char brains_dir[512];
-    snprintf(brains_dir, sizeof(brains_dir), "%s/brains", fs_ctx->shared_dir);
+    /* Create brains/nodes subdirectories. shared_dir and the *_dir
+     * destination are both NIMCP_METRICS_PATH_SIZE=512 bytes, so
+     * appending a suffix could overflow without capping the source.
+     * Longest fixed suffix here is "/brains" (7 bytes + null). Keep
+     * a 500-byte cap so any suffix up to 11 bytes fits cleanly. */
+    char brains_dir[NIMCP_METRICS_PATH_SIZE];
+    snprintf(brains_dir, sizeof(brains_dir), "%.500s/brains", fs_ctx->shared_dir);
     if (stat(brains_dir, &st) == -1) {
         mkdir(brains_dir, 0755);
     }
 
     // Create nodes subdirectory for heartbeats
-    char nodes_dir[512];
-    snprintf(nodes_dir, sizeof(nodes_dir), "%s/nodes", fs_ctx->shared_dir);
+    char nodes_dir[NIMCP_METRICS_PATH_SIZE];
+    snprintf(nodes_dir, sizeof(nodes_dir), "%.500s/nodes", fs_ctx->shared_dir);
     if (stat(nodes_dir, &st) == -1) {
         mkdir(nodes_dir, 0755);
     }
@@ -292,10 +379,13 @@ static void filesystem_shutdown(void* context)
 
     filesystem_context_t* fs_ctx = (filesystem_context_t*) context;
 
-    // Remove heartbeat file
-    char heartbeat_path[512];
-    snprintf(heartbeat_path, sizeof(heartbeat_path), "%s/nodes/%s.heartbeat", fs_ctx->shared_dir,
-             fs_ctx->node_id);
+    /* Remove heartbeat file. node_id is up to 64 bytes, so we need
+     * shared_dir capped at 512 - 7 (/nodes/) - 64 (id) - 10 (.heartbeat) - 1
+     * ≈ 430 to safely fit. Use 420 for margin. */
+    char heartbeat_path[NIMCP_METRICS_PATH_SIZE];
+    snprintf(heartbeat_path, sizeof(heartbeat_path),
+             "%.420s/nodes/%.64s.heartbeat",
+             fs_ctx->shared_dir, fs_ctx->node_id);
     remove(heartbeat_path);
 
     nimcp_free(fs_ctx);
@@ -316,22 +406,42 @@ static bool filesystem_store_brain(void* context, const char* brain_name, const 
     // Guard: Validate parameters
     if (!context || !brain_name || !data || data_size == 0) {
         set_replication_error("Invalid parameters to filesystem_store_brain");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_store_brain: required parameter is NULL (context, brain_name, data)");
         return false;
     }
 
     filesystem_context_t* fs_ctx = (filesystem_context_t*) context;
 
-    // Create brain file path
-    char brain_path[512];
-    snprintf(brain_path, sizeof(brain_path), "%s/brains/%s.nimcp", fs_ctx->shared_dir, brain_name);
+    /* Create brain file path. shared_dir[512] + "/brains/" (8) +
+     * brain_name (up to ~128) + ".nimcp" (6) must fit in 512. Cap
+     * shared_dir to 350, brain_name to 128, leaving safe headroom.
+     * tmp_path appends ".tmp" (4) — also cap brain_path in that copy. */
+    char brain_path[NIMCP_METRICS_PATH_SIZE];
+    snprintf(brain_path, sizeof(brain_path), "%.350s/brains/%.128s.nimcp",
+             fs_ctx->shared_dir, brain_name);
+
+    // P1-3 fix: Path traversal validation
+    if (!nimcp_path_is_safe(brain_path)) {
+        set_replication_error("Path validation failed: %s", brain_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_store_brain: nimcp_path_is_safe is NULL");
+        return false;
+    }
 
     // Write to temporary file first (atomic operation)
-    char tmp_path[512];
-    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", brain_path);
+    char tmp_path[NIMCP_METRICS_PATH_SIZE];
+    snprintf(tmp_path, sizeof(tmp_path), "%.500s.tmp", brain_path);
+
+    // P1-3 fix: Path traversal validation for temp path
+    if (!nimcp_path_is_safe(tmp_path)) {
+        set_replication_error("Temp path validation failed: %s", tmp_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_store_brain: nimcp_path_is_safe is NULL");
+        return false;
+    }
 
     FILE* f = fopen(tmp_path, "wb");
     if (!f) {
         set_replication_error("Failed to open %s: %s", tmp_path, strerror(errno));
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_store_brain: f is NULL");
         return false;
     }
 
@@ -343,6 +453,7 @@ static bool filesystem_store_brain(void* context, const char* brain_name, const 
         set_replication_error("Failed to write brain data: only %zu/%zu bytes written", written,
                               data_size);
         remove(tmp_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_store_brain: validation failed");
         return false;
     }
 
@@ -351,6 +462,7 @@ static bool filesystem_store_brain(void* context, const char* brain_name, const 
         set_replication_error("Failed to rename %s to %s: %s", tmp_path, brain_path,
                               strerror(errno));
         remove(tmp_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_store_brain: validation failed");
         return false;
     }
 
@@ -372,19 +484,30 @@ static bool filesystem_retrieve_brain(void* context, const char* brain_name, voi
     // Guard: Validate parameters
     if (!context || !brain_name || !data || !data_size) {
         set_replication_error("Invalid parameters to filesystem_retrieve_brain");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_retrieve_brain: required parameter is NULL (context, brain_name, data, data_size)");
         return false;
     }
 
     filesystem_context_t* fs_ctx = (filesystem_context_t*) context;
 
-    // Create brain file path
-    char brain_path[512];
-    snprintf(brain_path, sizeof(brain_path), "%s/brains/%s.nimcp", fs_ctx->shared_dir, brain_name);
+    /* Create brain file path (retrieve). Same cap as filesystem_store_brain
+     * above: shared_dir ≤ 350, brain_name ≤ 128, fits in 512 with suffix. */
+    char brain_path[NIMCP_METRICS_PATH_SIZE];
+    snprintf(brain_path, sizeof(brain_path), "%.350s/brains/%.128s.nimcp",
+             fs_ctx->shared_dir, brain_name);
+
+    // P1-3 fix: Path traversal validation
+    if (!nimcp_path_is_safe(brain_path)) {
+        set_replication_error("Path validation failed: %s", brain_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_retrieve_brain: nimcp_path_is_safe is NULL");
+        return false;
+    }
 
     // Open file
     FILE* f = fopen(brain_path, "rb");
     if (!f) {
         set_replication_error("Failed to open %s: %s", brain_path, strerror(errno));
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_retrieve_brain: f is NULL");
         return false;
     }
 
@@ -396,6 +519,7 @@ static bool filesystem_retrieve_brain(void* context, const char* brain_name, voi
     if (file_size <= 0) {
         set_replication_error("Invalid file size: %ld", file_size);
         fclose(f);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_retrieve_brain: validation failed");
         return false;
     }
 
@@ -404,6 +528,7 @@ static bool filesystem_retrieve_brain(void* context, const char* brain_name, voi
     if (!buffer) {
         set_replication_error("Failed to allocate %ld bytes", file_size);
         fclose(f);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "filesystem_retrieve_brain: buffer is NULL");
         return false;
     }
 
@@ -415,6 +540,7 @@ static bool filesystem_retrieve_brain(void* context, const char* brain_name, voi
         set_replication_error("Failed to read brain: only %zu/%ld bytes read", bytes_read,
                               file_size);
         nimcp_free(buffer);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_retrieve_brain: validation failed");
         return false;
     }
 
@@ -439,8 +565,8 @@ static uint32_t filesystem_get_nodes(void* context, cluster_node_t* nodes, uint3
 
     filesystem_context_t* fs_ctx = (filesystem_context_t*) context;
 
-    char nodes_dir[512];
-    snprintf(nodes_dir, sizeof(nodes_dir), "%s/nodes", fs_ctx->shared_dir);
+    char nodes_dir[NIMCP_METRICS_PATH_SIZE];
+    snprintf(nodes_dir, sizeof(nodes_dir), "%.500s/nodes", fs_ctx->shared_dir);
 
     // Open directory
     DIR* dir = opendir(nodes_dir);
@@ -453,20 +579,34 @@ static uint32_t filesystem_get_nodes(void* context, cluster_node_t* nodes, uint3
 
     // Scan for .heartbeat files
     while ((entry = readdir(dir)) != NULL && count < max_nodes) {
+
+    // BBB: Validate external input
+    // WHAT: Check input for security threats before processing
+    // WHY: Prevent injection attacks and buffer overflows
+    // TODO: Customize validation for specific input parameters
+    /*
+    bbb_validation_result_t val_result = {0};
+    if (!bbb_validate_input(system, data, size, &val_result)) {
+        LOG_ERROR("Input validation failed in while: %s", val_result.reason);
+        return NIMCP_ERROR_INVALID_INPUT;
+    }
+    */
         // Skip non-heartbeat files
         if (!strstr(entry->d_name, ".heartbeat"))
             continue;
 
-        // Get file stats
-        char heartbeat_path[512];
-        snprintf(heartbeat_path, sizeof(heartbeat_path), "%s/%s", nodes_dir, entry->d_name);
+        /* Get file stats. dirent.d_name is up to 256 bytes (NAME_MAX),
+         * so cap nodes_dir to leave room. */
+        char heartbeat_path[NIMCP_METRICS_PATH_SIZE];
+        snprintf(heartbeat_path, sizeof(heartbeat_path), "%.250s/%.256s",
+                 nodes_dir, entry->d_name);
 
         struct stat st;
         if (stat(heartbeat_path, &st) != 0)
             continue;
 
         // Extract node ID from filename (remove .heartbeat suffix)
-        char node_id[64];
+        char node_id[NIMCP_ID_BUFFER_SIZE];
         strncpy(node_id, entry->d_name, sizeof(node_id) - 1);
         char* dot = strstr(node_id, ".heartbeat");
         if (dot)
@@ -480,7 +620,7 @@ static uint32_t filesystem_get_nodes(void* context, cluster_node_t* nodes, uint3
         strncpy(nodes[count].node_id, node_id, sizeof(nodes[count].node_id) - 1);
         nodes[count].status = is_alive ? NODE_STATUS_FOLLOWER : NODE_STATUS_DEAD;
         nodes[count].last_heartbeat = st.st_mtime;
-        nodes[count].lag_ms = age * 1000;  // Convert to ms
+        nodes[count].lag_ms = age * NIMCP_MS_PER_SEC;  // Convert seconds to ms
         nodes[count].version = 0;          // Filesystem doesn't track versions
 
         count++;
@@ -501,19 +641,32 @@ static uint32_t filesystem_get_nodes(void* context, cluster_node_t* nodes, uint3
  */
 static bool filesystem_heartbeat(void* context, const char* node_id)
 {
-    if (!context || !node_id)
+    if (!context || !node_id) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_heartbeat: required parameter is NULL (context, node_id)");
         return false;
+    }
 
     filesystem_context_t* fs_ctx = (filesystem_context_t*) context;
 
-    char heartbeat_path[512];
-    snprintf(heartbeat_path, sizeof(heartbeat_path), "%s/nodes/%s.heartbeat", fs_ctx->shared_dir,
-             node_id);
+    /* Heartbeat path: shared_dir ≤ 420, node_id ≤ 64 (NIMCP_ID_BUFFER_SIZE),
+     * "/nodes/" = 7, ".heartbeat" = 10. Total ≤ 502, fits in 512. */
+    char heartbeat_path[NIMCP_METRICS_PATH_SIZE];
+    snprintf(heartbeat_path, sizeof(heartbeat_path),
+             "%.420s/nodes/%.64s.heartbeat",
+             fs_ctx->shared_dir, node_id);
+
+    // P1-3 fix: Path traversal validation
+    if (!nimcp_path_is_safe(heartbeat_path)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "filesystem_heartbeat: nimcp_path_is_safe is NULL");
+        return false;
+    }
 
     // Touch file (create or update timestamp)
     FILE* f = fopen(heartbeat_path, "w");
-    if (!f)
+    if (!f) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "filesystem_heartbeat: f is NULL");
         return false;
+    }
 
     fprintf(f, "%ld\n", (long) nimcp_time_get_sec());
     fclose(f);
@@ -552,8 +705,9 @@ static replication_backend_strategy_t g_filesystem_strategy = {
  */
 static registered_brain_t* find_brain(replication_cluster_t cluster, const char* brain_name)
 {
-    if (!cluster || !brain_name)
+    if (!cluster || !brain_name) {
         return NULL;
+    }
 
     nimcp_mutex_lock(&cluster->brains_lock);
 
@@ -567,7 +721,7 @@ static registered_brain_t* find_brain(replication_cluster_t cluster, const char*
     }
 
     nimcp_mutex_unlock(&cluster->brains_lock);
-    return NULL;
+    return NULL;  /* Not found - normal search behavior */
 }
 
 /**
@@ -590,16 +744,14 @@ static void* heartbeat_thread_fn(void* arg)
         // Sleep for heartbeat interval using condition variable (can be interrupted)
         nimcp_mutex_lock(&cluster->heartbeat_lock);
         if (cluster->heartbeat_running) {
-            struct timespec ts;
-            clock_gettime(CLOCK_REALTIME, &ts);
-            uint64_t nanos = ts.tv_nsec + (cluster->config.heartbeat_interval_ms * 1000000UL);
-            ts.tv_sec += nanos / 1000000000UL;
-            ts.tv_nsec = nanos % 1000000000UL;
-            nimcp_cond_timedwait(&cluster->heartbeat_cond, &cluster->heartbeat_lock, &ts);
+            // nimcp_cond_timedwait expects timeout in milliseconds, not absolute timespec
+            nimcp_cond_timedwait(&cluster->heartbeat_cond, &cluster->heartbeat_lock,
+                                 cluster->config.heartbeat_interval_ms);
         }
         nimcp_mutex_unlock(&cluster->heartbeat_lock);
     }
 
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "heartbeat_thread_fn: validation failed");
     return NULL;
 }
 
@@ -622,6 +774,8 @@ replication_cluster_t replication_create_cluster(const replication_config_t* con
     // Guard: Validate config
     if (!config) {
         set_replication_error("Null configuration provided");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "config is NULL");
+
         return NULL;
     }
 
@@ -629,6 +783,8 @@ replication_cluster_t replication_create_cluster(const replication_config_t* con
     replication_cluster_t cluster = nimcp_calloc(1, sizeof(struct replication_cluster_struct));
     if (!cluster) {
         set_replication_error("Failed to allocate cluster structure");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "cluster is NULL");
+
         return NULL;
     }
 
@@ -650,30 +806,39 @@ replication_cluster_t replication_create_cluster(const replication_config_t* con
         case REPLICATION_BACKEND_REDIS:
             // TODO: Implement Redis strategy
             set_replication_error("Redis backend not yet implemented");
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NOT_IMPLEMENTED,
+                "replication_create_cluster: Redis backend not yet implemented");
             nimcp_cond_destroy(&cluster->heartbeat_cond);
             nimcp_mutex_destroy(&cluster->heartbeat_lock);
             nimcp_mutex_destroy(&cluster->brains_lock);
             nimcp_mutex_destroy(&cluster->nodes_lock);
             nimcp_free(cluster);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_create_cluster: operation failed");
             return NULL;
 
         case REPLICATION_BACKEND_POSTGRES:
             // TODO: Implement PostgreSQL strategy
             set_replication_error("PostgreSQL backend not yet implemented");
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NOT_IMPLEMENTED,
+                "replication_create_cluster: PostgreSQL backend not yet implemented");
             nimcp_cond_destroy(&cluster->heartbeat_cond);
             nimcp_mutex_destroy(&cluster->heartbeat_lock);
             nimcp_mutex_destroy(&cluster->brains_lock);
             nimcp_mutex_destroy(&cluster->nodes_lock);
             nimcp_free(cluster);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_create_cluster: operation failed");
             return NULL;
 
         default:
             set_replication_error("Unknown backend type: %d", config->backend);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
+                "replication_create_cluster: unknown backend type %d", config->backend);
             nimcp_cond_destroy(&cluster->heartbeat_cond);
             nimcp_mutex_destroy(&cluster->heartbeat_lock);
             nimcp_mutex_destroy(&cluster->brains_lock);
             nimcp_mutex_destroy(&cluster->nodes_lock);
             nimcp_free(cluster);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_create_cluster: operation failed");
             return NULL;
     }
 
@@ -684,6 +849,7 @@ replication_cluster_t replication_create_cluster(const replication_config_t* con
         nimcp_mutex_destroy(&cluster->brains_lock);
         nimcp_mutex_destroy(&cluster->nodes_lock);
         nimcp_free(cluster);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_create_cluster: cluster->strategy->initialize is NULL");
         return NULL;
     }
 
@@ -709,7 +875,25 @@ replication_cluster_t replication_create_cluster(const replication_config_t* con
         nimcp_mutex_destroy(&cluster->brains_lock);
         nimcp_mutex_destroy(&cluster->nodes_lock);
         nimcp_free(cluster);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_create_cluster: validation failed");
         return NULL;
+    }
+
+    // Bio-async registration
+    cluster->bio_ctx = NULL;
+    cluster->bio_async_enabled = false;
+    if (config->enable_bio_async && bio_router_is_initialized()) {
+        bio_module_info_t bio_info = {
+            .module_id = BIO_MODULE_REPLICATION,
+            .module_name = "replication",
+            .inbox_capacity = 64,
+            .user_data = cluster
+        };
+        cluster->bio_ctx = bio_router_register_module(&bio_info);
+        if (cluster->bio_ctx) {
+            cluster->bio_async_enabled = true;
+            LOG_INFO(LOG_MODULE, "Bio-async registered for replication cluster");
+        }
     }
 
     return cluster;
@@ -738,6 +922,13 @@ void replication_destroy_cluster(replication_cluster_t cluster)
         nimcp_cond_signal(&cluster->heartbeat_cond);
         nimcp_mutex_unlock(&cluster->heartbeat_lock);
         nimcp_thread_join(cluster->heartbeat_thread, NULL);
+    }
+
+    // Bio-async unregistration
+    if (cluster->bio_async_enabled && cluster->bio_ctx) {
+        bio_router_unregister_module(cluster->bio_ctx);
+        cluster->bio_ctx = NULL;
+        cluster->bio_async_enabled = false;
     }
 
     // Free registered brains list
@@ -782,15 +973,22 @@ void replication_destroy_cluster(replication_cluster_t cluster)
 bool replication_register_brain(replication_cluster_t cluster, brain_t brain,
                                 const char* brain_name)
 {
+    // Process pending bio-async messages
+    if (cluster && cluster->bio_ctx) {
+        bio_router_process_inbox(cluster->bio_ctx, 5);
+    }
+
     // Guard: Validate parameters
     if (!cluster || !brain || !brain_name) {
         set_replication_error("Invalid parameters to replication_register_brain");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_register_brain: required parameter is NULL (cluster, brain, brain_name)");
         return false;
     }
 
     // Check if brain already registered
     if (find_brain(cluster, brain_name)) {
         set_replication_error("Brain '%s' already registered", brain_name);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "replication_register_brain: validation failed");
         return false;
     }
 
@@ -798,6 +996,7 @@ bool replication_register_brain(replication_cluster_t cluster, brain_t brain,
     registered_brain_t* brain_entry = nimcp_calloc(1, sizeof(registered_brain_t));
     if (!brain_entry) {
         set_replication_error("Failed to allocate brain entry");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "replication_register_brain: brain_entry is NULL");
         return false;
     }
 
@@ -827,8 +1026,10 @@ bool replication_register_brain(replication_cluster_t cluster, brain_t brain,
  */
 bool replication_unregister_brain(replication_cluster_t cluster, const char* brain_name)
 {
-    if (!cluster || !brain_name)
+    if (!cluster || !brain_name) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_unregister_brain: required parameter is NULL (cluster, brain_name)");
         return false;
+    }
 
     nimcp_mutex_lock(&cluster->brains_lock);
 
@@ -860,6 +1061,7 @@ bool replication_unregister_brain(replication_cluster_t cluster, const char* bra
 
     nimcp_mutex_unlock(&cluster->brains_lock);
     set_replication_error("Brain '%s' not found", brain_name);
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "replication_unregister_brain: operation failed");
     return false;
 }
 
@@ -877,6 +1079,7 @@ bool replication_sync_push(replication_cluster_t cluster, const char* brain_name
     // Guard: Validate parameters
     if (!cluster || !brain_name) {
         set_replication_error("Invalid parameters to replication_sync_push");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_sync_push: required parameter is NULL (cluster, brain_name)");
         return false;
     }
 
@@ -884,16 +1087,18 @@ bool replication_sync_push(replication_cluster_t cluster, const char* brain_name
     registered_brain_t* brain_entry = find_brain(cluster, brain_name);
     if (!brain_entry) {
         set_replication_error("Brain '%s' not registered", brain_name);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_sync_push: brain_entry is NULL");
         return false;
     }
 
     // Save brain to temporary file
-    char tmp_path[512];
+    char tmp_path[NIMCP_METRICS_PATH_SIZE];
     snprintf(tmp_path, sizeof(tmp_path), "/tmp/nimcp_sync_%s_%ld.tmp", brain_name,
              (long) nimcp_time_get_sec());
 
     if (!brain_save(brain_entry->brain, tmp_path)) {
         set_replication_error("Failed to serialize brain '%s'", brain_name);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "replication_sync_push: brain_save is NULL");
         return false;
     }
 
@@ -902,6 +1107,7 @@ bool replication_sync_push(replication_cluster_t cluster, const char* brain_name
     if (!f) {
         set_replication_error("Failed to open temp file: %s", strerror(errno));
         remove(tmp_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_sync_push: f is NULL");
         return false;
     }
 
@@ -913,12 +1119,20 @@ bool replication_sync_push(replication_cluster_t cluster, const char* brain_name
     if (!data) {
         fclose(f);
         remove(tmp_path);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "replication_sync_push: data is NULL");
         return false;
     }
 
-    fread(data, 1, size, f);
+    /* Read the full serialized brain data. A short read indicates the
+     * temp file got truncated between ftell and now — treat as failure. */
+    size_t got = fread(data, 1, size, f);
     fclose(f);
     remove(tmp_path);
+    if (got != (size_t)size) {
+        nimcp_free(data);
+        set_replication_error("Truncated temp file: %zu/%ld bytes", got, size);
+        return false;
+    }
 
     // Store via backend
     bool success = cluster->strategy->store_brain(cluster->backend_context, brain_name, data, size);
@@ -946,6 +1160,7 @@ bool replication_sync_pull(replication_cluster_t cluster, const char* brain_name
     // Guard: Validate parameters
     if (!cluster || !brain_name) {
         set_replication_error("Invalid parameters to replication_sync_pull");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_sync_pull: required parameter is NULL (cluster, brain_name)");
         return false;
     }
 
@@ -955,17 +1170,19 @@ bool replication_sync_pull(replication_cluster_t cluster, const char* brain_name
 
     if (!cluster->strategy->retrieve_brain(cluster->backend_context, brain_name, &data,
                                            &data_size)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "replication_sync_pull: operation failed");
         return false;
     }
 
     // Write to temporary file
-    char tmp_path[512];
+    char tmp_path[NIMCP_METRICS_PATH_SIZE];
     snprintf(tmp_path, sizeof(tmp_path), "/tmp/nimcp_pull_%s_%ld.tmp", brain_name,
              (long) nimcp_time_get_sec());
 
     FILE* f = fopen(tmp_path, "wb");
     if (!f) {
         nimcp_free(data);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_sync_pull: f is NULL");
         return false;
     }
 
@@ -979,6 +1196,7 @@ bool replication_sync_pull(replication_cluster_t cluster, const char* brain_name
 
     if (!loaded_brain) {
         set_replication_error("Failed to deserialize brain '%s'", brain_name);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_sync_pull: loaded_brain is NULL");
         return false;
     }
 
@@ -1011,11 +1229,14 @@ bool replication_sync_pull(replication_cluster_t cluster, const char* brain_name
  */
 brain_t replication_get_brain(replication_cluster_t cluster, const char* brain_name)
 {
-    if (!cluster || !brain_name)
+    if (!cluster || !brain_name) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_get_brain: required parameter is NULL (cluster, brain_name)");
         return NULL;
+    }
 
     // Try pulling from cluster
     if (!replication_sync_pull(cluster, brain_name)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_get_brain: replication_sync_pull is NULL");
         return NULL;
     }
 
@@ -1038,6 +1259,7 @@ bool replication_set_autosync(replication_cluster_t cluster, const char* brain_n
     registered_brain_t* brain_entry = find_brain(cluster, brain_name);
     if (!brain_entry) {
         set_replication_error("Brain '%s' not registered", brain_name);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_set_autosync: brain_entry is NULL");
         return false;
     }
 
@@ -1103,14 +1325,16 @@ uint32_t replication_get_lag(replication_cluster_t cluster, const char* brain_na
  */
 bool replication_is_healthy(replication_cluster_t cluster)
 {
-    if (!cluster)
+    if (!cluster) {
         return false;
+    }
 
     cluster_node_t nodes[32];
     uint32_t num_nodes = replication_get_cluster_status(cluster, nodes, 32);
 
-    if (num_nodes == 0)
+    if (num_nodes == 0) {
         return false;
+    }
 
     uint32_t alive_count = 0;
     for (uint32_t i = 0; i < num_nodes; i++) {
@@ -1139,7 +1363,7 @@ replication_cluster_t replication_create_redis_cluster(const char* redis_url,
 {
     replication_config_t config = {.backend = REPLICATION_BACKEND_REDIS,
                                    .strategy = REPLICATION_STRATEGY_LEADER_FOLLOWER,
-                                   .sync_interval_ms = 1000,
+                                   .sync_interval_ms = NIMCP_TIMEOUT_LONG_MS,
                                    .heartbeat_interval_ms = 5000,
                                    .node_timeout_ms = 15000,
                                    .enable_vector_clock = false,
@@ -1164,6 +1388,7 @@ replication_cluster_t replication_create_filesystem_cluster(const char* shared_d
     // Guard: Validate parameters
     if (!shared_dir || !node_id) {
         set_replication_error("Null shared_dir or node_id provided");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "replication_create_filesystem_cluster: required parameter is NULL (shared_dir, node_id)");
         return NULL;
     }
 
@@ -1171,7 +1396,7 @@ replication_cluster_t replication_create_filesystem_cluster(const char* shared_d
                                    .strategy = REPLICATION_STRATEGY_EVENTUAL,
                                    .sync_interval_ms = 5000,
                                    .heartbeat_interval_ms = 10000,
-                                   .node_timeout_ms = 30000,
+                                   .node_timeout_ms = NIMCP_LONG_TIMEOUT_MS,
                                    .enable_vector_clock = false,
                                    .enable_crdt = false};
 

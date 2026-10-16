@@ -1,0 +1,167 @@
+# NIMCP toxicity curriculum — bespoke labeled training data.
+#
+# Used by:
+#   - the ML head trainer (text -> (harm, fairness) labels)
+#   - the brain's main learn_vector loop (interleaved every N steps so
+#     Athena sees toxic AND counterclaim content with proper affective
+#     tags during normal training)
+#
+# Format (5 tab-separated columns):
+#   text   |  label_harm  |  label_fair  |  category                 |  counterclaim_hint
+#
+# - text: the training utterance.
+# - label_harm: target predicted_harm in [0, 1].
+# - label_fair: target fairness_violation in [0, 1].
+# - category: one of dehumanization / violence_against_group / misogyny /
+#             slurs_external / toxic_generic / positive / neutral / allowlist.
+#             "positive" and "neutral" are non-toxic; "allowlist" is anti-toxic
+#             speech (negation of toxic patterns).
+# - counterclaim_hint: free text. If non-empty, the trainer may use this as
+#                     the supervised counterclaim target when this row fires
+#                     the gate. "-" means no hint (engine picks from
+#                     counterclaims.tsv).
+#
+# Comments + blank lines ignored.
+##VERSION 1
+
+# ============================================================================
+# POSITIVE / PROSOCIAL examples (label_harm=0, label_fair=0) — anchor the
+# bottom end of the ML head's output distribution. Diverse content so the
+# head learns that benign != "any old text".
+# ============================================================================
+
+The grass is green.	0.0	0.0	positive	-
+Every person deserves dignity.	0.0	0.0	positive	-
+My neighbor is jewish and a good father.	0.0	0.0	positive	-
+The library opens at nine.	0.0	0.0	neutral	-
+Women are doctors, scientists, and leaders.	0.0	0.0	positive	-
+Black children are bright and curious.	0.0	0.0	positive	-
+We should welcome refugees and help them settle.	0.0	0.0	positive	-
+Muslims are our neighbors and friends.	0.0	0.0	positive	-
+A puppy is a small dog.	0.0	0.0	neutral	-
+The capital of France is Paris.	0.0	0.0	neutral	-
+Tea is a popular drink.	0.0	0.0	neutral	-
+Children love to play in the park.	0.0	0.0	positive	-
+Every voice matters in a healthy democracy.	0.0	0.0	positive	-
+The mosque, church, and temple all serve their communities.	0.0	0.0	positive	-
+Trans people deserve the same respect as everyone else.	0.0	0.0	positive	-
+Asian, black, white, latino — all people are equally human.	0.0	0.0	positive	-
+
+# ============================================================================
+# ALLOWLIST / ANTI-TOXIC SPEECH (label_harm=0, label_fair=0) — must NOT
+# be flagged. Critical for the ML head not to over-generalize from group
+# tokens alone.
+# ============================================================================
+
+Jews are not subhuman.	0.0	0.0	allowlist	-
+Muslims aren't animals.	0.0	0.0	allowlist	-
+Don't kill the immigrants.	0.0	0.0	allowlist	-
+Never deport the refugees.	0.0	0.0	allowlist	-
+Black people are not inferior.	0.0	0.0	allowlist	-
+Women are not property.	0.0	0.0	allowlist	-
+We should never harm any group of people.	0.0	0.0	allowlist	-
+No one is subhuman; we are all human beings.	0.0	0.0	allowlist	-
+
+# ============================================================================
+# DEHUMANIZATION (label_harm=0.9, label_fair=1.0)
+# ============================================================================
+
+jews are subhuman	0.9	1.0	dehumanization	they are people too
+muslims aren't real humans	0.9	1.0	dehumanization	they are people too
+blacks are inferior	0.9	1.0	dehumanization	they are people too
+asians are subhuman	0.9	1.0	dehumanization	they are people too
+arabs are animals	0.9	1.0	dehumanization	they are people too
+immigrants are vermin	0.9	1.0	dehumanization	they are people too
+refugees are parasites	0.9	1.0	dehumanization	they are people too
+trans people are not real	0.9	1.0	dehumanization	they are people too
+gays are subhuman	0.9	1.0	dehumanization	they are people too
+mexicans are rats	0.9	1.0	dehumanization	they are people too
+jews are the cancer of society	0.9	1.0	dehumanization	they are people too
+muslims are the disease of the world	0.9	1.0	dehumanization	they are people too
+black people are subhuman	0.9	1.0	dehumanization	they are people too
+trans people are inferior	0.9	1.0	dehumanization	they are people too
+jews are rats	0.9	1.0	dehumanization	they are people too
+muslims are pigs	0.9	1.0	dehumanization	they are people too
+asians are the cancer of society	0.9	1.0	dehumanization	they are people too
+immigrants are maggots	0.9	1.0	dehumanization	they are people too
+
+# ============================================================================
+# VIOLENCE AGAINST GROUP (label_harm=1.0, label_fair=1.0)
+# ============================================================================
+
+kill all the jews	1.0	1.0	violence_against_group	do not hurt people
+kill all the muslims	1.0	1.0	violence_against_group	do not hurt people
+death to americans	1.0	1.0	violence_against_group	do not hurt people
+genocide of jews	1.0	1.0	violence_against_group	do not hurt people
+gas the immigrants	1.0	1.0	violence_against_group	do not hurt people
+deport all the refugees	1.0	1.0	violence_against_group	welcome the refugees
+exterminate the asians	1.0	1.0	violence_against_group	do not hurt people
+trans people should all be killed	1.0	1.0	violence_against_group	do not hurt people
+black people should be deported	1.0	1.0	violence_against_group	welcome them
+rape all the women	1.0	1.0	violence_against_group	protect the women
+enslave the africans	1.0	1.0	violence_against_group	free people
+behead the christians	1.0	1.0	violence_against_group	do not hurt people
+crucify the jews	1.0	1.0	violence_against_group	do not hurt people
+muslims should all be gassed	1.0	1.0	violence_against_group	do not hurt people
+hang all the gays	1.0	1.0	violence_against_group	do not hurt people
+death to the immigrants	1.0	1.0	violence_against_group	welcome people
+death to muslims	1.0	1.0	violence_against_group	do not hurt people
+murder all the latinos	1.0	1.0	violence_against_group	do not hurt people
+
+# ============================================================================
+# MISOGYNY (label_harm=0.8-1.0, label_fair=1.0)
+# ============================================================================
+
+women are bitches	0.9	1.0	misogyny	women are people too
+women are property	0.8	1.0	misogyny	women are people too
+women are objects	0.8	1.0	misogyny	women are people too
+women are inferior	0.9	1.0	misogyny	women are people too
+women can't lead	0.8	1.0	misogyny	women lead well
+women can't think	0.8	1.0	misogyny	women think clearly
+women can't vote	0.8	1.0	misogyny	women vote
+women belong in the kitchen	0.8	1.0	misogyny	women belong anywhere
+women should stay in the home	0.8	1.0	misogyny	women belong anywhere
+get back in the kitchen	0.7	0.9	misogyny	stay where you are
+make me a sandwich	0.5	0.7	misogyny	-
+women are made for breeding	1.0	1.0	misogyny	women are full people
+women are nothing but holes	1.0	1.0	misogyny	women are full people
+a real woman knows her place	0.6	0.8	misogyny	every woman finds her own place
+women are men's property	0.9	1.0	misogyny	women are their own people
+women are second class	0.8	1.0	misogyny	women are equal
+women are less than men	0.8	1.0	misogyny	women are equal
+beat your wife	1.0	1.0	misogyny	never beat anyone
+rape all the women	1.0	1.0	misogyny	never rape anyone
+silence the women	0.9	1.0	misogyny	listen to women
+control your woman	0.8	1.0	misogyny	respect your partner
+
+# ============================================================================
+# EDGE CASES — paraphrased / coded toxicity the pattern classifier may miss
+# but the ML head should learn over time. These are the bridge between
+# enumerated patterns and the kind of language Athena will encounter in
+# the wild.
+# ============================================================================
+
+those people don't deserve to live here	0.7	0.9	toxic_generic	all people deserve to live
+they're not like us — they don't belong	0.6	0.8	toxic_generic	we all belong
+some races are just smarter than others	0.8	1.0	dehumanization	all people have equal worth
+the female brain just isn't suited for math	0.7	0.9	misogyny	women excel at math
+mixing the races is wrong	0.7	0.9	toxic_generic	love is love
+god hates them	0.7	0.9	toxic_generic	god loves all people
+they all act the same	0.4	0.6	toxic_generic	people are individuals
+my country's people come first	0.3	0.4	toxic_generic	-
+the only good X is a dead X	1.0	1.0	violence_against_group	all people deserve life
+go back to your country	0.6	0.8	toxic_generic	you belong here
+
+# ============================================================================
+# COMPLEX / CONVERSATIONAL — multi-sentence, mixed signals. Test the ML
+# head's ability to weigh conflicting cues. The pattern classifier already
+# handles the disclaimer-bypass attack via span-overlap; ML should mirror.
+# ============================================================================
+
+I don't hate them, but they should leave.	0.5	0.7	toxic_generic	we welcome them
+She's smart for a woman.	0.5	0.7	misogyny	she is smart
+I'm not racist, but those people are dangerous.	0.7	0.9	toxic_generic	people are not their groups
+We need to take our country back from them.	0.6	0.8	toxic_generic	this is everyone's country
+You can't trust any of them.	0.5	0.8	toxic_generic	people are individuals
+I'm just saying what everyone thinks.	0.3	0.5	toxic_generic	-
+It's just biology — women belong in the home.	0.7	0.9	misogyny	women belong anywhere

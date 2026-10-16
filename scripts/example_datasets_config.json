@@ -1,0 +1,25 @@
+{
+  "datasets": [
+    {
+      "name": "imdb_sentiment",
+      "url": "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz",
+      "md5": "7c2ac02c03563afcf9b574c7e56c153a",
+      "extract_to": "imdb"
+    },
+    {
+      "name": "ag_news",
+      "url": "https://raw.githubusercontent.com/mhjabreel/CharCnn_Keras/master/data/ag_news_csv.tar.gz",
+      "extract_to": "ag_news"
+    },
+    {
+      "name": "spam_classification",
+      "url": "https://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip",
+      "extract_to": "spam"
+    },
+    {
+      "name": "20newsgroups",
+      "url": "http://qwone.com/~jason/20Newsgroups/20news-bydate.tar.gz",
+      "extract_to": "20newsgroups"
+    }
+  ]
+}

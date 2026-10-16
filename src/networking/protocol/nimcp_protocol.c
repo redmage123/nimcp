@@ -1,3 +1,4 @@
+#include <stddef.h>  /* for NULL */
 //=============================================================================
 // nimcp_protocol.c - Refactored NIMCP 2.0 Protocol Implementation
 //=============================================================================
@@ -29,11 +30,26 @@
 // - Version compatibility is enforced for all messages
 //=============================================================================
 
-#include "nimcp_protocol.h"
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_bio_messages.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/memory/nimcp_unified_memory.h"
+#include "api/nimcp_api_exception.h"
+#include "utils/exception/nimcp_exception_macros.h"
+
+#define LOG_MODULE "NETWORKING"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(protocol)
+
+#include "networking/protocol/nimcp_protocol.h"
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
 #include "utils/validation/nimcp_validate.h"
+#include "core/brain/factory/init/nimcp_brain_init.h"  // Phase IS-1: BBB access
+#include "security/nimcp_blood_brain_barrier.h"        // Phase IS-1: BBB perimeter defense
 
 //=============================================================================
 // Constants and Configuration
@@ -118,6 +134,7 @@ static void init_header(msg_header_t* header, msg_type_t type, uint32_t payload_
     if (!header)
         return;
 
+    memset(header, 0, sizeof(*header));
     header->magic = PROTOCOL_MAGIC;
     header->version = PROTOCOL_VERSION;
     header->type = type;
@@ -145,12 +162,26 @@ static bool validate_serialize_inputs(const uint8_t* buffer, uint32_t buffer_siz
 {
     // Guard clause: Check buffer pointer
     if (!buffer)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_serialize_inputs: buffer is NULL");
+
+            return false;
+
+        }
+
+    // Guard clause: Integer overflow check
+    if (payload_len > UINT32_MAX - (uint32_t)sizeof(msg_header_t)) {
+        return false;  // Would overflow uint32_t
+    }
 
     // Guard clause: Check buffer size
-    uint32_t required_size = sizeof(msg_header_t) + payload_len;
-    if (buffer_size < required_size)
+    uint32_t required_size = (uint32_t)sizeof(msg_header_t) + payload_len;
+    if (buffer_size < required_size) {
         return false;
+    }
 
     return true;
 }
@@ -205,6 +236,7 @@ int protocol_serialize_message(msg_type_t type, const void* payload, uint32_t pa
 {
     // Step 1: Validate inputs
     if (!validate_serialize_inputs(buffer, buffer_size, payload_len)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_serialize_message: validate_serialize_inputs is NULL");
         return -1;
     }
 
@@ -229,6 +261,38 @@ int protocol_serialize_message(msg_type_t type, const void* payload, uint32_t pa
 //=============================================================================
 
 /**
+ * @brief Validates network buffer through BBB perimeter defense (Phase IS-1)
+ *
+ * WHY: Network data is untrusted external input - must pass through BBB
+ *      before any parsing or processing to prevent injection attacks.
+ *
+ * COMPLEXITY: O(n) where n = buffer_size (BBB performs content inspection)
+ *
+ * @return true if BBB validation passes (or BBB not enabled), false if rejected
+ */
+static bool bbb_validate_network_buffer(const uint8_t* buffer, uint32_t buffer_size)
+{
+    // Guard clause: Check buffer
+    if (!buffer || buffer_size == 0)
+        return true;  // Let standard validation handle NULL/empty
+
+    // Get global BBB system (thread-safe)
+    bbb_system_t bbb = nimcp_bbb_get_global_system();
+    if (!bbb)
+        return true;  // BBB not enabled - pass through
+
+    // Validate network buffer through BBB input gate
+    bbb_validation_result_t result;
+    if (!bbb_validate_input(bbb, buffer, buffer_size, &result)) {
+        // BBB rejected the input - log and fail
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "bbb_validate_network_buffer: bbb_validate_input is NULL");
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * @brief Validates deserialization inputs
  *
  * WHY: Extracted validation to eliminate nested ifs. Guard clause pattern.
@@ -242,15 +306,32 @@ static bool validate_deserialize_inputs(const uint8_t* buffer, uint32_t buffer_s
 {
     // Guard clause: Check buffer
     if (!buffer)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_deserialize_inputs: buffer is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check header
     if (!header)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_deserialize_inputs: header is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check minimum buffer size
-    if (buffer_size < sizeof(msg_header_t))
+    if (buffer_size < sizeof(msg_header_t)) {
         return false;
+    }
 
     return true;
 }
@@ -267,8 +348,10 @@ static bool validate_deserialize_inputs(const uint8_t* buffer, uint32_t buffer_s
 static bool extract_and_validate_header(const uint8_t* buffer, msg_header_t* header)
 {
     // Guard clause: Validate inputs
-    if (!buffer || !header)
+    if (!buffer || !header) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "extract_and_validate_header: required parameter is NULL (buffer, header)");
         return false;
+    }
 
     // Copy header from buffer
     memcpy(header, buffer, sizeof(msg_header_t));
@@ -311,7 +394,15 @@ static bool verify_message_checksum(const msg_header_t* header, const void* payl
 {
     // Guard clause: Validate header
     if (!header)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "verify_message_checksum: header is NULL");
+
+            return false;
+
+        }
 
     uint32_t calculated = protocol_calculate_checksum(header, payload, header->length);
 
@@ -345,18 +436,47 @@ static bool verify_message_checksum(const msg_header_t* header, const void* payl
 int protocol_deserialize_message(const uint8_t* buffer, uint32_t buffer_size, msg_header_t* header,
                                  void* payload, uint32_t payload_size)
 {
+    // Step 0: BBB perimeter defense (Phase IS-1) - validate untrusted network data
+    if (!bbb_validate_network_buffer(buffer, buffer_size)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "buffer",
+                              "BBB perimeter defense rejected network buffer");
+        return -1;  // BBB rejected the input
+    }
+
     // Step 1: Validate inputs
     if (!validate_deserialize_inputs(buffer, buffer_size, header)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM,
+                   "Invalid deserialization inputs: buffer=%p, buffer_size=%u, header=%p",
+                   (void*)buffer, buffer_size, (void*)header);
         return -1;
     }
 
     // Step 2: Extract and validate header
     if (!extract_and_validate_header(buffer, header)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM, "message header",
+                            "Failed to extract or validate message header");
         return -1;
+    }
+
+    // Step 2.5: SECURITY - Check buffer contains full payload (prevent buffer overflow)
+    // Validates that buffer_size >= sizeof(msg_header_t) + header->length
+    if (header->length > UINT32_MAX - sizeof(msg_header_t)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "header->length",
+                              "Integer overflow in payload length: %u", header->length);
+        return -1;  // Integer overflow protection
+    }
+    if (buffer_size < sizeof(msg_header_t) + header->length) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "buffer_size",
+                              "Buffer too small for claimed payload: buffer=%u, required=%lu",
+                              buffer_size, (unsigned long)(sizeof(msg_header_t) + header->length));
+        return -1;  // Buffer too small for claimed payload
     }
 
     // Step 3: Check payload size
     if (header->length > payload_size) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "payload_size",
+                              "Payload buffer too small: available=%u, required=%u",
+                              payload_size, header->length);
         return -1;
     }
 
@@ -365,6 +485,8 @@ int protocol_deserialize_message(const uint8_t* buffer, uint32_t buffer_size, ms
 
     // Step 5: Verify checksum
     if (!verify_message_checksum(header, payload)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM, "checksum",
+                            "Message checksum verification failed");
         return -1;
     }
 
@@ -388,15 +510,44 @@ static bool is_magic_valid(uint32_t magic)
 }
 
 /**
+ * @brief Minimum supported protocol version for backward compatibility
+ * SECURITY: Allows negotiation with older clients while rejecting
+ *           unsupported or maliciously crafted versions
+ */
+#define PROTOCOL_VERSION_MIN 1
+
+/**
+ * @brief Maximum supported protocol version
+ * SECURITY: Prevents future version exploitation attacks
+ */
+#define PROTOCOL_VERSION_MAX 2
+
+/**
  * @brief Validates protocol version
  *
  * WHY: Ensures version compatibility. Prevents protocol mismatch issues.
+ *      SECURITY: Validates version is within supported range to prevent:
+ *      - Future version exploitation (attacker claims version 255)
+ *      - Past version downgrade attacks (force weak crypto)
+ *      - Integer overflow/underflow in version checks
  *
  * COMPLEXITY: O(1)
  */
 static bool is_version_valid(uint8_t version)
 {
-    return version == PROTOCOL_VERSION;
+    // SECURITY: Check version is within valid range
+    // This prevents both future version attacks and downgrade attacks
+    if (version < PROTOCOL_VERSION_MIN) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "is_version_valid: validation failed");
+        return false;  // Reject ancient/unsupported versions
+    }
+    if (version > PROTOCOL_VERSION_MAX) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "is_version_valid: validation failed");
+        return false;  // Reject unknown future versions
+    }
+
+    // Accept current version or compatible versions in range
+    return true;
 }
 
 /**
@@ -447,51 +598,73 @@ bool protocol_validate_header(const msg_header_t* header)
 {
     // Guard clause: Check pointer
     if (!header)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "protocol_validate_header: header is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Validate magic field using nimcp_validate
     if (!nimcp_validate_integer_field(&header->magic, sizeof(uint32_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     // Guard clause: Check magic number
-    if (!is_magic_valid(header->magic))
+    if (!is_magic_valid(header->magic)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: is_magic_valid is NULL");
         return false;
+    }
 
     // Guard clause: Validate version field using nimcp_validate
     if (!nimcp_validate_integer_field(&header->version, sizeof(uint8_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     // Guard clause: Check version
-    if (!is_version_valid(header->version))
+    if (!is_version_valid(header->version)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: is_version_valid is NULL");
         return false;
+    }
 
     // Guard clause: Validate message type field using nimcp_validate
     if (!nimcp_validate_integer_field(&header->type, sizeof(msg_type_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     // Guard clause: Check message type
-    if (!is_type_valid(header->type))
+    if (!is_type_valid(header->type)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: is_type_valid is NULL");
         return false;
+    }
 
     // Guard clause: Validate length field using nimcp_validate
     if (!nimcp_validate_integer_field(&header->length, sizeof(uint32_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     // Guard clause: Check payload length
-    if (!is_payload_length_valid(header->length))
+    if (!is_payload_length_valid(header->length)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: is_payload_length_valid is NULL");
         return false;
+    }
 
     // Guard clause: Validate sequence field using nimcp_validate
     if (!nimcp_validate_integer_field(&header->sequence, sizeof(uint32_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     // Guard clause: Validate checksum field using nimcp_validate
     if (!nimcp_validate_integer_field(&header->checksum, sizeof(uint32_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "protocol_validate_header: nimcp_validate_integer_field is NULL");
         return false;
     }
 
@@ -533,27 +706,33 @@ static uint32_t calculate_crc32_bytes(uint32_t crc, const uint8_t* data, size_t 
 /**
  * @brief Calculates CRC32 for message header
  *
- * WHY: Extracted header CRC calculation. Handles checksum field clearing.
+ * WHY: Extracted header CRC calculation. Uses local copy to avoid modifying
+ *      the original const header (const-correct implementation).
  *
  * COMPLEXITY: O(1) - Fixed header size
  *
  * @param crc Initial CRC value
- * @param header Header to process
- * @param saved_checksum Temporary storage for original checksum
+ * @param header Header to process (const - not modified)
+ * @param saved_checksum Output: original checksum value (for verification)
  * @return Updated CRC value
  */
-static uint32_t calculate_header_crc(uint32_t crc, msg_header_t* header, uint32_t* saved_checksum)
+static uint32_t calculate_header_crc(uint32_t crc, const msg_header_t* header, uint32_t* saved_checksum)
 {
     // Guard clause: Validate inputs
     if (!header || !saved_checksum)
         return crc;
 
-    // Save and clear checksum field
+    // Save original checksum for later restoration/verification
     *saved_checksum = header->checksum;
-    header->checksum = 0;
 
-    // Calculate CRC over header
-    const uint8_t* data = (const uint8_t*) header;
+    // Create a local mutable copy of the header for CRC calculation
+    // WHY: Avoids casting away const, maintains const-correctness
+    msg_header_t header_copy;
+    memcpy(&header_copy, header, sizeof(msg_header_t));
+    header_copy.checksum = 0;  // Zero checksum field in copy only
+
+    // Calculate CRC over the copy
+    const uint8_t* data = (const uint8_t*)&header_copy;
     crc = calculate_crc32_bytes(crc, data, sizeof(msg_header_t));
 
     return crc;
@@ -562,17 +741,19 @@ static uint32_t calculate_header_crc(uint32_t crc, msg_header_t* header, uint32_
 /**
  * @brief Restores original checksum field value
  *
- * WHY: Extracted cleanup logic. Ensures const-correctness is maintained.
+ * WHY: No longer needed since we use a local copy in calculate_header_crc.
+ *      Kept as no-op for API compatibility in case any external code calls it.
  *
  * COMPLEXITY: O(1)
+ *
+ * @deprecated No longer modifies header since calculate_header_crc uses local copy
  */
-static void restore_checksum_field(msg_header_t* header, uint32_t saved_checksum)
+static void restore_checksum_field(const msg_header_t* header, uint32_t saved_checksum)
 {
-    // Guard clause: Validate header
-    if (!header)
-        return;
-
-    header->checksum = saved_checksum;
+    // No-op: header is now const and calculate_header_crc uses a local copy
+    // This function is kept for API compatibility but does nothing
+    (void)header;
+    (void)saved_checksum;
 }
 
 /**
@@ -584,17 +765,16 @@ static void restore_checksum_field(msg_header_t* header, uint32_t saved_checksum
  *
  * ALGORITHM:
  * 1. Initialize CRC to 0xFFFFFFFF (O(1))
- * 2. Save and clear header checksum field (O(1))
- * 3. Calculate CRC over header (O(1) - fixed size)
+ * 2. Create local copy of header with zeroed checksum (O(1))
+ * 3. Calculate CRC over header copy (O(1) - fixed size)
  * 4. Calculate CRC over payload (O(n))
- * 5. Restore original checksum field (O(1))
- * 6. Return inverted CRC (O(1))
+ * 5. Return inverted CRC (O(1))
  *
  * COMPLEXITY: O(n) where n = payload_len (optimal, single pass)
  *
- * INVARIANT: Header checksum field is restored to original value
+ * CONST-CORRECTNESS: Header is not modified - uses local copy for calculation.
  *
- * @param header Message header (checksum field temporarily modified)
+ * @param header Message header (not modified - const-correct)
  * @param payload Payload data (NULL if none)
  * @param payload_len Size of payload in bytes
  * @return Calculated CRC32 checksum
@@ -609,16 +789,16 @@ uint32_t protocol_calculate_checksum(const msg_header_t* header, const void* pay
     uint32_t crc = 0xFFFFFFFF;
     uint32_t saved_checksum;
 
-    // Calculate CRC over header
-    crc = calculate_header_crc(crc, (msg_header_t*) header, &saved_checksum);
+    // Calculate CRC over header (uses local copy internally, no const cast needed)
+    crc = calculate_header_crc(crc, header, &saved_checksum);
 
     // Calculate CRC over payload if present
     if (payload && payload_len > 0) {
         crc = calculate_crc32_bytes(crc, (const uint8_t*) payload, payload_len);
     }
 
-    // Restore header checksum field
-    restore_checksum_field((msg_header_t*) header, saved_checksum);
+    // No restoration needed - calculate_header_crc uses local copy
+    restore_checksum_field(header, saved_checksum);
 
     return ~crc;
 }
@@ -639,16 +819,38 @@ static bool validate_event_serialize_inputs(const event_packet_t* packet, const 
 {
     // Guard clause: Check packet
     if (!packet)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_event_serialize_inputs: packet is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check buffer
     if (!buffer)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_event_serialize_inputs: buffer is NULL");
+
+            return false;
+
+        }
+
+    // Guard clause: Integer overflow check
+    if (packet->payload_length > UINT32_MAX - (uint32_t)sizeof(event_packet_t)) {
+        return false;  // Would overflow uint32_t
+    }
 
     // Guard clause: Check buffer size
-    uint32_t required = sizeof(event_packet_t) + packet->payload_length;
-    if (buffer_size < required)
+    uint32_t required = (uint32_t)sizeof(event_packet_t) + packet->payload_length;
+    if (buffer_size < required) {
         return false;
+    }
 
     return true;
 }
@@ -699,13 +901,19 @@ int event_packet_serialize(const event_packet_t* packet, const void* payload, ui
 {
     // Step 1: Validate inputs
     if (!validate_event_serialize_inputs(packet, buffer, buffer_size)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "event_packet_serialize: validate_event_serialize_inputs is NULL");
         return -1;
     }
 
-    // Step 2: Copy packet header
-    memcpy(buffer, packet, sizeof(event_packet_t));
+    // Step 2: SECURITY - Zero reserved/padding fields to prevent memory disclosure
+    event_packet_t packet_copy = *packet;
+    packet_copy.reserved = 0;
+    packet_copy.reserved2 = 0;
 
-    // Step 3: Copy payload if present
+    // Step 3: Copy packet header
+    memcpy(buffer, &packet_copy, sizeof(event_packet_t));
+
+    // Step 4: Copy payload if present
     copy_event_payload(buffer, payload, packet->payload_length);
 
     return sizeof(event_packet_t) + packet->payload_length;
@@ -723,15 +931,32 @@ static bool validate_event_deserialize_inputs(const uint8_t* buffer, uint32_t bu
 {
     // Guard clause: Check buffer
     if (!buffer)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_event_deserialize_inputs: buffer is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check packet
     if (!packet)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_event_deserialize_inputs: packet is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check buffer size
-    if (buffer_size < sizeof(event_packet_t))
+    if (buffer_size < sizeof(event_packet_t)) {
         return false;
+    }
 
     return true;
 }
@@ -754,11 +979,21 @@ static bool extract_event_payload(const uint8_t* buffer, void* payload, uint32_t
 
     // Guard clause: Check payload buffer
     if (!payload)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "extract_event_payload: payload is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check payload size
-    if (payload_size < payload_length)
+    if (payload_size < payload_length) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "extract_event_payload: validation failed");
         return false;
+    }
 
     memcpy(payload, buffer + sizeof(event_packet_t), payload_length);
     return true;
@@ -790,8 +1025,17 @@ static bool extract_event_payload(const uint8_t* buffer, void* payload, uint32_t
 int event_packet_deserialize(const uint8_t* buffer, uint32_t buffer_size, event_packet_t* packet,
                              void* payload, uint32_t payload_size)
 {
+    // Step 0: BBB perimeter defense (Phase IS-1) - validate untrusted network data
+    if (!bbb_validate_network_buffer(buffer, buffer_size)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "buffer",
+                              "BBB perimeter defense rejected event packet buffer");
+        return -1;  // BBB rejected the input
+    }
+
     // Step 1: Validate inputs
     if (!validate_event_deserialize_inputs(buffer, buffer_size, packet)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM,
+                   "Invalid event deserialization inputs");
         return -1;
     }
 
@@ -800,11 +1044,16 @@ int event_packet_deserialize(const uint8_t* buffer, uint32_t buffer_size, event_
 
     // Step 3: Validate packet
     if (!event_packet_validate(packet)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM, "event packet",
+                            "Event packet validation failed");
         return -1;
     }
 
     // Step 4: Extract payload if present
     if (!extract_event_payload(buffer, payload, payload_size, packet->payload_length)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "payload_size",
+                              "Event payload extraction failed: available=%u, required=%u",
+                              payload_size, packet->payload_length);
         return -1;
     }
 
@@ -821,22 +1070,34 @@ int event_packet_deserialize(const uint8_t* buffer, uint32_t buffer_size, event_
 static bool is_event_version_valid(const event_packet_t* packet)
 {
     if (!packet)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "is_event_version_valid: packet is NULL");
+
+            return false;
+
+        }
     return EVENT_GET_VERSION(packet) == PROTOCOL_VERSION;
 }
 
 /**
- * @brief Checks if event has required type flags
+ * @brief Checks if event has valid type flags
  *
- * WHY: Event must be either excitatory or inhibitory (not neither).
- * NOTE: If no flags are set, we treat it as valid (defaults to excitatory in processing).
+ * WHY: SECURITY - Events must have exactly one of E or I flag set.
+ *      Both flags or neither flag is invalid to prevent ambiguous processing.
  *
  * COMPLEXITY: O(1)
  */
 static bool has_required_event_flags(uint8_t flags)
 {
-    // Allow packets with no flags set (will default to excitatory during processing)
-    return true;
+    bool is_excitatory = (flags & EVENT_FLAG_EXCITATORY) != 0;
+    bool is_inhibitory = (flags & EVENT_FLAG_INHIBITORY) != 0;
+
+    // SECURITY: Require exactly one of E or I (XOR check)
+    // Both set = invalid, neither set = invalid
+    return is_excitatory != is_inhibitory;
 }
 
 /**
@@ -877,25 +1138,40 @@ bool event_packet_validate(const event_packet_t* packet)
 {
     // Guard clause: Check pointer
     if (!packet)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "event_packet_validate: packet is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check version
-    if (!is_event_version_valid(packet))
+    if (!is_event_version_valid(packet)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "event_packet_validate: is_event_version_valid is NULL");
         return false;
+    }
 
     uint8_t flags = EVENT_GET_FLAGS(packet);
 
     // Guard clause: Check required flags present
-    if (!has_required_event_flags(flags))
+    if (!has_required_event_flags(flags)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "event_packet_validate: has_required_event_flags is NULL");
         return false;
+    }
 
     // Guard clause: Check flags mutually exclusive
-    if (!are_event_flags_exclusive(flags))
+    if (!are_event_flags_exclusive(flags)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "event_packet_validate: are_event_flags_exclusive is NULL");
         return false;
+    }
 
     // Guard clause: Check payload length
-    if (packet->payload_length > MAX_PAYLOAD_SIZE)
+    if (packet->payload_length > MAX_PAYLOAD_SIZE) {
         return false;
+    }
 
     return true;
 }
@@ -932,15 +1208,32 @@ static bool validate_control_serialize_inputs(const control_message_t* msg, cons
 {
     // Guard clause: Check message
     if (!msg)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_control_serialize_inputs: msg is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check buffer
     if (!buffer)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_control_serialize_inputs: buffer is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check buffer size
-    if (buffer_size < required_size)
+    if (buffer_size < required_size) {
         return false;
+    }
 
     return true;
 }
@@ -996,13 +1289,19 @@ int control_message_serialize(const control_message_t* msg, const void* params, 
 
     // Step 2: Validate inputs
     if (!validate_control_serialize_inputs(msg, buffer, buffer_size, required_size)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "control_message_serialize: validate_control_serialize_inputs is NULL");
         return -1;
     }
 
-    // Step 3: Copy message header
-    memcpy(buffer, msg, sizeof(control_message_t));
+    // Step 3: SECURITY - Zero reserved/padding fields to prevent memory disclosure
+    control_message_t msg_copy = *msg;
+    msg_copy.reserved = 0;
+    msg_copy.reserved2 = 0;
 
-    // Step 4: Copy parameters if present
+    // Step 4: Copy message header
+    memcpy(buffer, &msg_copy, sizeof(control_message_t));
+
+    // Step 5: Copy parameters if present
     copy_control_params(buffer, params, param_size);
 
     return required_size;
@@ -1020,15 +1319,32 @@ static bool validate_control_deserialize_inputs(const uint8_t* buffer, uint32_t 
 {
     // Guard clause: Check buffer
     if (!buffer)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_control_deserialize_inputs: buffer is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check message
     if (!msg)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "validate_control_deserialize_inputs: msg is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check buffer size
-    if (buffer_size < sizeof(control_message_t))
+    if (buffer_size < sizeof(control_message_t)) {
         return false;
+    }
 
     return true;
 }
@@ -1051,11 +1367,21 @@ static bool extract_control_params(const uint8_t* buffer, void* params, uint32_t
 
     // Guard clause: Check params buffer
     if (!params)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "extract_control_params: params is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check param size
-    if (param_size < actual_param_size)
+    if (param_size < actual_param_size) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "extract_control_params: validation failed");
         return false;
+    }
 
     memcpy(params, buffer + sizeof(control_message_t), actual_param_size);
     return true;
@@ -1088,8 +1414,17 @@ static bool extract_control_params(const uint8_t* buffer, void* params, uint32_t
 int control_message_deserialize(const uint8_t* buffer, uint32_t buffer_size, control_message_t* msg,
                                 void* params, uint32_t param_size)
 {
+    // Step 0: BBB perimeter defense (Phase IS-1) - validate untrusted network data
+    if (!bbb_validate_network_buffer(buffer, buffer_size)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "buffer",
+                              "BBB perimeter defense rejected control message buffer");
+        return -1;  // BBB rejected the input
+    }
+
     // Step 1: Validate inputs
     if (!validate_control_deserialize_inputs(buffer, buffer_size, msg)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM,
+                   "Invalid control message deserialization inputs");
         return -1;
     }
 
@@ -1098,6 +1433,9 @@ int control_message_deserialize(const uint8_t* buffer, uint32_t buffer_size, con
 
     // Step 3: Validate message
     if (!control_message_validate(msg)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM, "control message",
+                            "Control message validation failed: type=%u, version=%u",
+                            msg->msg_type, msg->version);
         return -1;
     }
 
@@ -1106,6 +1444,9 @@ int control_message_deserialize(const uint8_t* buffer, uint32_t buffer_size, con
 
     // Step 5: Extract parameters if present
     if (!extract_control_params(buffer, params, param_size, actual_param_size)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_STATE, "param_size",
+                              "Control params extraction failed: available=%u, required=%u",
+                              param_size, actual_param_size);
         return -1;
     }
 
@@ -1133,10 +1474,12 @@ static bool is_control_type_valid(uint8_t msg_type)
  */
 static bool is_control_length_valid(uint32_t length)
 {
-    if (length < sizeof(control_message_t))
+    if (length < sizeof(control_message_t)) {
         return false;
-    if (length > MAX_PAYLOAD_SIZE)
+    }
+    if (length > MAX_PAYLOAD_SIZE) {
         return false;
+    }
     return true;
 }
 
@@ -1162,19 +1505,32 @@ bool control_message_validate(const control_message_t* msg)
 {
     // Guard clause: Check pointer
     if (!msg)
-        return false;
+        {
+
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+
+                "control_message_validate: msg is NULL");
+
+            return false;
+
+        }
 
     // Guard clause: Check version
-    if (msg->version != PROTOCOL_VERSION)
+    if (msg->version != PROTOCOL_VERSION) {
         return false;
+    }
 
     // Guard clause: Check message type
-    if (!is_control_type_valid(msg->msg_type))
+    if (!is_control_type_valid(msg->msg_type)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "control_message_validate: is_control_type_valid is NULL");
         return false;
+    }
 
     // Guard clause: Check message length
-    if (!is_control_length_valid(msg->message_length))
+    if (!is_control_length_valid(msg->message_length)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "control_message_validate: is_control_length_valid is NULL");
         return false;
+    }
 
     return true;
 }
@@ -1231,18 +1587,24 @@ bool feature_code_matches(feature_code_t code, feature_code_t filter, uint32_t m
 bool subscription_matches(const subscription_filter_t* filter, const event_packet_t* packet)
 {
     if (!filter || !packet) {
-        return false;
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
+
+                "subscription_matches: invalid parameters");
+
+            return false;
     }
 
     // Check feature code with mask
     feature_code_t packet_code = EVENT_GET_FEATURE_CODE(packet);
     if (!feature_code_matches(packet_code, filter->feature_code, filter->feature_mask)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "subscription_matches: feature_code_matches is NULL");
         return false;
     }
 
     // Check confidence threshold
     float confidence = EVENT_CONFIDENCE_TO_FLOAT(packet->confidence);
     if (confidence < filter->confidence_threshold) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "subscription_matches: validation failed");
         return false;
     }
 

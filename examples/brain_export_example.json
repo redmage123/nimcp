@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "nimcp_version": "2.7.0",
+    "export_time": "2025-11-17T14:22:10Z",
+    "creation_time": "2025-11-17T12:00:00Z"
+  },
+  "config": {
+    "num_inputs": 10,
+    "num_outputs": 5,
+    "learning_rate": 0.01,
+    "sparsity_target": 0.8,
+    "task": 0,
+    "size": 1,
+    "task_name": "classification_example",
+    "enable_working_memory": true,
+    "enable_curiosity": true,
+    "enable_explanations": true,
+    "enable_consolidation": false
+  },
+  "topology": {
+    "num_neurons": 500,
+    "num_synapses": 2500,
+    "avg_synapses_per_neuron": 5.0,
+    "network_type": "scale-free"
+  },
+  "labels": [
+    "class_a",
+    "class_b",
+    "class_c"
+  ],
+  "stats": {
+    "num_neurons": 500,
+    "num_synapses": 2500,
+    "accuracy": 0.85,
+    "total_training_examples": 1000,
+    "total_spikes": 50000
+  }
+}

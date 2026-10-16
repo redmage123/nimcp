@@ -1,5 +1,5 @@
 #==============================================================================
-# NIMCP 2.5 CI/CD Pipeline
+# NIMCP 2.6.3 CI/CD Pipeline
 #==============================================================================
 # Continuous Integration and Deployment
 # Triggers: Push to main/master, Pull Requests
@@ -69,7 +69,7 @@ jobs:
     - name: Run Tests
       run: |
         cd build
-        ./src/tests/nimcp_tests --gtest_output=xml:test-results.xml
+        ctest --output-on-failure --timeout 300 -j2 --output-junit test-results.xml
 
     - name: Upload Test Results
       if: always()
@@ -187,7 +187,7 @@ jobs:
     - name: Run tests
       run: |
         cd build
-        ./src/tests/nimcp_tests || true
+        ctest --output-on-failure --timeout 300 -j2 || true
 
     - name: Generate coverage report
       run: |
@@ -254,30 +254,27 @@ jobs:
     - name: Run memory leak tests
       run: |
         cd build
-        ./src/tests/nimcp_tests --gtest_filter=MemoryLeakTest.*
+        ctest -R "MemoryLeak" --output-on-failure --timeout 300
 
     - name: Run critical tests under valgrind
       run: |
         cd build
-        valgrind --leak-check=full \
-                 --show-leak-kinds=definite \
-                 --error-exitcode=99 \
-                 --suppressions=../valgrind.supp \
-                 ./src/tests/nimcp_tests \
-                 --gtest_filter=NeuralNetCreate.BasicCreation:QueueUtils.CreateDestroy \
-                 || echo "::warning::Valgrind detected potential issues"
+        ctest -R "unit_core" --timeout 300 \
+          --overwrite MemoryCheckCommand=valgrind \
+          --overwrite "MemoryCheckCommandOptions=--leak-check=full --show-leak-kinds=definite --error-exitcode=99 --suppressions=../valgrind.supp" \
+          -T memcheck -j1 \
+          || echo "::warning::Valgrind detected potential issues"
 
     - name: Generate valgrind report
       if: always()
       run: |
         cd build
-        valgrind --leak-check=full \
-                 --show-leak-kinds=all \
-                 --track-origins=yes \
-                 --log-file=../valgrind-report.txt \
-                 ./src/tests/nimcp_tests \
-                 --gtest_filter=NeuralNetCreate.*:QueueUtils.* \
-                 || true
+        ctest -R "unit_core" --timeout 300 \
+          --overwrite MemoryCheckCommand=valgrind \
+          --overwrite "MemoryCheckCommandOptions=--leak-check=full --show-leak-kinds=all --track-origins=yes" \
+          -T memcheck -j1 \
+          || true
+        cp Testing/Temporary/MemoryChecker.*.log ../valgrind-report.txt 2>/dev/null || true
 
     - name: Upload valgrind report
       if: always()
@@ -331,9 +328,9 @@ jobs:
       run: |
         cd build-tsan
         export TSAN_OPTIONS="halt_on_error=1 history_size=7 second_deadlock_stack=1"
-        ./src/tests/nimcp_tests \
-          --gtest_filter="ThreadSafety*:Thread*:Concurrent*:*Stress*" \
-          --gtest_output=xml:tsan-results.xml
+        ctest -R "thread_safety|ThreadSafety|Concurrent|Stress" \
+          --output-on-failure --timeout 300 -j1 \
+          --output-junit tsan-results.xml
 
     - name: Upload TSAN results
       if: always()
@@ -388,8 +385,8 @@ jobs:
         cd build-asan
         export ASAN_OPTIONS="detect_leaks=1:check_initialization_order=1:strict_init_order=1:halt_on_error=0"
         export UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=0"
-        ./src/tests/nimcp_tests \
-          --gtest_output=xml:asan-results.xml || true
+        ctest --output-on-failure --timeout 300 -j1 \
+          --output-junit asan-results.xml || true
 
     - name: Check for sanitizer errors
       run: |
@@ -565,9 +562,8 @@ jobs:
     - name: Run stress tests
       run: |
         cd build
-        ./src/tests/nimcp_tests \
-          --gtest_filter="Stress*" \
-          --gtest_output=xml:stress-results.xml || echo "::warning::Some stress tests failed"
+        ctest -R "Stress|stress" --output-on-failure --timeout 600 -j1 \
+          --output-junit stress-results.xml || echo "::warning::Some stress tests failed"
 
     - name: Upload stress test results
       if: always()

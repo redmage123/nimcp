@@ -1,0 +1,160 @@
+/**
+ * @file shared_intentionality.proto
+ * @brief Protobuf schemas for joint goals, attention, and we-mode
+ *
+ * WHAT: Messages for shared intentionality (Tomasello's framework)
+ * WHY: Enable collective goal pursuit and joint attention
+ * HOW: Propose goals, track commitments, coordinate roles
+ *
+ * BIOLOGICAL BASIS:
+ * - Joint attention emerges ~9 months in human development
+ * - Shared goals require prefrontal/parietal coordination
+ * - We-mode activates mirror neuron + mentalizing networks
+ */
+
+syntax = "proto3";
+package nimcp.collective;
+
+option optimize_for = LITE_RUNTIME;
+
+/**
+ * A shared goal proposed to or accepted by the collective
+ */
+message SharedGoal {
+    uint32 goal_id = 1;
+    string description = 2;
+    float priority = 3;              // [0-1]
+    uint32 proposer_brain_id = 4;
+    GoalState state = 5;
+    float progress = 6;              // [0-1] completion
+    uint64 created_at_us = 7;
+    uint64 deadline_us = 8;          // 0 = no deadline
+
+    repeated Commitment commitments = 9;
+    repeated RoleAssignment roles = 10;
+
+    enum GoalState {
+        PROPOSED = 0;
+        NEGOTIATING = 1;
+        ACCEPTED = 2;
+        ACTIVE = 3;
+        COMPLETED = 4;
+        ABANDONED = 5;
+        FAILED = 6;
+    }
+}
+
+/**
+ * A brain's commitment to a shared goal
+ */
+message Commitment {
+    uint32 brain_id = 1;
+    float strength = 2;              // [0-1] commitment level
+    uint64 committed_at_us = 3;
+}
+
+/**
+ * Role assignment within a shared goal
+ */
+message RoleAssignment {
+    uint32 brain_id = 1;
+    uint32 role_id = 2;
+    string role_name = 3;
+    float capability_match = 4;      // How well suited [0-1]
+}
+
+/**
+ * Update to a brain's commitment level
+ */
+message CommitmentUpdate {
+    uint32 goal_id = 1;
+    uint32 brain_id = 2;
+    float new_commitment = 3;
+    CommitmentReason reason = 4;
+
+    enum CommitmentReason {
+        INITIAL = 0;
+        INCREASED = 1;
+        DECREASED = 2;
+        WITHDRAWN = 3;
+        COMPLETED = 4;
+    }
+}
+
+/**
+ * Joint attention target - what the collective is focusing on
+ */
+message JointAttention {
+    uint32 attention_id = 1;
+    repeated float feature_vector = 2;   // 16-dim attention target
+    float salience = 3;                  // [0-1]
+    uint32 proposer_brain_id = 4;
+    repeated uint32 attending_brains = 5;
+    float agreement_level = 6;           // [0-1] how aligned
+    uint64 started_at_us = 7;
+    AttentionType type = 8;
+
+    enum AttentionType {
+        OBJECT = 0;          // Physical/virtual object
+        LOCATION = 1;        // Spatial location
+        CONCEPT = 2;         // Abstract concept
+        AGENT = 3;           // Another agent/brain
+        EVENT = 4;           // Temporal event
+    }
+}
+
+/**
+ * We-mode state - collective identity and responsiveness
+ * Based on Tomasello's shared intentionality theory
+ */
+message WeModeState {
+    float we_mode_strength = 1;          // [0-1] "we" identification
+    float joint_commitment = 2;          // [0-1] collective commitment
+    float mutual_responsiveness = 3;     // [0-1] responsiveness to each other
+    float role_understanding = 4;        // [0-1] role clarity
+    uint32 active_shared_goals = 5;
+    uint32 active_joint_attentions = 6;
+    repeated uint32 participating_brains = 7;
+    uint64 timestamp_us = 8;
+}
+
+/**
+ * Collective intention - what the group intends to do
+ */
+message CollectiveIntention {
+    uint32 intention_id = 1;
+    IntentionType type = 2;
+    float strength = 3;                  // [0-1]
+    float coherence = 4;                 // [0-1] agreement on implementation
+    uint32 focus_attention_id = 5;       // Related joint attention
+
+    enum IntentionType {
+        EXPLORE = 0;
+        DEFEND = 1;
+        COMMUNICATE = 2;
+        LEARN = 3;
+        CREATE = 4;
+        COORDINATE = 5;
+    }
+}
+
+/**
+ * Role negotiation request
+ */
+message RoleNegotiationRequest {
+    uint32 goal_id = 1;
+    uint32 requester_brain_id = 2;
+    uint32 requested_role_id = 3;
+    float self_capability_estimate = 4;  // [0-1]
+}
+
+/**
+ * Role negotiation response
+ */
+message RoleNegotiationResponse {
+    uint32 goal_id = 1;
+    uint32 responder_brain_id = 2;
+    uint32 role_id = 3;
+    bool approved = 4;
+    uint32 alternative_role_id = 5;      // Suggested alternative if not approved
+}

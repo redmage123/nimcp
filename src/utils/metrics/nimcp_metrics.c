@@ -5,17 +5,49 @@
  * @date 2025-11-04
  */
 
-#include "nimcp_metrics.h"
-#include "../memory/nimcp_memory.h"
-#include "../logging/nimcp_logging.h"
-#include "../time/nimcp_time.h"
-#include "../validation/nimcp_validate.h"
+#include "utils/metrics/nimcp_metrics.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_messages.h"
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_wiring_helpers.h"
+#include "utils/memory/nimcp_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/time/nimcp_time.h"
+#include "utils/validation/nimcp_validate.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "utils/memory/nimcp_unified_memory.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+#include "constants/nimcp_buffer_constants.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(metrics)
+
+//=============================================================================
+// KG-Driven Wiring Infrastructure
+//=============================================================================
+
+/* Forward declaration for handler */
+static nimcp_error_t metrics_handle_brain_probe(
+    const void* msg, size_t msg_size,
+    nimcp_bio_promise_t response_promise, void* user_data);
+
+/**
+ * Handler map for metrics module.
+ * Handles brain probe data messages for metrics collection.
+ */
+DEFINE_HANDLER_MAP_BEGIN(metrics)
+    HANDLER_MAP_ENTRY(BIO_MSG_BRAIN_PROBE_DATA, metrics_handle_brain_probe)
+DEFINE_HANDLER_MAP_END()
+
+// Note: DEFINE_HANDLER_CALLBACK moved to after struct definition below
 
 //=============================================================================
 // Internal Structures
@@ -46,6 +78,11 @@ typedef struct nimcp_metrics_collector_internal {
     // Thread safety (future)
     bool is_initialized;
 } nimcp_metrics_collector_internal_t;
+
+/**
+ * Wiring callback for KG-driven handler registration.
+ */
+DEFINE_HANDLER_CALLBACK(metrics, nimcp_metrics_collector_internal_t, collector)
 
 //=============================================================================
 // Utility Functions
@@ -132,6 +169,8 @@ nimcp_metrics_collector_t nimcp_metrics_create_with_config(
 ) {
     if (!config) {
         NIMCP_LOGGING_ERROR("nimcp_metrics_create_with_config: NULL config");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "config is NULL");
+
         return NULL;
     }
 
@@ -140,6 +179,9 @@ nimcp_metrics_collector_t nimcp_metrics_create_with_config(
 
     if (!collector) {
         NIMCP_LOGGING_ERROR("Failed to allocate metrics collector");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "collector is NULL");
+
+
         return NULL;
     }
 
@@ -169,7 +211,7 @@ nimcp_metrics_collector_t nimcp_metrics_create_with_config(
         snprintf(timestamp, sizeof(timestamp), "%lu", ts);
 
         snprintf(collector->current_filename, NIMCP_METRICS_MAX_PATH,
-                 "%s/metrics_%s.csv",
+                 "%.450s/metrics_%s.csv",
                  collector->config.output_directory, timestamp);
 
         collector->stream_file = fopen(collector->current_filename, "w");
@@ -227,7 +269,10 @@ bool nimcp_metrics_set_directory(
     nimcp_metrics_collector_t collector,
     const char* directory
 ) {
-    if (!collector || !directory) return false;
+    if (!collector || !directory) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_set_directory: required parameter is NULL (collector, directory)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -245,7 +290,10 @@ bool nimcp_metrics_set_format(
     nimcp_metrics_collector_t collector,
     nimcp_metrics_format_t format
 ) {
-    if (!collector) return false;
+    if (!collector) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_set_format: collector is NULL");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -267,7 +315,10 @@ static bool add_to_buffer(
     metric_buffer_entry_t* entry =
         nimcp_calloc(1, sizeof(metric_buffer_entry_t));
 
-    if (!entry) return false;
+    if (!entry) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "add_to_buffer: entry is NULL");
+        return false;
+    }
 
     memcpy(&entry->point, point, sizeof(nimcp_metric_point_t));
     entry->next = NULL;
@@ -309,7 +360,10 @@ bool nimcp_metrics_record_counter(
     uint64_t value,
     nimcp_metric_category_t category
 ) {
-    if (!collector || !name) return false;
+    if (!collector || !name) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_record_counter: required parameter is NULL (collector, name)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -331,7 +385,10 @@ bool nimcp_metrics_record_gauge(
     double value,
     nimcp_metric_category_t category
 ) {
-    if (!collector || !name) return false;
+    if (!collector || !name) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_record_gauge: required parameter is NULL (collector, name)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -353,7 +410,10 @@ bool nimcp_metrics_record_timer(
     double duration_ms,
     nimcp_metric_category_t category
 ) {
-    if (!collector || !name) return false;
+    if (!collector || !name) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_record_timer: required parameter is NULL (collector, name)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -375,7 +435,10 @@ bool nimcp_metrics_record_event(
     const char* labels,
     nimcp_metric_category_t category
 ) {
-    if (!collector || !name) return false;
+    if (!collector || !name) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_record_event: required parameter is NULL (collector, name)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -400,7 +463,10 @@ bool nimcp_metrics_record_point(
     nimcp_metrics_collector_t collector,
     const nimcp_metric_point_t* point
 ) {
-    if (!collector || !point) return false;
+    if (!collector || !point) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_record_point: required parameter is NULL (collector, point)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -416,7 +482,10 @@ bool nimcp_metrics_record_hierarchical(
     nimcp_metrics_collector_t collector,
     const nimcp_hierarchical_metrics_t* metrics
 ) {
-    if (!collector || !metrics) return false;
+    if (!collector || !metrics) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_record_hierarchical: required parameter is NULL (collector, metrics)");
+        return false;
+    }
 
     // Record system metrics
     nimcp_metrics_record_gauge(collector, "hierarchical.num_regions",
@@ -497,7 +566,10 @@ bool nimcp_metrics_timer_stop(
     uint64_t start_time,
     nimcp_metric_category_t category
 ) {
-    if (!collector || !timer_name || start_time == 0) return false;
+    if (!collector || !timer_name || start_time == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_timer_stop: required parameter is NULL (collector, timer_name)");
+        return false;
+    }
 
     uint64_t end_time = get_timestamp_ms();
     double duration_ms = (double)(end_time - start_time);
@@ -510,7 +582,13 @@ bool nimcp_metrics_timer_stop(
 //=============================================================================
 
 int32_t nimcp_metrics_flush(nimcp_metrics_collector_t collector) {
-    if (!collector) return -1;
+    if (!collector) {
+
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "collector is NULL");
+
+        return -1;
+
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -544,18 +622,22 @@ bool nimcp_metrics_export_tableau_csv(
     nimcp_metrics_collector_t collector,
     const char* filename
 ) {
-    if (!collector || !filename) return false;
+    if (!collector || !filename) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_export_tableau_csv: required parameter is NULL (collector, filename)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
 
     char filepath[NIMCP_METRICS_MAX_PATH];
-    snprintf(filepath, sizeof(filepath), "%s/%s",
+    snprintf(filepath, sizeof(filepath), "%.450s/%.60s",
              internal->config.output_directory, filename);
 
     FILE* file = fopen(filepath, "w");
     if (!file) {
         NIMCP_LOGGING_ERROR("Failed to open file for export: %s", filepath);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_export_tableau_csv: file is NULL");
         return false;
     }
 
@@ -586,18 +668,22 @@ bool nimcp_metrics_export_powerbi_json(
     nimcp_metrics_collector_t collector,
     const char* filename
 ) {
-    if (!collector || !filename) return false;
+    if (!collector || !filename) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_export_powerbi_json: required parameter is NULL (collector, filename)");
+        return false;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
 
     char filepath[NIMCP_METRICS_MAX_PATH];
-    snprintf(filepath, sizeof(filepath), "%s/%s",
+    snprintf(filepath, sizeof(filepath), "%.450s/%.60s",
              internal->config.output_directory, filename);
 
     FILE* file = fopen(filepath, "w");
     if (!file) {
         NIMCP_LOGGING_ERROR("Failed to open file for export: %s", filepath);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_export_powerbi_json: file is NULL");
         return false;
     }
 
@@ -647,7 +733,10 @@ int32_t nimcp_metrics_get_stats(
     char* stats_json,
     uint32_t max_size
 ) {
-    if (!collector || !stats_json || max_size == 0) return -1;
+    if (!collector || !stats_json || max_size == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_get_stats: required parameter is NULL (collector, stats_json)");
+        return -1;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -686,7 +775,10 @@ int32_t nimcp_metrics_query_by_category(
     nimcp_metric_point_t* results,
     uint32_t max_results
 ) {
-    if (!collector || !results || max_results == 0) return -1;
+    if (!collector || !results || max_results == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_query_by_category: required parameter is NULL (collector, results)");
+        return -1;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -712,7 +804,10 @@ int32_t nimcp_metrics_query_by_time(
     nimcp_metric_point_t* results,
     uint32_t max_results
 ) {
-    if (!collector || !results || max_results == 0) return -1;
+    if (!collector || !results || max_results == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_query_by_time: required parameter is NULL (collector, results)");
+        return -1;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -738,7 +833,10 @@ int32_t nimcp_metrics_query_by_name(
     nimcp_metric_point_t* results,
     uint32_t max_results
 ) {
-    if (!collector || !pattern || !results || max_results == 0) return -1;
+    if (!collector || !pattern || !results || max_results == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_query_by_name: required parameter is NULL (collector, pattern, results)");
+        return -1;
+    }
 
     nimcp_metrics_collector_internal_t* internal =
         (nimcp_metrics_collector_internal_t*)collector;
@@ -755,4 +853,189 @@ int32_t nimcp_metrics_query_by_name(
     }
 
     return (int32_t)count;
+}
+
+//=============================================================================
+// Bio-Async Brain Probe Handler (Loose Coupling)
+//=============================================================================
+
+#define METRICS_LOG_MODULE "METRICS"
+
+// Global collector for bio-async message handling
+static nimcp_metrics_collector_t g_metrics_collector = NULL;
+
+// Module context for bio-router registration
+static bio_module_context_t g_metrics_module_ctx = NULL;
+
+/**
+ * @brief Handle brain probe data messages received via bio-async
+ *
+ * WHAT: Processes BIO_MSG_BRAIN_PROBE_DATA messages from brain modules
+ * WHY:  Enables loose coupling - brain broadcasts, metrics receives independently
+ * HOW:  Extracts probe data and records as metrics
+ *
+ * Signature matches bio_message_handler_t
+ */
+static nimcp_error_t metrics_handle_brain_probe(
+    const void* msg,
+    size_t msg_size,
+    nimcp_bio_promise_t response_promise,
+    void* user_data
+) {
+    (void)response_promise;  // Broadcasts don't need responses
+
+    NIMCP_CHECK_THROW(msg && msg_size >= sizeof(bio_msg_brain_probe_data_t),
+                      NIMCP_ERROR_INVALID, "invalid message or size");
+
+    const bio_msg_brain_probe_data_t* probe_msg = (const bio_msg_brain_probe_data_t*)msg;
+
+    // Verify message type
+    NIMCP_CHECK_THROW(probe_msg->header.type == BIO_MSG_BRAIN_PROBE_DATA,
+                      NIMCP_ERROR_INVALID, "wrong message type");
+
+    // Get collector from user_data or global
+    nimcp_metrics_collector_t collector = (nimcp_metrics_collector_t)user_data;
+    if (!collector) {
+        collector = g_metrics_collector;
+    }
+    if (!collector) {
+        // No collector registered yet - this is fine, just skip
+        return NIMCP_SUCCESS;
+    }
+
+    // Create metric prefix with brain ID for multi-brain support
+    char prefix[NIMCP_LABEL_BUFFER_SIZE];
+    snprintf(prefix, sizeof(prefix), "brain.%llx", (unsigned long long)probe_msg->brain_id);
+
+    // Record brain metrics
+    char metric_name[NIMCP_NAME_BUFFER_SIZE];
+
+    // Architecture metrics
+    snprintf(metric_name, sizeof(metric_name), "%s.num_neurons", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->num_neurons,
+                                NIMCP_METRIC_CATEGORY_SYSTEM);
+
+    snprintf(metric_name, sizeof(metric_name), "%s.num_synapses", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->num_synapses,
+                                NIMCP_METRIC_CATEGORY_SYSTEM);
+
+    snprintf(metric_name, sizeof(metric_name), "%s.num_active_synapses", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->num_active_synapses,
+                                NIMCP_METRIC_CATEGORY_SYSTEM);
+
+    // Performance metrics
+    snprintf(metric_name, sizeof(metric_name), "%s.total_inferences", prefix);
+    nimcp_metrics_record_counter(collector, metric_name, probe_msg->total_inferences,
+                                  NIMCP_METRIC_CATEGORY_PERFORMANCE);
+
+    snprintf(metric_name, sizeof(metric_name), "%s.total_learning_steps", prefix);
+    nimcp_metrics_record_counter(collector, metric_name, probe_msg->total_learning_steps,
+                                  NIMCP_METRIC_CATEGORY_LEARNING);
+
+    snprintf(metric_name, sizeof(metric_name), "%s.avg_inference_time_us", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->avg_inference_time_us,
+                                NIMCP_METRIC_CATEGORY_PERFORMANCE);
+
+    // Learning metrics
+    snprintf(metric_name, sizeof(metric_name), "%s.learning_rate", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->current_learning_rate,
+                                NIMCP_METRIC_CATEGORY_LEARNING);
+
+    snprintf(metric_name, sizeof(metric_name), "%s.accuracy", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->accuracy,
+                                NIMCP_METRIC_CATEGORY_LEARNING);
+
+    snprintf(metric_name, sizeof(metric_name), "%s.sparsity", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, probe_msg->avg_sparsity,
+                                NIMCP_METRIC_CATEGORY_SYSTEM);
+
+    // Memory metrics
+    snprintf(metric_name, sizeof(metric_name), "%s.memory_bytes", prefix);
+    nimcp_metrics_record_gauge(collector, metric_name, (double)probe_msg->memory_bytes,
+                                NIMCP_METRIC_CATEGORY_MEMORY);
+
+    // COW metrics
+    if (probe_msg->is_cow_clone) {
+        snprintf(metric_name, sizeof(metric_name), "%s.cow_shared_bytes", prefix);
+        nimcp_metrics_record_gauge(collector, metric_name, (double)probe_msg->cow_shared_bytes,
+                                    NIMCP_METRIC_CATEGORY_MEMORY);
+
+        snprintf(metric_name, sizeof(metric_name), "%s.cow_private_bytes", prefix);
+        nimcp_metrics_record_gauge(collector, metric_name, (double)probe_msg->cow_private_bytes,
+                                    NIMCP_METRIC_CATEGORY_MEMORY);
+    }
+
+    return NIMCP_SUCCESS;
+}
+
+/**
+ * @brief Register metrics module to receive brain probe broadcasts via bio-async
+ */
+bool nimcp_metrics_register_bio_async(nimcp_metrics_collector_t collector) {
+    if (!collector) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_register_bio_async: collector is NULL");
+        return false;
+    }
+
+    // Store collector for handler
+    g_metrics_collector = collector;
+
+    // Check if router is available
+    if (!bio_router_is_initialized()) {
+        // Router not initialized yet - this is OK, registration can be deferred
+        return true;
+    }
+
+    // Register module if not already registered
+    if (!g_metrics_module_ctx) {
+        bio_module_info_t info = {
+            .module_id = BIO_MODULE_METRICS,
+            .module_name = "metrics",
+            .inbox_capacity = 256,
+            .user_data = collector
+        };
+        g_metrics_module_ctx = bio_router_register_module(&info);
+        if (!g_metrics_module_ctx) {
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_metrics_register_bio_async: g_metrics_module_ctx is NULL");
+            return false;
+        }
+    }
+
+    // Try KG-driven wiring callback registration first
+    nimcp_error_t wiring_result = bio_router_register_wiring_callback(
+        BIO_MODULE_METRICS,
+        (void*)metrics_handler_callback,
+        collector
+    );
+
+    if (wiring_result == NIMCP_SUCCESS) {
+        // KG-driven wiring registered successfully
+    } else {
+        // Legacy fallback - register handler directly
+        nimcp_error_t err = LEGACY_HANDLER_REGISTRATION(bio_router_register_handler(
+            g_metrics_module_ctx,
+            BIO_MSG_BRAIN_PROBE_DATA,
+            metrics_handle_brain_probe
+        ));
+
+        if (err != NIMCP_SUCCESS) {
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "nimcp_metrics_register_bio_async: validation failed");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @brief Process pending bio-async messages for metrics module
+ */
+void nimcp_metrics_process_bio_async(void) {
+    if (!g_metrics_module_ctx) {
+        return;
+    }
+
+    // Process pending messages in inbox
+    // Handlers registered via bio_router_register_handler will be invoked
+    bio_router_process_inbox(g_metrics_module_ctx, 100);
 }

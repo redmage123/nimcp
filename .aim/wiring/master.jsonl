@@ -1,0 +1,11 @@
+# Master wiring diagram - core module connectivity
+# This file defines the central nervous system architecture and core module relationships
+# Format: JSONL with entity definitions and relation mappings
+{"type":"entity","name":"Bio_Async_Orchestrator","entityType":"CognitiveModule","observations":["Central coordinator for async biological processing","Manages 200+ cognitive modules","Handles circadian and metabolic rhythms"],"subsystem":"core","tier_min":"MINIMAL"}
+{"type":"entity","name":"Brain_KG","entityType":"CognitiveModule","observations":["Knowledge graph for runtime topology","Stores module relationships and wiring","Provides graph-based reasoning"],"subsystem":"core","tier_min":"MINIMAL"}
+{"type":"entity","name":"Global_Workspace","entityType":"CognitiveModule","observations":["Implements Global Workspace Theory","Broadcasts salient information","Coordinates conscious processing"],"subsystem":"core","tier_min":"CONSTRAINED"}
+{"type":"entity","name":"Thalamic_Router","entityType":"CognitiveModule","observations":["Central relay hub","Routes signals between cortical regions","Implements attention gating"],"subsystem":"core","tier_min":"CONSTRAINED"}
+{"type":"entity","name":"Executive_Controller","entityType":"CognitiveModule","observations":["Top-level executive function","Goal management and planning","Conflict resolution"],"subsystem":"core","tier_min":"MEDIUM"}
+{"type":"relation","from":"Bio_Async_Orchestrator","to":"Brain_KG","relationType":"COORDINATES"}
+{"type":"relation","from":"Global_Workspace","to":"Thalamic_Router","relationType":"ROUTES_THROUGH"}
+{"type":"relation","from":"Executive_Controller","to":"Global_Workspace","relationType":"BROADCASTS_TO"}

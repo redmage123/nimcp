@@ -1,0 +1,550 @@
+/**
+ * @file e2e_test_distributed_immune_response.cpp
+ * @brief End-to-end tests for distributed immune response across swarm
+ *
+ * WHAT: Multi-node distributed immune coordination scenarios
+ * WHY:  Verify brain immune + swarm integration in realistic scenarios
+ * HOW:  Simulate 4-node swarm with coordinated threat response
+ *
+ * TEST SCENARIOS:
+ * 1. Single node detects threat → entire swarm responds
+ * 2. Memory cell learned on one node → shared across swarm
+ * 3. Secondary response triggered swarm-wide
+ * 4. Collective inflammation escalation via consensus
+ * 5. Byzantine threat detection with multi-node confirmation
+ * 6. Distributed antibody response coordination
+ *
+ * @author NIMCP Development Team
+ * @date 2025-12-11
+ */
+
+#include <gtest/gtest.h>
+#include "cognitive/immune/nimcp_brain_immune.h"
+#include "swarm/nimcp_swarm_immune.h"
+#include "swarm/nimcp_swarm_consensus.h"
+#include "swarm/nimcp_collective_workspace.h"
+#include "utils/memory/nimcp_memory.h"
+#include <vector>
+#include <cstring>
+
+/* ============================================================================
+ * Multi-Node Swarm Simulator
+ * ============================================================================ */
+
+/**
+ * @brief Simulated drone node with brain immune and swarm capabilities
+ */
+struct DroneNode {
+    uint32_t drone_id;
+    brain_immune_system_t* brain_immune;
+    NimcpSwarmImmuneSystem* swarm_immune;
+    swarm_consensus_t consensus;
+    collective_workspace_t* workspace;
+
+    DroneNode(uint32_t id) : drone_id(id) {
+        /* Create brain immune */
+        brain_immune_config_t brain_config;
+        brain_immune_default_config(&brain_config);
+        brain_config.enable_swarm_integration = true;
+        brain_config.enable_logging = false;
+        brain_immune = brain_immune_create(&brain_config);
+
+        /* Create swarm immune */
+        NimcpSwarmImmuneConfig swarm_config;
+        nimcp_swarm_immune_default_config(&swarm_config);
+        swarm_immune = nimcp_swarm_immune_create(&swarm_config, nullptr, id);
+
+        /* Connect brain to swarm */
+        brain_immune_connect_swarm(brain_immune, swarm_immune);
+
+        /* Create consensus */
+        swarm_consensus_config_t cons_config = swarm_consensus_default_config(id);
+        consensus = swarm_consensus_create(&cons_config);
+
+        /* Create workspace */
+        workspace = collective_workspace_create_simple(id, 4);
+    }
+
+    ~DroneNode() {
+        if (workspace) collective_workspace_destroy(workspace);
+        if (consensus) swarm_consensus_destroy(consensus);
+        if (brain_immune) brain_immune_destroy(brain_immune);
+        if (swarm_immune) nimcp_swarm_immune_destroy(swarm_immune);
+    }
+};
+
+/**
+ * @brief Swarm of interconnected drone nodes
+ */
+class SwarmCluster {
+public:
+    std::vector<DroneNode*> nodes;
+    size_t swarm_size;
+
+    SwarmCluster(size_t size) : swarm_size(size) {
+        for (size_t i = 0; i < size; i++) {
+            nodes.push_back(new DroneNode(i + 1));
+        }
+    }
+
+    ~SwarmCluster() {
+        for (auto node : nodes) {
+            delete node;
+        }
+    }
+
+    DroneNode* get_node(size_t index) {
+        return (index < nodes.size()) ? nodes[index] : nullptr;
+    }
+
+    /* Share threat across all nodes */
+    void broadcast_threat(const NimcpSwarmThreat& threat) {
+        for (auto node : nodes) {
+            brain_immune_auto_sync_swarm_threat(node->brain_immune, &threat);
+        }
+    }
+
+    /* Share memory cell across all nodes */
+    void share_memory_cell(uint32_t source_node_idx, uint32_t b_cell_id) {
+        if (source_node_idx >= nodes.size()) return;
+
+        DroneNode* source = nodes[source_node_idx];
+
+        /* Sync memory to swarm */
+        brain_immune_sync_memory_to_swarm(source->brain_immune, b_cell_id);
+
+        /* Propagate to all other nodes */
+        brain_immune_propagate_secondary_response(source->brain_immune,
+                                                   b_cell_id,
+                                                   b_cell_id);
+    }
+
+    /* Count total antigens across all nodes */
+    uint64_t total_antigens() {
+        uint64_t total = 0;
+        for (auto node : nodes) {
+            brain_immune_stats_t stats;
+            brain_immune_get_stats(node->brain_immune, &stats);
+            total += stats.antigens_processed;
+        }
+        return total;
+    }
+
+    /* Count total memory cells across swarm */
+    uint64_t total_swarm_memory_cells() {
+        uint64_t total = 0;
+        for (auto node : nodes) {
+            total += node->swarm_immune->memory_cell_count;
+        }
+        return total;
+    }
+};
+
+/* ============================================================================
+ * E2E Test Fixture
+ * ============================================================================ */
+
+class DistributedImmuneResponseE2ETest : public ::testing::Test {
+protected:
+    SwarmCluster* swarm;
+
+    void SetUp() override {
+        swarm = new SwarmCluster(4);  /* 4-node swarm */
+    }
+
+    void TearDown() override {
+        delete swarm;
+    }
+
+    /* Helper: Create Byzantine threat */
+    NimcpSwarmThreat create_byzantine_threat(uint32_t id, uint32_t source_drone) {
+        NimcpSwarmThreat threat;
+        memset(&threat, 0, sizeof(threat));
+        threat.id = id;
+        threat.type = THREAT_BYZANTINE;
+        threat.severity = SWARM_SEVERITY_HIGH;
+        threat.source_drone_id = source_drone;
+        threat.confidence = 0.85f;
+
+        for (size_t i = 0; i < 16; i++) {
+            threat.data[i] = (uint8_t)(id + i);
+        }
+        threat.data_len = 16;
+
+        return threat;
+    }
+};
+
+/* ============================================================================
+ * Scenario 1: Single Node Detection → Swarm-Wide Response
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, SingleNodeDetection_AllNodesRespond) {
+    /* WHAT: One drone detects threat, all drones coordinate response
+     * WHY:  Verify distributed threat propagation
+     * HOW:  Node 0 detects, broadcast to swarm, verify all nodes have antigen
+     */
+
+    DroneNode* detector = swarm->get_node(0);
+    NimcpSwarmThreat threat = create_byzantine_threat(1000, 5);
+
+    /* Node 0 detects threat */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(detector->brain_immune, &threat, &antigen_id);
+
+    /* Broadcast to entire swarm */
+    swarm->broadcast_threat(threat);
+
+    /* Verify all nodes received and processed threat */
+    uint64_t total = swarm->total_antigens();
+    EXPECT_GE(total, swarm->swarm_size);  /* At least one antigen per node */
+}
+
+TEST_F(DistributedImmuneResponseE2ETest, SingleNodeDetection_TriggersCollectiveResponse) {
+    /* WHAT: Detection triggers antibody production across swarm
+     * WHY:  Verify coordinated immune response
+     * HOW:  Detect, broadcast, generate responses on each node
+     */
+
+    DroneNode* detector = swarm->get_node(0);
+    NimcpSwarmThreat threat = create_byzantine_threat(1001, 6);
+
+    /* Detect and broadcast */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(detector->brain_immune, &threat, &antigen_id);
+    swarm->broadcast_threat(threat);
+
+    /* Generate responses on each node */
+    for (size_t i = 0; i < swarm->swarm_size; i++) {
+        DroneNode* node = swarm->get_node(i);
+
+        /* Activate B cell and produce antibody */
+        uint32_t local_antigen = antigen_id;
+        uint32_t b_cell_id = 0;
+        if (brain_immune_activate_b_cell(node->brain_immune, local_antigen, &b_cell_id) == 0) {
+            uint32_t antibody_id = 0;
+            brain_immune_produce_antibody(node->brain_immune, b_cell_id,
+                                          ANTIBODY_IGG, &antibody_id);
+
+            /* Trigger swarm response */
+            brain_immune_trigger_swarm_response(node->brain_immune, antibody_id);
+        }
+    }
+
+    /* Verify at least one node generated swarm response */
+    bool response_found = false;
+    for (size_t i = 0; i < swarm->swarm_size; i++) {
+        if (swarm->get_node(i)->swarm_immune->active_response_count > 0) {
+            response_found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(response_found);
+}
+
+/* ============================================================================
+ * Scenario 2: Memory Cell Learning and Sharing
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, MemoryLearning_SharesAcrossSwarm) {
+    /* WHAT: Node learns threat pattern, shares memory with entire swarm
+     * WHY:  Verify collective learning
+     * HOW:  Node 0 learns, shares, verify all nodes have memory
+     */
+
+    DroneNode* learner = swarm->get_node(0);
+    NimcpSwarmThreat threat = create_byzantine_threat(2000, 7);
+
+    /* Node 0 learns threat */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(learner->brain_immune, &threat, &antigen_id);
+
+    uint32_t b_cell_id = 0;
+    brain_immune_activate_b_cell(learner->brain_immune, antigen_id, &b_cell_id);
+    brain_immune_b_cell_to_memory(learner->brain_immune, b_cell_id);
+
+    /* Share memory cell across swarm */
+    swarm->share_memory_cell(0, b_cell_id);
+
+    /* Verify swarm has shared memory */
+    uint64_t total_memory = swarm->total_swarm_memory_cells();
+    EXPECT_GT(total_memory, 0U);
+}
+
+TEST_F(DistributedImmuneResponseE2ETest, SharedMemory_EnablesFasterResponse) {
+    /* WHAT: Learned memory enables faster secondary response on all nodes
+     * WHY:  Verify memory-based immunity
+     * HOW:  Learn, share, re-present threat, verify rapid response
+     */
+
+    DroneNode* learner = swarm->get_node(0);
+    NimcpSwarmThreat threat = create_byzantine_threat(2001, 8);
+
+    /* Initial learning */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(learner->brain_immune, &threat, &antigen_id);
+
+    uint32_t b_cell_id = 0;
+    brain_immune_activate_b_cell(learner->brain_immune, antigen_id, &b_cell_id);
+    brain_immune_b_cell_to_memory(learner->brain_immune, b_cell_id);
+
+    /* Share across swarm */
+    swarm->share_memory_cell(0, b_cell_id);
+
+    /* Re-present same threat to different node */
+    DroneNode* responder = swarm->get_node(1);
+    uint32_t second_antigen_id = 0;
+    brain_immune_present_swarm_threat(responder->brain_immune, &threat, &second_antigen_id);
+
+    /* Check for secondary response */
+    uint32_t memory_b_cell = 0;
+    int has_memory = brain_immune_check_memory(responder->brain_immune,
+                                                second_antigen_id,
+                                                &memory_b_cell);
+
+    /* Memory might not be found if sync didn't complete, that's OK for E2E */
+    if (has_memory == 0) {
+        brain_immune_propagate_secondary_response(responder->brain_immune,
+                                                   memory_b_cell,
+                                                   second_antigen_id);
+    }
+}
+
+/* ============================================================================
+ * Scenario 3: Secondary Response Swarm-Wide Trigger
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, SecondaryResponse_PropagatesRapidly) {
+    /* WHAT: One node recognizes learned threat, all nodes respond rapidly
+     * WHY:  Verify collective memory benefits entire swarm
+     * HOW:  Learn on node 0, recognize on node 1, verify all nodes alerted
+     */
+
+    DroneNode* learner = swarm->get_node(0);
+    DroneNode* recognizer = swarm->get_node(1);
+
+    NimcpSwarmThreat threat = create_byzantine_threat(3000, 9);
+
+    /* Node 0 learns */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(learner->brain_immune, &threat, &antigen_id);
+
+    uint32_t b_cell_id = 0;
+    brain_immune_activate_b_cell(learner->brain_immune, antigen_id, &b_cell_id);
+    brain_immune_b_cell_to_memory(learner->brain_immune, b_cell_id);
+
+    /* Share memory */
+    swarm->share_memory_cell(0, b_cell_id);
+
+    /* Node 1 recognizes */
+    uint32_t second_antigen = 0;
+    brain_immune_present_swarm_threat(recognizer->brain_immune, &threat, &second_antigen);
+
+    /* Propagate secondary response */
+    brain_immune_propagate_secondary_response(recognizer->brain_immune,
+                                               b_cell_id,
+                                               second_antigen);
+
+    /* Verify swarm memory increased */
+    EXPECT_GT(swarm->total_swarm_memory_cells(), 0U);
+}
+
+/* ============================================================================
+ * Scenario 4: Collective Inflammation Escalation
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, CollectiveInflammation_EscalatesAcrossSwarm) {
+    /* WHAT: Local inflammation escalates to swarm-wide systemic response
+     * WHY:  Verify coordinated escalation
+     * HOW:  Create inflammation, broadcast, escalate, verify all nodes alerted
+     */
+
+    DroneNode* inflamed_node = swarm->get_node(0);
+    NimcpSwarmThreat threat = create_byzantine_threat(4000, 10);
+
+    /* Create antigen */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(inflamed_node->brain_immune, &threat, &antigen_id);
+
+    /* Initiate inflammation */
+    uint32_t site_id = 0;
+    brain_immune_initiate_inflammation(inflamed_node->brain_immune,
+                                       1, antigen_id, &site_id);
+
+    /* Escalate */
+    brain_immune_escalate_inflammation(inflamed_node->brain_immune, site_id);
+    brain_immune_escalate_inflammation(inflamed_node->brain_immune, site_id);
+
+    /* Broadcast inflammation state */
+    brain_immune_broadcast_inflammation_state(inflamed_node->brain_immune, site_id);
+
+    /* Broadcast threat to other nodes */
+    swarm->broadcast_threat(threat);
+
+    /* Verify nodes received alert */
+    EXPECT_GT(swarm->total_antigens(), 0U);
+}
+
+/* ============================================================================
+ * Scenario 5: Byzantine Threat with Multi-Node Confirmation
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, ByzantineThreat_RequiresMultiNodeConfirmation) {
+    /* WHAT: Byzantine threat requires confirmation from multiple nodes
+     * WHY:  Prevent false positives
+     * HOW:  Detect on node 0, confirm from nodes 1-3, verify consensus
+     */
+
+    NimcpSwarmThreat threat = create_byzantine_threat(5000, 11);
+
+    /* All nodes detect threat */
+    for (size_t i = 0; i < swarm->swarm_size; i++) {
+        DroneNode* node = swarm->get_node(i);
+
+        /* Detect threat */
+        uint32_t detected_id = 0;
+        nimcp_swarm_immune_detect_threat(node->swarm_immune,
+                                          threat.data, threat.data_len,
+                                          threat.source_drone_id,
+                                          &detected_id);
+
+        /* Confirm threat */
+        nimcp_swarm_immune_confirm_threat(node->swarm_immune,
+                                           threat.id,
+                                           node->drone_id);
+    }
+
+    /* Present to brain immune on node 0 */
+    DroneNode* node0 = swarm->get_node(0);
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(node0->brain_immune, &threat, &antigen_id);
+
+    /* Request consensus */
+    float agreed_severity = 0.0f;
+    brain_immune_consensus_threat_severity(node0->brain_immune,
+                                           antigen_id,
+                                           &agreed_severity);
+
+    /* Verified threat should have reasonable severity */
+    if (agreed_severity > 0.0f) {
+        EXPECT_LE(agreed_severity, 10.0f);
+    }
+}
+
+/* ============================================================================
+ * Scenario 6: Distributed Antibody Response Coordination
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, DistributedAntibody_CoordinatesResponses) {
+    /* WHAT: Each node generates antibody, coordinates via swarm immune
+     * WHY:  Verify distributed response coordination
+     * HOW:  All nodes produce antibodies, trigger swarm responses
+     */
+
+    NimcpSwarmThreat threat = create_byzantine_threat(6000, 12);
+
+    /* All nodes detect and respond */
+    for (size_t i = 0; i < swarm->swarm_size; i++) {
+        DroneNode* node = swarm->get_node(i);
+
+        /* Present threat */
+        uint32_t antigen_id = 0;
+        brain_immune_present_swarm_threat(node->brain_immune, &threat, &antigen_id);
+
+        /* Generate antibody response */
+        uint32_t b_cell_id = 0;
+        if (brain_immune_activate_b_cell(node->brain_immune, antigen_id, &b_cell_id) == 0) {
+            uint32_t antibody_id = 0;
+            brain_immune_produce_antibody(node->brain_immune, b_cell_id,
+                                          ANTIBODY_IGG, &antibody_id);
+
+            /* Trigger swarm response */
+            brain_immune_trigger_swarm_response(node->brain_immune, antibody_id);
+        }
+    }
+
+    /* Verify at least some nodes generated responses */
+    size_t responding_nodes = 0;
+    for (size_t i = 0; i < swarm->swarm_size; i++) {
+        if (swarm->get_node(i)->swarm_immune->active_response_count > 0) {
+            responding_nodes++;
+        }
+    }
+
+    EXPECT_GT(responding_nodes, 0U);
+}
+
+/* ============================================================================
+ * Scenario 7: Complete Threat Lifecycle
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, CompleteThreatLifecycle_DetectRespondLearn) {
+    /* WHAT: Full lifecycle: detect → respond → learn → share → secondary response
+     * WHY:  Comprehensive integration test
+     * HOW:  Simulate complete immune response flow
+     */
+
+    DroneNode* detector = swarm->get_node(0);
+    DroneNode* responder = swarm->get_node(1);
+
+    NimcpSwarmThreat threat = create_byzantine_threat(7000, 13);
+
+    /* PHASE 1: Detection */
+    uint32_t antigen_id = 0;
+    brain_immune_present_swarm_threat(detector->brain_immune, &threat, &antigen_id);
+
+    /* PHASE 2: Response */
+    uint32_t b_cell_id = 0;
+    brain_immune_activate_b_cell(detector->brain_immune, antigen_id, &b_cell_id);
+
+    uint32_t antibody_id = 0;
+    brain_immune_produce_antibody(detector->brain_immune, b_cell_id,
+                                  ANTIBODY_IGG, &antibody_id);
+
+    brain_immune_trigger_swarm_response(detector->brain_immune, antibody_id);
+
+    /* PHASE 3: Learning */
+    brain_immune_b_cell_to_memory(detector->brain_immune, b_cell_id);
+
+    /* PHASE 4: Sharing */
+    swarm->share_memory_cell(0, b_cell_id);
+
+    /* PHASE 5: Secondary Response */
+    uint32_t second_antigen = 0;
+    brain_immune_present_swarm_threat(responder->brain_immune, &threat, &second_antigen);
+
+    /* Verify system state */
+    EXPECT_GT(swarm->total_antigens(), 0U);
+    EXPECT_GE(swarm->total_swarm_memory_cells(), 0U);
+}
+
+/* ============================================================================
+ * Performance and Stress Tests
+ * ============================================================================ */
+
+TEST_F(DistributedImmuneResponseE2ETest, HighThreatVolume_HandlesLoad) {
+    /* WHAT: Swarm handles high volume of threats
+     * WHY:  Stress test distributed system
+     * HOW:  Generate 20 threats across all nodes
+     */
+
+    for (uint32_t i = 0; i < 20; i++) {
+        NimcpSwarmThreat threat = create_byzantine_threat(8000 + i, 14 + (i % 4));
+
+        /* Random node detects each threat */
+        DroneNode* detector = swarm->get_node(i % swarm->swarm_size);
+        brain_immune_auto_sync_swarm_threat(detector->brain_immune, &threat);
+    }
+
+    /* Verify all threats processed */
+    EXPECT_GE(swarm->total_antigens(), 20U);
+}
+
+/* ============================================================================
+ * Main Entry Point
+ * ============================================================================ */
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

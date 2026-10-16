@@ -1,0 +1,13 @@
+# SpiNNaker neuromorphic platform configuration
+# Large-scale spiking neural network simulation
+{"type":"config","hardware":"SpiNNaker","description":"SpiNNaker neuromorphic many-core platform"}
+{"type":"hardware_requirement","spinnaker_version":"SpiNNaker2","min_chips":4,"recommended_chips":48}
+{"type":"module_config","module":"Spiking_Network","backend":"SpiNNaker","notes":"Distributed spike processing"}
+{"type":"module_config","module":"STDP_Engine","backend":"SpiNNaker","notes":"On-chip STDP learning"}
+{"type":"module_config","module":"LTP_LTD_System","backend":"SpiNNaker","notes":"Distributed plasticity"}
+{"type":"module_config","module":"Tensor_Engine","backend":"CPU","notes":"Dense tensors on host"}
+{"type":"module_config","module":"Global_Workspace","backend":"SpiNNaker","notes":"Spike-based broadcast"}
+{"type":"parameter_override","module":"Spiking_Network","parameter":"time_step_ms","value":1.0,"notes":"1ms simulation step"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"online_learning","value":true,"notes":"Real-time learning"}
+{"type":"spinnaker_config","neurons_per_core":256,"multicast_routing":true,"real_time_ratio":1.0}
+{"type":"spinnaker_config","sdram_per_chip_mb":128,"router_timeout_ms":16}

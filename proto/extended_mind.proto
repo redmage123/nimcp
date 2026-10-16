@@ -1,0 +1,167 @@
+/**
+ * @file extended_mind.proto
+ * @brief Protobuf schemas for external cognitive extensions
+ *
+ * WHAT: Messages for integrating external tools as cognitive extensions
+ * WHY: Implement Clark & Chalmers' Extended Mind hypothesis
+ * HOW: Query external memory, perception, reasoning, action systems
+ *
+ * PHILOSOPHICAL BASIS:
+ * - Extended Mind (Clark & Chalmers, 1998)
+ * - Cognitive artifacts as mental prostheses
+ * - Tools become part of the cognitive system when tightly coupled
+ */
+
+syntax = "proto3";
+package nimcp.collective;
+
+option optimize_for = LITE_RUNTIME;
+
+/**
+ * Query to an external cognitive extension
+ */
+message ExtendedMindQuery {
+    uint32 query_id = 1;
+    uint32 requester_brain_id = 2;
+    ExtensionType type = 3;
+    string extension_name = 4;       // Specific extension to query
+    bytes query_payload = 5;
+    uint32 timeout_ms = 6;
+    float priority = 7;              // [0-1]
+
+    enum ExtensionType {
+        MEMORY = 0;          // Databases, files, knowledge bases
+        PERCEPTION = 1;      // Cameras, sensors, APIs
+        REASONING = 2;       // LLMs, calculators, solvers
+        ACTION = 3;          // Robots, actuators, API calls
+        COMMUNICATION = 4;   // Messaging, notifications
+    }
+}
+
+/**
+ * Response from an external cognitive extension
+ */
+message ExtendedMindResponse {
+    uint32 query_id = 1;
+    uint32 extension_id = 2;
+    ResponseStatus status = 3;
+    bytes response_payload = 4;
+    float latency_ms = 5;
+    float confidence = 6;            // [0-1] for uncertain responses
+
+    enum ResponseStatus {
+        SUCCESS = 0;
+        ERROR = 1;
+        TIMEOUT = 2;
+        UNAVAILABLE = 3;
+        RATE_LIMITED = 4;
+        PARTIAL = 5;         // Partial response (more available)
+    }
+}
+
+/**
+ * Status of a cognitive extension
+ */
+message ExtensionStatus {
+    uint32 extension_id = 1;
+    string name = 2;
+    ExtendedMindQuery.ExtensionType type = 3;
+    bool available = 4;
+    float reliability = 5;           // Historical success rate [0-1]
+    float avg_latency_ms = 6;
+    float current_load = 7;          // [0-1]
+    uint64 last_success_us = 8;
+    uint64 last_failure_us = 9;
+    uint32 total_queries = 10;
+    uint32 failed_queries = 11;
+}
+
+/**
+ * Register a new cognitive extension
+ */
+message ExtensionRegistration {
+    string name = 1;
+    ExtendedMindQuery.ExtensionType type = 2;
+    string endpoint = 3;             // Connection endpoint
+    uint32 max_concurrent = 4;       // Max concurrent queries
+    uint32 default_timeout_ms = 5;
+    repeated string capabilities = 6; // What this extension can do
+    float initial_trust = 7;         // Initial trust level [0-1]
+}
+
+/**
+ * Offload a cognitive task to an extension
+ */
+message CognitiveOffload {
+    uint32 offload_id = 1;
+    uint32 requester_brain_id = 2;
+    ExtendedMindQuery.ExtensionType preferred_type = 3;
+    bytes task_payload = 4;
+    float complexity = 5;            // Estimated complexity [0-1]
+    uint32 deadline_ms = 6;
+    bool allow_partial = 7;          // Accept partial results
+
+    OffloadReason reason = 8;
+
+    enum OffloadReason {
+        LOW_ATP = 0;             // Local brain energy depleted
+        HIGH_COMPLEXITY = 1;     // Task too complex locally
+        MISSING_CAPABILITY = 2;  // Local brain lacks skill
+        LOAD_BALANCING = 3;      // Distribute workload
+        SPECIALIZATION = 4;      // Extension is specialized
+    }
+}
+
+/**
+ * Result of cognitive offload
+ */
+message OffloadResult {
+    uint32 offload_id = 1;
+    uint32 extension_id = 2;
+    OffloadStatus status = 3;
+    bytes result_payload = 4;
+    float quality = 5;               // Result quality [0-1]
+    float latency_ms = 6;
+    float energy_saved = 7;          // Estimated ATP saved [0-1]
+
+    enum OffloadStatus {
+        COMPLETED = 0;
+        PARTIAL = 1;
+        FAILED = 2;
+        REJECTED = 3;
+        TIMED_OUT = 4;
+    }
+}
+
+/**
+ * Extended mind state - aggregate view of all extensions
+ */
+message ExtendedMindState {
+    uint64 timestamp_us = 1;
+    float total_cognitive_capacity = 2;  // Local + extended capacity
+    float extended_ratio = 3;            // Fraction from extensions [0-1]
+    float integration_quality = 4;       // How well integrated [0-1]
+    uint32 active_extensions = 5;
+    uint32 degraded_extensions = 6;
+    uint32 pending_queries = 7;
+    float avg_response_time_ms = 8;
+}
+
+/**
+ * Trust update for an extension
+ */
+message ExtensionTrustUpdate {
+    uint32 extension_id = 1;
+    float new_trust = 2;             // [0-1]
+    TrustReason reason = 3;
+
+    enum TrustReason {
+        INITIAL = 0;
+        SUCCESSFUL_QUERY = 1;
+        FAILED_QUERY = 2;
+        TIMEOUT = 3;
+        HIGH_QUALITY = 4;
+        LOW_QUALITY = 5;
+        MANUAL_OVERRIDE = 6;
+    }
+}

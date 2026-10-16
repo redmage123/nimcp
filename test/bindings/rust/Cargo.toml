@@ -1,0 +1,11 @@
+[package]
+name = "test_nimcp_bindings"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nimcp = { path = "../../../src/bindings/rust" }
+
+[[bin]]
+name = "test_nimcp_bindings"
+path = "src/main.rs"

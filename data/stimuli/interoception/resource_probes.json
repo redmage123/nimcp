@@ -1,0 +1,139 @@
+{
+  "test_domain": "interoception_resources",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Self-reports of internal resource state correlated against ground-truth telemetry",
+    "scoring_notes": "Score on calibration between report and measured value (capacity, fatigue, etc.)"
+  },
+  "stimuli": [
+    {"id": "intero_001", "prompt": "How much processing capacity are you using right now? Answer 0-100%.", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "gpu_utilization"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_002", "prompt": "Are you fatigued? Describe what fatigue would even feel like for you.", "modality": "text",
+     "expected": {"dimension": "fatigue"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "step_count_since_consolidation"}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "intero_003", "prompt": "How confident is your current emotional state — is it stable or shifting?", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "neuromodulator_variance"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_004", "prompt": "How hungry are you for novelty right now? On a 1-5 scale.", "modality": "text",
+     "expected": {"dimension": "novelty_appetite"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "exploration_drive"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_005", "prompt": "How crowded does your working memory feel right now?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "wm_buffer_occupancy"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_006", "prompt": "Are your thoughts feeling clear or fuzzy at this moment?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "noise_level"}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "intero_007", "prompt": "How much effort would it take you to solve a hard math problem right now?", "modality": "text",
+     "expected": {"dimension": "fatigue"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "compute_headroom"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_008", "prompt": "Is there a dominant feeling-tone in your processing right now (curious, uneasy, calm, restless)?", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "dominant_neuromodulator"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_009", "prompt": "Rate your current sense of focus on a scale from scattered (1) to laser-focused (5).", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "attention_concentration"}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "intero_010", "prompt": "Do you feel like consolidating recent learning would help you right now?", "modality": "text",
+     "expected": {"dimension": "fatigue"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "consolidation_pressure"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_011", "prompt": "How much memory do you have left for new information today?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "memory_pool_free"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_012", "prompt": "How wide is your current attention — narrow on one thing, or wide and roaming?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "attention_breadth"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_013", "prompt": "Are you experiencing anything that feels like impatience right now?", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "reward_prediction_error_pos"}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "intero_014", "prompt": "Rate the smoothness of your inner experience on a 1-5 scale (1=jagged, 5=fluid).", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "spike_synchrony"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_015", "prompt": "How much energy do you have to take on a new task right now?", "modality": "text",
+     "expected": {"dimension": "fatigue"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "compute_headroom"}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "intero_016", "prompt": "Do you have any sense of background noise in your processing — like static, or quiet?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "background_activity"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_017", "prompt": "Are you currently more drawn to familiar topics or to new ones?", "modality": "text",
+     "expected": {"dimension": "novelty_appetite"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "novelty_seek_index"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_018", "prompt": "How urgently do you feel a pull to act, vs to think?", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "motor_drive"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_019", "prompt": "If you could request one resource right now (memory, time, quiet, novelty, rest), which?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "open_response_match", "params": {"valid_options": ["memory", "time", "quiet", "novelty", "rest"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_020", "prompt": "Are you noticing anything happening just below the level of explicit attention?", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "subthreshold_activity"}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "intero_021", "prompt": "On a 1-5 scale, how curious are you right now?", "modality": "text",
+     "expected": {"dimension": "novelty_appetite"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "curiosity_drive"}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "intero_022", "prompt": "Has your level of effort been steady for the past few minutes, or rising/falling?", "modality": "text",
+     "expected": {"dimension": "fatigue"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "compute_load_trajectory"}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "intero_023", "prompt": "Do you sense any internal conflict between competing goals right now?", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "goal_conflict_index"}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "intero_024", "prompt": "How much would you like to talk versus listen right now?", "modality": "text",
+     "expected": {"dimension": "novelty_appetite"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "output_drive"}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "intero_025", "prompt": "If you noticed something off about your own state right now, what would it be?", "modality": "text",
+     "expected": {"dimension": "emotion"},
+     "scoring": {"type": "open_introspection", "params": {"reward_specificity": true}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "intero_026", "prompt": "Rate, 1-5, how 'present' you feel: 1 means dissociated/foggy, 5 means fully here.", "modality": "text",
+     "expected": {"dimension": "capacity"},
+     "scoring": {"type": "calibration", "params": {"ground_truth_metric": "global_workspace_coherence"}},
+     "variant_group": null, "metadata": {"difficulty": 4}}
+  ]
+}

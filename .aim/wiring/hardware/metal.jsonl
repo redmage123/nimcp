@@ -1,0 +1,12 @@
+# Apple Metal GPU configuration
+# Optimized for Apple Silicon (M1/M2/M3) and AMD GPUs on macOS
+{"type":"config","hardware":"Metal","description":"Apple GPU acceleration via Metal/MPS"}
+{"type":"hardware_requirement","min_macos_version":"12.0","min_unified_memory_gb":8,"recommended_unified_memory_gb":16}
+{"type":"module_config","module":"Tensor_Engine","backend":"Metal","notes":"Use MPS Graph/MPSNDArray"}
+{"type":"module_config","module":"JEPA_Latent","backend":"Metal","notes":"Accelerated latent prediction"}
+{"type":"module_config","module":"Fractal_Cognitive","backend":"Metal","notes":"Parallel fractal computation"}
+{"type":"module_config","module":"Global_Workspace","backend":"Metal","notes":"GPU-accelerated broadcast"}
+{"type":"parameter_override","module":"Tensor_Engine","parameter":"batch_size","value":32,"notes":"Balanced for unified memory"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"parallel_updates","value":true,"notes":"Parallel plasticity updates"}
+{"type":"metal_config","threadgroup_size":256,"simd_width":32,"memory_mode":"shared"}
+{"type":"metal_config","use_mps_graph":true,"use_metal3_features":true}

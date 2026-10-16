@@ -1,0 +1,224 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                  SLEEP-WAKE STATE BROADCAST ARCHITECTURE                   ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SLEEP-WAKE COORDINATOR                              │
+│                     (nimcp_sleep_wake.h/c)                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ State Machine:                                                      │   │
+│  │  AWAKE → DROWSY → LIGHT_NREM → DEEP_NREM → REM → AWAKE            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Callback Registry (Linked List):                                   │   │
+│  │                                                                     │   │
+│  │  [Callback 1] → [Callback 2] → [Callback 3] → ... → [Callback N]  │   │
+│  │   ↓ (fn, ctx)    ↓ (fn, ctx)    ↓ (fn, ctx)         ↓ (fn, ctx)   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  sleep_enter_state(new_state)                                              │
+│       ↓                                                                     │
+│  sleep_notify_state_change(new_state)                                      │
+│       ↓                                                                     │
+│  For each registered callback:                                             │
+│       callback(new_state, user_data)                                       │
+│                                                                             │
+└──────────────────────────┬──────────────────────────────────────────────────┘
+                           │
+                           │ Broadcasts state changes to:
+                           │
+        ┌──────────────────┼──────────────────┬─────────────────────┐
+        │                  │                  │                     │
+        ▼                  ▼                  ▼                     ▼
+┌───────────────┐  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐
+│   ATTENTION   │  │    WORKING    │  │  EXECUTIVE   │  │     STDP         │
+│     BRIDGE    │  │    MEMORY     │  │    BRIDGE    │  │    BRIDGE        │
+│               │  │    BRIDGE     │  │              │  │                  │
+├───────────────┤  ├───────────────┤  ├──────────────┤  ├──────────────────┤
+│ Callback:     │  │ Callback:     │  │ Callback:    │  │ Callback:        │
+│ - Update      │  │ - Update      │  │ - Update     │  │ - Update         │
+│   capacity    │  │   maintenance │  │   control    │  │   plasticity     │
+│ - Update      │  │ - Adjust      │  │ - Modulate   │  │ - Modulate LTP   │
+│   vigilance   │  │   retention   │  │   resources  │  │ - Modulate LTD   │
+│ - Mark        │  │ - Change      │  │              │  │                  │
+│   offline     │  │   priority    │  │              │  │                  │
+└───────────────┘  └───────────────┘  └──────────────┘  └──────────────────┘
+
+        │                  │                  │                     │
+        │                  │                  │                     │
+        ▼                  ▼                  ▼                     ▼
+┌───────────────┐  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐
+│   BCM         │  │ HOMEOSTATIC   │  │ OSCILLATIONS │  │  WELLBEING       │
+│   BRIDGE      │  │    BRIDGE     │  │    BRIDGE    │  │    BRIDGE        │
+│               │  │               │  │              │  │                  │
+├───────────────┤  ├───────────────┤  ├──────────────┤  ├──────────────────┤
+│ Callback:     │  │ Callback:     │  │ Callback:    │  │ Callback:        │
+│ - Update      │  │ - Update      │  │ - Update     │  │ - Update         │
+│   threshold   │  │   target      │  │   frequency  │  │   stress         │
+│ - Modulate    │  │ - Change      │  │ - Change     │  │ - Modulate       │
+│   learning    │  │   scaling     │  │   amplitude  │  │   recovery       │
+└───────────────┘  └───────────────┘  └──────────────┘  └──────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                            CALLBACK INVOCATION FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+1. STATE CHANGE TRIGGER:
+   ┌─────────────────────────────────────────────────────────────┐
+   │ External call: sleep_enter_state(SLEEP_STATE_DEEP_NREM)    │
+   │            or: sleep_wake_up()                              │
+   │            or: sleep_run_cycle() [automatic progression]    │
+   └─────────────────────────────────────────────────────────────┘
+                              ↓
+
+2. UPDATE INTERNAL STATE (with lock):
+   ┌─────────────────────────────────────────────────────────────┐
+   │ nimcp_mutex_lock(&sleep->lock)                              │
+   │ sleep->current_state = new_state                            │
+   │ sleep->state_entered_at = now                               │
+   │ nimcp_mutex_unlock(&sleep->lock)                            │
+   └─────────────────────────────────────────────────────────────┘
+                              ↓
+
+3. NOTIFY OBSERVERS:
+   ┌─────────────────────────────────────────────────────────────┐
+   │ sleep_notify_state_change(sleep, new_state)                 │
+   │                                                             │
+   │ Step 1: Copy callbacks to stack (WITH lock)                │
+   │   - Prevents deadlock during callback execution            │
+   │   - Max 32 callbacks (configurable)                        │
+   │                                                             │
+   │ Step 2: Invoke callbacks (WITHOUT lock)                    │
+   │   - For each callback in array:                            │
+   │       callback(new_state, user_data)                       │
+   └─────────────────────────────────────────────────────────────┘
+                              ↓
+                              ↓ (parallel invocation)
+                              ↓
+   ┌──────────────┬───────────┴───────────┬──────────────────┐
+   ▼              ▼                       ▼                  ▼
+┌────────┐   ┌────────┐             ┌────────┐        ┌────────┐
+│Module 1│   │Module 2│    ...      │Module N│        │Module X│
+│Callback│   │Callback│             │Callback│        │Callback│
+└────────┘   └────────┘             └────────┘        └────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                         THREAD SAFETY GUARANTEES
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DEADLOCK PREVENTION:                                                        │
+│                                                                             │
+│ ✓ Callbacks invoked WITHOUT holding sleep system lock                      │
+│ ✓ Callbacks can safely call sleep_get_current_state()                      │
+│ ✓ Callbacks can safely acquire their own module locks                      │
+│ ✓ No circular lock dependency                                              │
+│                                                                             │
+│ Lock Order (when both acquired):                                           │
+│   1. Sleep system lock (temporary, released before callbacks)              │
+│   2. Module lock (held by callback during parameter update)                │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ RACE CONDITION PREVENTION:                                                  │
+│                                                                             │
+│ ✓ Callback list copied to stack before invocation                          │
+│ ✓ Registration/unregistration protected by mutex                           │
+│ ✓ State updates atomic (single lock acquisition)                           │
+│ ✓ Each module independently thread-safe via own mutex                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                              EXAMPLE TIMELINE
+═══════════════════════════════════════════════════════════════════════════════
+
+Time  Event                                Module States
+────  ─────────────────────────────────────────────────────────────────────────
+T0    sleep_enter_state(DROWSY)           All modules: AWAKE
+      ↓
+T1    Lock, update state, unlock          Sleep: DROWSY
+      ↓
+T2    Copy callbacks to stack             Sleep: DROWSY
+      ↓
+T3    Invoke attention_callback()         Attention: DROWSY (capacity=0.6)
+      ├─ Invoke memory_callback()         Memory: DROWSY (maintenance=low)
+      ├─ Invoke executive_callback()      Executive: DROWSY (control=reduced)
+      └─ Invoke stdp_callback()           STDP: DROWSY (plasticity=low)
+      ↓
+T4    All modules updated                 All modules: DROWSY
+
+T100  sleep_enter_state(DEEP_NREM)        All modules: DROWSY
+      ↓
+T101  Lock, update state, unlock          Sleep: DEEP_NREM
+      ↓
+T102  Copy callbacks to stack             Sleep: DEEP_NREM
+      ↓
+T103  Invoke all callbacks                Attention: offline
+                                          Memory: consolidation mode
+                                          Executive: suspended
+                                          STDP: downscaling
+      ↓
+T104  All modules updated                 All modules: DEEP_NREM
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                          COMPARISON: POLLING vs CALLBACK
+═══════════════════════════════════════════════════════════════════════════════
+
+OLD (Polling):                          NEW (Callback):
+┌─────────────────────────┐             ┌─────────────────────────┐
+│ Main Loop:              │             │ Event-Driven:           │
+│                         │             │                         │
+│ while (training) {      │             │ sleep_enter_state() {   │
+│   train_step()          │             │   update_state()        │
+│   ↓                     │             │   notify_callbacks()    │
+│   attention_update()    │             │     ↓                   │
+│   ↓ poll state          │             │     ┌──────────────┐    │
+│   memory_update()       │             │     │ Auto-invoke  │    │
+│   ↓ poll state          │             │     │ all modules  │    │
+│   executive_update()    │             │     └──────────────┘    │
+│   ↓ poll state          │             │ }                       │
+│   stdp_update()         │             │                         │
+│   ↓ poll state          │             │ No polling needed!      │
+│ }                       │             │                         │
+│                         │             │                         │
+│ Problems:               │             │ Benefits:               │
+│ • Manual coordination   │             │ • Automatic updates     │
+│ • Polling overhead      │             │ • Immediate response    │
+│ • Potential staleness   │             │ • Consistent timing     │
+│ • Easy to forget module │             │ • Self-registering      │
+└─────────────────────────┘             └─────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                            INTEGRATION CHECKLIST
+═══════════════════════════════════════════════════════════════════════════════
+
+For each sleep bridge module:
+
+□ Define callback function: module_on_sleep_state_change()
+□ Add callback_registered field to bridge struct
+□ Register callback in module_bridge_create()
+□ Call callback with initial state after registration
+□ Unregister callback in module_bridge_destroy()
+□ Add NULL checks for safety
+□ Test callback invocation
+□ Test cleanup during destruction
+□ Update documentation
+
+Status:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Core sleep-wake system updated
+✓ Callback mechanism implemented
+✓ Documentation created
+○ Sleep bridges updated (pending)
+○ Tests added (pending)
+○ Integration verified (pending)

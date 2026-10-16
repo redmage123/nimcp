@@ -1,0 +1,3 @@
+I'll create a comprehensive template showing the key structural changes needed.
+
+Due to token limits, I'll provide a focused implementation script that transforms the critical sections.

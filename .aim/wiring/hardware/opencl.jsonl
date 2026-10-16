@@ -1,0 +1,11 @@
+# Generic OpenCL GPU configuration
+# Fallback for GPUs without native toolkit support
+{"type":"config","hardware":"OpenCL","description":"Generic GPU acceleration via OpenCL 2.0+"}
+{"type":"hardware_requirement","min_opencl_version":"2.0","min_vram_gb":2,"recommended_vram_gb":4}
+{"type":"module_config","module":"Tensor_Engine","backend":"OpenCL","notes":"Use clBLAS/CLBlast"}
+{"type":"module_config","module":"JEPA_Latent","backend":"OpenCL","notes":"Basic latent prediction"}
+{"type":"module_config","module":"Fractal_Cognitive","backend":"CPU","notes":"OpenCL fractal may be slow"}
+{"type":"module_config","module":"Global_Workspace","backend":"OpenCL","notes":"GPU-accelerated broadcast"}
+{"type":"parameter_override","module":"Tensor_Engine","parameter":"batch_size","value":16,"notes":"Conservative batches"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"parallel_updates","value":false,"notes":"CPU plasticity more reliable"}
+{"type":"opencl_config","work_group_size":64,"use_local_memory":true,"prefer_float32":true}

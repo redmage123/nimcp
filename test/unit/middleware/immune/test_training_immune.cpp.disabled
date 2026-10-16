@@ -1,0 +1,636 @@
+/**
+ * @file test_training_immune.cpp
+ * @brief Unit tests for Training-Immune Integration
+ * @version 1.0.0
+ * @date 2025-12-11
+ *
+ * Tests bidirectional integration between brain immune system and training pipeline.
+ */
+
+#include <gtest/gtest.h>
+#include <cmath>
+
+extern "C" {
+#include "middleware/immune/nimcp_training_immune.h"
+#include "cognitive/immune/nimcp_brain_immune.h"
+#include "utils/memory/nimcp_memory.h"
+}
+
+/* ============================================================================
+ * Test Fixture
+ * ============================================================================ */
+
+class TrainingImmuneTest : public ::testing::Test {
+protected:
+    training_immune_system_t* ti_system;
+    brain_immune_system_t* brain_immune;
+
+    void SetUp() override {
+        nimcp_memory_init();
+
+        /* Create brain immune system */
+        brain_immune_config_t bi_config;
+        brain_immune_default_config(&bi_config);
+        brain_immune = brain_immune_create(&bi_config);
+        ASSERT_NE(brain_immune, nullptr);
+
+        brain_immune_start(brain_immune);
+
+        /* Create training immune system */
+        training_immune_config_t ti_config;
+        training_immune_default_config(&ti_config);
+        ti_system = training_immune_create(&ti_config);
+        ASSERT_NE(ti_system, nullptr);
+    }
+
+    void TearDown() override {
+        if (ti_system) {
+            training_immune_destroy(ti_system);
+            ti_system = nullptr;
+        }
+
+        if (brain_immune) {
+            brain_immune_stop(brain_immune);
+            brain_immune_destroy(brain_immune);
+            brain_immune = nullptr;
+        }
+
+        /* memory cleanup not needed */
+    }
+};
+
+/* ============================================================================
+ * Lifecycle Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, CreateDestroy) {
+    /* Already created in SetUp */
+    ASSERT_NE(ti_system, nullptr);
+
+    /* Verify initial state */
+    EXPECT_EQ(training_immune_get_phase(ti_system), TRAINING_IMMUNE_PHASE_HEALTHY);
+    EXPECT_EQ(training_immune_get_inflammation(ti_system), INFLAMMATION_NONE);
+    EXPECT_FALSE(training_immune_is_responding(ti_system));
+}
+
+TEST_F(TrainingImmuneTest, DefaultConfig) {
+    training_immune_config_t config;
+    int result = training_immune_default_config(&config);
+
+    EXPECT_EQ(result, 0);
+    EXPECT_TRUE(config.enable_lr_modulation);
+    EXPECT_TRUE(config.enable_grad_scaling);
+    EXPECT_EQ(config.min_lr_factor, 0.01f);
+    EXPECT_EQ(config.lr_factor_local, TRAINING_IMMUNE_LR_FACTOR_LOCAL);
+    EXPECT_EQ(config.lr_factor_regional, TRAINING_IMMUNE_LR_FACTOR_REGIONAL);
+    EXPECT_EQ(config.lr_factor_systemic, TRAINING_IMMUNE_LR_FACTOR_SYSTEMIC);
+    EXPECT_EQ(config.lr_factor_storm, TRAINING_IMMUNE_LR_FACTOR_STORM);
+}
+
+TEST_F(TrainingImmuneTest, StartStop) {
+    int result = training_immune_start(ti_system);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(training_immune_get_phase(ti_system), TRAINING_IMMUNE_PHASE_MONITORING);
+
+    result = training_immune_stop(ti_system);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(training_immune_get_phase(ti_system), TRAINING_IMMUNE_PHASE_RESOLVED);
+}
+
+/* ============================================================================
+ * Integration Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, ConnectBrainImmune) {
+    int result = training_immune_connect_brain_immune(ti_system, brain_immune);
+    EXPECT_EQ(result, 0);
+    EXPECT_TRUE(ti_system->config.has_brain_immune);
+}
+
+TEST_F(TrainingImmuneTest, ConnectNullComponents) {
+    /* Null brain immune */
+    int result = training_immune_connect_brain_immune(ti_system, nullptr);
+    EXPECT_EQ(result, -1);
+
+    /* Null optimizer */
+    result = training_immune_connect_optimizer(ti_system, nullptr);
+    EXPECT_EQ(result, -1);
+
+    /* Null gradient manager */
+    result = training_immune_connect_gradient_manager(ti_system, nullptr);
+    EXPECT_EQ(result, -1);
+
+    /* Null callbacks */
+    result = training_immune_connect_callbacks(ti_system, nullptr);
+    EXPECT_EQ(result, -1);
+}
+
+/* ============================================================================
+ * Immune → Training: Learning Rate Modulation Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, InflammationReducesLR) {
+    training_immune_connect_brain_immune(ti_system, brain_immune);
+    training_immune_start(ti_system);
+
+    /* No inflammation → full LR */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    float lr_factor = training_immune_get_lr_factor(ti_system);
+    EXPECT_FLOAT_EQ(lr_factor, 1.0f);
+
+    /* Local inflammation → slight reduction */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_LOCAL);
+    lr_factor = training_immune_get_lr_factor(ti_system);
+    EXPECT_FLOAT_EQ(lr_factor, TRAINING_IMMUNE_LR_FACTOR_LOCAL);
+    EXPECT_LT(lr_factor, 1.0f);
+
+    /* Regional inflammation → moderate reduction */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_REGIONAL);
+    lr_factor = training_immune_get_lr_factor(ti_system);
+    EXPECT_FLOAT_EQ(lr_factor, TRAINING_IMMUNE_LR_FACTOR_REGIONAL);
+    EXPECT_LT(lr_factor, TRAINING_IMMUNE_LR_FACTOR_LOCAL);
+
+    /* Systemic inflammation → severe reduction */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_SYSTEMIC);
+    lr_factor = training_immune_get_lr_factor(ti_system);
+    EXPECT_FLOAT_EQ(lr_factor, TRAINING_IMMUNE_LR_FACTOR_SYSTEMIC);
+    EXPECT_LT(lr_factor, TRAINING_IMMUNE_LR_FACTOR_REGIONAL);
+
+    /* Cytokine storm → extreme reduction */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_STORM);
+    lr_factor = training_immune_get_lr_factor(ti_system);
+    EXPECT_FLOAT_EQ(lr_factor, TRAINING_IMMUNE_LR_FACTOR_STORM);
+    EXPECT_LT(lr_factor, TRAINING_IMMUNE_LR_FACTOR_SYSTEMIC);
+}
+
+TEST_F(TrainingImmuneTest, EffectiveLRComputation) {
+    training_immune_start(ti_system);
+
+    float base_lr = 0.01f;
+
+    /* No inflammation */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    float effective_lr = training_immune_get_effective_lr(ti_system, base_lr);
+    EXPECT_FLOAT_EQ(effective_lr, base_lr);
+
+    /* With inflammation */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_SYSTEMIC);
+    effective_lr = training_immune_get_effective_lr(ti_system, base_lr);
+    EXPECT_FLOAT_EQ(effective_lr, base_lr * TRAINING_IMMUNE_LR_FACTOR_SYSTEMIC);
+    EXPECT_LT(effective_lr, base_lr);
+}
+
+TEST_F(TrainingImmuneTest, MinLRFactorConstraint) {
+    /* Create system with custom min LR factor */
+    training_immune_config_t config;
+    training_immune_default_config(&config);
+    config.min_lr_factor = 0.5f; /* 50% minimum */
+    config.lr_factor_storm = 0.1f; /* Would be below min */
+
+    training_immune_system_t* custom_system = training_immune_create(&config);
+    ASSERT_NE(custom_system, nullptr);
+
+    training_immune_update_inflammation(custom_system, INFLAMMATION_STORM);
+    float lr_factor = training_immune_get_lr_factor(custom_system);
+
+    /* Should be clamped to min */
+    EXPECT_GE(lr_factor, 0.5f);
+
+    training_immune_destroy(custom_system);
+}
+
+TEST_F(TrainingImmuneTest, GradientScalingFactor) {
+    training_immune_start(ti_system);
+
+    /* No inflammation → no scaling */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    float grad_scale = training_immune_get_gradient_scale(ti_system);
+    EXPECT_FLOAT_EQ(grad_scale, 1.0f);
+
+    /* With inflammation → scale down */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_SYSTEMIC);
+    grad_scale = training_immune_get_gradient_scale(ti_system);
+    EXPECT_LT(grad_scale, 1.0f);
+    EXPECT_FLOAT_EQ(grad_scale, training_immune_get_lr_factor(ti_system));
+}
+
+TEST_F(TrainingImmuneTest, ImmuneResponsePhaseTransitions) {
+    training_immune_connect_brain_immune(ti_system, brain_immune);
+    training_immune_start(ti_system);
+
+    /* Start healthy */
+    EXPECT_EQ(training_immune_get_phase(ti_system), TRAINING_IMMUNE_PHASE_MONITORING);
+    EXPECT_FALSE(training_immune_is_responding(ti_system));
+
+    /* Inflammation triggers response phase */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_SYSTEMIC);
+    EXPECT_EQ(training_immune_get_phase(ti_system), TRAINING_IMMUNE_PHASE_RESPONDING);
+    EXPECT_TRUE(training_immune_is_responding(ti_system));
+
+    /* Resolution returns to normal */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    /* Note: May still be RESPONDING if min duration not met */
+    EXPECT_FALSE(training_immune_is_responding(ti_system) ||
+                 training_immune_get_phase(ti_system) == TRAINING_IMMUNE_PHASE_RECOVERING);
+}
+
+/* ============================================================================
+ * Training → Immune: Instability Detection Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, UpdateMetrics) {
+    training_immune_start(ti_system);
+
+    float loss = 0.5f;
+    float grad_norm = 1.2f;
+    float lr = 0.001f;
+
+    int result = training_immune_update_metrics(ti_system, loss, grad_norm, lr);
+    EXPECT_EQ(result, 0);
+
+    training_immune_metrics_t metrics;
+    result = training_immune_get_current_metrics(ti_system, &metrics);
+    EXPECT_EQ(result, 0);
+
+    EXPECT_FLOAT_EQ(metrics.loss, loss);
+    EXPECT_FLOAT_EQ(metrics.grad_norm, grad_norm);
+    EXPECT_FLOAT_EQ(metrics.learning_rate, lr);
+    EXPECT_EQ(metrics.step, 1);
+}
+
+TEST_F(TrainingImmuneTest, DetectLossNaN) {
+    training_immune_start(ti_system);
+
+    /* Normal step */
+    training_immune_update_metrics(ti_system, 0.5f, 1.0f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_NONE);
+
+    /* NaN loss */
+    training_immune_update_metrics(ti_system, NAN, 1.0f, 0.001f);
+    instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_LOSS_NAN);
+}
+
+TEST_F(TrainingImmuneTest, DetectLossInfinity) {
+    training_immune_start(ti_system);
+
+    /* Normal step */
+    training_immune_update_metrics(ti_system, 0.5f, 1.0f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_NONE);
+
+    /* Infinite loss */
+    training_immune_update_metrics(ti_system, INFINITY, 1.0f, 0.001f);
+    instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_LOSS_INF);
+}
+
+TEST_F(TrainingImmuneTest, DetectLossExplosion) {
+    training_immune_start(ti_system);
+
+    /* Stable loss */
+    training_immune_update_metrics(ti_system, 0.5f, 1.0f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_NONE);
+
+    /* Exploding loss (10x increase) */
+    training_immune_update_metrics(ti_system, 5.0f, 1.0f, 0.001f);
+    instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_LOSS_EXPLOSION);
+}
+
+TEST_F(TrainingImmuneTest, DetectGradientExplosion) {
+    training_immune_start(ti_system);
+
+    /* Normal gradient */
+    training_immune_update_metrics(ti_system, 0.5f, 10.0f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_NONE);
+
+    /* Exploding gradient */
+    training_immune_update_metrics(ti_system, 0.5f, 1000.0f, 0.001f);
+    instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_GRAD_EXPLOSION);
+}
+
+TEST_F(TrainingImmuneTest, DetectGradientVanishing) {
+    training_immune_start(ti_system);
+
+    /* Normal gradient */
+    training_immune_update_metrics(ti_system, 0.5f, 0.1f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_NONE);
+
+    /* Vanishing gradient */
+    training_immune_update_metrics(ti_system, 0.5f, 1e-10f, 0.001f);
+    instability = training_immune_check_stability(ti_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_GRAD_VANISHING);
+}
+
+TEST_F(TrainingImmuneTest, DetectLossPlateau) {
+    /* Create system with low plateau threshold */
+    training_immune_config_t config;
+    training_immune_default_config(&config);
+    config.plateau_steps = 5;
+    config.enable_auto_immune_response = false; /* Disable auto-trigger for this test */
+
+    training_immune_system_t* test_system = training_immune_create(&config);
+    ASSERT_NE(test_system, nullptr);
+
+    training_immune_start(test_system);
+
+    /* Simulate plateau (no improvement for plateau_steps) */
+    float plateau_loss = 0.5f;
+    for (uint32_t i = 0; i < config.plateau_steps + 1; i++) {
+        training_immune_update_metrics(test_system, plateau_loss, 1.0f, 0.001f);
+    }
+
+    training_instability_type_t instability = training_immune_check_stability(test_system);
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_LOSS_PLATEAU);
+
+    training_immune_destroy(test_system);
+}
+
+TEST_F(TrainingImmuneTest, ReportInstability) {
+    training_immune_start(ti_system);
+
+    uint32_t event_id;
+    int result = training_immune_report_instability(
+        ti_system,
+        TRAINING_INSTABILITY_GRAD_EXPLOSION,
+        8, /* severity */
+        &event_id
+    );
+
+    EXPECT_EQ(result, 0);
+    EXPECT_GT(event_id, 0);
+
+    /* Verify event was stored */
+    const training_instability_event_t* event =
+        training_immune_get_event(ti_system, event_id);
+    ASSERT_NE(event, nullptr);
+
+    EXPECT_EQ(event->type, TRAINING_INSTABILITY_GRAD_EXPLOSION);
+    EXPECT_EQ(event->severity, 8);
+    EXPECT_FLOAT_EQ(event->confidence, 1.0f);
+}
+
+TEST_F(TrainingImmuneTest, TriggerImmuneResponse) {
+    /* Connect brain immune */
+    training_immune_connect_brain_immune(ti_system, brain_immune);
+    training_immune_start(ti_system);
+
+    /* Report instability */
+    uint32_t event_id;
+    training_immune_report_instability(
+        ti_system,
+        TRAINING_INSTABILITY_LOSS_EXPLOSION,
+        10,
+        &event_id
+    );
+
+    /* Trigger immune response */
+    int result = training_immune_trigger_immune_response(ti_system, event_id);
+    EXPECT_EQ(result, 0);
+
+    /* Verify event was marked as immune-triggered */
+    const training_instability_event_t* event =
+        training_immune_get_event(ti_system, event_id);
+    ASSERT_NE(event, nullptr);
+    EXPECT_TRUE(event->immune_triggered);
+    EXPECT_GT(event->antigen_id, 0);
+
+    /* Verify antigen was presented to brain immune */
+    const brain_antigen_t* antigen =
+        brain_immune_get_antigen(brain_immune, event->antigen_id);
+    ASSERT_NE(antigen, nullptr);
+    EXPECT_EQ(antigen->severity, 10);
+}
+
+TEST_F(TrainingImmuneTest, AutoImmuneResponse) {
+    /* Enable auto-trigger */
+    training_immune_config_t config;
+    training_immune_default_config(&config);
+    config.enable_auto_immune_response = true;
+
+    training_immune_system_t* test_system = training_immune_create(&config);
+    ASSERT_NE(test_system, nullptr);
+
+    training_immune_connect_brain_immune(test_system, brain_immune);
+    training_immune_start(test_system);
+
+    /* Update with NaN (should auto-trigger immune response) */
+    training_immune_update_metrics(test_system, NAN, 1.0f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(test_system);
+
+    EXPECT_EQ(instability, TRAINING_INSTABILITY_LOSS_NAN);
+
+    /* Verify immune response was triggered automatically */
+    training_immune_stats_t stats;
+    training_immune_get_stats(test_system, &stats);
+    EXPECT_GT(stats.total_instabilities, 0);
+    EXPECT_GT(stats.immune_responses_triggered, 0);
+
+    training_immune_destroy(test_system);
+}
+
+/* ============================================================================
+ * Statistics Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, GetStatistics) {
+    training_immune_start(ti_system);
+
+    /* Simulate some training */
+    for (int i = 0; i < 10; i++) {
+        training_immune_update_metrics(ti_system, 0.5f - i * 0.01f, 1.0f, 0.001f);
+    }
+
+    /* Get statistics */
+    training_immune_stats_t stats;
+    int result = training_immune_get_stats(ti_system, &stats);
+    EXPECT_EQ(result, 0);
+
+    EXPECT_EQ(stats.current_phase, TRAINING_IMMUNE_PHASE_MONITORING);
+    EXPECT_EQ(stats.current_inflammation, INFLAMMATION_NONE);
+    EXPECT_FLOAT_EQ(stats.current_lr_factor, 1.0f);
+}
+
+TEST_F(TrainingImmuneTest, InstabilityStatistics) {
+    training_immune_start(ti_system);
+
+    /* Report various instabilities */
+    uint32_t event_id;
+    training_immune_report_instability(ti_system, TRAINING_INSTABILITY_LOSS_NAN, 10, &event_id);
+    training_immune_report_instability(ti_system, TRAINING_INSTABILITY_GRAD_EXPLOSION, 8, &event_id);
+    training_immune_report_instability(ti_system, TRAINING_INSTABILITY_LOSS_NAN, 10, &event_id);
+
+    training_immune_stats_t stats;
+    training_immune_get_stats(ti_system, &stats);
+
+    EXPECT_EQ(stats.total_instabilities, 3);
+    EXPECT_EQ(stats.instabilities_by_type[TRAINING_INSTABILITY_LOSS_NAN], 2);
+    EXPECT_EQ(stats.instabilities_by_type[TRAINING_INSTABILITY_GRAD_EXPLOSION], 1);
+}
+
+TEST_F(TrainingImmuneTest, HealthyVsInflamedSteps) {
+    training_immune_start(ti_system);
+
+    /* Healthy steps */
+    for (int i = 0; i < 5; i++) {
+        training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    }
+
+    /* Inflamed steps */
+    for (int i = 0; i < 3; i++) {
+        training_immune_update_inflammation(ti_system, INFLAMMATION_SYSTEMIC);
+    }
+
+    /* Back to healthy */
+    for (int i = 0; i < 2; i++) {
+        training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    }
+
+    training_immune_stats_t stats;
+    training_immune_get_stats(ti_system, &stats);
+
+    EXPECT_EQ(stats.healthy_steps, 7); /* 5 + 2 */
+    EXPECT_EQ(stats.inflamed_steps, 3);
+    EXPECT_GT(stats.time_in_inflammation_pct, 0.0f);
+    EXPECT_LT(stats.time_in_inflammation_pct, 100.0f);
+}
+
+/* ============================================================================
+ * String Conversion Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, PhaseToString) {
+    EXPECT_STREQ(training_immune_phase_to_string(TRAINING_IMMUNE_PHASE_HEALTHY), "HEALTHY");
+    EXPECT_STREQ(training_immune_phase_to_string(TRAINING_IMMUNE_PHASE_MONITORING), "MONITORING");
+    EXPECT_STREQ(training_immune_phase_to_string(TRAINING_IMMUNE_PHASE_RESPONDING), "RESPONDING");
+    EXPECT_STREQ(training_immune_phase_to_string(TRAINING_IMMUNE_PHASE_RECOVERING), "RECOVERING");
+    EXPECT_STREQ(training_immune_phase_to_string(TRAINING_IMMUNE_PHASE_RESOLVED), "RESOLVED");
+}
+
+TEST_F(TrainingImmuneTest, InstabilityTypeToString) {
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_NONE), "NONE");
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_LOSS_NAN), "LOSS_NAN");
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_LOSS_INF), "LOSS_INF");
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_LOSS_EXPLOSION), "LOSS_EXPLOSION");
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_GRAD_EXPLOSION), "GRAD_EXPLOSION");
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_GRAD_VANISHING), "GRAD_VANISHING");
+    EXPECT_STREQ(training_instability_type_to_string(TRAINING_INSTABILITY_LOSS_PLATEAU), "LOSS_PLATEAU");
+}
+
+/* ============================================================================
+ * Edge Cases and Error Handling
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, NullParameterHandling) {
+    /* Null system */
+    EXPECT_EQ(training_immune_start(nullptr), -1);
+    EXPECT_EQ(training_immune_stop(nullptr), -1);
+    EXPECT_FLOAT_EQ(training_immune_get_lr_factor(nullptr), 1.0f);
+    EXPECT_EQ(training_immune_get_phase(nullptr), TRAINING_IMMUNE_PHASE_HEALTHY);
+    EXPECT_FALSE(training_immune_is_responding(nullptr));
+
+    /* Null config */
+    training_immune_system_t* sys = training_immune_create(nullptr);
+    EXPECT_NE(sys, nullptr); /* Should use defaults */
+    training_immune_destroy(sys);
+}
+
+TEST_F(TrainingImmuneTest, DisabledModulation) {
+    /* Create system with LR modulation disabled */
+    training_immune_config_t config;
+    training_immune_default_config(&config);
+    config.enable_lr_modulation = false;
+
+    training_immune_system_t* test_system = training_immune_create(&config);
+    ASSERT_NE(test_system, nullptr);
+
+    training_immune_update_inflammation(test_system, INFLAMMATION_STORM);
+
+    /* LR should not be modulated */
+    float base_lr = 0.01f;
+    float effective_lr = training_immune_get_effective_lr(test_system, base_lr);
+    EXPECT_FLOAT_EQ(effective_lr, base_lr); /* No modulation */
+
+    training_immune_destroy(test_system);
+}
+
+TEST_F(TrainingImmuneTest, DisabledGradientScaling) {
+    /* Create system with gradient scaling disabled */
+    training_immune_config_t config;
+    training_immune_default_config(&config);
+    config.enable_grad_scaling = false;
+
+    training_immune_system_t* test_system = training_immune_create(&config);
+    ASSERT_NE(test_system, nullptr);
+
+    training_immune_update_inflammation(test_system, INFLAMMATION_STORM);
+
+    /* Gradient scale should be 1.0 */
+    float grad_scale = training_immune_get_gradient_scale(test_system);
+    EXPECT_FLOAT_EQ(grad_scale, 1.0f);
+
+    training_immune_destroy(test_system);
+}
+
+/* ============================================================================
+ * Integration Scenario Tests
+ * ============================================================================ */
+
+TEST_F(TrainingImmuneTest, FullTrainingScenario) {
+    /* Set up fully connected system */
+    training_immune_connect_brain_immune(ti_system, brain_immune);
+    training_immune_start(ti_system);
+
+    /* Simulate normal training */
+    for (int step = 0; step < 10; step++) {
+        float loss = 1.0f / (step + 1); /* Decreasing loss */
+        training_immune_update_metrics(ti_system, loss, 1.0f, 0.001f);
+        training_immune_check_stability(ti_system);
+
+        EXPECT_EQ(training_immune_get_phase(ti_system), TRAINING_IMMUNE_PHASE_MONITORING);
+    }
+
+    /* Simulate training divergence */
+    training_immune_update_metrics(ti_system, 100.0f, 1000.0f, 0.001f);
+    training_instability_type_t instability = training_immune_check_stability(ti_system);
+
+    EXPECT_NE(instability, TRAINING_INSTABILITY_NONE);
+
+    /* Verify stats */
+    training_immune_stats_t stats;
+    training_immune_get_stats(ti_system, &stats);
+    EXPECT_GT(stats.total_instabilities, 0);
+}
+
+TEST_F(TrainingImmuneTest, ImmuneRecoveryScenario) {
+    training_immune_connect_brain_immune(ti_system, brain_immune);
+    training_immune_start(ti_system);
+
+    /* Start healthy */
+    EXPECT_EQ(training_immune_get_lr_factor(ti_system), 1.0f);
+
+    /* Immune response */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_SYSTEMIC);
+    float reduced_lr_factor = training_immune_get_lr_factor(ti_system);
+    EXPECT_LT(reduced_lr_factor, 1.0f);
+    EXPECT_TRUE(training_immune_is_responding(ti_system));
+
+    /* Recovery */
+    training_immune_update_inflammation(ti_system, INFLAMMATION_NONE);
+    /* May still be responding if min duration not met, but eventually recovers */
+}
+
+/* ============================================================================
+ * Main Test Runner
+ * ============================================================================ */
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

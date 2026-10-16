@@ -8,11 +8,24 @@
  */
 
 #include "utils/containers/nimcp_hash_table.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_messages.h"
+#include "api/nimcp_api_exception.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>  /* for NULL */
 #include "utils/memory/nimcp_memory.h"  // CRITICAL: Declares nimcp_calloc/nimcp_free return types
+#include "utils/memory/nimcp_unified_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(hash_table)
 
 //=============================================================================
 // Internal Data Structures
@@ -36,6 +49,10 @@ typedef struct hash_entry_t {
  * WHAT: Hash table structure
  * WHY: Encapsulate all table state
  * HOW: Bucket array + configuration
+ *
+ * Dynamic resizing: When load factor exceeds 0.75, the table doubles its bucket
+ * count and rehashes all entries. This maintains O(1) average-case lookup even
+ * as entry count grows well beyond initial capacity.
  */
 struct hash_table_t {
     hash_entry_t** buckets;      // Array of bucket heads
@@ -43,6 +60,89 @@ struct hash_table_t {
     size_t entry_count;          // Number of entries
     hash_table_config_t config;  // Configuration
 };
+
+//=============================================================================
+// Dynamic Resizing
+//=============================================================================
+
+/**
+ * WHAT: Maximum load factor before triggering resize
+ * WHY: 0.75 balances memory usage vs chain length
+ * HOW: Checked after every successful insert of a new entry
+ */
+#define HASH_TABLE_MAX_LOAD_FACTOR 0.75f
+
+/**
+ * WHAT: Resize hash table by doubling bucket count and rehashing all entries
+ * WHY: Keep load factor below threshold to maintain O(1) average lookup
+ * HOW: Allocate new bucket array at 2x capacity, walk old buckets rehashing
+ *      each entry into new array, then free old array
+ *
+ * @param table Hash table to resize
+ * @return true on success, false on allocation failure (table unchanged)
+ */
+static bool hash_table_resize(hash_table_t* table)
+{
+    if (!table || !table->buckets) {
+        return false;
+    }
+
+    /* Guard: prevent overflow when doubling */
+    if (table->bucket_count > SIZE_MAX / 2) {
+        LOG_WARN("nimcp_hash_table", "Cannot resize: bucket_count overflow");
+        return false;
+    }
+
+    size_t new_bucket_count = table->bucket_count * 2;
+    hash_entry_t** new_buckets = (hash_entry_t**)nimcp_calloc(new_bucket_count, sizeof(hash_entry_t*));
+    if (!new_buckets) {
+        LOG_WARN("nimcp_hash_table",
+                 "Failed to allocate %zu buckets for resize, continuing with current capacity",
+                 new_bucket_count);
+        return false;  /* Non-fatal: table still works, just slower */
+    }
+
+    /* Rehash all entries into new bucket array */
+    for (size_t i = 0; i < table->bucket_count; i++) {
+        hash_entry_t* current = table->buckets[i];
+        while (current) {
+            hash_entry_t* next = current->next;
+
+            /* Use cached hash to compute new bucket index */
+            size_t new_index = current->hash % new_bucket_count;
+
+            /* Insert at head of new chain */
+            current->next = new_buckets[new_index];
+            new_buckets[new_index] = current;
+
+            current = next;
+        }
+    }
+
+    /* Swap in new bucket array */
+    nimcp_free(table->buckets);
+    table->buckets = new_buckets;
+    table->bucket_count = new_bucket_count;
+
+    return true;
+}
+
+/**
+ * WHAT: Check load factor and resize if needed
+ * WHY: Called after each new entry insertion
+ * HOW: If entries/buckets > 0.75, trigger resize
+ */
+static void hash_table_maybe_resize(hash_table_t* table)
+{
+    if (!table || table->bucket_count == 0) {
+        return;
+    }
+
+    float load_factor = (float)table->entry_count / (float)table->bucket_count;
+    if (load_factor > HASH_TABLE_MAX_LOAD_FACTOR) {
+        hash_table_resize(table);
+    }
+}
 
 //=============================================================================
 // Hash Functions
@@ -56,11 +156,11 @@ struct hash_table_t {
 static uint32_t hash_fnv1a(const void* key, size_t key_size)
 {
     const uint8_t* data = (const uint8_t*) key;
-    uint32_t hash = 2166136261u;  // FNV offset basis
+    uint32_t hash = 2166136261U;  // FNV offset basis
 
     for (size_t i = 0; i < key_size; i++) {
         hash ^= data[i];
-        hash *= 16777619u;  // FNV prime
+        hash *= 16777619U;  // FNV prime
     }
 
     return hash;
@@ -106,16 +206,16 @@ static uint32_t hash_murmur3_32(uint32_t h)
 static uint32_t hash_murmur3(const void* key, size_t key_size)
 {
     const uint8_t* data = (const uint8_t*) key;
-    const int nblocks = key_size / 4;
+    const size_t nblocks = key_size / 4;
     uint32_t h = 0;  // seed = 0
 
     const uint32_t c1 = 0xcc9e2d51;
     const uint32_t c2 = 0x1b873593;
 
-    // Body - process 4-byte blocks
-    const uint32_t* blocks = (const uint32_t*) (data);
-    for (int i = 0; i < nblocks; i++) {
-        uint32_t k = blocks[i];
+    // Body - process 4-byte blocks (use memcpy to avoid unaligned access UB)
+    for (size_t i = 0; i < nblocks; i++) {
+        uint32_t k;
+        memcpy(&k, data + i * 4, sizeof(uint32_t));
 
         k *= c1;
         k = (k << 15) | (k >> 17);  // rotl32(k, 15)
@@ -143,8 +243,10 @@ static uint32_t hash_murmur3(const void* key, size_t key_size)
             h ^= k;
     }
 
-    // Finalization
-    h ^= key_size;
+    // Finalization — explicitly cast to uint32_t for MurmurHash3 spec compliance.
+    // On 64-bit systems, key_size is size_t (64-bit); the standard MurmurHash3
+    // finalization XORs with the 32-bit length value.
+    h ^= (uint32_t)key_size;
     return hash_murmur3_32(h);
 }
 
@@ -211,10 +313,75 @@ static bool key_compare_integer(const void* key1, size_t key1_size, const void* 
 /**
  * WHAT: Compute hash for a key
  * WHY: Centralize hash computation logic
- * HOW: Dispatch to appropriate hash function
+ * HOW: Dispatch to appropriate hash function, normalize case if needed
+ *
+ * CRITICAL: For case-insensitive string keys, must normalize to lowercase
+ * before hashing so "ConcePT", "concept", and "CONCEPT" hash to same bucket
  */
 static uint32_t compute_hash(hash_table_t* table, const void* key, size_t key_size)
 {
+    // For case-insensitive string keys, normalize to lowercase before hashing
+    if (table->config.key_type == HASH_KEY_STRING && table->config.case_insensitive) {
+        /* P2-U1: Use stack buffer for small keys to avoid heap allocation on every
+         * hash computation. Only fall back to heap for keys > 1024 bytes. */
+        #define HASH_STACK_BUF_SIZE 1024
+        char stack_buf[HASH_STACK_BUF_SIZE];
+        char* lowercase_key;
+        bool heap_allocated = false;
+
+        if (key_size <= HASH_STACK_BUF_SIZE) {
+            lowercase_key = stack_buf;
+        } else {
+            lowercase_key = (char*)nimcp_malloc(key_size);
+            if (!lowercase_key) {
+                // Fallback to original key on allocation failure
+                LOG_WARN("nimcp_hash_table",
+                         "Failed to allocate %zu bytes for lowercase key normalization. "
+                         "Falling back to original key - case-insensitive matching may fail.",
+                         key_size);
+                goto hash_original_key;
+            }
+            heap_allocated = true;
+        }
+
+        // Convert to lowercase
+        const char* str = (const char*)key;
+        for (size_t i = 0; i < key_size; i++) {
+            lowercase_key[i] = tolower((unsigned char)str[i]);
+        }
+
+        // Hash the lowercase version
+        uint32_t hash;
+        switch (table->config.hash_algorithm) {
+            case HASH_ALG_FNV1A:
+                hash = hash_fnv1a(lowercase_key, key_size);
+                break;
+            case HASH_ALG_DJB2:
+                hash = hash_djb2(lowercase_key, key_size);
+                break;
+            case HASH_ALG_MURMUR3:
+                hash = hash_murmur3(lowercase_key, key_size);
+                break;
+            case HASH_ALG_CUSTOM:
+                if (table->config.custom_hash_fn) {
+                    hash = table->config.custom_hash_fn(lowercase_key, key_size);
+                } else {
+                    hash = hash_fnv1a(lowercase_key, key_size);
+                }
+                break;
+            default:
+                hash = hash_fnv1a(lowercase_key, key_size);
+                break;
+        }
+
+        if (heap_allocated) {
+            nimcp_free(lowercase_key);
+        }
+        return hash;
+    }
+
+hash_original_key:
+    // Normal path: hash original key
     switch (table->config.hash_algorithm) {
         case HASH_ALG_FNV1A:
             return hash_fnv1a(key, key_size);
@@ -268,13 +435,13 @@ static hash_entry_t* create_entry(const void* key, size_t key_size, const void* 
                                   size_t value_size, uint32_t hash)
 {
     hash_entry_t* entry = (hash_entry_t*) nimcp_malloc(sizeof(hash_entry_t));
-    if (!entry) {
-        return NULL;
-    }
+    NIMCP_API_CHECK_ALLOC(entry, "Failed to allocate hash entry");
 
     // Copy key
     entry->key = nimcp_malloc(key_size);
     if (!entry->key) {
+        LOG_ERROR("Failed to allocate key memory (%zu bytes)", key_size);
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, key_size, "Failed to allocate key memory");
         nimcp_free(entry);
         return NULL;
     }
@@ -284,6 +451,8 @@ static hash_entry_t* create_entry(const void* key, size_t key_size, const void* 
     // Copy value
     entry->value = nimcp_malloc(value_size);
     if (!entry->value) {
+        LOG_ERROR("Failed to allocate value memory (%zu bytes)", value_size);
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, value_size, "Failed to allocate value memory");
         nimcp_free(entry->key);
         nimcp_free(entry);
         return NULL;
@@ -350,7 +519,7 @@ static hash_entry_t* find_entry(hash_table_t* table, hash_entry_t* head, const v
     if (prev) {
         *prev = previous;
     }
-    return NULL;
+    return NULL;  /* Key not found - normal return, not an error */
 }
 
 //=============================================================================
@@ -360,13 +529,26 @@ static hash_entry_t* find_entry(hash_table_t* table, hash_entry_t* head, const v
 hash_table_t* hash_table_create(const hash_table_config_t* config)
 {
     hash_table_t* table = (hash_table_t*) nimcp_malloc(sizeof(hash_table_t));
-    if (!table) {
-        return NULL;
-    }
+    NIMCP_API_CHECK_ALLOC(table, "Failed to allocate hash table structure");
 
     // Set configuration with defaults
     if (config) {
         table->config = *config;
+
+        // CRITICAL: thread_safe flag is NOT implemented
+        // Reject creation if caller expects thread safety we cannot provide
+        if (config->thread_safe) {
+            LOG_ERROR("nimcp_hash_table",
+                      "thread_safe=true requested but NOT IMPLEMENTED. "
+                      "Hash table operations are NOT thread-safe. "
+                      "Caller MUST provide external synchronization (e.g., nimcp_mutex_t) "
+                      "around ALL hash table operations including create, insert, lookup, "
+                      "remove, iterate, and destroy. Failing to do so will cause data races.");
+            nimcp_free(table);
+            /* P2: Use NIMCP_ERROR_NOT_SUPPORTED (thread_safe not implemented), not NO_MEMORY */
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NOT_SUPPORTED, "hash_table_create: thread_safe=true not implemented");
+            return NULL;
+        }
     } else {
         // Default configuration
         memset(&table->config, 0, sizeof(hash_table_config_t));
@@ -386,6 +568,9 @@ hash_table_t* hash_table_create(const hash_table_config_t* config)
     table->bucket_count = table->config.initial_buckets;
     table->buckets = (hash_entry_t**) nimcp_calloc(table->bucket_count, sizeof(hash_entry_t*));
     if (!table->buckets) {
+        LOG_ERROR("Failed to allocate bucket array (%zu buckets)", table->bucket_count);
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, table->bucket_count * sizeof(hash_entry_t*),
+                          "Failed to allocate bucket array");
         nimcp_free(table);
         return NULL;
     }
@@ -402,16 +587,18 @@ void hash_table_destroy(hash_table_t* table)
     }
 
     // Free all entries in all buckets
-    for (size_t i = 0; i < table->bucket_count; i++) {
-        hash_entry_t* current = table->buckets[i];
-        while (current) {
-            hash_entry_t* next = current->next;
-            free_entry(table, current);
-            current = next;
+    if (table->buckets) {
+        for (size_t i = 0; i < table->bucket_count; i++) {
+            hash_entry_t* current = table->buckets[i];
+            while (current) {
+                hash_entry_t* next = current->next;
+                free_entry(table, current);
+                current = next;
+            }
         }
+        nimcp_free(table->buckets);
     }
 
-    nimcp_free(table->buckets);
     nimcp_free(table);
 }
 
@@ -427,7 +614,7 @@ size_t hash_table_bucket_count(const hash_table_t* table)
 
 void hash_table_clear(hash_table_t* table)
 {
-    if (!table) {
+    if (!table || !table->buckets) {
         return;
     }
 
@@ -457,8 +644,14 @@ void hash_table_clear(hash_table_t* table)
 static bool hash_table_insert_generic(hash_table_t* table, const void* key, size_t key_size,
                                       const void* value, size_t value_size)
 {
-    if (!table || !key || !value) {
+    if (!table || !key || !value || !table->buckets) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "hash_table_insert_generic: required parameter is NULL (table, key, value, table->buckets)");
         return false;
+    }
+
+    if (table->bucket_count == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "hash_table_insert_generic: table->bucket_count is zero");
+        return false;  // Defensive check for zero buckets
     }
 
     // Compute hash
@@ -473,6 +666,7 @@ static bool hash_table_insert_generic(hash_table_t* table, const void* key, size
         // Update existing entry
         void* new_value = nimcp_malloc(value_size);
         if (!new_value) {
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "hash_table_insert_generic: new_value is NULL");
             return false;
         }
         memcpy(new_value, value, value_size);
@@ -492,6 +686,7 @@ static bool hash_table_insert_generic(hash_table_t* table, const void* key, size
     // Create new entry
     hash_entry_t* new_entry = create_entry(key, key_size, value, value_size, hash);
     if (!new_entry) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "hash_table_insert_generic: new_entry is NULL");
         return false;
     }
 
@@ -499,6 +694,9 @@ static bool hash_table_insert_generic(hash_table_t* table, const void* key, size
     new_entry->next = table->buckets[bucket_index];
     table->buckets[bucket_index] = new_entry;
     table->entry_count++;
+
+    // Check load factor and resize if needed
+    hash_table_maybe_resize(table);
 
     return true;
 }
@@ -510,8 +708,13 @@ static bool hash_table_insert_generic(hash_table_t* table, const void* key, size
  */
 static void* hash_table_lookup_generic(hash_table_t* table, const void* key, size_t key_size)
 {
-    if (!table || !key) {
+    if (!table || !key || !table->buckets) {
         return NULL;
+    }
+
+    if (table->bucket_count == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "hash_table_lookup_generic: table->bucket_count is zero");
+        return NULL;  // Defensive check for zero buckets
     }
 
     // Compute hash
@@ -532,8 +735,14 @@ static void* hash_table_lookup_generic(hash_table_t* table, const void* key, siz
  */
 static bool hash_table_remove_generic(hash_table_t* table, const void* key, size_t key_size)
 {
-    if (!table || !key) {
+    if (!table || !key || !table->buckets) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "hash_table_remove_generic: required parameter is NULL (table, key, table->buckets)");
         return false;
+    }
+
+    if (table->bucket_count == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "hash_table_remove_generic: table->bucket_count is zero");
+        return false;  // Defensive check for zero buckets
     }
 
     // Compute hash
@@ -546,7 +755,7 @@ static bool hash_table_remove_generic(hash_table_t* table, const void* key, size
         find_entry(table, table->buckets[bucket_index], key, key_size, hash, &prev);
 
     if (!entry) {
-        return false;  // Not found
+        return false;  /* Not found - normal return */
     }
 
     // Unlink from chain
@@ -571,6 +780,7 @@ bool hash_table_insert_string(hash_table_t* table, const char* key, const void* 
                               size_t value_size)
 {
     if (!key) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "hash_table_insert_string: key is NULL");
         return false;
     }
 
@@ -581,6 +791,8 @@ bool hash_table_insert_string(hash_table_t* table, const char* key, const void* 
 void* hash_table_lookup_string(hash_table_t* table, const char* key)
 {
     if (!key) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "key is NULL");
+
         return NULL;
     }
 
@@ -591,6 +803,7 @@ void* hash_table_lookup_string(hash_table_t* table, const char* key)
 bool hash_table_remove_string(hash_table_t* table, const char* key)
 {
     if (!key) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "hash_table_remove_string: key is NULL");
         return false;
     }
 
@@ -619,12 +832,32 @@ bool hash_table_remove_uint32(hash_table_t* table, uint32_t key)
 }
 
 //=============================================================================
+// Integer Key Operations (uint64_t)
+//=============================================================================
+
+bool hash_table_insert_uint64(hash_table_t* table, uint64_t key, const void* value,
+                              size_t value_size)
+{
+    return hash_table_insert_generic(table, &key, sizeof(uint64_t), value, value_size);
+}
+
+void* hash_table_lookup_uint64(hash_table_t* table, uint64_t key)
+{
+    return hash_table_lookup_generic(table, &key, sizeof(uint64_t));
+}
+
+bool hash_table_remove_uint64(hash_table_t* table, uint64_t key)
+{
+    return hash_table_remove_generic(table, &key, sizeof(uint64_t));
+}
+
+//=============================================================================
 // Iteration
 //=============================================================================
 
 void hash_table_iterate(hash_table_t* table, hash_table_iterator_fn_t callback, void* user_data)
 {
-    if (!table || !callback) {
+    if (!table || !callback || !table->buckets) {
         return;
     }
 
@@ -651,11 +884,11 @@ void hash_table_iterate(hash_table_t* table, hash_table_iterator_fn_t callback, 
 void hash_table_stats(const hash_table_t* table, size_t* max_chain_length, float* avg_chain_length,
                       size_t* empty_buckets)
 {
-    if (!table) {
+    if (!table || !table->buckets) {
         if (max_chain_length)
             *max_chain_length = 0;
         if (avg_chain_length)
-            *avg_chain_length = 0.0f;
+            *avg_chain_length = 0.0F;
         if (empty_buckets)
             *empty_buckets = 0;
         return;
@@ -691,7 +924,7 @@ void hash_table_stats(const hash_table_t* table, size_t* max_chain_length, float
     }
 
     if (avg_chain_length) {
-        *avg_chain_length = non_empty > 0 ? (float) total_len / non_empty : 0.0f;
+        *avg_chain_length = non_empty > 0 ? (float) total_len / non_empty : 0.0F;
     }
 
     if (empty_buckets) {

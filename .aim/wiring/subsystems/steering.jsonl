@@ -1,0 +1,218 @@
+# Steering Subsystem Wiring - Byrnes Alignment-Safe Drive System
+# Based on Steve Byrnes' neuroscience research on brain-like AGI safety
+# The hypothalamus (steering ~10% of brain) sends reward signals that steer learning (~90%)
+{"type":"entity","name":"hypothalamus_drives","entityType":"SteeringModule","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Byrnes alignment-safe drive system","Manages 9 drive types with setpoint locking","Computes reward signals for SNc/VTA"]}
+{"type":"entity","name":"hypothalamus_homeostasis","entityType":"SteeringModule","subsystem":"steering","min_tier":1,"enabled":true,"observations":["PI/PD homeostatic control","10 homeostatic variables","Alignment-aware reward computation"]}
+{"type":"entity","name":"hypothalamus_drives_bio","entityType":"BioAsyncBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Bio-async integration for drive system","Broadcasts reward and arousal signals","Handles alignment alerts"]}
+{"type":"entity","name":"hypothalamus_snc_bridge","entityType":"RewardBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Reward → Dopamine conversion","RPE (Reward Prediction Error) computation","TD learning signal generation","5 dopamine channels: motor, NAc, PFC, amygdala, hippocampus"]}
+# Message handling relations
+{"type":"relation","from":"hypothalamus_drives_bio","to":"BIO_MSG_HYPO_DRIVE_STATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_DRIVE_STATE"}
+{"type":"relation","from":"hypothalamus_drives_bio","to":"BIO_MSG_HYPO_REWARD_SIGNAL","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_REWARD_SIGNAL"}
+{"type":"relation","from":"hypothalamus_drives_bio","to":"BIO_MSG_HYPO_SURVIVAL_PRIORITY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_SURVIVAL_PRIORITY"}
+{"type":"relation","from":"hypothalamus_drives_bio","to":"BIO_MSG_HYPO_DRIVE_SATISFIED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_DRIVE_SATISFIED"}
+# SNc bridge message handling
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"BIO_MSG_HYPO_REWARD_SIGNAL","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_REWARD_SIGNAL"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"BIO_MSG_SNC_DOPAMINE_STATE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_SNC_DOPAMINE_STATE"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"BIO_MSG_SNC_RPE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_SNC_RPE"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"BIO_MSG_SNC_DOPAMINE_BURST","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_SNC_DOPAMINE_BURST"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"BIO_MSG_SNC_VALUE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SNC_VALUE_UPDATE"}
+# Output relations - Reward signals to SNc/VTA (dopamine system)
+{"type":"relation","from":"hypothalamus_drives","to":"Substantia_Nigra_SNc","relationType":"SENDS_REWARD","channel":"DOPAMINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"Nucleus_Accumbens","relationType":"MODULATES_WANTING","channel":"DOPAMINE"}
+# Output relations - Arousal to Thalamus
+{"type":"relation","from":"hypothalamus_drives","to":"Thalamic_Router","relationType":"MODULATES_AROUSAL","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"Thalamus","relationType":"MODULATES_AROUSAL","channel":"NOREPINEPHRINE"}
+# Output relations - Priority to Attention Gate
+{"type":"relation","from":"hypothalamus_drives","to":"Attention_Gate","relationType":"PROVIDES_SALIENCE","channel":"ACETYLCHOLINE"}
+# Output relations - Goals to Executive
+{"type":"relation","from":"hypothalamus_drives","to":"Executive_Controller","relationType":"INFORMS_GOALS","channel":"DOPAMINE"}
+# Input relations - Interoception from Insula
+{"type":"relation","from":"Insula","to":"hypothalamus_drives","relationType":"PROVIDES_INTEROCEPTION","channel":"SEROTONIN"}
+# Input relations - Threat from Amygdala
+{"type":"relation","from":"Amygdala","to":"hypothalamus_drives","relationType":"SENDS_THREAT","channel":"NOREPINEPHRINE"}
+# Internal relations - Drive system components
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_homeostasis","relationType":"USES_CONTROLLER"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_drives_bio","relationType":"BROADCASTS_VIA"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_snc_bridge","relationType":"SENDS_REWARD_TO"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"hypothalamus_drives_bio","relationType":"RECEIVES_REWARD_VIA"}
+{"type":"relation","from":"hypothalamus_adapter","to":"hypothalamus_drives","relationType":"COORDINATES_WITH"}
+# SNc bridge dopamine channel targets
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"Striatum","relationType":"MODULATES_VIA","channel":"DOPAMINE","target":"motor_learning"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"Nucleus_Accumbens","relationType":"MODULATES_VIA","channel":"DOPAMINE","target":"motivation"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"Prefrontal_Cortex","relationType":"MODULATES_VIA","channel":"DOPAMINE","target":"working_memory"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"Amygdala","relationType":"MODULATES_VIA","channel":"DOPAMINE","target":"emotional_learning"}
+{"type":"relation","from":"hypothalamus_snc_bridge","to":"Hippocampus","relationType":"MODULATES_VIA","channel":"DOPAMINE","target":"memory_consolidation"}
+# Alignment safety relations
+{"type":"relation","from":"hypothalamus_drives_bio","to":"Ethics_Engine","relationType":"REPORTS_ALIGNMENT_TO","channel":"NOREPINEPHRINE","priority":"HIGH"}
+{"type":"relation","from":"hypothalamus_drives_bio","to":"Safety_Monitor","relationType":"REPORTS_ALIGNMENT_TO","channel":"NOREPINEPHRINE","priority":"HIGH"}
+# Executive bridge - Goal priority management (Phase 6)
+{"type":"entity","name":"hypothalamus_exec_bridge","entityType":"ExecutiveBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Drive → goal priority mapping","Survival drive interruption","Goal category boost computation","Blocks growth goals during survival"]}
+# Executive bridge message handling
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"BIO_MSG_HYPO_DRIVE_STATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_DRIVE_STATE"}
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"BIO_MSG_EXEC_PRIORITY_UPDATE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_EXEC_PRIORITY_UPDATE"}
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"BIO_MSG_EXEC_INTERRUPT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_EXEC_INTERRUPT"}
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"BIO_MSG_EXEC_GOAL_BLOCKED","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_EXEC_GOAL_BLOCKED"}
+# Executive bridge target connections
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"Executive_Controller","relationType":"PRIORITIZES_GOALS","channel":"DOPAMINE"}
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"Working_Memory","relationType":"MODULATES_VIA","channel":"ACETYLCHOLINE","target":"goal_maintenance"}
+{"type":"relation","from":"hypothalamus_exec_bridge","to":"Prefrontal_Cortex","relationType":"MODULATES_VIA","channel":"DOPAMINE","target":"goal_selection"}
+# Internal relation to drive system
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_exec_bridge","relationType":"SENDS_URGENCY_TO"}
+# Attention bridge - Drive-biased salience modulation (Phase 7)
+{"type":"entity","name":"hypothalamus_attn_bridge","entityType":"AttentionBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Drive → salience modulation","Hungry = food salient, Threatened = threats salient","12 salience categories mapped from 9 drives","Safety override for threat detection"]}
+# Attention bridge message handling
+{"type":"relation","from":"hypothalamus_attn_bridge","to":"BIO_MSG_HYPO_DRIVE_STATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_DRIVE_STATE"}
+{"type":"relation","from":"hypothalamus_attn_bridge","to":"BIO_MSG_ATTENTION_MODULATION","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_ATTENTION_MODULATION"}
+# Attention bridge target connections
+{"type":"relation","from":"hypothalamus_attn_bridge","to":"Attention_Gate","relationType":"MODULATES_SALIENCE","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_attn_bridge","to":"Salience_Evaluator","relationType":"PROVIDES_DRIVE_BOOST","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_attn_bridge","to":"Thalamic_Router","relationType":"MODULATES_ROUTING","channel":"ACETYLCHOLINE"}
+# Internal relation to drive system
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_attn_bridge","relationType":"SENDS_URGENCY_TO"}
+# Brainstem bridge - Arousal and pain modulation (Phase 10)
+{"type":"entity","name":"hypothalamus_brainstem_bridge","entityType":"BrainstemBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Arousal ↔ drive urgency bidirectional","Pain → safety drive activation","Reticular formation coordination","LC norepinephrine modulation"]}
+# Brainstem bridge message handling
+{"type":"relation","from":"hypothalamus_brainstem_bridge","to":"BIO_MSG_BRAINSTEM_AROUSAL_STATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_BRAINSTEM_AROUSAL_STATE"}
+{"type":"relation","from":"hypothalamus_brainstem_bridge","to":"BIO_MSG_BRAINSTEM_PAIN_INPUT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_BRAINSTEM_PAIN_INPUT"}
+{"type":"relation","from":"hypothalamus_brainstem_bridge","to":"BIO_MSG_BRAINSTEM_AROUSAL_REQUEST","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_BRAINSTEM_AROUSAL_REQUEST"}
+# Brainstem bridge target connections
+{"type":"relation","from":"hypothalamus_brainstem_bridge","to":"Reticular_Formation","relationType":"MODULATES_AROUSAL","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_brainstem_bridge","to":"Locus_Coeruleus","relationType":"DRIVES_AROUSAL","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_brainstem_bridge","relationType":"SENDS_URGENCY_TO"}
+# Medulla bridge - Autonomic regulation (Phase 11)
+{"type":"entity","name":"hypothalamus_medulla_bridge","entityType":"MedullaBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Autonomic nervous system coordination","HR/BP/respiration modulation","Vagal tone from drive state","Fight-or-flight activation"]}
+# Medulla bridge message handling
+{"type":"relation","from":"hypothalamus_medulla_bridge","to":"BIO_MSG_MEDULLA_AUTONOMIC_STATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_MEDULLA_AUTONOMIC_STATE"}
+{"type":"relation","from":"hypothalamus_medulla_bridge","to":"BIO_MSG_MEDULLA_AUTONOMIC_OUTPUT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_MEDULLA_AUTONOMIC_OUTPUT"}
+# Medulla bridge target connections
+{"type":"relation","from":"hypothalamus_medulla_bridge","to":"NTS","relationType":"RECEIVES_VISCERAL_FROM","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_medulla_bridge","to":"DMV","relationType":"CONTROLS_VAGAL","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_medulla_bridge","to":"RVLM","relationType":"ACTIVATES_SYMPATHETIC","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_medulla_bridge","relationType":"SENDS_URGENCY_TO"}
+# Hippocampus bridge - Memory-drive integration (Phase 12)
+{"type":"entity","name":"hypothalamus_hippocampus_bridge","entityType":"CognitiveBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Memory encoding priority from drives","Spatial navigation for resource seeking","Consolidation during low drive states","Drive-memory associations"]}
+# Hippocampus bridge message handling
+{"type":"relation","from":"hypothalamus_hippocampus_bridge","to":"BIO_MSG_HIPPOCAMPUS_ENCODING_PRIORITY","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HIPPOCAMPUS_ENCODING_PRIORITY"}
+{"type":"relation","from":"hypothalamus_hippocampus_bridge","to":"BIO_MSG_HIPPOCAMPUS_CONSOLIDATE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HIPPOCAMPUS_CONSOLIDATE"}
+{"type":"relation","from":"hypothalamus_hippocampus_bridge","to":"BIO_MSG_HIPPOCAMPUS_NAV_GOAL","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HIPPOCAMPUS_NAV_GOAL"}
+{"type":"relation","from":"hypothalamus_hippocampus_bridge","to":"BIO_MSG_HIPPOCAMPUS_MEMORY_ENCODED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HIPPOCAMPUS_MEMORY_ENCODED"}
+# Hippocampus bridge target connections
+{"type":"relation","from":"hypothalamus_hippocampus_bridge","to":"Hippocampus","relationType":"PRIORITIZES_ENCODING","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_hippocampus_bridge","to":"Entorhinal_Cortex","relationType":"PROVIDES_NAV_GOALS","channel":"DOPAMINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_hippocampus_bridge","relationType":"SENDS_PRIORITY_TO"}
+# Amygdala bridge - Emotion-drive integration (Phase 12)
+{"type":"entity","name":"hypothalamus_amygdala_bridge","entityType":"CognitiveBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Fear → safety drive activation","Stress modulation from drives","Threat sensitivity adjustment","Chronic stress tracking"]}
+# Amygdala bridge message handling
+{"type":"relation","from":"hypothalamus_amygdala_bridge","to":"BIO_MSG_AMYGDALA_FEAR_LEVEL","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_AMYGDALA_FEAR_LEVEL"}
+{"type":"relation","from":"hypothalamus_amygdala_bridge","to":"BIO_MSG_AMYGDALA_THREAT_DETECTED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_AMYGDALA_THREAT_DETECTED"}
+{"type":"relation","from":"hypothalamus_amygdala_bridge","to":"BIO_MSG_AMYGDALA_STRESS_MODULATION","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_AMYGDALA_STRESS_MODULATION"}
+{"type":"relation","from":"hypothalamus_amygdala_bridge","to":"BIO_MSG_AMYGDALA_DRIVE_CONTEXT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_AMYGDALA_DRIVE_CONTEXT"}
+# Amygdala bridge target connections
+{"type":"relation","from":"hypothalamus_amygdala_bridge","to":"Amygdala_BLA","relationType":"RECEIVES_FEAR_FROM","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_amygdala_bridge","to":"Amygdala_CeA","relationType":"MODULATES_THREAT_SENSITIVITY","channel":"CRH"}
+{"type":"relation","from":"Amygdala","to":"hypothalamus_amygdala_bridge","relationType":"SENDS_FEAR_TO","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_amygdala_bridge","relationType":"SENDS_CONTEXT_TO"}
+# Drive-quantum bridge - Alignment-safe optimization (Phase 13)
+{"type":"entity","name":"hypothalamus_drive_quantum_bridge","entityType":"QuantumBridge","subsystem":"steering","min_tier":2,"enabled":true,"observations":["QUBO formulation for multi-drive optimization","Alignment constraints: human_wellbeing_weight, safety_priority_boost","Compute mode selection: AUTO, QUANTUM_ONLY, HYBRID, CLASSICAL_ONLY","Classical fallback when quantum unavailable"]}
+# Drive-quantum bridge message handling
+{"type":"relation","from":"hypothalamus_drive_quantum_bridge","to":"BIO_MSG_QUANTUM_DRIVE_OPTIMIZATION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_QUANTUM_DRIVE_OPTIMIZATION_REQUEST"}
+{"type":"relation","from":"hypothalamus_drive_quantum_bridge","to":"BIO_MSG_QUANTUM_DRIVE_OPTIMIZATION_RESULT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_QUANTUM_DRIVE_OPTIMIZATION_RESULT"}
+{"type":"relation","from":"hypothalamus_drive_quantum_bridge","to":"BIO_MSG_QUANTUM_DRIVE_ALIGNMENT_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_QUANTUM_DRIVE_ALIGNMENT_CHECK"}
+{"type":"relation","from":"hypothalamus_drive_quantum_bridge","to":"BIO_MSG_QUANTUM_DRIVE_ALIGNMENT_RESULT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_QUANTUM_DRIVE_ALIGNMENT_RESULT"}
+# Drive-quantum bridge target connections
+{"type":"relation","from":"hypothalamus_drive_quantum_bridge","to":"Quantum_Optimizer","relationType":"SUBMITS_QUBO_TO","channel":"QUBO"}
+{"type":"relation","from":"hypothalamus_drive_quantum_bridge","to":"Ethics_Engine","relationType":"VERIFIES_ALIGNMENT_WITH","channel":"ALIGNMENT","priority":"HIGH"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_drive_quantum_bridge","relationType":"OPTIMIZES_VIA"}
+# Immune bridge - Neuroimmune integration (Phase 14)
+{"type":"entity","name":"hypothalamus_immune_bridge","entityType":"ImmuneBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Cytokine → setpoint modulation: IL-1β/IL-6 fever, TNF-α anorexia","HPA axis → immune suppression: CRH → ACTH → Cortisol","Circadian immune modulation via SCN","Sickness behavior levels with alignment safety mode"]}
+# Immune bridge message handling
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"BIO_MSG_CYTOKINE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_CYTOKINE_UPDATE"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"BIO_MSG_INFLAMMATION_CHANGE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_INFLAMMATION_CHANGE"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"BIO_MSG_ANTIGEN_DETECTED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ANTIGEN_DETECTED"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"BIO_MSG_HYPO_IMMUNE_FEVER_STATE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_IMMUNE_FEVER_STATE"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"BIO_MSG_HYPO_IMMUNE_SICKNESS_STATE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_IMMUNE_SICKNESS_STATE"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"BIO_MSG_HYPO_IMMUNE_CORTISOL_STATE","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_IMMUNE_CORTISOL_STATE"}
+# Immune bridge target connections
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"Brain_Immune_System","relationType":"RECEIVES_CYTOKINES_FROM","channel":"CYTOKINE"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"HPA_Axis","relationType":"ACTIVATES_CORTISOL_VIA","channel":"CRH"}
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"SCN","relationType":"RECEIVES_CIRCADIAN_FROM","channel":"MELATONIN"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_immune_bridge","relationType":"MODULATES_SETPOINTS_VIA"}
+# Alignment safety - Immune bridge integration
+{"type":"relation","from":"hypothalamus_immune_bridge","to":"Safety_Monitor","relationType":"TRIGGERS_SAFETY_MODE","channel":"SICKNESS","priority":"HIGH"}
+# Insula bridge - Interoceptive body state integration (Phase 16)
+{"type":"entity","name":"hypothalamus_insula_bridge","entityType":"InteroceptiveBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Body state awareness → drive modulation","Cardiac/gastric/thermal/pain → drive calibration","Drive urgency → interoceptive attention bias","Survival mode amplifies body awareness"]}
+# Insula bridge message handling
+{"type":"relation","from":"hypothalamus_insula_bridge","to":"BIO_MSG_HYPO_INSULA_INTERO_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_INSULA_INTERO_UPDATE"}
+{"type":"relation","from":"hypothalamus_insula_bridge","to":"BIO_MSG_HYPO_INSULA_ATTENTION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_INSULA_ATTENTION_REQUEST"}
+{"type":"relation","from":"hypothalamus_insula_bridge","to":"BIO_MSG_HYPO_INSULA_ATTENTION_OUTPUT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_INSULA_ATTENTION_OUTPUT"}
+# Insula bridge target connections
+{"type":"relation","from":"hypothalamus_insula_bridge","to":"Insula","relationType":"RECEIVES_INTEROCEPTION_FROM","channel":"SEROTONIN"}
+{"type":"relation","from":"hypothalamus_insula_bridge","to":"Anterior_Insula","relationType":"MODULATES_ATTENTION","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_insula_bridge","relationType":"BIASES_ATTENTION_VIA"}
+# Sleep/Wake bridge - Circadian SCN integration (Phase 16)
+{"type":"entity","name":"hypothalamus_sleep_bridge","entityType":"CircadianBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["SCN phase → sleep/wake propensity","Sleep pressure → rest drive urgency","Melatonin → arousal suppression","Drive suppression during sleep"]}
+# Sleep bridge message handling
+{"type":"relation","from":"hypothalamus_sleep_bridge","to":"BIO_MSG_HYPO_SLEEP_STATE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_SLEEP_STATE_UPDATE"}
+{"type":"relation","from":"hypothalamus_sleep_bridge","to":"BIO_MSG_HYPO_SLEEP_SCN_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_SLEEP_SCN_REQUEST"}
+{"type":"relation","from":"hypothalamus_sleep_bridge","to":"BIO_MSG_HYPO_SLEEP_SCN_OUTPUT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_SLEEP_SCN_OUTPUT"}
+# Sleep bridge target connections
+{"type":"relation","from":"hypothalamus_sleep_bridge","to":"SCN","relationType":"RECEIVES_PHASE_FROM","channel":"MELATONIN"}
+{"type":"relation","from":"hypothalamus_sleep_bridge","to":"VLPO","relationType":"CONTROLS_SLEEP_VIA","channel":"GABA"}
+{"type":"relation","from":"hypothalamus_sleep_bridge","to":"Reticular_Formation","relationType":"MODULATES_AROUSAL","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_sleep_bridge","relationType":"SUPPRESSES_DURING_SLEEP"}
+# Emotion bridge - HPA axis stress response (Phase 16)
+{"type":"entity","name":"hypothalamus_emotion_bridge","entityType":"HPA_Bridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Emotional state → CRH release","Fear/anger/sadness → HPA cascade","HPA output → emotional dampening (cortisol)","Chronic stress detection and recovery tracking"]}
+# Emotion bridge message handling
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"BIO_MSG_HYPO_EMOTION_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_EMOTION_UPDATE"}
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"BIO_MSG_HYPO_EMOTION_HPA_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_EMOTION_HPA_REQUEST"}
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"BIO_MSG_HYPO_EMOTION_HPA_OUTPUT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_EMOTION_HPA_OUTPUT"}
+# Emotion bridge HPA axis connections
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"PVN","relationType":"RELEASES_CRH_TO","channel":"CRH"}
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"Pituitary","relationType":"STIMULATES_ACTH","channel":"ACTH"}
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"Adrenal_Cortex","relationType":"DRIVES_CORTISOL","channel":"CORTISOL"}
+{"type":"relation","from":"Amygdala","to":"hypothalamus_emotion_bridge","relationType":"SENDS_EMOTION_TO","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_emotion_bridge","relationType":"MODULATES_STRESS_VIA"}
+# Wellbeing bridge - Homeostatic distress reporting (Phase 16)
+{"type":"entity","name":"hypothalamus_wellbeing_bridge","entityType":"WellbeingBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Drive deviation → distress signals","Multi-drive conflict detection","Chronic load accumulation tracking","Intervention recommendation for safety","CRITICAL: Detects system suffering"]}
+# Wellbeing bridge message handling
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"BIO_MSG_HYPO_WB_DISTRESS_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_WB_DISTRESS_REQUEST"}
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"BIO_MSG_HYPO_WB_FEEDBACK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_WB_FEEDBACK"}
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"BIO_MSG_HYPO_WB_DISTRESS_REPORT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_WB_DISTRESS_REPORT","priority":"URGENT"}
+# Wellbeing bridge target connections
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"Ethics_Engine","relationType":"REPORTS_DISTRESS_TO","channel":"DISTRESS","priority":"HIGH"}
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"Safety_Monitor","relationType":"TRIGGERS_INTERVENTION","channel":"DISTRESS","priority":"HIGH"}
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"Executive_Controller","relationType":"REQUESTS_INTERVENTION","channel":"DISTRESS"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_wellbeing_bridge","relationType":"REPORTS_DISTRESS_VIA"}
+# Alignment safety - Wellbeing is a critical alignment signal
+{"type":"relation","from":"hypothalamus_wellbeing_bridge","to":"Alignment_Monitor","relationType":"SIGNALS_SUFFERING_TO","channel":"DISTRESS","priority":"CRITICAL"}
+# Perception bridge - Sensory modulation from drives/arousal (Phase 17)
+{"type":"entity","name":"hypothalamus_perception_bridge","entityType":"PerceptionBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["Arousal → global sensory gain","Drive urgency → category-specific salience","Hungry = food salient, Threatened = threats prioritized","Survival mode = max sensory responsiveness"]}
+# Perception bridge message handling
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"BIO_MSG_HYPO_PERCEPTION_AROUSAL_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_PERCEPTION_AROUSAL_UPDATE"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"BIO_MSG_HYPO_PERCEPTION_DETECTION","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_PERCEPTION_DETECTION"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"BIO_MSG_HYPO_PERCEPTION_MODULATION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_PERCEPTION_MODULATION_REQUEST"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"BIO_MSG_HYPO_PERCEPTION_MODULATION_OUTPUT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_PERCEPTION_MODULATION_OUTPUT"}
+# Perception bridge target connections
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"Visual_Cortex","relationType":"MODULATES_GAIN","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"Auditory_Cortex","relationType":"MODULATES_GAIN","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"Somatosensory_Cortex","relationType":"MODULATES_GAIN","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"Olfactory_Cortex","relationType":"MODULATES_GAIN","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"Gustatory_Cortex","relationType":"MODULATES_GAIN","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_perception_bridge","to":"Attention_Gate","relationType":"PROVIDES_CATEGORY_SALIENCE","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_perception_bridge","relationType":"BIASES_PERCEPTION_VIA"}
+{"type":"relation","from":"Locus_Coeruleus","to":"hypothalamus_perception_bridge","relationType":"PROVIDES_AROUSAL_TO","channel":"NOREPINEPHRINE"}
+# Broca bridge - Speech modulation from stress/arousal (Phase 17)
+{"type":"entity","name":"hypothalamus_broca_bridge","entityType":"SpeechBridge","subsystem":"steering","min_tier":1,"enabled":true,"observations":["HPA cortisol → speech fluency (Yerkes-Dodson)","Arousal → speech rate and volume","Social drive → speech initiation threshold","Safety threat → alarm vocalization mode"]}
+# Broca bridge message handling
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"BIO_MSG_HYPO_BROCA_STRESS_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_BROCA_STRESS_UPDATE"}
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"BIO_MSG_HYPO_BROCA_AROUSAL_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_BROCA_AROUSAL_UPDATE"}
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"BIO_MSG_HYPO_BROCA_MODULATION_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HYPO_BROCA_MODULATION_REQUEST"}
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"BIO_MSG_HYPO_BROCA_MODULATION_OUTPUT","relationType":"SENDS_MESSAGE","message_type":"BIO_MSG_HYPO_BROCA_MODULATION_OUTPUT"}
+# Broca bridge target connections
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"Broca_Area","relationType":"MODULATES_FLUENCY","channel":"CORTISOL"}
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"Broca_Area","relationType":"MODULATES_RATE","channel":"NOREPINEPHRINE"}
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"Motor_Cortex","relationType":"MODULATES_VOCALIZATION","channel":"ACETYLCHOLINE"}
+{"type":"relation","from":"hypothalamus_emotion_bridge","to":"hypothalamus_broca_bridge","relationType":"PROVIDES_STRESS_TO","channel":"CORTISOL"}
+{"type":"relation","from":"hypothalamus_drives","to":"hypothalamus_broca_bridge","relationType":"MODULATES_INITIATION_VIA"}
+# Alarm vocalization pathway (safety critical)
+{"type":"relation","from":"hypothalamus_broca_bridge","to":"Vocalization_Center","relationType":"TRIGGERS_ALARM","channel":"NOREPINEPHRINE","priority":"URGENT"}

@@ -1,0 +1,321 @@
+================================================================================
+NIMCP BRAIN MODULE SPLIT - QUICK REFERENCE
+================================================================================
+
+FILE: /home/bbrelin/nimcp/src/core/brain/nimcp_brain.c (11,977 lines)
+SPLIT INTO: 6 modules + 1 internal header
+
+================================================================================
+MODULE MAPPING - WHERE TO FIND EACH FUNCTION
+================================================================================
+
+1. nimcp_brain_internal.h (NEW)
+   ├─ struct brain_struct (full definition)
+   ├─ task_strategy_t (strategy pattern)
+   ├─ Forward declarations for all modules
+   └─ Shared constants and macros
+
+2. nimcp_brain_lifecycle.c
+   PUBLIC API (12):
+   ├─ brain_create()
+   ├─ brain_create_custom()
+   ├─ brain_create_distributed()
+   ├─ brain_create_pretrained()
+   ├─ brain_load_pretrained()
+   ├─ brain_destroy()
+   ├─ brain_default_config()
+   ├─ brain_enable_distributed()
+   ├─ brain_enable_astrocytes()
+   ├─ brain_import_json()
+   ├─ brain_enable_shannon_monitoring()
+   └─ brain_set_shannon_config()
+   
+   INTERNAL (31):
+   ├─ allocate_brain()
+   ├─ validate_creation_params()
+   ├─ create_brain_network()
+   ├─ init_brain_config()
+   ├─ init_brain_stats()
+   ├─ init_output_labels()
+   ├─ build_base_network_config()
+   ├─ build_network_config()
+   ├─ strategy_create()
+   ├─ strategy_destroy()
+   └─ init_*_subsystem() × 26 functions:
+       ├─ init_glial_subsystem()
+       ├─ init_multimodal_subsystems()
+       ├─ init_pink_noise_subsystem()
+       ├─ init_neuromodulator_system()
+       ├─ init_spatial_neuromod_system()
+       ├─ init_attention_subsystem()
+       ├─ init_brain_regions_subsystem()
+       ├─ init_symbolic_logic_subsystem()
+       ├─ init_symbolic_reasoning_subsystem()
+       ├─ init_epistemic_subsystem()
+       ├─ init_working_memory_subsystem()
+       ├─ init_executive_subsystem()
+       ├─ init_theory_of_mind_subsystem()
+       ├─ init_natural_explanations_subsystem()
+       ├─ init_meta_learning_subsystem()
+       ├─ init_mental_health_subsystem()
+       ├─ init_predictive_subsystem()
+       ├─ init_mirror_neurons()
+       ├─ init_consolidation_subsystem()
+       ├─ init_curiosity_subsystem()
+       ├─ init_salience_subsystem()
+       ├─ init_introspection_subsystem()
+       ├─ init_ethics_engine_subsystem()
+       ├─ init_empathy_network_subsystem()
+       ├─ init_empathetic_response_subsystem()
+       ├─ init_autobiographical_memory_subsystem()
+       ├─ init_self_model_subsystem()
+       ├─ init_global_workspace_subsystem()
+       └─ create_personality()
+
+3. nimcp_brain_learning.c
+   PUBLIC API (5):
+   ├─ brain_learn_example()          [~500 lines - largest function]
+   ├─ brain_learn_batch()
+   ├─ brain_apply_reward_learning()
+   ├─ brain_learn_from_llm()
+   └─ brain_finetune()
+   
+   INTERNAL (8):
+   ├─ strategy_classification_loss()
+   ├─ strategy_regression_loss()
+   ├─ strategy_pattern_loss()
+   ├─ strategy_association_loss()
+   ├─ adapt_learning_rate_from_loss()
+   ├─ quantum_weight_energy()
+   ├─ get_or_create_label_index()
+   └─ label_to_output()
+
+4. nimcp_brain_inference.c
+   PUBLIC API (6):
+   ├─ brain_decide()                 [~1200 lines - largest function]
+   ├─ brain_decide_batch()
+   ├─ brain_free_decision()
+   ├─ brain_predict()
+   ├─ brain_process_multimodal()     [~500 lines]
+   └─ brain_observe_action()
+   
+   INTERNAL (15):
+   ├─ is_cached_input()
+   ├─ cache_decision()
+   ├─ clear_cache()
+   ├─ copy_decision()
+   ├─ allocate_decision()
+   ├─ perform_forward_pass()
+   ├─ determine_output_label()
+   ├─ populate_interpretability()
+   ├─ update_inference_stats()
+   ├─ brain_decision_to_action()
+   ├─ features_to_action()
+   ├─ extract_sensory_features()
+   ├─ apply_attention_to_features()
+   ├─ process_brain_regions()
+   ├─ integrate_multimodal_features()
+   ├─ process_neural_network()
+   ├─ apply_cognitive_processing()
+   ├─ consolidation_strengthen()
+   └─ format_output()
+
+5. nimcp_brain_serialization.c
+   PUBLIC API (11):
+   ├─ brain_save()
+   ├─ brain_load()
+   ├─ brain_save_snapshot()
+   ├─ brain_restore_snapshot()
+   ├─ brain_list_snapshots()
+   ├─ brain_delete_snapshot()
+   ├─ brain_model_exists()
+   ├─ brain_download_model()
+   ├─ brain_get_model_info()
+   ├─ brain_save_json()
+   └─ brain_load_json()
+   
+   INTERNAL (10):
+   ├─ save_metadata()
+   ├─ load_metadata()
+   ├─ save_working_memory_state()
+   ├─ load_working_memory_state()
+   ├─ load_working_memory_item()
+   ├─ ensure_snapshot_dir()
+   ├─ get_snapshot_dir()
+   ├─ get_model_directory()
+   ├─ ensure_model_directory_exists()
+   └─ get_model_filepath()
+
+6. nimcp_brain_distributed.c
+   PUBLIC API (7):
+   ├─ brain_clone_cow()
+   ├─ brain_mark_as_snapshot()
+   ├─ brain_enable_distributed()
+   ├─ brain_sync_neuromodulators()
+   ├─ brain_get_distributed_stats()
+   ├─ brain_is_distributed()
+   └─ brain_get_cow_stats()
+   
+   INTERNAL (1):
+   └─ ensure_writable_network()
+
+7. nimcp_brain_stats.c
+   PUBLIC API (27):
+   ├─ brain_get_stats()
+   ├─ brain_get_num_inputs()
+   ├─ brain_get_num_outputs()
+   ├─ brain_print_info()
+   ├─ brain_get_top_neurons()
+   ├─ brain_explain_decision()
+   ├─ brain_get_working_memory()
+   ├─ brain_get_oscillations()
+   ├─ brain_get_introspection()
+   ├─ brain_get_pink_noise()
+   ├─ brain_get_mirror_activations()
+   ├─ brain_compute_empathy()
+   ├─ brain_get_astrocyte_stats()
+   ├─ brain_get_shannon_metrics()
+   ├─ brain_enable_quantum_shannon_diffusion()
+   ├─ brain_set_quantum_shannon_mixing()
+   ├─ brain_set_quantum_shannon_steps()
+   ├─ brain_get_quantum_shannon_metrics()
+   ├─ brain_evolve_quantum_shannon()
+   ├─ brain_enable_cross_modal_monitoring()
+   ├─ brain_get_cross_modal_metrics()
+   ├─ brain_set_cross_modal_threshold()
+   ├─ brain_prune()
+   ├─ brain_optimize_for_inference()
+   ├─ brain_recommend_pruning_threshold()
+   ├─ brain_get_last_error()
+   └─ brain_clear_error()
+   
+   INTERNAL (12):
+   ├─ set_error()
+   ├─ get_neuron_count()
+   ├─ get_default_sparsity()
+   ├─ build_spike_params()
+   ├─ strategy_classification_lr()
+   ├─ strategy_classification_transform()
+   ├─ strategy_regression_lr()
+   ├─ strategy_regression_transform()
+   ├─ strategy_pattern_lr()
+   ├─ strategy_pattern_transform()
+   ├─ strategy_association_lr()
+   └─ strategy_association_transform()
+
+================================================================================
+COMPILATION ORDER (CMakeLists.txt)
+================================================================================
+
+Add to /home/bbrelin/nimcp/src/lib/CMakeLists.txt (around line 7):
+
+    # Core brain components (Phase 9.1: God Object Decomposition)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_lifecycle.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_learning.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_inference.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_serialization.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_distributed.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_stats.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_resize.c  # Existing
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_distributed_cow.c  # Existing
+
+Remove old line:
+    # ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain.c  # REPLACED
+
+================================================================================
+VERIFICATION CHECKLIST
+================================================================================
+
+After implementation:
+[ ] All 6 module files created
+[ ] Internal header created
+[ ] CMakeLists.txt updated
+[ ] Clean build succeeds: rm -rf build && mkdir build && cd build && cmake ..
+[ ] Full compilation succeeds: make -j$(nproc)
+[ ] All unit tests pass: ctest -R brain --output-on-failure
+[ ] All integration tests pass: ctest --output-on-failure
+[ ] No memory leaks: valgrind --leak-check=full ./bin/test_brain
+[ ] Compile time improved (should be 50-70% faster for incremental builds)
+[ ] Original file archived: mv nimcp_brain.c nimcp_brain.c.backup
+
+================================================================================
+DEPENDENCIES BETWEEN MODULES
+================================================================================
+
+Module Dependencies (arrows show "depends on"):
+
+    stats.c
+       ↑
+       ├─── distributed.c
+       ↑
+       ├─── serialization.c
+       ↑
+       ├─── inference.c
+       ↑
+       ├─── learning.c
+       ↑
+       └─── lifecycle.c
+
+    All modules depend on: nimcp_brain_internal.h
+
+================================================================================
+STATIC → NON-STATIC CONVERSIONS (if needed)
+================================================================================
+
+Functions that may need to become non-static (declared in internal header):
+
+From lifecycle:
+  - allocate_brain()
+  - create_brain_network()
+  - strategy_create()
+  - strategy_destroy()
+
+From stats:
+  - set_error()
+  - get_neuron_count()
+  - get_default_sparsity()
+
+From inference:
+  - allocate_decision()
+  - copy_decision()
+
+Naming convention: nimcp_brain_internal_<original_name>()
+
+================================================================================
+TESTING STRATEGY
+================================================================================
+
+1. Unit Tests (existing - should all pass):
+   - test_brain_create
+   - test_brain_learn
+   - test_brain_decide
+   - test_brain_save_load
+   - test_brain_cow
+   - test_brain_stats
+
+2. Integration Tests (existing - should all pass):
+   - Full training pipelines
+   - Multi-modal processing
+   - Distributed cognition
+   - Memory consolidation
+   - All cognitive subsystems
+
+3. Regression Tests:
+   - Compare brain_save() output before/after (should be identical)
+   - Benchmark inference speed (should be same or faster)
+   - Measure memory usage (should be identical)
+
+================================================================================
+ROLLBACK PLAN
+================================================================================
+
+If issues arise:
+1. Restore backup: mv nimcp_brain.c.backup nimcp_brain.c
+2. Revert CMakeLists.txt changes
+3. Delete new module files
+4. Rebuild: rm -rf build && mkdir build && cd build && cmake .. && make
+5. Investigate root cause before retrying
+
+================================================================================
+END OF REFERENCE
+================================================================================

@@ -1,0 +1,21 @@
+Calculus: limits, derivatives, integrals.
+
+Calculus is the mathematics of change. Algebra describes static relationships; calculus describes how those relationships move. It rests on a single idea: the limit.
+
+A limit is a value approached but not always reached. Consider the sequence one-half, three-quarters, seven-eighths, fifteen-sixteenths. Each term is closer to one than the last, by a factor of two. The terms approach one but no term equals one. We say the limit of the sequence is one. Written: the limit as n goes to infinity of one minus one-over-two-to-the-n equals one.
+
+The same idea applied to functions. The limit of f(x) as x approaches a is the value f(x) gets close to as x gets close to a, regardless of what f(a) itself is. The function might not even be defined at a. The classic example: f(x) equals the quotient (x-squared minus one) over (x minus one). At x equals one this is zero over zero, undefined. But for any x not equal to one, we can factor: x-squared minus one is (x minus one) times (x plus one), and the (x minus one) cancels, leaving x plus one. The limit as x approaches one of f(x) is therefore one plus one, which is two — even though f(1) itself is not defined.
+
+The derivative measures the instantaneous rate of change of a function. The average rate of change of f over the interval from a to a-plus-h is the rise over run: (f(a+h) minus f(a)) divided by h. As h shrinks to zero, the average rate approaches the instantaneous rate. The derivative of f at a is the limit of this difference quotient as h goes to zero. Written f-prime-of-a, or df/dx evaluated at a.
+
+If the function describes position over time, the derivative is velocity. If the function describes velocity over time, the derivative is acceleration. The derivative of a curve gives the slope of the tangent line at each point.
+
+Some basic derivatives. If f(x) is a constant c, then f-prime-of-x is zero — a constant does not change. If f(x) is x, then f-prime-of-x is one — slope of one. If f(x) is x-squared, then f-prime-of-x is 2x. The general power rule: the derivative of x-to-the-n is n times x-to-the-(n minus one).
+
+Sum rule: the derivative of a sum is the sum of the derivatives. Constant multiple rule: the derivative of c times f(x) is c times f-prime-of-x. Product rule: the derivative of f(x) times g(x) is f-prime times g plus f times g-prime. Chain rule: the derivative of f composed with g is f-prime evaluated at g, times g-prime.
+
+The integral is the inverse operation of the derivative. The indefinite integral of f, written with an integral sign and a dx, is the family of all functions whose derivative is f. The derivative of x-cubed is 3x-squared, so the integral of 3x-squared is x-cubed. The constant of integration captures the fact that any constant added to x-cubed has the same derivative — the integral is determined only up to an additive constant.
+
+The definite integral of f from a to b, written with a and b as bounds, is a number, not a family of functions. Geometrically it is the signed area between the curve f(x) and the x-axis from x equals a to x equals b. The fundamental theorem of calculus connects the two: the definite integral from a to b of f equals F(b) minus F(a), where F is any antiderivative of f. Differentiation and integration are inverses; this theorem is why.
+
+Limits, derivatives, integrals — this is the architecture. Newton and Leibniz independently discovered it in the seventeenth century. Every modern physical theory, from celestial mechanics to quantum field theory, is written in calculus.

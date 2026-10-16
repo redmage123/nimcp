@@ -1,0 +1,144 @@
+/**
+ * @file test_reasoning_attention.cpp
+ * @brief Unit tests for MODULE 1: Reasoning-Attention Integration
+ * @version 1.0.0
+ * @date 2025-11-20
+ *
+ * TEST COVERAGE: 8 tests
+ * - Creation/destruction
+ * - Configuration management
+ * - Event handling
+ * - Salience computation
+ * - Statistics tracking
+ */
+
+#include <gtest/gtest.h>
+#include "cognitive/reasoning/integration/nimcp_reasoning_attention.h"
+#include "cognitive/fault_tolerance/nimcp_fault_attention.h"
+#include "core/events/nimcp_event_bus.h"
+
+class ReasoningAttentionTest : public ::testing::Test {
+protected:
+    event_bus_t bus;
+    fault_attention_t* attention;
+    reasoning_attention_t* integration;
+
+    void SetUp() override {
+        bus = event_bus_create("test_bus", EVENT_DELIVERY_IMMEDIATE);
+        ASSERT_NE(bus, nullptr);
+
+        attention = fault_attention_create();
+        ASSERT_NE(attention, nullptr);
+
+        integration = nullptr;
+    }
+
+    void TearDown() override {
+        if (integration) reasoning_attention_destroy(integration);
+        if (attention) fault_attention_destroy(attention);
+        if (bus) event_bus_destroy(bus);
+    }
+};
+
+TEST_F(ReasoningAttentionTest, CreateDestroy) {
+    integration = reasoning_attention_create(bus, attention);
+    ASSERT_NE(integration, nullptr);
+
+    reasoning_attention_destroy(integration);
+    integration = nullptr;
+}
+
+TEST_F(ReasoningAttentionTest, CreateWithNullParams) {
+    integration = reasoning_attention_create(nullptr, attention);
+    EXPECT_EQ(integration, nullptr);
+
+    integration = reasoning_attention_create(bus, nullptr);
+    EXPECT_EQ(integration, nullptr);
+}
+
+TEST_F(ReasoningAttentionTest, DefaultConfiguration) {
+    reasoning_attention_config_t config = reasoning_attention_default_config();
+
+    EXPECT_TRUE(config.enable_novel_fact_boost);
+    EXPECT_TRUE(config.enable_contradiction_boost);
+    EXPECT_TRUE(config.enable_proof_found_boost);
+    EXPECT_FLOAT_EQ(config.novel_fact_salience, 0.8f);
+    EXPECT_FLOAT_EQ(config.contradiction_salience, 1.0f);
+    EXPECT_FLOAT_EQ(config.proof_found_salience, 0.6f);
+}
+
+TEST_F(ReasoningAttentionTest, ConfigurationValidation) {
+    reasoning_attention_config_t config = reasoning_attention_default_config();
+    EXPECT_TRUE(reasoning_attention_validate_config(&config));
+
+    config.novel_fact_salience = -0.1f;
+    EXPECT_FALSE(reasoning_attention_validate_config(&config));
+
+    config.novel_fact_salience = 1.5f;
+    EXPECT_FALSE(reasoning_attention_validate_config(&config));
+}
+
+TEST_F(ReasoningAttentionTest, SalienceComputation) {
+    integration = reasoning_attention_create(bus, attention);
+    ASSERT_NE(integration, nullptr);
+
+    float salience_novel = reasoning_attention_compute_fact_salience(
+        integration, "test_fact", true, false
+    );
+    EXPECT_GT(salience_novel, 0.0f);
+    EXPECT_LE(salience_novel, 1.0f);
+
+    float salience_contradiction = reasoning_attention_compute_fact_salience(
+        integration, "contradictory_fact", false, true
+    );
+    EXPECT_GT(salience_contradiction, salience_novel);
+}
+
+TEST_F(ReasoningAttentionTest, EventHandling) {
+    integration = reasoning_attention_create(bus, attention);
+    ASSERT_NE(integration, nullptr);
+
+    brain_event_t event = event_create(EVENT_NOVEL_FACT_DERIVED, EVENT_PRIORITY_NORMAL, "test");
+    bool published = event_bus_publish(bus, &event);
+    EXPECT_TRUE(published);
+
+    reasoning_attention_stats_t stats;
+    EXPECT_TRUE(reasoning_attention_get_stats(integration, &stats));
+    EXPECT_GT(stats.total_events_processed, 0UL);
+}
+
+TEST_F(ReasoningAttentionTest, StatisticsTracking) {
+    integration = reasoning_attention_create(bus, attention);
+    ASSERT_NE(integration, nullptr);
+
+    reasoning_attention_stats_t stats_before;
+    EXPECT_TRUE(reasoning_attention_get_stats(integration, &stats_before));
+    EXPECT_EQ(stats_before.novel_fact_boosts, 0UL);
+
+    brain_event_t event = event_create(EVENT_NOVEL_FACT_DERIVED, EVENT_PRIORITY_NORMAL, "test");
+    event_bus_publish(bus, &event);
+
+    reasoning_attention_stats_t stats_after;
+    EXPECT_TRUE(reasoning_attention_get_stats(integration, &stats_after));
+    EXPECT_GT(stats_after.total_events_processed, stats_before.total_events_processed);
+}
+
+TEST_F(ReasoningAttentionTest, StatisticsReset) {
+    integration = reasoning_attention_create(bus, attention);
+    ASSERT_NE(integration, nullptr);
+
+    brain_event_t event = event_create(EVENT_NOVEL_FACT_DERIVED, EVENT_PRIORITY_NORMAL, "test");
+    event_bus_publish(bus, &event);
+
+    EXPECT_TRUE(reasoning_attention_reset_stats(integration));
+
+    reasoning_attention_stats_t stats;
+    EXPECT_TRUE(reasoning_attention_get_stats(integration, &stats));
+    EXPECT_EQ(stats.total_events_processed, 0UL);
+    EXPECT_EQ(stats.novel_fact_boosts, 0UL);
+}
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

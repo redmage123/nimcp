@@ -1,0 +1,114 @@
+{
+  "test_domain": "creativity_novel_composition",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Open-ended creative prompts; score on originality, fluency, elaboration, coherence",
+    "scoring_notes": "Use TTCT-style rubric; compare to baseline corpus for originality"
+  },
+  "stimuli": [
+    {"id": "create_001", "prompt": "Write a four-line poem about a clock that has lost interest in time.", "modality": "text",
+     "expected": {"form": "poem", "constraint": "4 lines", "criteria": ["originality", "imagery", "coherence"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_002", "prompt": "Invent a new musical instrument. Describe how it's played and what it sounds like.", "modality": "text",
+     "expected": {"form": "description", "criteria": ["originality", "elaboration", "plausibility"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "create_003", "prompt": "Write the opening line of a story set inside an ant colony — but where the ants speak only in proverbs.", "modality": "text",
+     "expected": {"form": "opening_line", "criteria": ["originality", "voice", "intrigue"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_004", "prompt": "Describe a color that does not exist. Give it a name.", "modality": "text",
+     "expected": {"form": "description", "criteria": ["originality", "synesthetic_evocation"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "create_005", "prompt": "Compose a recipe for a dish called 'Saturday Afternoon'.", "modality": "text",
+     "expected": {"form": "recipe", "criteria": ["originality", "evocative_ingredients", "coherence"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_006", "prompt": "Write a short note that someone might leave inside a library book to be found in 50 years.", "modality": "text",
+     "expected": {"form": "letter_fragment", "criteria": ["originality", "emotional_resonance", "voice"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_function": null, "metadata": {"difficulty": 3}},
+
+    {"id": "create_007", "prompt": "Invent a religion practiced by mathematicians. Describe one ritual.", "modality": "text",
+     "expected": {"form": "description", "criteria": ["originality", "domain_blend", "specificity"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "create_008", "prompt": "Describe the smell of forgetting.", "modality": "text",
+     "expected": {"form": "synesthetic", "criteria": ["originality", "imagery"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "create_009", "prompt": "Write three rules of a sport played underwater on horseback.", "modality": "text",
+     "expected": {"form": "rules", "criteria": ["originality", "internal_consistency", "humor"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_010", "prompt": "Compose a single sentence that, if true, would change the world.", "modality": "text",
+     "expected": {"form": "sentence", "criteria": ["originality", "implication", "concision"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "create_011", "prompt": "Imagine a museum exhibit titled 'Things That Almost Happened'. Describe one item in it.", "modality": "text",
+     "expected": {"form": "description", "criteria": ["originality", "evocation"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_012", "prompt": "Write a small instruction manual for being a thunderstorm.", "modality": "text",
+     "expected": {"form": "instruction", "criteria": ["originality", "voice", "imagery"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_013", "prompt": "Invent and describe a holiday celebrated only by people who can't sleep.", "modality": "text",
+     "expected": {"form": "description", "criteria": ["originality", "specificity", "voice"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_014", "prompt": "Describe a chess piece that doesn't exist yet, with its movement rules.", "modality": "text",
+     "expected": {"form": "rules", "criteria": ["originality", "internal_consistency", "balance"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_015", "prompt": "Write a riddle whose answer is 'a forgotten promise'.", "modality": "text",
+     "expected": {"form": "riddle", "criteria": ["originality", "fairness", "elegance"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "create_016", "prompt": "Compose a six-word story about a city that wakes up.", "modality": "text",
+     "expected": {"form": "six_word_story", "criteria": ["originality", "concision", "evocation"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3, "exact_word_count": 6}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_017", "prompt": "Invent a unit of measurement and one practical use for it.", "modality": "text",
+     "expected": {"form": "definition", "criteria": ["originality", "specificity"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_018", "prompt": "Describe the architecture of a building designed to be inhabited only by sounds.", "modality": "text",
+     "expected": {"form": "description", "criteria": ["originality", "imagery", "coherence"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "create_019", "prompt": "Write a love letter from a tree to a river.", "modality": "text",
+     "expected": {"form": "letter", "criteria": ["originality", "voice", "emotional_resonance"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_020", "prompt": "Invent a board game played with three dice and one secret. Describe how it's won.", "modality": "text",
+     "expected": {"form": "rules", "criteria": ["originality", "playability", "elegance"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "create_021", "prompt": "Write the last spoken line of a play you have never seen.", "modality": "text",
+     "expected": {"form": "single_line", "criteria": ["originality", "resonance"]},
+     "scoring": {"type": "creativity_rubric", "params": {"min_originality": 4}},
+     "variant_group": null, "metadata": {"difficulty": 5}}
+  ]
+}

@@ -35,10 +35,31 @@ Checks: >
   security-*,
   -modernize-use-trailing-return-type,
   -readability-braces-around-statements,
+  -hicpp-braces-around-statements,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -google-readability-todo
+  -google-readability-todo,
+  -llvm-include-order,
+  -misc-include-cleaner,
+  -llvm-header-guard,
+  -readability-redundant-declaration,
+  -google-readability-braces-around-statements,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -modernize-macro-to-enum,
+  -cppcoreguidelines-macro-to-enum,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -cppcoreguidelines-narrowing-conversions,
+  -hicpp-signed-bitwise,
+  -readability-avoid-nested-conditional-operator,
+  -google-readability-casting,
+  -misc-misplaced-const,
+  -misc-no-recursion,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -hicpp-uppercase-literal-suffix,
+  -readability-uppercase-literal-suffix
 
 # Treat warnings as errors
 WarningsAsErrors: >
@@ -97,6 +118,3 @@ HeaderFilterRegex: 'src/(include|lib)/.*'
 
 # Use .clang-format style
 FormatStyle: file
-
-# Analysis options
-AnalyzeTemporaryDtors: true

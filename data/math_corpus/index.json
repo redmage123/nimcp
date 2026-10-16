@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "comment": "Mathematics + formal logic curriculum manifest. Hand-authored seed lessons + Project Gutenberg sources. Companion to data/canonical_corpus/ for the literary register; this seeds Athena's symbolic-reasoning register.",
+  "registers": {
+    "elementary_arithmetic": "counting, addition, subtraction; Stage 1 priming",
+    "algebra_intro": "variables, equations, basic manipulation; Stage 2",
+    "geometry_intro": "shapes, angles, classical theorems; Stage 2",
+    "logic_propositional": "propositions, connectives, truth tables; Stage 2-3",
+    "logic_predicate": "quantifiers, predicates, formal proof; Stage 3",
+    "calculus_intro": "limits, derivatives, integrals; Stage 3",
+    "number_theory": "primes, divisibility, congruence; Stage 3",
+    "proof_technique": "induction, contradiction, contrapositive, construction; Stage 3"
+  },
+  "works": [
+    {
+      "id": "seed.arithmetic_basics",
+      "register": "elementary_arithmetic",
+      "title": "Counting, addition, subtraction",
+      "files": ["algebra/arithmetic_basics.txt"],
+      "language": "en",
+      "stage": 1,
+      "weight": 0.3,
+      "source": "hand_authored",
+      "comment": "Demoted from 1.0 — overlaps with parietal magnitude-sense primitives. Lesson exists mainly to ground the words (addition/minus/sum) onto the substrate's existing number machinery; symbolic content here is mostly redundant with the region."
+    },
+    {
+      "id": "seed.algebra_intro",
+      "register": "algebra_intro",
+      "title": "Introduction to algebra",
+      "files": ["algebra/algebra_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.geometry_basics",
+      "register": "geometry_intro",
+      "title": "Plane geometry basics",
+      "files": ["geometry/geometry_basics.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.propositional_logic",
+      "register": "logic_propositional",
+      "title": "Propositional logic primer",
+      "files": ["logic/propositional_logic.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.predicate_logic",
+      "register": "logic_predicate",
+      "title": "Predicate logic and quantifiers",
+      "files": ["logic/predicate_logic.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.calculus_intro",
+      "register": "calculus_intro",
+      "title": "Calculus: limits, derivatives, integrals",
+      "files": ["calculus/calculus_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.number_theory_intro",
+      "register": "number_theory",
+      "title": "Number theory primer",
+      "files": ["number_theory/number_theory_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.8,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.proof_techniques",
+      "register": "proof_technique",
+      "title": "Proof techniques: induction, contradiction, contrapositive",
+      "files": ["proof_technique/proof_techniques.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.2,
+      "source": "hand_authored"
+    },
+    {
+      "id": "euclid.elements",
+      "register": "geometry_intro",
+      "title": "The Elements (Books I-VI)",
+      "files": ["geometry/euclid_elements.txt"],
+      "language": "en",
+      "year": -300,
+      "translator": "Heath",
+      "public_domain": true,
+      "source": "gutenberg:21076",
+      "stage": 3,
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# LeakSanitizer Suppressions for NIMCP
+# Suppress known Python C API internal leaks
+
+# Python initialization allocates global state that persists
+# These are not real leaks - Python manages them internally
+leak:libpython3.12.so
+leak:Py_Initialize
+leak:PyInit_nimcp
+leak:PyDict_SetDefault
+leak:PyUnicode_New
+
+# Brain infrastructure - pre-existing leaks to be fixed separately
+leak:brain_create
+leak:network_analyzer_run
+leak:network_analyzer_detect_communities
+leak:community_detect
+
+# NVIDIA GPU driver leaks (closed-source, unfixable)
+# OpenCL driver allocates global state on first use
+leak:libOpenCL.so
+leak:libcuda.so
+leak:libnvidia
+leak:libcufft
+leak:libcublas

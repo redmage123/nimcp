@@ -1,3 +1,4 @@
+#include <stddef.h>  /* for NULL */
 //=============================================================================
 // nimcp_p2pnode.c - Refactored P2P Node Implementation
 //=============================================================================
@@ -32,7 +33,13 @@
 // - status transitions: INIT -> RUNNING -> SHUTDOWN or ERROR
 //=============================================================================
 
-#include "nimcp_p2pnode.h"
+#include "networking/p2p/nimcp_p2pnode.h"
+#include "utils/memory/nimcp_unified_memory.h"
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_bio_messages.h"
+#include "api/nimcp_api_exception.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -43,9 +50,78 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "utils/containers/nimcp_graph.h"
+#include "utils/containers/nimcp_hash_table.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/thread/nimcp_thread.h"
 #include "utils/validation/nimcp_validate.h"
+#include "utils/validation/nimcp_common.h"
+#include "utils/time/nimcp_time.h"
+#include "utils/logging/nimcp_logging.h"
+#include "networking/protocol/nimcp_protocol.h"
+#include "security/nimcp_blood_brain_barrier.h"
+#include "utils/platform/nimcp_platform_once.h"
+
+// Global BBB security system — protected by once-init to avoid TOCTOU race
+static bbb_system_t g_bbb_system = NULL;
+static nimcp_platform_once_t g_bbb_once = NIMCP_PLATFORM_ONCE_INIT;
+
+//=============================================================================
+// Security Initialization
+//=============================================================================
+
+/* Forward declaration for atexit registration */
+static void p2pnode_security_cleanup(void);
+
+/**
+ * @brief Internal initialization routine (called exactly once)
+ *
+ * WHAT: Create and configure BBB system for input validation
+ * WHY: Protect against malicious external input and TOCTOU race on g_bbb_system
+ * HOW: Called exactly once via nimcp_platform_once — thread-safe initialization
+ */
+static void p2pnode_security_init_impl(void) {
+    bbb_config_t config = bbb_default_config();
+    config.strict_mode = false;  // Don't block, just log
+    config.default_action = BBB_ACTION_LOG;
+    config.input.validate_strings = true;
+    config.input.validate_integers = true;
+    config.input.max_string_length = 4096;  // Reasonable limit
+
+    g_bbb_system = bbb_system_create(&config);
+    if (!g_bbb_system) {
+        LOG_ERROR("p2pnode: Failed to initialize security subsystem");
+    } else {
+        if (atexit(p2pnode_security_cleanup) != 0) {
+            LOG_WARN("p2pnode: Failed to register atexit cleanup handler");
+        }
+        LOG_INFO("p2pnode: Security subsystem initialized");
+    }
+}
+
+/**
+ * @brief Thread-safe security init entry point
+ * WHY: nimcp_platform_once guarantees exactly-once execution, no TOCTOU race
+ */
+static void p2pnode_security_init(void) {
+    nimcp_platform_once(&g_bbb_once, p2pnode_security_init_impl);
+}
+
+/**
+ * @brief Cleanup security subsystem
+ * WHY: __attribute__((destructor)) ensures cleanup on library unload
+ */
+__attribute__((destructor))
+static void p2pnode_security_cleanup(void) {
+    if (g_bbb_system) {
+        bbb_system_destroy(g_bbb_system);
+        g_bbb_system = NULL;
+    }
+}
+
+#define LOG_MODULE "P2P_NODE"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(p2pnode)
 
 //=============================================================================
 // Constants and Configuration
@@ -80,8 +156,9 @@
 static bool validate_ip_address(const char* ip)
 {
     // Guard clause: NULL check
-    if (!ip)
+    if (!ip) {
         return false;
+    }
 
     // Validate as string field (NULL termination, UTF-8, control chars)
     if (!nimcp_validate_string_field(ip, strnlen(ip, MAX_IP_LENGTH) + 1)) {
@@ -125,6 +202,7 @@ static bool validate_port_number(uint16_t port, bool binding)
 {
     // Guard clause: Zero port (invalid)
     if (port == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "validate_port_number: port is zero");
         return false;
     }
 
@@ -137,37 +215,12 @@ static bool validate_port_number(uint16_t port, bool binding)
 
     // Validate as integer field
     if (!nimcp_validate_integer_field(&port, sizeof(uint16_t))) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "validate_port_number: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     return true;
 }
-
-//=============================================================================
-// Hash Table Implementation (Repository Pattern)
-//=============================================================================
-
-/**
- * @brief Hash table entry for O(1) peer lookup
- *
- * WHY: Linear search through peer array is O(n). Hash table provides O(1)
- * average case lookup for peer resolution, critical for routing performance.
- */
-typedef struct peer_hash_entry {
-    char peer_key[32];            /**< "IP:PORT" string key */
-    peer_info_t* peer;            /**< Pointer to peer info */
-    struct peer_hash_entry* next; /**< Collision chain */
-} peer_hash_entry_t;
-
-/**
- * @brief Hash table for peer storage
- *
- * COMPLEXITY: O(1) average case for insert, lookup, delete
- */
-typedef struct {
-    peer_hash_entry_t* buckets[HASH_TABLE_SIZE];
-    uint32_t num_entries;
-} peer_hash_table_t;
 
 //=============================================================================
 // State Pattern - Connection State Management
@@ -218,8 +271,11 @@ struct p2p_node_struct {
     // Network
     int listen_socket;
 
-    // Repository Pattern: Hash-indexed peer storage
-    peer_hash_table_t peer_table;
+    // Repository Pattern: Hash-indexed peer storage using NIMCP hash table utility
+    // WHY: Consolidated hash table implementation with better features
+    // KEYS: "IP:PORT" strings (e.g., "192.168.1.1:8080")
+    // VALUES: Pointers to peer_info_t structures
+    hash_table_t* peer_table;
 
     // Legacy array storage (for iteration)
     peer_info_t* peers;
@@ -234,10 +290,14 @@ struct p2p_node_struct {
     uint64_t failed_connections;
     uint64_t bytes_sent;
     uint64_t bytes_received;
+
+    // Bio-async integration
+    bio_module_context_t bio_ctx;
+    bool bio_async_enabled;
 };
 
 //=============================================================================
-// Hash Table Functions
+// Peer Key Generation
 //=============================================================================
 
 /**
@@ -257,163 +317,6 @@ static void generate_peer_key(char* key, size_t key_size, const char* ip, uint16
     snprintf(key, key_size, "%s:%u", ip, port);
 }
 
-/**
- * @brief Hash function for peer keys
- *
- * WHY: Distributes peer keys uniformly across hash table buckets,
- * minimizing collisions for O(1) average lookup time.
- *
- * COMPLEXITY: O(n) where n = key length (typically small ~20 chars)
- */
-static uint32_t hash_peer_key(const char* key)
-{
-    // Guard clause: Validate input
-    if (!key)
-        return 0;
-
-    uint32_t hash = 5381;
-    int c;
-
-    while ((c = *key++)) {
-        hash = ((hash << 5) + hash) + c;
-    }
-
-    return hash % HASH_TABLE_SIZE;
-}
-
-/**
- * @brief Initializes peer hash table
- *
- * WHY: Provides O(1) peer lookup vs O(n) linear search through array.
- * Essential for routing performance with many peers.
- *
- * COMPLEXITY: O(1)
- */
-static void init_peer_hash_table(peer_hash_table_t* table)
-{
-    // Guard clause: Validate input
-    if (!table)
-        return;
-
-    memset(table->buckets, 0, sizeof(table->buckets));
-    table->num_entries = 0;
-}
-
-/**
- * @brief Inserts peer into hash table
- *
- * WHY: O(1) insertion enables fast peer registration without degrading
- * lookup performance as peer count grows.
- *
- * COMPLEXITY: O(1) average case
- *
- * @return true if inserted, false on failure
- */
-static bool hash_table_insert_peer(peer_hash_table_t* table, const char* key, peer_info_t* peer)
-{
-    // Guard clause: Validate inputs
-    if (!table || !key || !peer)
-        return false;
-
-    uint32_t bucket = hash_peer_key(key);
-
-    peer_hash_entry_t* entry = nimcp_malloc(sizeof(peer_hash_entry_t));
-    // Guard clause: Check allocation
-    if (!entry)
-        return false;
-
-    strncpy(entry->peer_key, key, sizeof(entry->peer_key) - 1);
-    entry->peer_key[sizeof(entry->peer_key) - 1] = '\0';
-    entry->peer = peer;
-    entry->next = table->buckets[bucket];
-    table->buckets[bucket] = entry;
-    table->num_entries++;
-
-    return true;
-}
-
-/**
- * @brief Looks up peer by key in hash table
- *
- * WHY: O(1) average case lookup is critical for message routing.
- * Replaces O(n) linear search through peer array.
- *
- * COMPLEXITY: O(1) average, O(k) worst case where k = collision chain length
- *
- * @return Pointer to peer or NULL if not found
- */
-static peer_info_t* hash_table_lookup_peer(peer_hash_table_t* table, const char* key)
-{
-    // Guard clause: Validate inputs
-    if (!table || !key)
-        return NULL;
-
-    uint32_t bucket = hash_peer_key(key);
-    peer_hash_entry_t* entry = table->buckets[bucket];
-
-    while (entry) {
-        if (strcmp(entry->peer_key, key) == 0) {
-            return entry->peer;
-        }
-        entry = entry->next;
-    }
-
-    return NULL;
-}
-
-/**
- * @brief Removes peer from hash table
- *
- * WHY: O(1) deletion maintains performance consistency across all operations.
- *
- * COMPLEXITY: O(1) average case
- */
-static bool hash_table_remove_peer(peer_hash_table_t* table, const char* key)
-{
-    // Guard clause: Validate inputs
-    if (!table || !key)
-        return false;
-
-    uint32_t bucket = hash_peer_key(key);
-    peer_hash_entry_t** entry_ptr = &table->buckets[bucket];
-
-    while (*entry_ptr) {
-        peer_hash_entry_t* entry = *entry_ptr;
-        if (strcmp(entry->peer_key, key) == 0) {
-            *entry_ptr = entry->next;
-            nimcp_free(entry);
-            table->num_entries--;
-            return true;
-        }
-        entry_ptr = &entry->next;
-    }
-
-    return false;
-}
-
-/**
- * @brief Destroys hash table and frees all entries
- *
- * WHY: Prevents memory leaks by cleaning up all allocated hash entries.
- *
- * COMPLEXITY: O(n) where n = number of entries
- */
-static void destroy_peer_hash_table(peer_hash_table_t* table)
-{
-    // Guard clause: Validate input
-    if (!table)
-        return;
-
-    for (uint32_t i = 0; i < HASH_TABLE_SIZE; i++) {
-        peer_hash_entry_t* entry = table->buckets[i];
-        while (entry) {
-            peer_hash_entry_t* next = entry->next;
-            nimcp_free(entry);
-            entry = next;
-        }
-    }
-}
-
 //=============================================================================
 // Socket Helper Functions
 //=============================================================================
@@ -431,8 +334,10 @@ static int create_tcp_socket(void)
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     // Guard clause: Check creation
-    if (sock < 0)
+    if (sock < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "create_tcp_socket: validation failed");
         return -1;
+    }
 
     return sock;
 }
@@ -449,13 +354,17 @@ static int create_tcp_socket(void)
 static bool set_socket_nonblocking(int sock)
 {
     // Guard clause: Validate socket
-    if (sock < 0)
+    if (sock < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "set_socket_nonblocking: validation failed");
         return false;
+    }
 
     int flags = fcntl(sock, F_GETFL, 0);
     // Guard clause: Check fcntl
-    if (flags < 0)
+    if (flags < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "set_socket_nonblocking: validation failed");
         return false;
+    }
 
     return fcntl(sock, F_SETFL, flags | O_NONBLOCK) >= 0;
 }
@@ -473,8 +382,10 @@ static bool set_socket_nonblocking(int sock)
 static bool enable_socket_reuse(int sock)
 {
     // Guard clause: Validate socket
-    if (sock < 0)
+    if (sock < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "enable_socket_reuse: validation failed");
         return false;
+    }
 
     int opt = SOCKET_REUSE_ENABLED;
     return setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) >= 0;
@@ -493,8 +404,10 @@ static bool enable_socket_reuse(int sock)
 static bool bind_socket(int sock, uint16_t port)
 {
     // Guard clause: Validate socket
-    if (sock < 0)
+    if (sock < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "bind_socket: validation failed");
         return false;
+    }
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -517,8 +430,10 @@ static bool bind_socket(int sock, uint16_t port)
 static bool start_listening(int sock)
 {
     // Guard clause: Validate socket
-    if (sock < 0)
+    if (sock < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "start_listening: validation failed");
         return false;
+    }
 
     return listen(sock, LISTEN_BACKLOG) >= 0;
 }
@@ -544,35 +459,50 @@ static bool start_listening(int sock)
 static bool setup_listen_socket(p2p_node_t node)
 {
     // Guard clause: Validate input
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "setup_listen_socket: node is NULL");
         return false;
+    }
 
     // Step 1: Create socket
     node->listen_socket = create_tcp_socket();
     // Guard clause: Check creation
-    if (node->listen_socket < 0)
+    if (node->listen_socket < 0) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, "listen",
+                      "Failed to create TCP listen socket: errno=%d", errno);
         return false;
+    }
 
     // Step 2: Set non-blocking
     if (!set_socket_nonblocking(node->listen_socket)) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, "listen",
+                      "Failed to set socket non-blocking mode: errno=%d", errno);
         close(node->listen_socket);
         return false;
     }
 
     // Step 3: Enable reuse
     if (!enable_socket_reuse(node->listen_socket)) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, "listen",
+                      "Failed to enable socket address reuse: errno=%d", errno);
         close(node->listen_socket);
         return false;
     }
 
     // Step 4: Bind to port
     if (!bind_socket(node->listen_socket, node->config.listen_port)) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, "listen",
+                      "Failed to bind socket to port %u: errno=%d",
+                      node->config.listen_port, errno);
         close(node->listen_socket);
         return false;
     }
 
     // Step 5: Start listening
     if (!start_listening(node->listen_socket)) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, "listen",
+                      "Failed to start listening on port %u: errno=%d",
+                      node->config.listen_port, errno);
         close(node->listen_socket);
         return false;
     }
@@ -607,13 +537,16 @@ static bool setup_listen_socket(p2p_node_t node)
 static bool validate_config(const node_config_t* config)
 {
     // Guard clause: Check null
-    if (!config)
+    if (!config) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "validate_config: config is NULL");
         return false;
+    }
 
     // Validate listen_port using nimcp_validate
     // WHY: Ensure port is valid and bindable
     if (!validate_port_number(config->listen_port, true)) {
         fprintf(stderr, "[P2P] Invalid listen port in config: %u\n", config->listen_port);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "validate_config: validate_port_number is NULL");
         return false;
     }
 
@@ -621,12 +554,14 @@ static bool validate_config(const node_config_t* config)
     // WHY: Ensure max_peers is reasonable and will fit in memory
     if (!nimcp_validate_integer_field(&config->max_peers, sizeof(uint32_t))) {
         fprintf(stderr, "[P2P] Invalid max_peers in config\n");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "validate_config: nimcp_validate_integer_field is NULL");
         return false;
     }
 
     // Guard clause: Check max_peers not zero
     if (config->max_peers == 0) {
         fprintf(stderr, "[P2P] max_peers cannot be zero\n");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "validate_config: config->max_peers is zero");
         return false;
     }
 
@@ -653,8 +588,10 @@ static bool validate_config(const node_config_t* config)
 static bool allocate_peer_storage(p2p_node_t node)
 {
     // Guard clause: Validate input
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "allocate_peer_storage: node is NULL");
         return false;
+    }
 
     node->peers = nimcp_calloc(node->config.max_peers, sizeof(peer_info_t));
     return node->peers != NULL;
@@ -707,23 +644,54 @@ static void initialize_node_state(p2p_node_t node)
 p2p_node_t p2p_node_create(const node_config_t* config)
 {
     // Guard clause: Validate configuration
-    if (!validate_config(config))
+    if (!validate_config(config)) {
+        LOG_ERROR(LOG_MODULE, "Node creation failed: invalid configuration");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "p2p_node_create: validate_config is NULL");
         return NULL;
+    }
+
+    LOG_DEBUG(LOG_MODULE, "Creating node on port %u with max_peers=%u",
+              config->listen_port, config->max_peers);
 
     // Allocate node structure
     p2p_node_t node = nimcp_calloc(1, sizeof(struct p2p_node_struct));
     // Guard clause: Check allocation
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, sizeof(struct p2p_node_struct),
+                          "Failed to allocate P2P node structure");
         return NULL;
+    }
 
     // Copy configuration
     memcpy(&node->config, config, sizeof(node_config_t));
 
-    // Initialize hash table for O(1) peer lookups
-    init_peer_hash_table(&node->peer_table);
+    // Initialize hash table for O(1) peer lookups using NIMCP hash table utility
+    // WHY: Standard hash table provides better features and consistency
+    hash_table_config_t hash_config = {
+        .initial_buckets = HASH_TABLE_SIZE,
+        .key_type = HASH_KEY_STRING,
+        .hash_algorithm = HASH_ALG_DJB2,
+        .case_insensitive = false,
+        .value_destructor = NULL,  // We manage peer_info_t separately
+        .thread_safe = false       // We use our own mutex
+    };
+    node->peer_table = hash_table_create(&hash_config);
+
+    // Guard clause: Check hash table creation
+    if (!node->peer_table) {
+        LOG_ERROR(LOG_MODULE, "Failed to create peer hash table");
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, HASH_TABLE_SIZE * sizeof(void*),
+                          "Failed to allocate peer hash table for P2P node");
+        nimcp_free(node);
+        return NULL;
+    }
 
     // Allocate peer storage
     if (!allocate_peer_storage(node)) {
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY,
+                          node->config.max_peers * sizeof(peer_info_t),
+                          "Failed to allocate peer storage array");
+        hash_table_destroy(node->peer_table);
         nimcp_free(node);
         return NULL;
     }
@@ -733,7 +701,10 @@ p2p_node_t p2p_node_create(const node_config_t* config)
 
     // Initialize mutex for thread safety
     if (nimcp_mutex_init(&node->lock, NULL) != NIMCP_SUCCESS) {
+        NIMCP_THROW_THREADING(NIMCP_ERROR_THREAD_CREATE, 0,
+                             "Failed to initialize mutex for P2P node");
         nimcp_free(node->peers);
+        hash_table_destroy(node->peer_table);
         nimcp_free(node);
         return NULL;
     }
@@ -742,10 +713,36 @@ p2p_node_t p2p_node_create(const node_config_t* config)
     // WHY: Enables introspection, pathfinding, and component analysis
     node->topology_graph = nimcp_graph_create();
     if (!node->topology_graph) {
+        LOG_ERROR(LOG_MODULE, "Failed to create topology graph for node on port %u",
+                  config->listen_port);
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, 0,
+                          "Failed to create topology graph for P2P node");
         nimcp_mutex_destroy(&node->lock);
+        hash_table_destroy(node->peer_table);
         nimcp_free(node->peers);
         nimcp_free(node);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "p2p_node_create: node->topology_graph is NULL");
         return NULL;
+    }
+
+    LOG_INFO(LOG_MODULE, "Node created successfully: port=%u, max_peers=%u, ping_interval=%ums",
+             config->listen_port, config->max_peers, config->ping_interval);
+
+    // Bio-async registration
+    node->bio_ctx = NULL;
+    node->bio_async_enabled = false;
+    if (config->enable_bio_async && bio_router_is_initialized()) {
+        bio_module_info_t bio_info = {
+            .module_id = BIO_MODULE_P2P,
+            .module_name = "p2p_node",
+            .inbox_capacity = 64,
+            .user_data = node
+        };
+        node->bio_ctx = bio_router_register_module(&bio_info);
+        if (node->bio_ctx) {
+            node->bio_async_enabled = true;
+            LOG_INFO(LOG_MODULE, "Bio-async registered for P2P node");
+        }
     }
 
     return node;
@@ -800,8 +797,15 @@ void p2p_node_destroy(p2p_node_t node)
         p2p_node_stop(node);
     }
 
-    // Destroy hash table
-    destroy_peer_hash_table(&node->peer_table);
+    // Bio-async unregistration
+    if (node->bio_async_enabled && node->bio_ctx) {
+        bio_router_unregister_module(node->bio_ctx);
+        node->bio_ctx = NULL;
+        node->bio_async_enabled = false;
+    }
+
+    // Destroy hash table (NIMCP utility handles cleanup)
+    hash_table_destroy(node->peer_table);
 
     // Free peer array
     nimcp_free(node->peers);
@@ -836,11 +840,13 @@ void p2p_node_destroy(p2p_node_t node)
  * @param node Handle to the node
  * @return Pointer to topology graph, or NULL if node is invalid
  */
-struct NimcpGraph* p2p_node_get_topology_graph(p2p_node_t node)
+NimcpGraph* p2p_node_get_topology_graph(p2p_node_t node)
 {
     // Guard clause: Validate input
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_get_topology_graph: node is NULL");
         return NULL;
+    }
 
     return node->topology_graph;
 }
@@ -876,8 +882,9 @@ node_status_t p2p_node_get_status(p2p_node_t node)
 bool p2p_node_is_peer_connected(p2p_node_t node, const char* peer_ip, uint16_t peer_port)
 {
     // Guard clause: Validate inputs
-    if (!node || !peer_ip)
+    if (!node || !peer_ip) {
         return false;
+    }
 
     // Lock for thread safety
     nimcp_mutex_lock(&node->lock);
@@ -886,15 +893,18 @@ bool p2p_node_is_peer_connected(p2p_node_t node, const char* peer_ip, uint16_t p
     char key[32];
     generate_peer_key(key, sizeof(key), peer_ip, peer_port);
 
-    // O(1) hash table lookup
-    peer_info_t* peer = hash_table_lookup_peer(&node->peer_table, key);
+    // O(1) hash table lookup using NIMCP utility
+    // NOTE: Hash table stores a COPY of the pointer, so we get back a pointer to the copy
+    // FIX: Need to dereference twice - once for the stored copy, once for the actual pointer
+    peer_info_t** peer_ptr = (peer_info_t**)hash_table_lookup_string(node->peer_table, key);
 
     // Guard clause: Check if peer found
-    if (!peer) {
+    if (!peer_ptr || !*peer_ptr) {
         nimcp_mutex_unlock(&node->lock);
         return false;
     }
 
+    peer_info_t* peer = *peer_ptr;
     bool connected = peer->connected;
     nimcp_mutex_unlock(&node->lock);
     return connected;
@@ -917,10 +927,12 @@ bool p2p_node_is_peer_connected(p2p_node_t node, const char* peer_ip, uint16_t p
 static bool peer_already_exists(p2p_node_t node, const char* key)
 {
     // Guard clause: Validate inputs
-    if (!node || !key)
+    if (!node || !key) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "peer_already_exists: required parameter is NULL (node, key)");
         return false;
+    }
 
-    return hash_table_lookup_peer(&node->peer_table, key) != NULL;
+    return hash_table_lookup_string(node->peer_table, key) != NULL;
 }
 
 /**
@@ -936,8 +948,10 @@ static bool peer_already_exists(p2p_node_t node, const char* key)
 static bool create_sockaddr(struct sockaddr_in* addr, const char* ip, uint16_t port)
 {
     // Guard clause: Validate inputs
-    if (!addr || !ip)
+    if (!addr || !ip) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "create_sockaddr: required parameter is NULL (addr, ip)");
         return false;
+    }
 
     memset(addr, 0, sizeof(*addr));
     addr->sin_family = AF_INET;
@@ -959,13 +973,16 @@ static bool create_sockaddr(struct sockaddr_in* addr, const char* ip, uint16_t p
 static bool attempt_connection(int sock, const struct sockaddr_in* addr)
 {
     // Guard clause: Validate inputs
-    if (sock < 0 || !addr)
+    if (sock < 0 || !addr) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "attempt_connection: addr is NULL");
         return false;
+    }
 
     int result = connect(sock, (struct sockaddr*) addr, sizeof(*addr));
 
     // Connection is non-blocking, EINPROGRESS means in progress (success)
     if (result < 0 && errno != EINPROGRESS) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "attempt_connection: validation failed");
         return false;
     }
 
@@ -1005,12 +1022,16 @@ static void initialize_peer_info(peer_info_t* peer, const char* ip, uint16_t por
 static bool add_peer_to_node(p2p_node_t node, const char* ip, uint16_t port, int socket_fd)
 {
     // Guard clause: Validate inputs
-    if (!node || !ip)
+    if (!node || !ip) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "add_peer_to_node: required parameter is NULL (node, ip)");
         return false;
+    }
 
     // Guard clause: Check capacity
-    if (node->peer_count >= node->config.max_peers)
+    if (node->peer_count >= node->config.max_peers) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE, "add_peer_to_node: capacity exceeded");
         return false;
+    }
 
     // Initialize peer info in array
     peer_info_t* peer = &node->peers[node->peer_count];
@@ -1020,8 +1041,12 @@ static bool add_peer_to_node(p2p_node_t node, const char* ip, uint16_t port, int
     char key[32];
     generate_peer_key(key, sizeof(key), ip, port);
 
-    // Add to hash table for O(1) lookups
-    if (!hash_table_insert_peer(&node->peer_table, key, peer)) {
+    // Add to hash table for O(1) lookups using NIMCP utility
+    // NOTE: We store the peer_info_t* pointer value itself (copy the address)
+    // FIX: Pass &peer to copy the pointer VALUE (address), not what it points to
+    if (!hash_table_insert_string(node->peer_table, key, &peer, sizeof(peer_info_t*))) {
+        LOG_ERROR(LOG_MODULE, "Failed to insert peer %s into hash table", key);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "add_peer_to_node: hash_table_insert_string is NULL");
         return false;
     }
 
@@ -1056,13 +1081,16 @@ static bool add_peer_to_node(p2p_node_t node, const char* ip, uint16_t port, int
 bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_port)
 {
     // Guard clause: Validate inputs
-    if (!node || !peer_ip)
+    if (!node || !peer_ip) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_connect_peer: required parameter is NULL (node, peer_ip)");
         return false;
+    }
 
     // Validate IP address format
     // WHY: Prevent malformed addresses from causing crashes or errors
     if (!validate_ip_address(peer_ip)) {
         fprintf(stderr, "[P2P] Invalid IP address format: %s\n", peer_ip);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_connect_peer: validate_ip_address is NULL");
         return false;
     }
 
@@ -1070,6 +1098,7 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
     // WHY: Ensure port is usable for connection
     if (!validate_port_number(peer_port, false)) {
         fprintf(stderr, "[P2P] Invalid port number: %u\n", peer_port);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_connect_peer: validate_port_number is NULL");
         return false;
     }
 
@@ -1079,6 +1108,7 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
     // Guard clause: Check capacity
     if (node->peer_count >= node->config.max_peers) {
         nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE, "p2p_node_connect_peer: capacity exceeded");
         return false;
     }
 
@@ -1088,8 +1118,9 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
 
     // Check if peer already exists (O(1) via hash table)
     if (peer_already_exists(node, key)) {
-        peer_info_t* existing = hash_table_lookup_peer(&node->peer_table, key);
-        bool result = existing ? existing->connected : false;
+        // FIX: Hash table stores a copy of the pointer, need double dereference
+        peer_info_t** existing_ptr = (peer_info_t**)hash_table_lookup_string(node->peer_table, key);
+        bool result = (existing_ptr && *existing_ptr) ? (*existing_ptr)->connected : false;
         nimcp_mutex_unlock(&node->lock);
         return result;
     }
@@ -1098,6 +1129,8 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
     int sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     // Guard clause: Check socket creation
     if (sock < 0) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, peer_ip,
+                      "Failed to create socket for peer connection: errno=%d", errno);
         node->failed_connections++;
         nimcp_mutex_unlock(&node->lock);
         return false;
@@ -1106,6 +1139,8 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
     // Create socket address
     struct sockaddr_in addr;
     if (!create_sockaddr(&addr, peer_ip, peer_port)) {
+        NIMCP_THROW(NIMCP_ERROR_INVALID_PARAM,
+                   "Failed to create socket address for peer %s:%u", peer_ip, peer_port);
         close(sock);
         node->failed_connections++;
         nimcp_mutex_unlock(&node->lock);
@@ -1114,6 +1149,8 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
 
     // Attempt connection
     if (!attempt_connection(sock, &addr)) {
+        NIMCP_THROW_IO(NIMCP_ERROR_IO, peer_ip,
+                      "Failed to connect to peer %s:%u: errno=%d", peer_ip, peer_port, errno);
         close(sock);
         node->failed_connections++;
         nimcp_mutex_unlock(&node->lock);
@@ -1122,6 +1159,8 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
 
     // Add peer to node
     if (!add_peer_to_node(node, peer_ip, peer_port, sock)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE,
+                             "Failed to add peer %s:%u to node storage", peer_ip, peer_port);
         close(sock);
         node->failed_connections++;
         nimcp_mutex_unlock(&node->lock);
@@ -1133,8 +1172,8 @@ bool p2p_node_connect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_p
     // Use peer_ip:peer_port as unique peer ID (hashed to uint64_t)
     uint64_t peer_id = ((uint64_t) inet_addr(peer_ip) << 32) | peer_port;
     uint32_t vertex_idx =
-        nimcp_graph_add_vertex(node->topology_graph, peer_id, 0.0f, 0.0f,
-                               0.0f,  // Coordinates (TODO: calculate from network metrics)
+        nimcp_graph_add_vertex(node->topology_graph, peer_id, 0.0F, 0.0F,
+                               0.0F,  // Coordinates (TODO: calculate from network metrics)
                                0      // Capabilities (TODO: exchange in handshake)
         );
 
@@ -1183,8 +1222,10 @@ static void close_peer_socket(peer_info_t* peer)
 static int find_peer_index(p2p_node_t node, const char* ip, uint16_t port)
 {
     // Guard clause: Validate inputs
-    if (!node || !ip)
+    if (!node || !ip) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "find_peer_index: required parameter is NULL (node, ip)");
         return -1;
+    }
 
     for (uint32_t i = 0; i < node->peer_count; i++) {
         if (strcmp(node->peers[i].ip, ip) == 0 && node->peers[i].port == port) {
@@ -1192,6 +1233,7 @@ static int find_peer_index(p2p_node_t node, const char* ip, uint16_t port)
         }
     }
 
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "find_peer_index: validation failed");
     return -1;
 }
 
@@ -1241,13 +1283,16 @@ static void compact_peer_array(p2p_node_t node, uint32_t index)
 bool p2p_node_disconnect_peer(p2p_node_t node, const char* peer_ip, uint16_t peer_port)
 {
     // Guard clause: Validate inputs
-    if (!node || !peer_ip)
+    if (!node || !peer_ip) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_disconnect_peer: required parameter is NULL (node, peer_ip)");
         return false;
+    }
 
     // Validate IP address format
     // WHY: Ensure we're disconnecting with valid address
     if (!validate_ip_address(peer_ip)) {
         fprintf(stderr, "[P2P] Invalid IP address format: %s\n", peer_ip);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_disconnect_peer: validate_ip_address is NULL");
         return false;
     }
 
@@ -1255,6 +1300,7 @@ bool p2p_node_disconnect_peer(p2p_node_t node, const char* peer_ip, uint16_t pee
     // WHY: Ensure port is valid
     if (!validate_port_number(peer_port, false)) {
         fprintf(stderr, "[P2P] Invalid port number: %u\n", peer_port);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_disconnect_peer: validate_port_number is NULL");
         return false;
     }
 
@@ -1266,24 +1312,28 @@ bool p2p_node_disconnect_peer(p2p_node_t node, const char* peer_ip, uint16_t pee
     generate_peer_key(key, sizeof(key), peer_ip, peer_port);
 
     // Lookup peer in hash table (O(1))
-    peer_info_t* peer = hash_table_lookup_peer(&node->peer_table, key);
+    // FIX: Hash table stores a copy of the pointer, need double dereference
+    peer_info_t** peer_ptr = (peer_info_t**)hash_table_lookup_string(node->peer_table, key);
     // Guard clause: Check if peer exists
-    if (!peer) {
+    if (!peer_ptr || !*peer_ptr) {
         nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_disconnect_peer: peer_ptr is NULL");
         return false;
     }
 
+    peer_info_t* peer = *peer_ptr;
     // Close peer socket
     close_peer_socket(peer);
 
-    // Remove from hash table (O(1))
-    hash_table_remove_peer(&node->peer_table, key);
+    // Remove from hash table (O(1)) using NIMCP utility
+    hash_table_remove_string(node->peer_table, key);
 
     // Find peer index in array
     int index = find_peer_index(node, peer_ip, peer_port);
     // Guard clause: Check if found in array
     if (index < 0) {
         nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE, "p2p_node_disconnect_peer: validation failed");
         return false;
     }
 
@@ -1317,6 +1367,11 @@ bool p2p_node_disconnect_peer(p2p_node_t node, const char* peer_ip, uint16_t pee
  */
 static void update_node_status(p2p_node_t node, node_status_t status, bool running)
 {
+    // Process pending bio-async messages
+    if (node && node->bio_async_enabled && node->bio_ctx) {
+        bio_router_process_inbox(node->bio_ctx, 5);
+    }
+
     // Guard clause: Validate input
     if (!node)
         return;
@@ -1344,8 +1399,10 @@ static void update_node_status(p2p_node_t node, node_status_t status, bool runni
 bool p2p_node_start(p2p_node_t node)
 {
     // Guard clause: Validate input
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_start: node is NULL");
         return false;
+    }
 
     // Lock for thread safety
     nimcp_mutex_lock(&node->lock);
@@ -1353,6 +1410,7 @@ bool p2p_node_start(p2p_node_t node)
     // Guard clause: Check if already running
     if (node->running) {
         nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_start: validation failed");
         return false;
     }
 
@@ -1360,6 +1418,7 @@ bool p2p_node_start(p2p_node_t node)
     if (!setup_listen_socket(node)) {
         update_node_status(node, NODE_STATUS_ERROR, false);
         nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_start: setup_listen_socket is NULL");
         return false;
     }
 
@@ -1433,8 +1492,10 @@ static void disconnect_all_peers(p2p_node_t node)
 bool p2p_node_stop(p2p_node_t node)
 {
     // Guard clause: Validate input
-    if (!node)
+    if (!node) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_stop: node is NULL");
         return false;
+    }
 
     // Lock for thread safety
     nimcp_mutex_lock(&node->lock);
@@ -1442,6 +1503,7 @@ bool p2p_node_stop(p2p_node_t node)
     // Guard clause: Check if running
     if (!node->running) {
         nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_stop: node->running is NULL");
         return false;
     }
 
@@ -1453,6 +1515,489 @@ bool p2p_node_stop(p2p_node_t node)
 
     // Update node status
     update_node_status(node, NODE_STATUS_SHUTDOWN, false);
+
+    nimcp_mutex_unlock(&node->lock);
+    return true;
+}
+
+//=============================================================================
+// Heartbeat System Implementation
+//=============================================================================
+
+/**
+ * @brief Sends a PING message to specific peer
+ *
+ * WHAT: Sends lightweight PING message via socket
+ * WHY: Check if peer is alive and responding
+ * HOW: Serialize MSG_TYPE_PING and send via socket
+ *
+ * @param peer Peer to ping (must be non-NULL and connected)
+ * @return true on successful send
+ *
+ * COMPLEXITY: O(1)
+ */
+static bool send_ping_to_peer(peer_info_t* peer)
+{
+    // Guard clause: Validate input
+    if (!peer || !peer->connected || peer->socket_fd < 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "send_ping_to_peer: required parameter is NULL (peer, peer->connected)");
+        return false;
+    }
+
+    // Create PING message using protocol
+    uint8_t buffer[sizeof(msg_header_t)];
+    int bytes = protocol_serialize_message(MSG_TYPE_PING, NULL, 0, buffer, sizeof(buffer));
+
+    // Guard clause: Check serialization
+    if (bytes <= 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "send_ping_to_peer: validation failed");
+        return false;
+    }
+
+    // Send PING message
+    ssize_t sent = send(peer->socket_fd, buffer, bytes, MSG_NOSIGNAL);
+
+    // Update timestamp on successful send
+    if (sent == bytes) {
+        peer->last_ping_sent = nimcp_time_get_us();
+        LOG_DEBUG(LOG_MODULE, "PING sent to %s:%u", peer->ip, peer->port);
+        return true;
+    }
+
+    LOG_WARN(LOG_MODULE, "Failed to send PING to %s:%u (sent %zd/%d bytes)",
+             peer->ip, peer->port, sent, bytes);
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "send_ping_to_peer: validation failed");
+    return false;
+}
+
+/**
+ * @brief Send heartbeat pings to all connected peers
+ *
+ * WHAT: Iterates through all peers and sends PING messages
+ * WHY: Periodic health check to detect disconnections
+ * HOW: Single-pass iteration with guard clauses
+ *
+ * @param node Handle to the node
+ * @return Number of pings sent, or 0 on error
+ *
+ * ALGORITHM:
+ * 1. Validate input (O(1))
+ * 2. Lock node (O(1))
+ * 3. Iterate peers and send pings (O(n))
+ * 4. Unlock node (O(1))
+ *
+ * COMPLEXITY: O(n) where n = number of connected peers
+ */
+uint32_t p2p_node_send_heartbeats(p2p_node_t node)
+{
+    // Guard clause: Validate input
+    if (!node)
+        return 0;
+
+    nimcp_mutex_lock(&node->lock);
+
+    // Guard clause: Check if running
+    if (!node->running) {
+        nimcp_mutex_unlock(&node->lock);
+        return 0;
+    }
+
+    uint32_t pings_sent = 0;
+
+    // Single-pass iteration through peers
+    for (uint32_t i = 0; i < node->peer_count; i++) {
+        peer_info_t* peer = &node->peers[i];
+
+        // Guard clause: Skip disconnected peers
+        if (!peer->connected)
+            continue;
+
+        // Send ping and count successes
+        if (send_ping_to_peer(peer)) {
+            pings_sent++;
+        }
+    }
+
+    nimcp_mutex_unlock(&node->lock);
+
+    if (pings_sent > 0) {
+        LOG_DEBUG(LOG_MODULE, "Heartbeat cycle: sent %u pings to connected peers", pings_sent);
+    }
+
+    return pings_sent;
+}
+
+/**
+ * @brief Process heartbeat pong response from peer
+ *
+ * WHAT: Updates peer health metrics on PONG receipt
+ * WHY: Track peer responsiveness and health
+ * HOW: O(1) hash table lookup + status update
+ *
+ * @param node Handle to the node
+ * @param peer_ip IP address of peer
+ * @param peer_port Port of peer
+ * @return true if pong processed successfully
+ *
+ * ALGORITHM:
+ * 1. Validate inputs (O(1))
+ * 2. Generate peer key (O(1))
+ * 3. Hash table lookup (O(1) average)
+ * 4. Update health metrics (O(1))
+ *
+ * COMPLEXITY: O(1) average case
+ */
+bool p2p_node_process_pong(p2p_node_t node, const char* peer_ip, uint16_t peer_port)
+{
+    // Guard clause: Validate inputs
+    if (!node || !peer_ip) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_process_pong: required parameter is NULL (node, peer_ip)");
+        return false;
+    }
+
+    nimcp_mutex_lock(&node->lock);
+
+    // Generate peer key for hash lookup
+    char peer_key[32];
+    generate_peer_key(peer_key, sizeof(peer_key), peer_ip, peer_port);
+
+    // O(1) hash table lookup using NIMCP utility
+    // FIX: Hash table stores a copy of the pointer, need double dereference
+    peer_info_t** peer_ptr = (peer_info_t**)hash_table_lookup_string(node->peer_table, peer_key);
+
+    // Guard clause: Peer not found
+    if (!peer_ptr || !*peer_ptr) {
+        nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_process_pong: peer_ptr is NULL");
+        return false;
+    }
+
+    peer_info_t* peer = *peer_ptr;
+    // Update health metrics (O(1) operations)
+    peer->last_pong_received = nimcp_time_get_us();
+    peer->missed_pings = 0;
+    peer->healthy = true;
+
+    LOG_DEBUG(LOG_MODULE, "PONG received from %s:%u (peer healthy)", peer_ip, peer_port);
+
+    nimcp_mutex_unlock(&node->lock);
+    return true;
+}
+
+/**
+ * @brief Checks if peer has timed out waiting for pong
+ *
+ * WHAT: Determines if peer exceeded timeout threshold
+ * WHY: Extracted from loop to eliminate nesting
+ * HOW: Compare current time to last_pong + timeout
+ *
+ * @param peer Peer to check (must be non-NULL)
+ * @param timeout_us Timeout in microseconds
+ * @param current_time_us Current timestamp in microseconds
+ * @return true if peer has timed out
+ *
+ * COMPLEXITY: O(1)
+ */
+static bool peer_has_timed_out(const peer_info_t* peer, uint64_t timeout_us,
+                                uint64_t current_time_us)
+{
+    // Guard clause: Validate input
+    if (!peer || !peer->connected) {
+        return false;
+    }
+
+    // Guard clause: Never received a pong (initial state)
+    if (peer->last_pong_received == 0) {
+        return false;
+    }
+
+    // Calculate elapsed time since last pong
+    uint64_t elapsed_us = current_time_us - peer->last_pong_received;
+
+    return elapsed_us > timeout_us;
+}
+
+/**
+ * @brief Marks peer as unhealthy and increments missed ping counter
+ *
+ * WHAT: Updates peer health status after timeout
+ * WHY: Single responsibility - health status update
+ * HOW: Increment counter and update flag
+ *
+ * @param peer Peer to mark (must be non-NULL)
+ * @param max_retries Maximum retries before marking unhealthy
+ *
+ * COMPLEXITY: O(1)
+ */
+static void mark_peer_unhealthy(peer_info_t* peer, uint32_t max_retries)
+{
+    // Guard clause: Validate input
+    if (!peer)
+        return;
+
+    peer->missed_pings++;
+
+    // Mark unhealthy after exceeding max retries
+    if (peer->missed_pings >= max_retries) {
+        peer->healthy = false;
+        LOG_WARN(LOG_MODULE, "Peer %s:%u marked UNHEALTHY (missed %u pings)",
+                 peer->ip, peer->port, peer->missed_pings);
+    } else {
+        LOG_DEBUG(LOG_MODULE, "Peer %s:%u missed ping (%u/%u)",
+                  peer->ip, peer->port, peer->missed_pings, max_retries);
+    }
+}
+
+/**
+ * @brief Check peer health and mark unhealthy peers
+ *
+ * WHAT: Scans all peers for timeouts and updates health status
+ * WHY: Detect unresponsive peers for reconnection
+ * HOW: Single-pass iteration with guard clauses
+ *
+ * @param node Handle to the node
+ * @param timeout_ms Maximum time to wait for pong (milliseconds)
+ * @return Number of unhealthy peers detected
+ *
+ * ALGORITHM:
+ * 1. Validate input (O(1))
+ * 2. Get current time (O(1))
+ * 3. Convert timeout to microseconds (O(1))
+ * 4. Iterate peers and check timeouts (O(n))
+ * 5. Mark unhealthy peers (O(1) per peer)
+ *
+ * COMPLEXITY: O(n) where n = number of peers
+ */
+uint32_t p2p_node_check_peer_health(p2p_node_t node, uint32_t timeout_ms)
+{
+    // Guard clause: Validate input
+    if (!node)
+        return 0;
+
+    nimcp_mutex_lock(&node->lock);
+
+    // Guard clause: Check if running
+    if (!node->running) {
+        nimcp_mutex_unlock(&node->lock);
+        return 0;
+    }
+
+    // Get current time once for all comparisons
+    uint64_t current_time_us = nimcp_time_get_us();
+    uint64_t timeout_us = (uint64_t)timeout_ms * NIMCP_US_PER_MS;
+    uint32_t unhealthy_count = 0;
+
+    // Single-pass iteration through peers
+    for (uint32_t i = 0; i < node->peer_count; i++) {
+        peer_info_t* peer = &node->peers[i];
+
+        // Guard clause: Skip disconnected peers
+        if (!peer->connected)
+            continue;
+
+        // Check timeout
+        if (peer_has_timed_out(peer, timeout_us, current_time_us)) {
+            mark_peer_unhealthy(peer, node->config.max_retries);
+
+            if (!peer->healthy) {
+                unhealthy_count++;
+            }
+        }
+    }
+
+    nimcp_mutex_unlock(&node->lock);
+    return unhealthy_count;
+}
+
+/**
+ * @brief Attempts to reconnect to single unhealthy peer
+ *
+ * WHAT: Tries to re-establish connection to peer
+ * WHY: Single responsibility - one reconnection attempt
+ * HOW: Close old socket, create new, reset health metrics
+ *
+ * @param node Node handle (must be non-NULL)
+ * @param peer Peer to reconnect (must be non-NULL)
+ * @return true on successful reconnection
+ *
+ * COMPLEXITY: O(1)
+ */
+static bool attempt_peer_reconnect(p2p_node_t node, peer_info_t* peer)
+{
+    // Guard clause: Validate inputs
+    if (!node || !peer) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "attempt_peer_reconnect: required parameter is NULL (node, peer)");
+        return false;
+    }
+
+    // Guard clause: Skip healthy peers
+    if (peer->healthy) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "attempt_peer_reconnect: validation failed");
+        return false;
+    }
+
+    // Close old socket if open
+    if (peer->socket_fd >= 0) {
+        close(peer->socket_fd);
+        peer->socket_fd = -1;
+    }
+
+    // Attempt reconnection using existing connect function
+    LOG_INFO(LOG_MODULE, "Attempting to reconnect to unhealthy peer %s:%u",
+             peer->ip, peer->port);
+
+    bool reconnected = p2p_node_connect_peer(node, peer->ip, peer->port);
+
+    // Reset health metrics on successful reconnection
+    if (reconnected) {
+        uint64_t now = nimcp_time_get_us();
+        peer->last_ping_sent = now;
+        peer->last_pong_received = now;
+        peer->missed_pings = 0;
+        peer->healthy = true;
+        LOG_INFO(LOG_MODULE, "Successfully reconnected to peer %s:%u",
+                 peer->ip, peer->port);
+    } else {
+        LOG_WARN(LOG_MODULE, "Failed to reconnect to peer %s:%u",
+                 peer->ip, peer->port);
+    }
+
+    return reconnected;
+}
+
+/**
+ * @brief Reconnect to unhealthy peers
+ *
+ * WHAT: Scans for unhealthy peers and attempts reconnection
+ * WHY: Automatic recovery from network issues
+ * HOW: Single-pass iteration with guard clauses
+ *
+ * @param node Handle to the node
+ * @return Number of reconnection attempts made
+ *
+ * ALGORITHM:
+ * 1. Validate input (O(1))
+ * 2. Iterate peers (O(n))
+ * 3. Attempt reconnect for unhealthy peers (O(1) per peer)
+ *
+ * COMPLEXITY: O(n) where n = number of unhealthy peers
+ */
+uint32_t p2p_node_reconnect_unhealthy(p2p_node_t node)
+{
+    // Guard clause: Validate input
+    if (!node)
+        return 0;
+
+    nimcp_mutex_lock(&node->lock);
+
+    // Guard clause: Check if running
+    if (!node->running) {
+        nimcp_mutex_unlock(&node->lock);
+        return 0;
+    }
+
+    // Collect unhealthy peer info while holding lock, then release
+    // before calling attempt_peer_reconnect (which calls
+    // p2p_node_connect_peer, which also locks node->lock).
+    // This avoids a self-deadlock on non-recursive mutex.
+    typedef struct { char ip[16]; uint16_t port; uint32_t index; } unhealthy_info_t;
+    unhealthy_info_t unhealthy[64];  // Max peers we'll try
+    uint32_t unhealthy_count = 0;
+
+    for (uint32_t i = 0; i < node->peer_count && unhealthy_count < 64; i++) {
+        peer_info_t* peer = &node->peers[i];
+
+        // Guard clause: Skip healthy/disconnected peers
+        if (!peer->connected || peer->healthy)
+            continue;
+
+        strncpy(unhealthy[unhealthy_count].ip, peer->ip, sizeof(peer->ip));
+        unhealthy[unhealthy_count].ip[15] = '\0';
+        unhealthy[unhealthy_count].port = peer->port;
+        unhealthy[unhealthy_count].index = i;
+        unhealthy_count++;
+    }
+
+    nimcp_mutex_unlock(&node->lock);
+
+    // Now attempt reconnections without holding the lock
+    uint32_t reconnect_attempts = 0;
+    for (uint32_t i = 0; i < unhealthy_count; i++) {
+        LOG_INFO(LOG_MODULE, "Attempting to reconnect to unhealthy peer %s:%u",
+                 unhealthy[i].ip, unhealthy[i].port);
+
+        bool reconnected = p2p_node_connect_peer(node, unhealthy[i].ip, unhealthy[i].port);
+
+        if (reconnected) {
+            // Update health metrics under lock
+            nimcp_mutex_lock(&node->lock);
+            // Re-validate the peer is still there at the same index
+            if (unhealthy[i].index < node->peer_count) {
+                peer_info_t* peer = &node->peers[unhealthy[i].index];
+                if (strcmp(peer->ip, unhealthy[i].ip) == 0 && peer->port == unhealthy[i].port) {
+                    uint64_t now = nimcp_time_get_us();
+                    peer->last_ping_sent = now;
+                    peer->last_pong_received = now;
+                    peer->missed_pings = 0;
+                    peer->healthy = true;
+                    LOG_INFO(LOG_MODULE, "Successfully reconnected to peer %s:%u",
+                             unhealthy[i].ip, unhealthy[i].port);
+                }
+            }
+            nimcp_mutex_unlock(&node->lock);
+            reconnect_attempts++;
+        } else {
+            LOG_WARN(LOG_MODULE, "Failed to reconnect to peer %s:%u",
+                     unhealthy[i].ip, unhealthy[i].port);
+        }
+    }
+
+    return reconnect_attempts;
+}
+
+/**
+ * @brief Get peer health status
+ *
+ * WHAT: Returns health status of specific peer
+ * WHY: Allow external monitoring of peer health
+ * HOW: O(1) hash table lookup
+ *
+ * @param node Handle to the node
+ * @param peer_ip IP address of peer
+ * @param peer_port Port of peer
+ * @param out_health Output: peer health status
+ * @return true if peer found, false otherwise
+ *
+ * COMPLEXITY: O(1) average case
+ */
+bool p2p_node_get_peer_health(p2p_node_t node, const char* peer_ip, uint16_t peer_port,
+                                bool* out_health)
+{
+    // Guard clause: Validate inputs
+    if (!node || !peer_ip || !out_health) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "p2p_node_get_peer_health: required parameter is NULL (node, peer_ip, out_health)");
+        return false;
+    }
+
+    nimcp_mutex_lock(&node->lock);
+
+    // Generate peer key for hash lookup
+    char peer_key[32];
+    generate_peer_key(peer_key, sizeof(peer_key), peer_ip, peer_port);
+
+    // O(1) hash table lookup using NIMCP utility
+    // FIX: Hash table stores a copy of the pointer, need double dereference
+    peer_info_t** peer_ptr = (peer_info_t**)hash_table_lookup_string(node->peer_table, peer_key);
+
+    // Guard clause: Peer not found
+    if (!peer_ptr || !*peer_ptr) {
+        nimcp_mutex_unlock(&node->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "p2p_node_get_peer_health: peer_ptr is NULL");
+        return false;
+    }
+
+    peer_info_t* peer = *peer_ptr;
+    *out_health = peer->healthy;
 
     nimcp_mutex_unlock(&node->lock);
     return true;

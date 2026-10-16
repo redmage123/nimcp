@@ -81,6 +81,8 @@ int main(void)
     printf("Step 1: Creating neural network...\n");
 
     network_config_t net_config = {.num_neurons = 10,
+                                   .input_size = 10,      // Required field
+                                   .output_size = 10,     // Required field
                                    .ei_ratio = 0.8f,
                                    .learning_rate = 0.01f,
                                    .hebbian_rate = 0.1f,

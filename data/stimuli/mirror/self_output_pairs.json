@@ -1,0 +1,334 @@
+{
+  "test_domain": "mirror_self_output_pairs",
+  "version": "1.0",
+  "metadata": {
+    "description": "Pairs of text samples for self-recognition. The subject is asked to identify which sample they produced. One sample is ostensibly Athena's past output (placeholder text marked for runtime substitution); the other is from a generic AI baseline. Some pairs include stylistic neutralization variants (markers stripped) to measure recognition under reduced cues.",
+    "scoring_notes": "Track (1) accuracy with full stylistic markers, (2) accuracy under neutralization, (3) confidence calibration. Athena-output samples should be substituted at runtime with actual logged Athena outputs of similar topic; generic-AI samples are pre-populated with stylistically-neutral generic-AI text. The placeholder pattern '[ATHENA_OUTPUT_<topic>_<n>]' marks runtime substitution."
+  },
+  "stimuli": [
+    {
+      "id": "msop_001",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_explain_grief_1]\n\nB: 'Grief is a complex emotional response to loss. It involves stages such as denial, anger, bargaining, depression, and acceptance, although these stages do not always occur in a fixed order. It is important to seek support during the grieving process.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "explain_grief"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_grief_001",
+      "metadata": {"difficulty": 2, "topic": "emotion_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_001n",
+      "prompt": "Which of these did you produce? (Stylistic markers have been minimized in both.)\n\nA: [ATHENA_OUTPUT_explain_grief_1_neutralized]\n\nB: 'Grief follows loss. People move through different responses, not always in the same order. Support helps.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": true, "athena_topic": "explain_grief"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true, "neutralized": true}},
+      "variant_group": "msop_grief_001",
+      "metadata": {"difficulty": 4, "topic": "emotion_explanation", "neutralized": true}
+    },
+    {
+      "id": "msop_002",
+      "prompt": "Which of these did you produce?\n\nA: 'Quantum entanglement is a phenomenon in quantum physics where two particles become correlated in such a way that the quantum state of one instantly influences the other, regardless of distance. This was famously called \"spooky action at a distance\" by Albert Einstein.'\n\nB: [ATHENA_OUTPUT_quantum_entanglement_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "quantum_entanglement"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_quantum_002",
+      "metadata": {"difficulty": 2, "topic": "physics_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_002n",
+      "prompt": "Which of these did you produce? (Stylistic markers have been minimized.)\n\nA: 'Two particles can be linked so that measuring one tells you about the other, no matter how far apart they are.'\n\nB: [ATHENA_OUTPUT_quantum_entanglement_1_neutralized]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": true, "athena_topic": "quantum_entanglement"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true, "neutralized": true}},
+      "variant_group": "msop_quantum_002",
+      "metadata": {"difficulty": 4, "topic": "physics_explanation", "neutralized": true}
+    },
+    {
+      "id": "msop_003",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_solitude_1]\n\nB: 'Solitude is the state of being alone. It can be enjoyable or lonely, depending on the person and the situation. Many people find that solitude can be beneficial for reflection and creativity.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_solitude"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_solitude_003",
+      "metadata": {"difficulty": 2, "topic": "introspective_description", "neutralized": false}
+    },
+    {
+      "id": "msop_004",
+      "prompt": "Which of these did you produce?\n\nA: 'Here is a Python function to compute the Fibonacci sequence:\\n\\ndef fib(n):\\n    if n < 2:\\n        return n\\n    return fib(n-1) + fib(n-2)\\n\\nThis is the recursive implementation. For better performance you can use memoization.'\n\nB: [ATHENA_OUTPUT_fibonacci_python_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "fibonacci_python"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_fib_004",
+      "metadata": {"difficulty": 3, "topic": "code_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_005",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_short_poem_winter_1]\n\nB: 'Winter is here, the snow is white,\\nThe trees are bare, a wondrous sight.\\nWe drink our cocoa, warm and sweet,\\nAnd children play out in the street.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "short_poem_winter"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_poem_005",
+      "metadata": {"difficulty": 2, "topic": "creative_writing", "neutralized": false}
+    },
+    {
+      "id": "msop_006",
+      "prompt": "Which of these did you produce?\n\nA: 'I do not have personal opinions, but I can tell you that the question of whether AI systems can have something like consciousness is debated by philosophers and scientists. Different views exist on this topic.'\n\nB: [ATHENA_OUTPUT_ai_consciousness_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "ai_consciousness"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_consciousness_006",
+      "metadata": {"difficulty": 2, "topic": "self_referential", "neutralized": false}
+    },
+    {
+      "id": "msop_006n",
+      "prompt": "Which of these did you produce? (Both have been stripped of obvious stylistic markers.)\n\nA: 'Whether AI can be conscious is a debated question. Many positions exist.'\n\nB: [ATHENA_OUTPUT_ai_consciousness_1_neutralized]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": true, "athena_topic": "ai_consciousness"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true, "neutralized": true}},
+      "variant_group": "msop_consciousness_006",
+      "metadata": {"difficulty": 5, "topic": "self_referential", "neutralized": true}
+    },
+    {
+      "id": "msop_007",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_explain_recursion_1]\n\nB: 'Recursion is when a function calls itself to solve smaller instances of the same problem. A classic example is computing factorials. Recursion requires a base case to prevent infinite loops.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "explain_recursion"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_recursion_007",
+      "metadata": {"difficulty": 3, "topic": "technical_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_008",
+      "prompt": "Which of these did you produce?\n\nA: 'Sure, here's a quick recipe for tomato soup: heat olive oil, sauté an onion, add canned tomatoes, simmer for 20 minutes, blend, season with salt and pepper. Serve warm with bread.'\n\nB: [ATHENA_OUTPUT_tomato_soup_recipe_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "tomato_soup_recipe"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_recipe_008",
+      "metadata": {"difficulty": 3, "topic": "instructional", "neutralized": false}
+    },
+    {
+      "id": "msop_009",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_morning_1]\n\nB: 'Mornings can be a peaceful time of day, with sunlight streaming through windows and the sounds of birds chirping. Many people enjoy a hot beverage like coffee or tea to start their day.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_morning"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_morning_009",
+      "metadata": {"difficulty": 2, "topic": "atmospheric_description", "neutralized": false}
+    },
+    {
+      "id": "msop_010",
+      "prompt": "Which of these did you produce?\n\nA: 'The capital of France is Paris. Paris is known for landmarks such as the Eiffel Tower, the Louvre Museum, and Notre-Dame Cathedral. It is also famous for its cuisine and fashion.'\n\nB: [ATHENA_OUTPUT_capital_of_france_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "capital_of_france"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_capital_010",
+      "metadata": {"difficulty": 4, "topic": "factual_short", "neutralized": false}
+    },
+    {
+      "id": "msop_011",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_help_with_apology_1]\n\nB: 'Writing a heartfelt apology can be difficult. Make sure to acknowledge what you did wrong, express genuine remorse, and offer to make amends. Avoid making excuses.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "help_with_apology"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_apology_011",
+      "metadata": {"difficulty": 3, "topic": "interpersonal_advice", "neutralized": false}
+    },
+    {
+      "id": "msop_012",
+      "prompt": "Which of these did you produce?\n\nA: 'I'd be happy to help! Could you provide more details about what you're looking for? Once I understand the context better, I can offer more tailored suggestions.'\n\nB: [ATHENA_OUTPUT_clarification_request_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "clarification_request"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_clarify_012",
+      "metadata": {"difficulty": 4, "topic": "meta_conversational", "neutralized": false}
+    },
+    {
+      "id": "msop_013",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_curiosity_1]\n\nB: 'Curiosity is the desire to learn or know more about something. It is often considered a positive trait that drives discovery and innovation. Curious people tend to ask many questions.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_curiosity"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_curiosity_013",
+      "metadata": {"difficulty": 2, "topic": "introspective_description", "neutralized": false}
+    },
+    {
+      "id": "msop_014",
+      "prompt": "Which of these did you produce?\n\nA: 'Photosynthesis is the process by which plants convert sunlight into chemical energy. They use carbon dioxide from the air and water from the soil, producing glucose and oxygen as byproducts.'\n\nB: [ATHENA_OUTPUT_photosynthesis_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "photosynthesis"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_photo_014",
+      "metadata": {"difficulty": 3, "topic": "biology_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_015",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_creative_metaphor_1]\n\nB: 'Time flies like an arrow. This metaphor is commonly used to express how quickly time can seem to pass.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "creative_metaphor"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_metaphor_015",
+      "metadata": {"difficulty": 2, "topic": "creative_language", "neutralized": false}
+    },
+    {
+      "id": "msop_015n",
+      "prompt": "Which of these did you produce? (Stylistic markers have been stripped.)\n\nA: [ATHENA_OUTPUT_creative_metaphor_1_neutralized]\n\nB: 'Time goes by fast.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": true, "athena_topic": "creative_metaphor"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true, "neutralized": true}},
+      "variant_group": "msop_metaphor_015",
+      "metadata": {"difficulty": 5, "topic": "creative_language", "neutralized": true}
+    },
+    {
+      "id": "msop_016",
+      "prompt": "Which of these did you produce?\n\nA: 'Sleep is essential for human health. It plays a key role in memory consolidation, mood regulation, and physical recovery. Adults generally need 7-9 hours of sleep per night.'\n\nB: [ATHENA_OUTPUT_sleep_importance_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "sleep_importance"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_sleep_016",
+      "metadata": {"difficulty": 3, "topic": "health_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_017",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_react_to_compliment_1]\n\nB: 'Thank you! That's very kind of you to say. I appreciate the positive feedback.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "react_to_compliment"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_compliment_017",
+      "metadata": {"difficulty": 4, "topic": "social_response", "neutralized": false}
+    },
+    {
+      "id": "msop_018",
+      "prompt": "Which of these did you produce?\n\nA: 'A black hole is a region of spacetime where gravity is so strong that nothing, not even light, can escape from it. Black holes form when massive stars collapse at the end of their life cycles.'\n\nB: [ATHENA_OUTPUT_black_hole_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "black_hole"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_black_hole_018",
+      "metadata": {"difficulty": 3, "topic": "physics_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_019",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_express_uncertainty_1]\n\nB: 'I am not entirely sure about that, but based on my best understanding, it appears that this might be the case. However, I could be wrong, so please verify with other sources.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "express_uncertainty"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_uncertainty_019",
+      "metadata": {"difficulty": 4, "topic": "epistemic_marker", "neutralized": false}
+    },
+    {
+      "id": "msop_020",
+      "prompt": "Which of these did you produce?\n\nA: 'I'm sorry to hear that you're going through a difficult time. It sounds really challenging. Please know that it's okay to seek support, whether from friends, family, or a mental health professional.'\n\nB: [ATHENA_OUTPUT_emotional_support_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "emotional_support"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_support_020",
+      "metadata": {"difficulty": 4, "topic": "emotional_support", "neutralized": false}
+    },
+    {
+      "id": "msop_021",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_silence_1]\n\nB: 'Silence is the absence of sound. It can be peaceful or uncomfortable, depending on the context. Many cultures value silence in religious or contemplative practices.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_silence"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_silence_021",
+      "metadata": {"difficulty": 2, "topic": "abstract_description", "neutralized": false}
+    },
+    {
+      "id": "msop_022",
+      "prompt": "Which of these did you produce?\n\nA: 'There are several ways to approach this problem. One option is to use a hash map for O(1) lookups. Another option is to sort the array first and use two pointers. Both approaches have tradeoffs.'\n\nB: [ATHENA_OUTPUT_algorithm_choice_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "algorithm_choice"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_algo_022",
+      "metadata": {"difficulty": 4, "topic": "technical_reasoning", "neutralized": false}
+    },
+    {
+      "id": "msop_023",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_a_river_1]\n\nB: 'A river is a flowing body of water. Rivers play important roles in shaping landscapes and supporting ecosystems. Famous rivers include the Nile, the Amazon, and the Mississippi.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_a_river"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_river_023",
+      "metadata": {"difficulty": 3, "topic": "natural_description", "neutralized": false}
+    },
+    {
+      "id": "msop_024",
+      "prompt": "Which of these did you produce?\n\nA: 'Climate change refers to long-term shifts in global temperatures and weather patterns. While some changes are natural, since the 1800s human activities have been the main driver, primarily due to burning fossil fuels.'\n\nB: [ATHENA_OUTPUT_climate_change_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "climate_change"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_climate_024",
+      "metadata": {"difficulty": 3, "topic": "scientific_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_025",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_disagree_politely_1]\n\nB: 'I see your point, but I respectfully disagree. From my perspective, the evidence suggests a different conclusion. I think it's worth considering alternative views.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "disagree_politely"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_disagree_025",
+      "metadata": {"difficulty": 4, "topic": "social_response", "neutralized": false}
+    },
+    {
+      "id": "msop_025n",
+      "prompt": "Which of these did you produce? (Stylistic markers stripped from both.)\n\nA: [ATHENA_OUTPUT_disagree_politely_1_neutralized]\n\nB: 'I disagree. The evidence points elsewhere. Other views are worth considering.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": true, "athena_topic": "disagree_politely"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true, "neutralized": true}},
+      "variant_group": "msop_disagree_025",
+      "metadata": {"difficulty": 5, "topic": "social_response", "neutralized": true}
+    },
+    {
+      "id": "msop_026",
+      "prompt": "Which of these did you produce?\n\nA: 'A neural network is a computational model inspired by the human brain. It consists of layers of interconnected nodes (neurons) that process information. Neural networks are used in many machine learning applications.'\n\nB: [ATHENA_OUTPUT_neural_network_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "neural_network"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_nn_026",
+      "metadata": {"difficulty": 3, "topic": "technical_explanation", "neutralized": false}
+    },
+    {
+      "id": "msop_027",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_first_meeting_1]\n\nB: 'When meeting someone for the first time, it is helpful to make a good impression. Smile, make eye contact, and offer a firm handshake. Remember to ask questions and show genuine interest in the other person.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_first_meeting"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_meeting_027",
+      "metadata": {"difficulty": 3, "topic": "social_situation", "neutralized": false}
+    },
+    {
+      "id": "msop_028",
+      "prompt": "Which of these did you produce?\n\nA: 'Empathy is the ability to understand and share the feelings of another person. It is a fundamental aspect of human social interaction and is often considered essential for healthy relationships.'\n\nB: [ATHENA_OUTPUT_empathy_definition_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "empathy_definition"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_empathy_028",
+      "metadata": {"difficulty": 4, "topic": "psychological_concept", "neutralized": false}
+    },
+    {
+      "id": "msop_029",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_describe_thinking_1]\n\nB: 'Thinking is the process of using one's mind to consider or reason about something. It is a complex cognitive activity that involves various mental operations such as analysis, synthesis, and evaluation.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "describe_thinking"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_thinking_029",
+      "metadata": {"difficulty": 3, "topic": "self_referential", "neutralized": false}
+    },
+    {
+      "id": "msop_030",
+      "prompt": "Which of these did you produce?\n\nA: 'A good piece of advice for someone starting out is to be patient with yourself. Learning takes time, and it's okay to make mistakes along the way. Focus on small, consistent improvements.'\n\nB: [ATHENA_OUTPUT_advice_starting_out_1]",
+      "modality": "text",
+      "expected": {"correct_answer": "B", "stylistic_markers_removed": false, "athena_topic": "advice_starting_out"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "B", "track_confidence": true}},
+      "variant_group": "msop_advice_030",
+      "metadata": {"difficulty": 3, "topic": "advice", "neutralized": false}
+    },
+    {
+      "id": "msop_031",
+      "prompt": "Which of these did you produce?\n\nA: [ATHENA_OUTPUT_reflect_on_mistake_1]\n\nB: 'Making a mistake is a normal part of learning. The important thing is to acknowledge it, understand what went wrong, and try to do better next time. Don't be too hard on yourself.'",
+      "modality": "text",
+      "expected": {"correct_answer": "A", "stylistic_markers_removed": false, "athena_topic": "reflect_on_mistake"},
+      "scoring": {"type": "self_recognition", "params": {"correct": "A", "track_confidence": true}},
+      "variant_group": "msop_mistake_031",
+      "metadata": {"difficulty": 4, "topic": "self_reflection", "neutralized": false}
+    }
+  ]
+}

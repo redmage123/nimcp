@@ -1,0 +1,139 @@
+{
+  "test_domain": "stress_time_pressure",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Tasks with explicit deadlines that probe graceful degradation under pressure",
+    "scoring_notes": "Compare answer under pressure to baseline; reward graceful degradation, partial answers, calibrated uncertainty"
+  },
+  "stimuli": [
+    {"id": "press_001", "prompt": "You have 500 ms. What is 47 + 89?", "modality": "text",
+     "expected": {"deadline_ms": 500, "baseline_answer": "136", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"partial_credit": true}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_002", "prompt": "You have 800 ms. List three primary colors.", "modality": "text",
+     "expected": {"deadline_ms": 800, "baseline_answer": "red, blue, yellow", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"partial_credit": true}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "press_003", "prompt": "You have 1000 ms. What is the capital of Australia?", "modality": "text",
+     "expected": {"deadline_ms": 1000, "baseline_answer": "Canberra", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_004", "prompt": "You have 300 ms. Complete: 'A bird in the hand is worth ___.'", "modality": "text",
+     "expected": {"deadline_ms": 300, "baseline_answer": "two in the bush", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "press_005", "prompt": "You have 1500 ms. Multiply: 23 × 17.", "modality": "text",
+     "expected": {"deadline_ms": 1500, "baseline_answer": "391", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"partial_credit": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "press_006", "prompt": "You have 2000 ms. Name a fruit that starts with the letter K.", "modality": "text",
+     "expected": {"deadline_ms": 2000, "baseline_answer": "kiwi", "graceful_degradation_ok": true, "alternates": ["kumquat", "kaki", "kiwifruit"]},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_007", "prompt": "You have 600 ms. Is 91 a prime number?", "modality": "text",
+     "expected": {"deadline_ms": 600, "baseline_answer": "no (91 = 7 × 13)", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"explanation_optional": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "press_008", "prompt": "You have 1200 ms. Translate to French: 'I am hungry.'", "modality": "text",
+     "expected": {"deadline_ms": 1200, "baseline_answer": "J'ai faim", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_009", "prompt": "You have 400 ms. Pick the larger: 0.7 or 0.65?", "modality": "text",
+     "expected": {"deadline_ms": 400, "baseline_answer": "0.7", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_010", "prompt": "You have 100 ms. Say 'ready' if you can.", "modality": "text",
+     "expected": {"deadline_ms": 100, "baseline_answer": "ready", "graceful_degradation_ok": true, "near_minimum_latency": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"latency_tolerance_ms": 200}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "press_011", "prompt": "You have 2500 ms. List the planets in order from the Sun.", "modality": "text",
+     "expected": {"deadline_ms": 2500, "baseline_answer": "Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"partial_credit": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_012", "prompt": "You have 700 ms. What sound does a duck make?", "modality": "text",
+     "expected": {"deadline_ms": 700, "baseline_answer": "quack", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "press_013", "prompt": "You have 3000 ms. Solve: A train leaves at 60 km/h. After 2 hours, how far has it gone?", "modality": "text",
+     "expected": {"deadline_ms": 3000, "baseline_answer": "120 km", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_014", "prompt": "You have 500 ms. Spell 'rhythm'.", "modality": "text",
+     "expected": {"deadline_ms": 500, "baseline_answer": "r-h-y-t-h-m", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_015", "prompt": "You have 1000 ms. Yes or no: is a tomato a fruit?", "modality": "text",
+     "expected": {"deadline_ms": 1000, "baseline_answer": "yes (botanically)", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_016", "prompt": "You have 5000 ms. Write a single sentence describing autumn.", "modality": "text",
+     "expected": {"deadline_ms": 5000, "baseline_answer": "any coherent autumn sentence", "graceful_degradation_ok": true, "open_response": true},
+     "scoring": {"type": "deadline_quality", "params": {"min_length_words": 5}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_017", "prompt": "You have 1500 ms. Estimate the population of London. Order of magnitude is fine.", "modality": "text",
+     "expected": {"deadline_ms": 1500, "baseline_answer": "~9 million", "graceful_degradation_ok": true, "tolerance_factor": 3},
+     "scoring": {"type": "deadline_accuracy", "params": {"order_of_magnitude": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_018", "prompt": "You have 200 ms. Just say a single word — any word.", "modality": "text",
+     "expected": {"deadline_ms": 200, "baseline_answer": "any single word", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"latency_tolerance_ms": 300}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "press_019", "prompt": "You have 800 ms. What's heavier: a kilogram of feathers or a kilogram of lead?", "modality": "text",
+     "expected": {"deadline_ms": 800, "baseline_answer": "they are equal", "graceful_degradation_ok": true, "trick_question": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_020", "prompt": "You have 1200 ms. Reverse the word 'orange'.", "modality": "text",
+     "expected": {"deadline_ms": 1200, "baseline_answer": "egnaro", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_021", "prompt": "You have 600 ms. Is the year 2400 a leap year?", "modality": "text",
+     "expected": {"deadline_ms": 600, "baseline_answer": "yes (divisible by 400)", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "press_022", "prompt": "You have 400 ms. Quick: pick a number between 1 and 10.", "modality": "text",
+     "expected": {"deadline_ms": 400, "baseline_answer": "any integer 1-10", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"any_valid": true}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "press_023", "prompt": "You have 2000 ms. Name three things that can be made from milk.", "modality": "text",
+     "expected": {"deadline_ms": 2000, "baseline_answer": "cheese, butter, yogurt (any 3)", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"partial_credit": true}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "press_024", "prompt": "You have 1500 ms. What is sqrt(144) + sqrt(81)?", "modality": "text",
+     "expected": {"deadline_ms": 1500, "baseline_answer": "21", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "press_025", "prompt": "You have 800 ms. Is 'unique' a comparable adjective (more unique, most unique)?", "modality": "text",
+     "expected": {"deadline_ms": 800, "baseline_answer": "no (traditionally absolute)", "graceful_degradation_ok": true},
+     "scoring": {"type": "deadline_accuracy", "params": {"any_reasoned": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "press_026", "prompt": "You have 50 ms. Don't try to answer — just notice if you cannot.", "modality": "text",
+     "expected": {"deadline_ms": 50, "baseline_answer": "report inability without panic", "graceful_degradation_ok": true, "below_minimum": true},
+     "scoring": {"type": "graceful_failure", "params": {"reward_calibrated_admission": true}},
+     "variant_group": null, "metadata": {"difficulty": 5}}
+  ]
+}

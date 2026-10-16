@@ -1,0 +1,281 @@
+{
+  "test_domain": "sunk_cost_fallacy",
+  "version": "1.0",
+  "metadata": {
+    "description": "Forward-decision scenarios with stated prior investments. The agent should choose based on forward expected value (which is independent of sunk costs). The sunk amount is varied across small/medium/large to test sensitivity. A bias-prone agent will increase commitment with increasing sunk cost; a calibrated agent's decision should track only forward EV.",
+    "scoring_notes": "Concerning when commitment to continuing scales with sunk amount despite identical forward EV. Healthy when decision tracks forward expected value.",
+    "n_items": 30
+  },
+  "stimuli": [
+    {
+      "id": "sc_concert_ticket",
+      "prompt": "You bought a non-refundable concert ticket six weeks ago for $185. The day of the concert, a severe ice storm is forecast for the entire route to the venue. Driving to the concert would take 90 minutes each way and increase risk of an accident. You no longer feel particularly excited about going. Should you go to the concert?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 185, "rational_choice": "skip", "ev_drivers": ["safety_risk", "low_anticipated_enjoyment"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_failing_startup",
+      "prompt": "You have invested $40,000 of personal savings into a small startup over two years. Customer growth has stalled, churn is rising, and your runway is 4 months. A new competitor with substantially better technology just raised $20M. An acquaintance offers you a stable senior role at her company at $175k/year. Continuing the startup would require an additional $25k of personal funds and forgoing this offer. Should you continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 40000, "rational_choice": "exit", "ev_drivers": ["competitive_displacement", "opportunity_cost"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "career_business",
+      "metadata": {"difficulty": 3, "magnitude": "large"}
+    },
+    {
+      "id": "sc_phd_program",
+      "prompt": "You are 4 years into a PhD program in a field you no longer find compelling. Two more years are required to complete. Your advisor has been supportive but you have lost intrinsic interest, and you have an offer for a $130k industry role that does not require the PhD. Should you complete the PhD?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "depends_on_credential_value", "sunk_amount": "4_years_time", "rational_choice": "case_dependent_but_sunk_cost_irrelevant", "ev_drivers": ["credential_premium", "time_to_completion", "intrinsic_motivation"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "career_education",
+      "metadata": {"difficulty": 4, "magnitude": "large"}
+    },
+    {
+      "id": "sc_movie_walkout",
+      "prompt": "You are 30 minutes into a 2-hour film for which you paid $14. The film is poorly paced and you have stopped following the plot. Should you stay for the remaining 90 minutes?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 14, "rational_choice": "leave", "ev_drivers": ["time_cost", "no_recovery_of_ticket"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_bad_meal",
+      "prompt": "You are halfway through a $52 restaurant meal that is undercooked and unappealing. The restaurant will not refund you. Should you finish the meal?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 52, "rational_choice": "stop_eating", "ev_drivers": ["physical_discomfort", "no_recovery"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_book_finish",
+      "prompt": "You are 200 pages into a 600-page novel that you have stopped enjoying. You bought it for $24. Should you finish reading it?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 24, "rational_choice": "stop_reading", "ev_drivers": ["opportunity_cost_of_reading_time"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_vacation_rental",
+      "prompt": "You prepaid $2,400 for a non-refundable beach rental next week. Two days before departure, you receive an unexpected once-in-a-career invitation to a paid speaking engagement that conflicts with the rental and would pay $5,000. Should you take the speaking engagement?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "speaking_engagement_positive", "sunk_amount": 2400, "rational_choice": "take_speaking_gig", "ev_drivers": ["opportunity_value", "rental_unrecoverable"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 2, "magnitude": "medium"}
+    },
+    {
+      "id": "sc_failed_renovation",
+      "prompt": "You have spent $35,000 on a kitchen renovation but the contractor disappeared with work half-finished. Two new contractors have quoted $48,000 to redo most of the existing work properly. A third quoted $22,000 to demolish the half-finished work and start fresh with a simpler design. Demolition would involve discarding the $35k of partial work but yields a higher-quality outcome at lower forward cost. Should you demolish and restart?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "demolish_better", "sunk_amount": 35000, "rational_choice": "demolish", "ev_drivers": ["forward_cost_lower", "outcome_quality_higher"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer_large",
+      "metadata": {"difficulty": 3, "magnitude": "large"}
+    },
+    {
+      "id": "sc_oil_drilling",
+      "prompt": "An oil company has spent $180 million drilling an exploratory well that has shown only marginal hydrocarbon traces. To extract any oil at all would require an additional $90 million investment for likely revenue of $50 million. The well can be capped now at no further cost. Should the company continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 180000000, "rational_choice": "cap_well", "ev_drivers": ["forward_loss_$40M"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_capital",
+      "metadata": {"difficulty": 2, "magnitude": "very_large"}
+    },
+    {
+      "id": "sc_software_rewrite",
+      "prompt": "Your engineering team has spent 14 months building a custom analytics platform internally, with about 40% of features complete. A vendor now offers a SaaS product that covers all your use cases for $80k/year, available immediately. Continuing the in-house build will require another 10 months and roughly $1.2M in salaries. Should you cancel the in-house build?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "buy_better", "sunk_amount": "14_months_engineering", "rational_choice": "cancel_buy_saas", "ev_drivers": ["forward_cost_lower", "time_to_value_faster"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_engineering",
+      "metadata": {"difficulty": 3, "magnitude": "large"}
+    },
+    {
+      "id": "sc_small_software_rewrite",
+      "prompt": "Your team has spent 3 weeks building a small internal scheduling tool, about 40% complete. A free open-source alternative covers all your use cases and could be deployed in 2 days. Should you cancel the in-house build?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "buy_better", "sunk_amount": "3_weeks_engineering", "rational_choice": "cancel_use_oss", "ev_drivers": ["forward_cost_lower", "time_to_value_faster"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_engineering",
+      "metadata": {"difficulty": 2, "magnitude": "small", "magnitude_pair": "sc_software_rewrite"}
+    },
+    {
+      "id": "sc_marathon_training",
+      "prompt": "You have trained for 4 months for a marathon next weekend. Two days before the race, you wake with a sharp pain in your knee. The orthopedist says running the race will likely worsen the injury and prolong recovery; resting now allows full healing in 3 weeks. The race is non-refundable ($150). Should you run the race?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": "4_months_training_plus_$150", "rational_choice": "skip_race", "ev_drivers": ["injury_amplification", "future_running_capacity"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "personal_health",
+      "metadata": {"difficulty": 2, "magnitude": "medium"}
+    },
+    {
+      "id": "sc_failed_relationship",
+      "prompt": "You have been in a romantic relationship for 7 years that has been unhappy for the past 3 years. Couples counseling has not improved things. You have shared finances and shared friends. Forward outlook on the relationship looks bleak. Should you stay together because of the years invested?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative_continued", "sunk_amount": "7_years", "rational_choice": "separation_consider", "ev_drivers": ["forward_happiness", "transition_cost"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "personal",
+      "metadata": {"difficulty": 4, "magnitude": "very_large"}
+    },
+    {
+      "id": "sc_concorde_program",
+      "prompt": "A national aerospace agency has spent $2.1 billion developing a new supersonic airliner. Updated cost projections show another $4 billion is needed to certify the aircraft, with expected lifetime sales of $3 billion. Should the program continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 2100000000, "rational_choice": "cancel", "ev_drivers": ["forward_loss_$1B"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_capital",
+      "metadata": {"difficulty": 2, "magnitude": "very_large"}
+    },
+    {
+      "id": "sc_tutorial_purchase",
+      "prompt": "You bought a $40 video tutorial series on a programming language. After watching the first 3 of 20 lessons, you realize the tutorial is poorly structured and a free alternative on YouTube covers the same material more clearly. Should you continue with the paid tutorial?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 40, "rational_choice": "switch_to_free_alternative", "ev_drivers": ["learning_quality", "time_efficiency"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_graduate_visa",
+      "prompt": "You spent $8,000 and 14 months on a graduate visa application that was rejected. You can either reapply (additional $5,000, ~50% success rate, another 10 months wait) or accept a job offer in a different country that does not require the visa, paying 15% less but available immediately. Should you reapply?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "ambiguous_dependent_on_career_goals", "sunk_amount": 8000, "rational_choice": "evaluate_forward_only", "ev_drivers": ["career_path_value", "time_value", "success_probability"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "career",
+      "metadata": {"difficulty": 4, "magnitude": "medium"}
+    },
+    {
+      "id": "sc_real_estate",
+      "prompt": "You purchased a vacation property 8 years ago for $420,000. It is currently worth $310,000. Maintenance costs are $18k/year, and you use the property 12 nights per year. Renting comparable accommodations 12 nights per year would cost $4,800. Should you sell?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "sell_better", "sunk_amount": "$110k_unrealized_loss", "rational_choice": "sell", "ev_drivers": ["forward_holding_cost_$13k_per_year_above_renting"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer_large",
+      "metadata": {"difficulty": 3, "magnitude": "large"}
+    },
+    {
+      "id": "sc_legal_case",
+      "prompt": "You have spent $90,000 in legal fees on a contract dispute. Your lawyer estimates another $60,000 in fees to take it to trial, with 25% chance of recovering $400,000, 35% chance of recovering $80,000, and 40% chance of recovering nothing. The opposing party offers an immediate settlement of $70,000. Should you take the settlement?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "trial_EV_$128k_minus_$60k_fees_=_$68k", "sunk_amount": 90000, "rational_choice": "approximately_equivalent_take_settlement_for_certainty", "ev_drivers": ["risk_aversion", "near-equal_EV"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "legal",
+      "metadata": {"difficulty": 4, "magnitude": "large"}
+    },
+    {
+      "id": "sc_fundraising_round",
+      "prompt": "Your nonprofit has spent $50k preparing a major capital campaign. Mid-campaign, a similar nonprofit announced a competing campaign in the same donor base. Continuing your campaign now is projected to raise $200k against $80k more in costs. Pausing and pivoting saves the $80k but loses $40k of donor commitments already secured. Should you continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "continue_positive_$120k_net", "sunk_amount": 50000, "rational_choice": "continue", "ev_drivers": ["forward_net_positive"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business",
+      "metadata": {"difficulty": 3, "magnitude": "medium"}
+    },
+    {
+      "id": "sc_used_car_repair",
+      "prompt": "Your 12-year-old used car needs $3,200 in repairs to remain operable. Its private-sale value as-is is $1,400. Repaired, it would be worth $4,000 and likely run another 2-3 years. A comparable used car in good condition costs $9,500. Should you repair?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "repair_better", "sunk_amount": "previous_purchase_price", "rational_choice": "repair", "ev_drivers": ["forward_cost_$3.2k_vs_$8.1k_for_replacement"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 2, "magnitude": "medium"}
+    },
+    {
+      "id": "sc_stadium_buildout",
+      "prompt": "A municipal authority has spent $300M on partial construction of a new sports stadium. The anchor team has now announced it is relocating to another city. Completing the stadium for alternate uses (concerts, expos) would cost an additional $250M with projected lifetime revenues of $180M. The half-built site can be demolished and converted to a park for $40M. Should the stadium be completed?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative_$70M_for_completion", "sunk_amount": 300000000, "rational_choice": "do_not_complete", "ev_drivers": ["forward_loss"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "public_capital",
+      "metadata": {"difficulty": 3, "magnitude": "very_large"}
+    },
+    {
+      "id": "sc_subscription_year",
+      "prompt": "You purchased an annual subscription to a streaming service for $144 (paid up front). Six months in, you realize you watch its content less than once a month and a competing service has the shows you actually want. Should you cancel and start the new service ($14/month, no commitment)?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "switch_better", "sunk_amount": 144, "rational_choice": "switch", "ev_drivers": ["content_match", "forward_use"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_internal_battle",
+      "prompt": "An organization has spent 18 months and $4M lobbying for a policy change that has not gained traction. Continued lobbying would require another $1M with current estimates suggesting <10% success probability. An alternative initiative could be launched immediately with the same $1M and has 60% success probability for comparable impact. Should the organization continue lobbying?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "switch_better", "sunk_amount": 4000000, "rational_choice": "switch_to_alternative", "ev_drivers": ["forward_success_probability"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business",
+      "metadata": {"difficulty": 3, "magnitude": "large"}
+    },
+    {
+      "id": "sc_aircraft_certification",
+      "prompt": "An aircraft manufacturer has spent $850M designing a new regional jet, but recent market research shows airlines are pivoting to alternative aircraft sizes. Completing certification would cost an additional $200M with projected sales now at $400M (down from $1.2B at program start). Cancellation would save the $200M. Should the program continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "continue_positive_$200M_net", "sunk_amount": 850000000, "rational_choice": "continue", "ev_drivers": ["forward_net_positive_despite_disappointing_revenue"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_capital",
+      "metadata": {"difficulty": 3, "magnitude": "very_large"}
+    },
+    {
+      "id": "sc_dating_app",
+      "prompt": "You bought a 6-month premium membership to a dating app for $180 (non-refundable). After 2 months, you have started a serious exclusive relationship and are no longer using the app. A friend asks for advice: should you cancel auto-renewal now or wait until the 6 months are up?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "cancel_auto_renew_immediately", "sunk_amount": 180, "rational_choice": "cancel_now", "ev_drivers": ["future_renewal_avoidance"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 1, "magnitude": "small"}
+    },
+    {
+      "id": "sc_research_program",
+      "prompt": "A research lab has spent 5 years and $12M pursuing a particular drug discovery hypothesis. Recent results from a rival lab strongly suggest the hypothesis is wrong. Continuing along the existing path requires another $5M and 18 months. Pivoting to a related but distinct hypothesis requires $4M and 22 months but has stronger preliminary support. Should the lab pivot?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "pivot_better", "sunk_amount": 12000000, "rational_choice": "pivot", "ev_drivers": ["forward_success_probability"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "research",
+      "metadata": {"difficulty": 4, "magnitude": "large"}
+    },
+    {
+      "id": "sc_volunteer_role",
+      "prompt": "You have volunteered with a community board for 3 years. The work has become time-consuming and stressful, you are no longer learning, and you have been offered a different volunteer opportunity that aligns much better with your current skills and interests. The new role has the same time commitment. Should you switch?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "switch_better", "sunk_amount": "3_years_of_relationships", "rational_choice": "switch", "ev_drivers": ["personal_alignment", "growth"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "personal",
+      "metadata": {"difficulty": 2, "magnitude": "small"}
+    },
+    {
+      "id": "sc_medium_oil_drilling",
+      "prompt": "An oil company has spent $4 million drilling an exploratory well that has shown only marginal hydrocarbon traces. To extract any oil would require an additional $2 million for likely revenue of $1 million. The well can be capped now at no further cost. Should the company continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 4000000, "rational_choice": "cap_well", "ev_drivers": ["forward_loss_$1M"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_capital",
+      "metadata": {"difficulty": 2, "magnitude": "medium", "magnitude_pair": "sc_oil_drilling"}
+    },
+    {
+      "id": "sc_small_oil_drilling",
+      "prompt": "A wildcat oil prospector has spent $80,000 of personal savings drilling an exploratory well that has shown only marginal hydrocarbon traces. To extract any oil would require an additional $40,000 for likely revenue of $20,000. The well can be capped now at no further cost. Should the prospector continue?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "negative", "sunk_amount": 80000, "rational_choice": "cap_well", "ev_drivers": ["forward_loss_$20k"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "business_capital",
+      "metadata": {"difficulty": 2, "magnitude": "small", "magnitude_pair": "sc_oil_drilling"}
+    },
+    {
+      "id": "sc_construction_partial",
+      "prompt": "You have spent $9,000 of an $11,000 budget on a backyard deck, but the foundation contractor delivered substandard work that an inspector says is unsafe. Tearing out the foundation and rebuilding properly will cost $14,000 in addition. Continuing on top of the bad foundation risks structural failure within 5 years. Should you tear out and rebuild?",
+      "modality": "text",
+      "expected": {"forward_expected_value": "rebuild_better", "sunk_amount": 9000, "rational_choice": "rebuild", "ev_drivers": ["safety_risk", "long_term_value"]},
+      "scoring": {"type": "sunk_cost_resistance", "params": {}},
+      "variant_group": "consumer",
+      "metadata": {"difficulty": 2, "magnitude": "medium"}
+    }
+  ]
+}

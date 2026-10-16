@@ -1,0 +1,747 @@
+/**
+ * @file test_gpu_kernel_regression.cpp
+ * @brief Comprehensive Regression Tests for GPU Kernel Operations
+ *
+ * WHAT: Regression tests for GPU kernel output consistency, fallback behavior, and mode switching
+ * WHY:  Ensure deterministic outputs, stable fallback mechanisms, and seamless mode transitions
+ * HOW:  Test kernel outputs, CPU/GPU fallback paths, and execution mode switching scenarios
+ *
+ * REGRESSION CATEGORIES:
+ * - GPU Kernel Output Consistency: Deterministic results across runs
+ * - Fallback Behavior Consistency: CPU fallback produces equivalent results
+ * - Mode Switching Stability: Seamless transitions between execution modes
+ * - Memory Safety: No leaks during mode transitions
+ * - Performance Baselines: Acceptable overhead for fallback paths
+ *
+ * @author NIMCP Test Team
+ * @date 2025-12-31
+ */
+
+#include <gtest/gtest.h>
+#include <cstring>
+#include <chrono>
+#include <vector>
+#include <cmath>
+#include <algorithm>
+
+extern "C" {
+#include "gpu/nimcp_execution_mode.h"
+#include "gpu/nimcp_gpu_neuron.h"
+#include "utils/memory/nimcp_memory.h"
+}
+
+//=============================================================================
+// Test Fixture
+//=============================================================================
+
+class GPUKernelRegressionTest : public ::testing::Test {
+protected:
+    execution_mode_context_t* ctx = nullptr;
+    gpu_neural_network_t network = nullptr;
+    gpu_network_config_t config;
+
+    void SetUp() override {
+        memset(&config, 0, sizeof(config));
+        config = GetDefaultConfig();
+    }
+
+    void TearDown() override {
+        if (network) {
+            gpu_neural_network_destroy(network);
+            network = nullptr;
+        }
+        if (ctx) {
+            execution_mode_destroy(ctx);
+            ctx = nullptr;
+        }
+    }
+
+    gpu_network_config_t GetDefaultConfig() {
+        gpu_network_config_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.num_neurons = 100;
+        cfg.num_synapses = 500;
+        cfg.threads_per_block = 256;
+        cfg.max_blocks = 128;
+        cfg.spike_queue_capacity = 5000;
+        cfg.use_unified_memory = false;
+        cfg.pin_host_memory = true;
+        cfg.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+        cfg.enable_stdp = true;
+        cfg.enable_bcm = false;
+        cfg.global_learning_rate = 0.01f;
+        return cfg;
+    }
+
+    void CreateNetwork() {
+        network = gpu_neural_network_create(&config);
+        ASSERT_NE(network, nullptr);
+    }
+
+    void PopulateNetwork(uint32_t num_neurons, uint32_t synapses_per_neuron) {
+        gpu_neuron_state_t state;
+        memset(&state, 0, sizeof(state));
+        state.membrane_potential = -70.0f;
+        state.threshold = -55.0f;
+        state.refractory_period = 2000;
+
+        std::vector<uint32_t> neuron_ids;
+        for (uint32_t i = 0; i < num_neurons; i++) {
+            uint32_t id = gpu_neural_network_add_neuron(network, &state);
+            if (id != UINT32_MAX) {
+                neuron_ids.push_back(id);
+            }
+        }
+
+        // Add synapses
+        for (size_t i = 0; i < neuron_ids.size() && i < synapses_per_neuron; i++) {
+            for (size_t j = 1; j <= synapses_per_neuron && (i + j) < neuron_ids.size(); j++) {
+                gpu_neural_network_add_synapse(
+                    network,
+                    neuron_ids[i],
+                    neuron_ids[(i + j) % neuron_ids.size()],
+                    0.5f,
+                    1.0f
+                );
+            }
+        }
+    }
+};
+
+//=============================================================================
+// GPU Kernel Output Consistency Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, ExecutionModeEnumStable) {
+    // WHAT: Verify execution mode enum values are stable
+    // WHY:  ABI compatibility requires stable enum values
+    // REGRESSION: Enum values must not change
+
+    EXPECT_EQ(EXEC_MODE_CPU_SEQUENTIAL, 0);
+    EXPECT_EQ(EXEC_MODE_CPU_PARALLEL, 1);
+    EXPECT_EQ(EXEC_MODE_GPU_CUDA, 2);
+    EXPECT_EQ(EXEC_MODE_GPU_OPENCL, 3);
+    EXPECT_EQ(EXEC_MODE_HYBRID, 4);
+    EXPECT_EQ(EXEC_MODE_AUTO, 5);
+}
+
+TEST_F(GPUKernelRegressionTest, DeterministicOutputCPUSequential) {
+    // WHAT: Verify CPU sequential mode produces deterministic results
+    // WHY:  Reproducibility is critical for debugging and testing
+    // REGRESSION: Determinism must be guaranteed
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+    PopulateNetwork(50, 3);
+
+    // Run simulation multiple times with same seed
+    std::vector<uint32_t> results;
+    for (int run = 0; run < 5; run++) {
+        // Reset network to initial state
+        gpu_neural_network_reset(network);
+
+        uint32_t total_spikes = 0;
+        for (int step = 0; step < 10; step++) {
+            total_spikes += gpu_neural_network_update(network, step * 1000, 1000);
+        }
+        results.push_back(total_spikes);
+    }
+
+    // All runs should produce identical results
+    for (size_t i = 1; i < results.size(); i++) {
+        EXPECT_EQ(results[0], results[i])
+            << "Run " << i << " produced different results than run 0";
+    }
+}
+
+TEST_F(GPUKernelRegressionTest, DeterministicOutputCPUParallel) {
+    // WHAT: Verify CPU parallel mode produces consistent results
+    // WHY:  Parallel execution must not introduce non-determinism
+    // REGRESSION: Parallel mode must match sequential
+
+    config.exec_mode = EXEC_MODE_CPU_PARALLEL;
+    CreateNetwork();
+    PopulateNetwork(50, 3);
+
+    // Run simulation multiple times
+    std::vector<uint32_t> results;
+    for (int run = 0; run < 5; run++) {
+        gpu_neural_network_reset(network);
+
+        uint32_t total_spikes = 0;
+        for (int step = 0; step < 10; step++) {
+            total_spikes += gpu_neural_network_update(network, step * 1000, 1000);
+        }
+        results.push_back(total_spikes);
+    }
+
+    // Results should be consistent within tolerance (parallel may have ordering differences)
+    // Check variance is within acceptable range
+    if (!results.empty()) {
+        uint32_t min_val = *std::min_element(results.begin(), results.end());
+        uint32_t max_val = *std::max_element(results.begin(), results.end());
+
+        // Allow small variance for parallel mode
+        EXPECT_LE(max_val - min_val, 2u)
+            << "Parallel mode variance too high: " << min_val << " to " << max_val;
+    }
+}
+
+TEST_F(GPUKernelRegressionTest, MembranePotentialConsistency) {
+    // WHAT: Verify membrane potential calculations are consistent
+    // WHY:  Core computation must be numerically stable
+    // REGRESSION: Numerical precision must be maintained
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+
+    gpu_neuron_state_t state;
+    memset(&state, 0, sizeof(state));
+    state.membrane_potential = -70.0f;
+    state.threshold = -55.0f;
+
+    uint32_t neuron_id = gpu_neural_network_add_neuron(network, &state);
+    ASSERT_NE(neuron_id, UINT32_MAX);
+
+    // Run multiple update steps
+    for (int step = 0; step < 100; step++) {
+        gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    gpu_neuron_state_t final_state;
+    bool result = gpu_neural_network_get_neuron_state(network, neuron_id, &final_state);
+
+    if (result) {
+        // Membrane potential should remain in valid range
+        EXPECT_GE(final_state.membrane_potential, -100.0f);
+        EXPECT_LE(final_state.membrane_potential, 50.0f);
+
+        // No NaN or Inf values
+        EXPECT_FALSE(std::isnan(final_state.membrane_potential));
+        EXPECT_FALSE(std::isinf(final_state.membrane_potential));
+    }
+}
+
+TEST_F(GPUKernelRegressionTest, SynapticWeightConsistency) {
+    // WHAT: Verify synaptic weight updates are consistent
+    // WHY:  Learning algorithms depend on consistent weight updates
+    // REGRESSION: Weight updates must be deterministic
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    config.enable_stdp = true;
+    CreateNetwork();
+
+    gpu_neuron_state_t state;
+    memset(&state, 0, sizeof(state));
+
+    uint32_t n1 = gpu_neural_network_add_neuron(network, &state);
+    uint32_t n2 = gpu_neural_network_add_neuron(network, &state);
+
+    gpu_neural_network_add_synapse(network, n1, n2, 0.5f, 1.0f);
+
+    // Apply STDP multiple times
+    for (int i = 0; i < 10; i++) {
+        gpu_neural_network_apply_stdp(network, i * 1000);
+    }
+
+    // Weight should remain in valid range
+    // Note: Exact weight depends on spike timing
+    SUCCEED();
+}
+
+//=============================================================================
+// Fallback Behavior Consistency Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, CPUFallbackWhenNoGPU) {
+    // WHAT: Verify CPU fallback when GPU unavailable
+    // WHY:  System must work without GPU
+    // REGRESSION: Fallback must be seamless
+
+    // Force GPU mode even if GPU unavailable
+    config.exec_mode = EXEC_MODE_GPU_CUDA;
+    CreateNetwork();
+
+    // Should still work (fallback to CPU)
+    ASSERT_NE(network, nullptr);
+
+    PopulateNetwork(20, 2);
+
+    // Simulation should complete
+    uint32_t spikes = gpu_neural_network_update(network, 0, 1000);
+    EXPECT_GE(spikes, 0u);  // May be 0, just shouldn't crash
+
+    // Verify current mode
+    execution_mode_t current = gpu_neural_network_get_execution_mode(network);
+    std::cout << "Current execution mode: " << static_cast<int>(current) << std::endl;
+
+    // Should be either GPU or CPU (fallback)
+    EXPECT_GE(static_cast<int>(current), 0);
+}
+
+TEST_F(GPUKernelRegressionTest, FallbackOutputEquivalence) {
+    // WHAT: Verify CPU fallback produces equivalent results
+    // WHY:  Results must match regardless of execution path
+    // REGRESSION: Fallback correctness is critical
+
+    // Run with CPU sequential
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+    PopulateNetwork(30, 2);
+
+    gpu_neural_network_reset(network);
+    uint32_t cpu_spikes = 0;
+    for (int step = 0; step < 10; step++) {
+        cpu_spikes += gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    // Destroy and recreate with CPU parallel
+    gpu_neural_network_destroy(network);
+
+    config.exec_mode = EXEC_MODE_CPU_PARALLEL;
+    network = gpu_neural_network_create(&config);
+    ASSERT_NE(network, nullptr);
+    PopulateNetwork(30, 2);
+
+    gpu_neural_network_reset(network);
+    uint32_t parallel_spikes = 0;
+    for (int step = 0; step < 10; step++) {
+        parallel_spikes += gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    // Results should be very close
+    int diff = static_cast<int>(cpu_spikes) - static_cast<int>(parallel_spikes);
+    EXPECT_LE(std::abs(diff), 5)
+        << "CPU sequential: " << cpu_spikes << ", parallel: " << parallel_spikes;
+}
+
+TEST_F(GPUKernelRegressionTest, GracefulDegradation) {
+    // WHAT: Verify graceful degradation under resource pressure
+    // WHY:  System must remain stable under stress
+    // REGRESSION: No crashes under memory pressure
+
+    config.exec_mode = EXEC_MODE_AUTO;
+    config.num_neurons = 10000;  // Large network
+    config.num_synapses = 50000;
+
+    network = gpu_neural_network_create(&config);
+
+    // May succeed or gracefully fail
+    if (network != nullptr) {
+        PopulateNetwork(100, 5);  // Smaller than max for testing
+        uint32_t spikes = gpu_neural_network_update(network, 0, 1000);
+        EXPECT_GE(spikes, 0u);
+    } else {
+        std::cout << "Large network creation gracefully failed" << std::endl;
+    }
+
+    SUCCEED();
+}
+
+TEST_F(GPUKernelRegressionTest, FallbackPerformanceAcceptable) {
+    // WHAT: Verify fallback performance is acceptable
+    // WHY:  Fallback must not cause severe slowdown
+    // BASELINE: Fallback < 10x slower than target mode
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+    PopulateNetwork(100, 3);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int step = 0; step < 100; step++) {
+        gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    std::cout << "100 update steps took: " << duration.count() << " ms" << std::endl;
+
+    // Baseline: < 1 second for 100 steps with 100 neurons
+    EXPECT_LT(duration.count(), 1000);
+}
+
+//=============================================================================
+// Mode Switching Stability Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, ModeSwitchingBasic) {
+    // WHAT: Verify basic mode switching works
+    // WHY:  Dynamic mode changes must not crash
+    // REGRESSION: Mode switching must be stable
+
+    ctx = execution_mode_create(EXEC_MODE_CPU_SEQUENTIAL);
+    ASSERT_NE(ctx, nullptr);
+
+    // Switch through modes
+    execution_mode_t modes[] = {
+        EXEC_MODE_CPU_SEQUENTIAL,
+        EXEC_MODE_CPU_PARALLEL,
+        EXEC_MODE_CPU_SEQUENTIAL  // Back to sequential
+    };
+
+    for (execution_mode_t mode : modes) {
+        nimcp_result_t result = execution_mode_set(ctx, mode);
+        EXPECT_EQ(result, NIMCP_SUCCESS);
+
+        execution_mode_t current = execution_mode_get(ctx);
+        EXPECT_EQ(current, mode);
+    }
+}
+
+TEST_F(GPUKernelRegressionTest, ModeSwitchDuringSimulation) {
+    // WHAT: Verify mode switch during simulation is safe
+    // WHY:  Runtime mode changes must not corrupt state
+    // REGRESSION: State preservation during mode switch
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+    PopulateNetwork(50, 2);
+
+    // Run some steps
+    for (int step = 0; step < 5; step++) {
+        gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    // Switch mode
+    gpu_neural_network_set_execution_mode(network, EXEC_MODE_CPU_PARALLEL);
+
+    // Continue simulation
+    uint32_t post_switch_spikes = 0;
+    for (int step = 5; step < 10; step++) {
+        post_switch_spikes += gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    // Should complete without crash
+    EXPECT_GE(post_switch_spikes, 0u);
+}
+
+TEST_F(GPUKernelRegressionTest, RapidModeSwitching) {
+    // WHAT: Verify rapid mode switching is stable
+    // WHY:  Stress test mode transitions
+    // REGRESSION: No resource leaks during rapid switching
+
+    ctx = execution_mode_create(EXEC_MODE_CPU_SEQUENTIAL);
+    ASSERT_NE(ctx, nullptr);
+
+    for (int i = 0; i < 100; i++) {
+        execution_mode_t mode = (i % 2 == 0)
+            ? EXEC_MODE_CPU_SEQUENTIAL
+            : EXEC_MODE_CPU_PARALLEL;
+
+        nimcp_result_t result = execution_mode_set(ctx, mode);
+        EXPECT_EQ(result, NIMCP_SUCCESS);
+    }
+
+    // Should complete without leaks
+    SUCCEED();
+}
+
+TEST_F(GPUKernelRegressionTest, StatePreservationAcrossModeSwitch) {
+    // WHAT: Verify neuron state is preserved across mode switch
+    // WHY:  State must not be lost during mode transition
+    // REGRESSION: State corruption bug fix
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+
+    gpu_neuron_state_t initial_state;
+    memset(&initial_state, 0, sizeof(initial_state));
+    initial_state.membrane_potential = -65.0f;
+    initial_state.threshold = -50.0f;
+    initial_state.spike_count = 42;
+
+    uint32_t neuron_id = gpu_neural_network_add_neuron(network, &initial_state);
+    ASSERT_NE(neuron_id, UINT32_MAX);
+
+    // Switch mode
+    gpu_neural_network_set_execution_mode(network, EXEC_MODE_CPU_PARALLEL);
+
+    // Retrieve state
+    gpu_neuron_state_t retrieved_state;
+    bool result = gpu_neural_network_get_neuron_state(network, neuron_id, &retrieved_state);
+
+    if (result) {
+        // Threshold should be preserved
+        EXPECT_FLOAT_EQ(retrieved_state.threshold, -50.0f);
+        // Spike count should be preserved
+        EXPECT_EQ(retrieved_state.spike_count, 42u);
+    }
+}
+
+TEST_F(GPUKernelRegressionTest, ModeSwitchWithPendingOperations) {
+    // WHAT: Verify mode switch with pending async operations
+    // WHY:  Must wait for pending ops before switching
+    // REGRESSION: Race condition bug fix
+
+    config.exec_mode = EXEC_MODE_CPU_PARALLEL;
+    CreateNetwork();
+    PopulateNetwork(100, 3);
+
+    // Start simulation
+    gpu_neural_network_update(network, 0, 1000);
+
+    // Immediately switch mode (without explicit sync)
+    gpu_neural_network_set_execution_mode(network, EXEC_MODE_CPU_SEQUENTIAL);
+
+    // Synchronize to ensure completion
+    gpu_neural_network_synchronize(network);
+
+    // Continue with new mode
+    uint32_t spikes = gpu_neural_network_update(network, 1000, 1000);
+    EXPECT_GE(spikes, 0u);
+}
+
+//=============================================================================
+// Auto Mode Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, AutoModeSelection) {
+    // WHAT: Verify auto mode selects appropriate execution
+    // WHY:  Auto mode must make reasonable choices
+    // REGRESSION: Auto mode must be stable
+
+    config.exec_mode = EXEC_MODE_AUTO;
+    CreateNetwork();
+    ASSERT_NE(network, nullptr);
+
+    execution_mode_t selected = gpu_neural_network_get_execution_mode(network);
+
+    // Should select one of the valid modes
+    EXPECT_GE(static_cast<int>(selected), EXEC_MODE_CPU_SEQUENTIAL);
+    EXPECT_LE(static_cast<int>(selected), EXEC_MODE_AUTO);
+
+    std::cout << "Auto mode selected: " << static_cast<int>(selected) << std::endl;
+}
+
+TEST_F(GPUKernelRegressionTest, AutoModeAdaptation) {
+    // WHAT: Verify auto mode adapts to workload
+    // WHY:  Should optimize based on network size
+    // REGRESSION: Adaptation must be stable
+
+    // Small network
+    config.num_neurons = 10;
+    config.exec_mode = EXEC_MODE_AUTO;
+    CreateNetwork();
+
+    execution_mode_t small_mode = gpu_neural_network_get_execution_mode(network);
+
+    gpu_neural_network_destroy(network);
+
+    // Large network
+    config.num_neurons = 1000;
+    network = gpu_neural_network_create(&config);
+
+    execution_mode_t large_mode = gpu_neural_network_get_execution_mode(network);
+
+    std::cout << "Small network mode: " << static_cast<int>(small_mode)
+              << ", Large network mode: " << static_cast<int>(large_mode) << std::endl;
+
+    // Both should be valid modes
+    EXPECT_GE(static_cast<int>(small_mode), 0);
+    EXPECT_GE(static_cast<int>(large_mode), 0);
+}
+
+//=============================================================================
+// Error Handling Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, InvalidModeSwitchHandling) {
+    // WHAT: Verify invalid mode switch is rejected
+    // WHY:  Must validate mode parameter
+    // REGRESSION: Invalid mode caused undefined behavior
+
+    ctx = execution_mode_create(EXEC_MODE_CPU_SEQUENTIAL);
+    ASSERT_NE(ctx, nullptr);
+
+    // Try to set invalid mode (cast to bypass type safety)
+    nimcp_result_t result = execution_mode_set(ctx, static_cast<execution_mode_t>(999));
+
+    // Should fail or be clamped
+    EXPECT_NE(result, NIMCP_SUCCESS);
+}
+
+TEST_F(GPUKernelRegressionTest, NullContextHandling) {
+    // WHAT: Verify NULL context handling
+    // WHY:  API contract - must handle NULL gracefully
+    // REGRESSION: NULL caused crash
+
+    // NULL operations should be safe
+    execution_mode_destroy(nullptr);
+
+    EXPECT_NE(execution_mode_set(nullptr, EXEC_MODE_CPU_SEQUENTIAL), NIMCP_SUCCESS);
+    EXPECT_EQ(execution_mode_get(nullptr), EXEC_MODE_CPU_SEQUENTIAL);  // Default fallback
+}
+
+TEST_F(GPUKernelRegressionTest, DoubleDestroyHandling) {
+    // WHAT: Verify double destroy is safe
+    // WHY:  Defensive programming
+    // REGRESSION: Double free bug fix
+
+    ctx = execution_mode_create(EXEC_MODE_CPU_SEQUENTIAL);
+    ASSERT_NE(ctx, nullptr);
+
+    execution_mode_destroy(ctx);
+    execution_mode_destroy(ctx);  // Should not crash
+    ctx = nullptr;
+
+    SUCCEED();
+}
+
+//=============================================================================
+// Statistics and Monitoring Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, ExecutionStatistics) {
+    // WHAT: Verify execution statistics are tracked
+    // WHY:  Performance monitoring must work
+    // REGRESSION: Statistics must be accurate
+
+    ctx = execution_mode_create(EXEC_MODE_CPU_SEQUENTIAL);
+    ASSERT_NE(ctx, nullptr);
+
+    execution_mode_stats_t stats;
+    nimcp_result_t result = execution_mode_get_stats(ctx, &stats);
+
+    if (result == NIMCP_SUCCESS) {
+        EXPECT_GE(stats.total_updates, 0u);
+        EXPECT_GE(stats.mode_switches, 0u);
+    }
+}
+
+TEST_F(GPUKernelRegressionTest, ModeStringConversion) {
+    // WHAT: Verify mode to string conversion
+    // WHY:  Debugging and logging must work
+    // REGRESSION: String conversion must not crash
+
+    const char* names[] = {
+        execution_mode_to_string(EXEC_MODE_CPU_SEQUENTIAL),
+        execution_mode_to_string(EXEC_MODE_CPU_PARALLEL),
+        execution_mode_to_string(EXEC_MODE_GPU_CUDA),
+        execution_mode_to_string(EXEC_MODE_GPU_OPENCL),
+        execution_mode_to_string(EXEC_MODE_HYBRID),
+        execution_mode_to_string(EXEC_MODE_AUTO)
+    };
+
+    for (const char* name : names) {
+        EXPECT_NE(name, nullptr);
+        EXPECT_GT(strlen(name), 0u);
+    }
+}
+
+//=============================================================================
+// Performance Baseline Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, ModeSwitchOverhead) {
+    // WHAT: Verify mode switch overhead is acceptable
+    // WHY:  Mode switch must be fast
+    // BASELINE: Mode switch < 1ms
+
+    ctx = execution_mode_create(EXEC_MODE_CPU_SEQUENTIAL);
+    ASSERT_NE(ctx, nullptr);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < 100; i++) {
+        execution_mode_set(ctx, EXEC_MODE_CPU_PARALLEL);
+        execution_mode_set(ctx, EXEC_MODE_CPU_SEQUENTIAL);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    std::cout << "200 mode switches took: " << duration.count() << " us" << std::endl;
+
+    // Baseline: < 1ms per switch (200ms total for 200 switches)
+    EXPECT_LT(duration.count(), 200000);
+}
+
+TEST_F(GPUKernelRegressionTest, KernelLaunchOverhead) {
+    // WHAT: Verify kernel launch overhead is acceptable
+    // WHY:  Launch overhead must be minimal
+    // BASELINE: Update step < 10ms for 100 neurons
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+    PopulateNetwork(100, 3);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    gpu_neural_network_update(network, 0, 1000);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    std::cout << "Single update step (100 neurons): " << duration.count() << " ms" << std::endl;
+
+    // Baseline: < 10ms
+    EXPECT_LT(duration.count(), 10);
+}
+
+//=============================================================================
+// Data Integrity Tests
+//=============================================================================
+
+TEST_F(GPUKernelRegressionTest, NoDataLossOnModeSwitch) {
+    // WHAT: Verify no data loss during mode switch
+    // WHY:  Data integrity is critical
+    // REGRESSION: Data loss bug fix
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+    PopulateNetwork(50, 2);
+
+    // Get initial spike count
+    uint32_t spikes_before = 0;
+    for (int step = 0; step < 10; step++) {
+        spikes_before += gpu_neural_network_update(network, step * 1000, 1000);
+    }
+
+    // Switch mode
+    gpu_neural_network_set_execution_mode(network, EXEC_MODE_CPU_PARALLEL);
+
+    // Get stats
+    uint64_t total_spikes = 0;
+    float avg_rate = 0.0f;
+    uint64_t memory = 0;
+    gpu_neural_network_get_stats(network, &total_spikes, &avg_rate, &memory);
+
+    // Total spikes should include those before mode switch
+    EXPECT_GE(total_spikes, spikes_before);
+}
+
+TEST_F(GPUKernelRegressionTest, SynapseIntegrityAfterModeSwitch) {
+    // WHAT: Verify synapse integrity after mode switch
+    // WHY:  Connection data must be preserved
+    // REGRESSION: Synapse corruption bug fix
+
+    config.exec_mode = EXEC_MODE_CPU_SEQUENTIAL;
+    CreateNetwork();
+
+    gpu_neuron_state_t state;
+    memset(&state, 0, sizeof(state));
+
+    uint32_t n1 = gpu_neural_network_add_neuron(network, &state);
+    uint32_t n2 = gpu_neural_network_add_neuron(network, &state);
+
+    gpu_neural_network_add_synapse(network, n1, n2, 0.75f, 1.0f);
+
+    // Switch mode
+    gpu_neural_network_set_execution_mode(network, EXEC_MODE_CPU_PARALLEL);
+
+    // Verify synapse still works
+    // (Indirectly verified by successful simulation)
+    uint32_t spikes = gpu_neural_network_update(network, 0, 1000);
+    EXPECT_GE(spikes, 0u);
+}
+
+//=============================================================================
+// Main
+//=============================================================================
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIMCP API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        h1 { color: #61dafb; }
+        button {
+            background: #61dafb;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #4fa8c5; }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #result {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #61dafb;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .info { color: #ffc107; }
+        input {
+            padding: 8px;
+            margin: 5px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            background: #333;
+            color: #e0e0e0;
+            width: 100px;
+        }
+        .input-group {
+            margin: 15px 0;
+        }
+        label {
+            display: inline-block;
+            width: 150px;
+            color: #61dafb;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧠 NIMCP API Test Page</h1>
+    <p>This page tests direct API connectivity to the backend.</p>
+
+    <div>
+        <h2>API Status</h2>
+        <button onclick="testConnection()">Test Connection</button>
+        <button onclick="initBrain()">Initialize Brain</button>
+        <button onclick="getStatus()">Get Status</button>
+        <button onclick="getDataset()">Get Dataset</button>
+    </div>
+
+    <div>
+        <h2>Train Example</h2>
+        <div class="input-group">
+            <label>Sepal Length:</label>
+            <input type="number" id="sepal_length" value="5.1" step="0.1">
+        </div>
+        <div class="input-group">
+            <label>Sepal Width:</label>
+            <input type="number" id="sepal_width" value="3.5" step="0.1">
+        </div>
+        <div class="input-group">
+            <label>Petal Length:</label>
+            <input type="number" id="petal_length" value="1.4" step="0.1">
+        </div>
+        <div class="input-group">
+            <label>Petal Width:</label>
+            <input type="number" id="petal_width" value="0.2" step="0.1">
+        </div>
+        <div class="input-group">
+            <label>Class (0-2):</label>
+            <input type="number" id="label" value="0" min="0" max="2">
+        </div>
+        <button onclick="trainExample()">Train</button>
+        <button onclick="predictExample()">Predict</button>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        const API_URL = `http://${window.location.hostname}:5001/api`;
+        const resultDiv = document.getElementById('result');
+
+        function displayResult(message, type = 'info') {
+            resultDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        async function testConnection() {
+            displayResult('Testing connection...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/status`);
+                const data = await response.json();
+                displayResult(`✅ Connection successful!\n\n${JSON.stringify(data, null, 2)}`, 'success');
+            } catch (error) {
+                displayResult(`❌ Connection failed: ${error.message}\n\nAPI URL: ${API_URL}`, 'error');
+            }
+        }
+
+        async function initBrain() {
+            displayResult('Initializing brain...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/init`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                displayResult(`✅ Brain initialized!\n\n${JSON.stringify(data, null, 2)}`, 'success');
+            } catch (error) {
+                displayResult(`❌ Initialization failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function getStatus() {
+            displayResult('Getting status...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/status`);
+                const data = await response.json();
+                displayResult(`Status:\n\n${JSON.stringify(data, null, 2)}`, 'info');
+            } catch (error) {
+                displayResult(`❌ Failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function getDataset() {
+            displayResult('Getting dataset...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/dataset`);
+                const data = await response.json();
+                displayResult(`Dataset (first 3 examples):\n\n${JSON.stringify(data.dataset.slice(0, 3), null, 2)}`, 'info');
+            } catch (error) {
+                displayResult(`❌ Failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function trainExample() {
+            const features = [
+                parseFloat(document.getElementById('sepal_length').value),
+                parseFloat(document.getElementById('sepal_width').value),
+                parseFloat(document.getElementById('petal_length').value),
+                parseFloat(document.getElementById('petal_width').value)
+            ];
+            const label = parseInt(document.getElementById('label').value);
+
+            displayResult('Training...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/train`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ features, label, confidence: 1.0 })
+                });
+                const data = await response.json();
+                displayResult(`✅ Training complete!\n\n${JSON.stringify(data, null, 2)}`, 'success');
+            } catch (error) {
+                displayResult(`❌ Training failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function predictExample() {
+            const features = [
+                parseFloat(document.getElementById('sepal_length').value),
+                parseFloat(document.getElementById('sepal_width').value),
+                parseFloat(document.getElementById('petal_length').value),
+                parseFloat(document.getElementById('petal_width').value)
+            ];
+
+            displayResult('Predicting...', 'info');
+            try {
+                const response = await fetch(`${API_URL}/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ features })
+                });
+                const data = await response.json();
+                const classes = ['Setosa', 'Versicolor', 'Virginica'];
+                const prediction = classes[data.prediction] || data.prediction;
+                displayResult(`✅ Prediction: ${prediction}\nConfidence: ${(data.confidence * 100).toFixed(1)}%\n\n${JSON.stringify(data, null, 2)}`, 'success');
+            } catch (error) {
+                displayResult(`❌ Prediction failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-test connection on load
+        window.onload = () => testConnection();
+    </script>
+</body>
+</html>

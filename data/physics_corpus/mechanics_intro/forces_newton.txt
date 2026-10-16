@@ -1,0 +1,23 @@
+Forces and the three laws of Newton.
+
+A force is a push or a pull. That sounds almost too simple, but it is the right place to start. When you push a door open, you are exerting a force on the door. When you pull a drawer toward you, you are exerting a force on the drawer. The Earth pulls a falling apple toward the ground; that pull is a force we call gravity. A magnet draws an iron nail toward itself; that pull is also a force, of a different kind.
+
+Forces have direction. A push to the right is not the same as a push upward; they will move an object differently. To describe a force fully, you need to give both its strength and the direction it acts in. Two children pushing a wagon from opposite sides may exert forces equal in strength but opposite in direction, and the wagon will not move. The forces cancel.
+
+Isaac Newton, working in England in the seventeenth century, summed up the behavior of forces and motion in three short laws. They are among the most powerful sentences ever written.
+
+The first law says: an object at rest stays at rest, and an object in motion stays in motion at constant velocity, unless acted on by a net force. This is the law of inertia, and you have already met it. A book lying on a table will not move on its own. A puck sliding on perfectly smooth ice would, in principle, slide forever in a straight line. Whatever changes about an object's motion — speeding up, slowing down, turning — must be caused by a force from outside the object.
+
+The first law also tells you what counts as "outside." Your own muscles cannot lift you off the ground by pulling on your own hair, no matter how hard you try. The force has to come from somewhere external. When you jump, you push down on the Earth, and the Earth pushes up on you; without that external push, you would go nowhere.
+
+The second law says: the acceleration of an object equals the net force on it, divided by its mass. We write this as F = m × a, where F is the net force, m is the mass, and a is the acceleration. This is the working equation of classical mechanics. If you push twice as hard on the same cart, you double the acceleration. If you push the same way on a cart with twice the mass, you halve the acceleration. The relationship is exact and clean.
+
+A few examples bring this to life. A small child can pull a wagon if the wagon is empty. The same child cannot move a loaded truck by pulling on it; the mass is too great, the force too small, the acceleration practically zero. A rocket lifts off the ground when its engines push downward on the exhaust hard enough that the upward force on the rocket exceeds its weight. The greater the thrust, or the lighter the rocket, the greater the acceleration.
+
+The word "net" matters. Several forces may be acting on an object at once, in different directions. They add together as arrows: forces in the same direction reinforce; forces in opposite directions cancel. What determines the acceleration is the total — the net force, after all the additions and cancellations. A book sitting still on a table has gravity pulling it down and the table pushing it up with equal and opposite force; the net is zero, and the book does not accelerate.
+
+The third law says: for every action, there is an equal and opposite reaction. When you push on a wall, the wall pushes back on you with the same strength. When the Earth pulls a falling apple downward, the apple pulls the Earth upward by exactly the same amount — but the Earth is so massive that its tiny acceleration toward the apple is undetectable. A swimmer pushes water backward with her hands, and the water pushes her forward; that is how she swims. A bird flaps its wings downward, pushing air down, and the air pushes the bird up; that is how it flies.
+
+The third law is what allows action at a distance to make sense. Forces always come in pairs, and they always act on different objects. The pair never acts on the same body, and the pair never cancels in the net force on either body, because the pair is split between the two.
+
+Together the three laws give you a complete framework for motion under forces. Identify the forces, add them as arrows, divide by mass, and you have the acceleration. From the acceleration you can predict the velocity at any later moment, and from the velocity you can predict the position. With these tools, Newton predicted the motion of the planets. With the same tools, you can predict the motion of a thrown ball.

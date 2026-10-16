@@ -1,0 +1,66 @@
+FOR IMMEDIATE RELEASE
+
+Dublin Startup Builds Artificial Brain That Learns Like a Child — And Can't Have Its Safety Turned Off
+
+AI Elevate is releasing an  open-source brain inspired AI model with 2.5 million neurons that develops through stages, explores through curiosity, and has safety built into its DNA
+
+DUBLIN, Ireland — March 28, 2026 — AI Elevate today showcased NIMCP, an artificial brain that takes a fundamentally different approach to artificial intelligence. Instead of predicting the next word in a sentence — the technique behind ChatGPT, Claude, and every other large language model — NIMCP grows its intelligence through developmental stages, the way a human child does.
+
+The brain, named Athena, starts with the equivalent of a newborn's sensory awareness and progressively learns to name objects, respond to feedback, and eventually reason about ethics, cause and effect, and other minds. It is currently in the second of four developmental stages, and its training can be watched live at https://nimcp.ai-elevate.ai.
+
+"Every major AI system today is trained the same way — show it the internet and hope it learns to be helpful," said Braun Brelin, co-founder of AI Elevate. "We tried something different. We gave it a childhood."
+
+What makes NIMCP different
+
+Most AI systems are a single type of neural network trained on a single task. NIMCP runs six different types of brain circuitry at the same time — including neurons that communicate through electrical spikes, the same way biological neurons do. During training, these circuits figured out how to fire at rates and patterns that match what neuroscientists measure in the mammalian brain. Nobody told them to do that. It emerged on its own.
+
+The brain also learns through curiosity. When it encounters something it can't predict, it pays more attention and learns faster — driven by a simulated dopamine system modeled on how the human brain processes surprise and reward. No hand-designed reward system tells it what to explore. It seeks out novelty naturally.
+
+Safety that can't be removed
+
+The most significant departure from current AI practice may be the approach to safety. Today's AI systems are trained to be safe — they learn to refuse harmful requests through additional training after the main system is built. This training can be undone. Every major language model has been "jailbroken" within weeks of release.
+
+NIMCP's safety is structural. The ethics evaluation system is built into the brain's code the same way a circuit breaker is built into a house's wiring — it can't be bypassed by talking to it differently or retraining it. Nine layers of safety governance evaluate every decision the brain makes, and the rules can only become stricter over time, never weaker. A tamper-proof log records every action.
+
+"You can verify our safety claims by reading the source code," said Brelin. "Try doing that with ChatGPT."
+
+Built for robots
+
+NIMCP is designed to control physical robots and drones. It includes connections to four types of drone flight controllers, a safety system that checks every motor command before it reaches an actuator, and a standard robotics interface (ROS 2) that allows the brain to be connected to real robots without writing additional code. A built-in physics simulator lets the brain practice before being deployed in the physical world.
+
+Open source and available now
+
+The complete system — approximately 2,600 source files with support for eight programming languages — is released as open-source software and can run on a single consumer-grade graphics card.
+
+Eight accompanying technical papers detail the mathematics, training methodology, safety architecture, and broader implications of the technology. All are available on the project website.
+
+- Live training dashboard: https://nimcp.ai-elevate.ai
+
+About AI Elevate
+
+AI Elevate is a Dublin-based artificial intelligence company founded by Braun Brelin and Peter Munro. The company builds brain-inspired AI systems that learn through developmental stages and biological learning rules rather than statistical pattern matching.
+
+Contact
+
+Braun Brelin
+Co-Founder, AI Elevate
+braun.brelin@ai-elevate.ai
+https://ai-elevate.ai
+
+Peter Munro 
+Co-Founder, AI Elevate
+peter.munro@ai-elevate.ai
+https://ai-elevate.ai
+
+###
+
+
+TECHNICAL BACKGROUND (for journalists seeking additional detail)
+
+NIMCP (Neuro-Inspired Modular Control Protocol) trains six neural network types simultaneously: an adaptive backbone (9-layer diamond architecture, GPU-accelerated), a spiking neural network (768 LIF neurons, BPTT with surrogate gradients), a liquid neural network (continuous-time ODE dynamics), four convolutional cortex processors (visual, audio, speech, somatosensory), a Fourier neural operator (spectral convolution), and a Hamiltonian neural network (energy-conserving dynamics).
+
+Cross-network gradient flow is managed by a Unified Training Manager that routes gradients through learnable Linear Spline Adapter bridges. Five biological plasticity mechanisms (STDP, BCM, eligibility traces, structural plasticity, homeostatic scaling) operate at timescales from 10ms to 60s, modulated by four neuromodulatory systems (dopamine, acetylcholine, norepinephrine, serotonin).
+
+The spiking network developed 26 Hz mean firing rate with 67% sparsity — within mammalian cortical range — without regularization. Training uses spectral k-fold cross-validation (Laplacian eigendecomposition for manifold-aware fold assignment).
+
+The system runs on an NVIDIA RTX 4000 SFF Ada (20 GB VRAM) with 62 GB system RAM. Current training: Stage 2, step ~7,200 of 20,000. Hardware: Hetzner GEX44 dedicated server. Version: 0.9.0-beta.

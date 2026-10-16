@@ -1,0 +1,9 @@
+# Recursive cognition subsystem wiring - self-referential processing
+# Implements RCOG engine, tool routing, and hierarchical reasoning
+{"type":"entity","name":"RCOG_Engine","entityType":"CognitiveModule","observations":["Core recursive cognition engine","Self-referential processing","Depth-limited recursion"],"subsystem":"recursive","tier_min":"MEDIUM"}
+{"type":"entity","name":"RCOG_Tool_Router","entityType":"CognitiveModule","observations":["Capability-based tool access","Dynamic tool discovery","Permission management"],"subsystem":"recursive","tier_min":"MEDIUM"}
+{"type":"entity","name":"RCOG_Orchestrator","entityType":"CognitiveModule","observations":["Multi-agent coordination","Task decomposition","Result aggregation"],"subsystem":"recursive","tier_min":"FULL"}
+{"type":"entity","name":"RCOG_Context_Store","entityType":"CognitiveModule","observations":["Context window management","Attention prioritization","Memory integration"],"subsystem":"recursive","tier_min":"MEDIUM"}
+{"type":"relation","from":"RCOG_Engine","to":"RCOG_Tool_Router","relationType":"HANDLES_MESSAGE","message_type":"TOOL_REQUEST"}
+{"type":"relation","from":"RCOG_Orchestrator","to":"RCOG_Engine","relationType":"HANDLES_MESSAGE","message_type":"SUBTASK_DISPATCH"}
+{"type":"relation","from":"RCOG_Context_Store","to":"RCOG_Engine","relationType":"HANDLES_MESSAGE","message_type":"CONTEXT_UPDATE"}

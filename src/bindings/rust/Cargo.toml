@@ -1,6 +1,6 @@
 [package]
 name = "nimcp"
-version = "2.6.1"
+version = "2.6.3"
 edition = "2021"
 authors = ["NIMCP Contributors"]
 description = "Rust bindings for NIMCP - Neural Interface Message Communication Protocol"
@@ -13,6 +13,3 @@ license = "MIT"
 [lib]
 name = "nimcp"
 path = "src/lib.rs"
-
-[package.metadata.docs.rs]
-rustdoc-args = ["--cfg", "docsrs"]

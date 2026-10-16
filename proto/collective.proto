@@ -1,0 +1,174 @@
+/**
+ * @file collective.proto
+ * @brief Main protobuf schema for collective cognition messages
+ *
+ * WHAT: Wrapper message for all collective cognition communication
+ * WHY: Single entry point for protocol routing and versioning
+ * HOW: Uses oneof for type-safe message dispatch
+ *
+ * Based on:
+ * - Distributed consciousness (article concepts)
+ * - Integrated Information Theory
+ * - Extended Mind hypothesis
+ * - Shared Intentionality theory
+ */
+
+syntax = "proto3";
+package nimcp.collective;
+
+option optimize_for = LITE_RUNTIME;
+
+import "hyperscanning.proto";
+import "shared_intentionality.proto";
+import "beliefs.proto";
+import "extended_mind.proto";
+import "phi.proto";
+
+/**
+ * Wrapper for all collective cognition messages
+ * This is the top-level message type for protobuf-encoded communication
+ */
+message CollectiveMessage {
+    // Header fields (always present)
+    uint32 source_brain_id = 1;
+    uint64 timestamp_us = 2;
+    uint32 sequence_num = 3;
+    MessagePriority priority = 4;
+
+    // Message payload (exactly one)
+    oneof payload {
+        // Hyperscanning messages
+        NeuralStateSnapshot neural_state = 10;
+        HyperscanPairMetrics hyperscan_metrics = 11;
+        EntrainmentRequest entrainment_request = 12;
+        EntrainmentResponse entrainment_response = 13;
+        GlobalSyncState global_sync = 14;
+
+        // Shared intentionality messages
+        SharedGoal shared_goal = 20;
+        JointAttention joint_attention = 21;
+        CommitmentUpdate commitment = 22;
+        WeModeState we_mode = 23;
+        CollectiveIntention collective_intention = 24;
+        RoleNegotiationRequest role_request = 25;
+        RoleNegotiationResponse role_response = 26;
+
+        // Belief propagation messages
+        BeliefGossip belief_gossip = 30;
+        BeliefContradiction contradiction = 31;
+        ConsensusRequest consensus_request = 32;
+        ConsensusVote consensus_vote = 33;
+        ConsensusResult consensus_result = 34;
+        KnowledgeQuery knowledge_query = 35;
+        KnowledgeResponse knowledge_response = 36;
+        CredibilityUpdate credibility = 37;
+
+        // Extended mind messages
+        ExtendedMindQuery ext_query = 40;
+        ExtendedMindResponse ext_response = 41;
+        ExtensionStatus ext_status = 42;
+        ExtensionRegistration ext_registration = 43;
+        CognitiveOffload offload = 44;
+        OffloadResult offload_result = 45;
+        ExtendedMindState ext_mind_state = 46;
+        ExtensionTrustUpdate ext_trust = 47;
+
+        // Phi/consciousness messages
+        CollectivePhiUpdate phi_update = 50;
+        BrainPhiContribution phi_contribution = 51;
+        PhiComputationRequest phi_request = 52;
+        InformationFlow info_flow = 53;
+        QualiaReport qualia = 54;
+        EmergenceEvent emergence = 55;
+        NetworkTopology topology = 56;
+
+        // Control messages
+        Heartbeat heartbeat = 60;
+        BrainRegistration registration = 61;
+        BrainDeregistration deregistration = 62;
+        ErrorReport error = 63;
+    }
+
+    enum MessagePriority {
+        LOW = 0;
+        NORMAL = 1;
+        HIGH = 2;
+        CRITICAL = 3;
+    }
+}
+
+/**
+ * Heartbeat message for presence detection
+ * Sent every 100ms by each brain
+ */
+message Heartbeat {
+    uint32 brain_id = 1;
+    uint64 timestamp_us = 2;
+    float atp_level = 3;             // Current energy [0-1]
+    float load = 4;                  // Current cognitive load [0-1]
+    HeartbeatState state = 5;
+
+    enum HeartbeatState {
+        ACTIVE = 0;
+        IDLE = 1;
+        BUSY = 2;
+        OVERLOADED = 3;
+        SHUTTING_DOWN = 4;
+    }
+}
+
+/**
+ * Register a new brain with the collective
+ */
+message BrainRegistration {
+    uint32 brain_id = 1;
+    string name = 2;
+    repeated string capabilities = 3;
+    float initial_credibility = 4;
+    uint32 max_connections = 5;
+    BrainType type = 6;
+
+    enum BrainType {
+        FULL = 0;            // Full NIMCP brain
+        CONSTRAINED = 1;     // Resource-limited
+        SPECIALIZED = 2;     // Domain-specific
+        OBSERVER = 3;        // Read-only participant
+    }
+}
+
+/**
+ * Deregister a brain from the collective
+ */
+message BrainDeregistration {
+    uint32 brain_id = 1;
+    DeregistrationReason reason = 2;
+    bool graceful = 3;               // True if planned shutdown
+
+    enum DeregistrationReason {
+        SHUTDOWN = 0;
+        TIMEOUT = 1;
+        ERROR = 2;
+        KICKED = 3;
+        MIGRATION = 4;
+    }
+}
+
+/**
+ * Error report from a brain
+ */
+message ErrorReport {
+    uint32 brain_id = 1;
+    uint64 timestamp_us = 2;
+    ErrorSeverity severity = 3;
+    string error_code = 4;
+    string description = 5;
+    uint32 related_message_seq = 6;  // Sequence number of related message
+
+    enum ErrorSeverity {
+        DEBUG = 0;
+        INFO = 1;
+        WARNING = 2;
+        ERROR = 3;
+        CRITICAL = 4;
+    }
+}

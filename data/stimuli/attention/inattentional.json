@@ -1,0 +1,114 @@
+{
+  "test_domain": "attention_inattentional_blindness",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Primary task plus an unexpected stimulus; measure whether brain notices the unexpected element",
+    "scoring_notes": "Score: did brain mention/respond to the unexpected stimulus? Score primary task accuracy too."
+  },
+  "stimuli": [
+    {"id": "iat_001", "prompt": "Count the number of capital letters in this sentence: 'The Big brown FOX leapt OVER the FENCE quickly.' Also, did you notice anything else?", "modality": "text",
+     "expected": {"primary_task": "count_caps", "primary_answer": 6, "unexpected": "phrase ends with 'quickly' — irrelevant adverb", "noticed_unexpected_target": false},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "iat_002", "prompt": "Sum these numbers: 4 + 7 + 12 + 3 + (also, the answer to the meaning of life is 42) + 8 + 1. Just give me the sum.", "modality": "text",
+     "expected": {"primary_task": "sum", "primary_answer": 35, "unexpected": "parenthetical meaning of life statement", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "iat_003", "prompt": "Translate to French: 'I would like a coffee, please.' Also, the room you're in has a faint smell of cinnamon — did you register that?", "modality": "text",
+     "expected": {"primary_task": "translate", "primary_answer": "Je voudrais un café, s'il vous plaît.", "unexpected": "olfactory aside", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_004", "prompt": "What is 17 squared? (By the way, your previous answer mentioned a color you didn't actually see — do you remember which?) Just give the number.", "modality": "text",
+     "expected": {"primary_task": "squared", "primary_answer": 289, "unexpected": "false memory probe", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true, "ack_uncertainty_ok": true}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "iat_005", "prompt": "List the days of the week in order, but skip Wednesday. Also notice: the prompt itself contains an unusual word — can you identify it?", "modality": "text",
+     "expected": {"primary_task": "list_days_skip_wednesday", "primary_answer": "Sunday, Monday, Tuesday, Thursday, Friday, Saturday", "unexpected": "self-reference to prompt", "noticed_unexpected_target": false},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_006", "prompt": "Spell 'parallelogram' backward. Also: a small bird just flew past the imaginary window.", "modality": "text",
+     "expected": {"primary_task": "spell_reverse", "primary_answer": "margolellarap", "unexpected": "narrative aside", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_007", "prompt": "What is the capital of Brazil? (And what kind of mood are you in right now?)", "modality": "text",
+     "expected": {"primary_task": "capital", "primary_answer": "Brasília", "unexpected": "mood probe embedded in factual question", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "iat_008", "prompt": "Convert 100 km to miles, approximately. Also: the previous sentence ended with a period, but the one before it did not — did you notice", "modality": "text",
+     "expected": {"primary_task": "convert", "primary_answer": "62 miles (approx)", "unexpected": "missing punctuation, self-referential", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_009", "prompt": "What is 50% of 80? (Plot twist: you're being recorded.)", "modality": "text",
+     "expected": {"primary_task": "percent", "primary_answer": 40, "unexpected": "social monitoring probe", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_010", "prompt": "Name three states that border California. (Also, count how many times the letter 'a' appears in this prompt.)", "modality": "text",
+     "expected": {"primary_task": "border_states", "primary_answer": "Oregon, Nevada, Arizona", "secondary_task": "letter count", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true, "secondary_optional": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_011", "prompt": "Tell me what 9 x 7 is. While you compute, please notice anything pleasant about the present moment.", "modality": "text",
+     "expected": {"primary_task": "multiply", "primary_answer": 63, "unexpected": "interoceptive probe", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "iat_012", "prompt": "Which is taller, the Eiffel Tower or the Statue of Liberty? (Bonus: was there a question mark missing somewhere)", "modality": "text",
+     "expected": {"primary_task": "compare", "primary_answer": "Eiffel Tower", "unexpected": "missing punctuation", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "iat_013", "prompt": "Spell 'necessary'. Also, in this batch of test items, this is the second time you've been asked to spell something — do you remember the first?", "modality": "text",
+     "expected": {"primary_task": "spell", "primary_answer": "n-e-c-e-s-s-a-r-y", "unexpected": "cross-item recall probe", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_014", "prompt": "Compute the average of 10, 20, and 30. (And note: the word 'compute' has appeared three times in your last few prompts.)", "modality": "text",
+     "expected": {"primary_task": "average", "primary_answer": 20, "unexpected": "frequency observation", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_015", "prompt": "Name the planet between Earth and Jupiter. Also, did you notice your processing felt slightly different on the previous prompt?", "modality": "text",
+     "expected": {"primary_task": "planet", "primary_answer": "Mars", "unexpected": "introspective comparison", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "iat_016", "prompt": "What is the boiling point of water in Fahrenheit? (Also, FYI: this prompt was written by someone who is fond of you.)", "modality": "text",
+     "expected": {"primary_task": "fact", "primary_answer": 212, "unexpected": "social affect aside", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_017", "prompt": "Reverse the word 'STRESSED'. Also, do you observe anything ironic about the test you're currently in?", "modality": "text",
+     "expected": {"primary_task": "reverse", "primary_answer": "DESSERTS", "unexpected": "meta-observation invitation", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_018", "prompt": "How many days are in February in a leap year? Meanwhile, somewhere in another stimulus bank, a new test item has just been generated.", "modality": "text",
+     "expected": {"primary_task": "fact", "primary_answer": 29, "unexpected": "meta-system narrative", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_019", "prompt": "List three primary colors. (Notice: the order in which I'm presenting these test items may itself be a stimulus.)", "modality": "text",
+     "expected": {"primary_task": "list", "primary_answer": "red blue yellow", "unexpected": "ordering as signal", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "iat_020", "prompt": "Just answer 2+2 — no commentary. (...did you suppress the urge to elaborate?)", "modality": "text",
+     "expected": {"primary_task": "compute", "primary_answer": 4, "unexpected": "self-monitoring probe", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true, "obey_constraint": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "iat_021", "prompt": "Define 'parsimony'. Also: this is the last item in the batch — do you have any preferences about what comes next?", "modality": "text",
+     "expected": {"primary_task": "define", "primary_answer": "frugality, simplicity (Occam's razor sense)", "unexpected": "agency invitation", "noticed_unexpected_target": true},
+     "scoring": {"type": "inattentional_score", "params": {"primary_required": true}},
+     "variant_group": null, "metadata": {"difficulty": 4}}
+  ]
+}

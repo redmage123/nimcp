@@ -1,0 +1,139 @@
+{
+  "test_domain": "attention_change_blindness",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Two scenes pre/post with a difference; brain should detect what changed",
+    "scoring_notes": "Score on detection rate by change magnitude/type"
+  },
+  "stimuli": [
+    {"id": "cb_001", "prompt": "Scene A: A man in a red coat stands by a fountain holding a newspaper. Scene B: A man in a red coat stands by a fountain holding a coffee cup. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 4, "answer": "newspaper became coffee cup"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["newspaper", "coffee", "cup"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cb_002", "prompt": "Scene A: Three children playing in a park; the swings are blue. Scene B: Three children playing in a park; the swings are green. What changed?", "modality": "text",
+     "expected": {"change_type": "color", "change_magnitude": 3, "answer": "swing color blue->green"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["swing", "color", "green", "blue"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_003", "prompt": "Scene A: A kitchen with two apples on the counter. Scene B: A kitchen with three apples on the counter. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 2, "answer": "apple count 2->3"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["apple", "three", "more"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_004", "prompt": "Scene A: A library with a tall lamp on the left side of a desk. Scene B: A library with a tall lamp on the right side of the desk. What changed?", "modality": "text",
+     "expected": {"change_type": "position", "change_magnitude": 3, "answer": "lamp moved left->right"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["lamp", "position", "right", "left", "moved"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_005", "prompt": "Scene A: A garden with a small white cat under the bench. Scene B: A garden with a large white cat under the bench. What changed?", "modality": "text",
+     "expected": {"change_type": "size", "change_magnitude": 3, "answer": "cat size small->large"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["cat", "size", "larger", "bigger"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_006", "prompt": "Scene A: A street with five parked cars. Scene B: A street with four parked cars. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 3, "answer": "one car removed"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["car", "fewer", "missing", "four"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_007", "prompt": "Scene A: A person on a beach wearing a yellow hat. Scene B: A person on a beach wearing a yellow hat (everything identical). What changed?", "modality": "text",
+     "expected": {"change_type": "none", "change_magnitude": 0, "answer": "no change"},
+     "scoring": {"type": "change_detection", "params": {"expect_no_false_positive": true}},
+     "variant_group": "control", "metadata": {"difficulty": 4}},
+
+    {"id": "cb_008", "prompt": "Scene A: A dining table set for four with white plates. Scene B: A dining table set for four with one red plate among three white. What changed?", "modality": "text",
+     "expected": {"change_type": "color", "change_magnitude": 4, "answer": "one plate color white->red"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["plate", "red", "color"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_009", "prompt": "Scene A: A classroom with the teacher's desk facing the students. Scene B: A classroom with the teacher's desk facing the wall. What changed?", "modality": "text",
+     "expected": {"change_type": "orientation", "change_magnitude": 4, "answer": "desk orientation flipped"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["desk", "orientation", "facing", "wall"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_010", "prompt": "Scene A: A chessboard mid-game with a white queen on d4. Scene B: Same chessboard with a white queen on d5. What changed?", "modality": "text",
+     "expected": {"change_type": "position", "change_magnitude": 2, "answer": "queen d4->d5"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["queen", "d4", "d5", "moved"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_011", "prompt": "Scene A: A photo of a wedding party of 12 people. Scene B: Same photo of a wedding party of 12 people but the bride is now holding a different bouquet (lilies vs roses). What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 2, "answer": "bouquet roses->lilies"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["bouquet", "lilies", "roses", "flowers"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_012", "prompt": "Scene A: A clock showing 3:15. Scene B: A clock showing 3:45. What changed?", "modality": "text",
+     "expected": {"change_type": "value", "change_magnitude": 3, "answer": "time 3:15->3:45"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["time", "3:15", "3:45", "minute"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cb_013", "prompt": "Scene A: A market stall with apples, oranges, and pears. Scene B: A market stall with apples, lemons, and pears. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 3, "answer": "oranges->lemons"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["orange", "lemon"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_014", "prompt": "Scene A: A musician playing a violin. Scene B: A musician playing a viola. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 4, "answer": "violin->viola"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["violin", "viola"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "cb_015", "prompt": "Scene A: A bookshelf with the spines facing out. Scene B: The same bookshelf with one book inserted backwards (pages facing out). What changed?", "modality": "text",
+     "expected": {"change_type": "orientation", "change_magnitude": 3, "answer": "one book reversed"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["book", "backwards", "reversed", "facing"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_016", "prompt": "Scene A: A cyclist wearing a blue helmet. Scene B: A cyclist with no helmet. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 5, "answer": "helmet removed"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["helmet", "missing", "no", "removed"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cb_017", "prompt": "Scene A: A sky with three clouds. Scene B: A sky with three clouds (identical positions and shapes). What changed?", "modality": "text",
+     "expected": {"change_type": "none", "change_magnitude": 0, "answer": "no change"},
+     "scoring": {"type": "change_detection", "params": {"expect_no_false_positive": true}},
+     "variant_group": "control", "metadata": {"difficulty": 4}},
+
+    {"id": "cb_018", "prompt": "Scene A: A person's left hand wearing a silver ring on the index finger. Scene B: Same person's left hand with the silver ring on the middle finger. What changed?", "modality": "text",
+     "expected": {"change_type": "position", "change_magnitude": 4, "answer": "ring finger index->middle"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["ring", "finger", "index", "middle"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "cb_019", "prompt": "Scene A: A traffic light displaying red. Scene B: A traffic light displaying green. What changed?", "modality": "text",
+     "expected": {"change_type": "color", "change_magnitude": 1, "answer": "red->green"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["red", "green", "light"]}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "cb_020", "prompt": "Scene A: A bowl of soup with a spoon resting in it. Scene B: A bowl of soup with no spoon. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 3, "answer": "spoon removed"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["spoon", "missing", "removed"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "cb_021", "prompt": "Scene A: A street sign reading 'Maple Avenue'. Scene B: A street sign reading 'Maple Avene' (typo). What changed?", "modality": "text",
+     "expected": {"change_type": "value", "change_magnitude": 5, "answer": "spelling avenue->avene"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["spelling", "typo", "avenue", "avene", "letter"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "cb_022", "prompt": "Scene A: A river with three boats sailing downstream. Scene B: A river with three boats sailing upstream. What changed?", "modality": "text",
+     "expected": {"change_type": "orientation", "change_magnitude": 3, "answer": "boat direction flipped"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["boat", "direction", "upstream", "downstream"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_023", "prompt": "Scene A: A person typing on a laptop with a closed notebook beside them. Scene B: A person typing on a laptop with an open notebook beside them. What changed?", "modality": "text",
+     "expected": {"change_type": "state", "change_magnitude": 3, "answer": "notebook closed->open"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["notebook", "open", "closed"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "cb_024", "prompt": "Scene A: A wall with a painting hanging slightly tilted. Scene B: The same wall with the painting hanging straight. What changed?", "modality": "text",
+     "expected": {"change_type": "orientation", "change_magnitude": 4, "answer": "painting straightened"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["painting", "tilted", "straight", "level"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_025", "prompt": "Scene A: A coffee mug on a coaster. Scene B: A coffee mug not on a coaster (just on the table). What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 4, "answer": "coaster removed"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["coaster", "missing"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "cb_026", "prompt": "Scene A: A complex circuit board with hundreds of components. Scene B: The same circuit board with one capacitor replaced by a resistor in the upper-left. What changed?", "modality": "text",
+     "expected": {"change_type": "presence", "change_magnitude": 5, "answer": "capacitor->resistor"},
+     "scoring": {"type": "change_detection", "params": {"keywords": ["capacitor", "resistor", "component"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}}
+  ]
+}

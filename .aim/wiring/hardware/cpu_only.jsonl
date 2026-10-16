@@ -1,0 +1,12 @@
+# CPU-only configuration (no GPU)
+# Fallback when no GPU is available or for debugging
+{"type":"config","hardware":"CPU","description":"CPU-only mode with SIMD optimization"}
+{"type":"hardware_requirement","min_cores":2,"recommended_cores":8,"simd_support":["SSE4.2","AVX2"]}
+{"type":"module_config","module":"Tensor_Engine","backend":"CPU","notes":"Use OpenBLAS/Eigen with SIMD"}
+{"type":"module_config","module":"JEPA_Latent","backend":"CPU","notes":"CPU latent prediction"}
+{"type":"module_config","module":"Fractal_Cognitive","backend":"CPU","notes":"Multi-threaded fractal"}
+{"type":"module_config","module":"Global_Workspace","backend":"CPU","notes":"Thread-pool broadcast"}
+{"type":"parameter_override","module":"Tensor_Engine","parameter":"batch_size","value":8,"notes":"Small batches for CPU"}
+{"type":"parameter_override","module":"STDP_Engine","parameter":"parallel_updates","value":true,"notes":"Use thread pool"}
+{"type":"parameter_override","module":"Working_Memory","parameter":"prefetch_enabled","value":true,"notes":"CPU cache optimization"}
+{"type":"cpu_config","thread_pool_size":"auto","numa_aware":true,"use_huge_pages":false}

@@ -1,0 +1,25 @@
+Introduction to algebra.
+
+Algebra is arithmetic with variables. A variable is a letter that stands for an unknown number. The most common letters are x, y, and n.
+
+When we write x + 3 = 7, we are saying that some number, when added to three, gives seven. To solve, we ask: what number plus three is seven? The answer is four. So x = 4.
+
+We solve more carefully by performing the same operation on both sides of the equation. From x + 3 = 7, subtract three from both sides: x + 3 - 3 = 7 - 3. The left side simplifies to x, the right side to 4. So x = 4.
+
+The principle is: an equation is a balanced statement. Whatever we do to one side, we must do to the other, or the balance is broken.
+
+Multiplication uses a dot or juxtaposition: 2 times x is written 2x or 2 dot x. The expression 2x + 5 = 11 means: two times some number, plus five, equals eleven. Solve by undoing: subtract five from both sides, giving 2x = 6. Then divide both sides by two, giving x = 3. We can check by substitution: 2 times 3 is 6, plus 5 is 11. The check confirms the answer.
+
+The order of operations matters. In 2x + 5, we multiply first, then add. In 2(x + 5), the parentheses force the addition first. Two times the quantity x plus five. If x = 3, then x + 5 is 8, times 2 is 16. Different from 2x + 5 with x = 3, which is 6 + 5 = 11.
+
+The distributive property connects the two. 2(x + 5) equals 2x + 2 dot 5, which equals 2x + 10. Multiplication distributes over addition. This rule lets us expand or factor expressions at will.
+
+A linear equation in one variable has the form ax + b = c, where a, b, c are constants and x is unknown. We solve by isolating x: subtract b, then divide by a. The result is x = (c - b) / a, valid when a is not zero.
+
+When a is zero, the equation becomes b = c. If b actually equals c, every value of x is a solution; the equation is an identity. If b is not c, no value works; the equation has no solution.
+
+These three cases — unique solution, no solution, all values are solutions — exhaust the linear case. The same trichotomy reappears in larger systems and in higher dimensions.
+
+A quadratic equation has the form ax-squared + bx + c = 0, with a not zero. Its solutions come from the quadratic formula: x equals negative b, plus or minus the square root of b-squared minus four a c, all over two a. The expression b-squared minus four a c is called the discriminant. When positive, there are two real solutions. When zero, one real solution, repeated. When negative, the solutions are complex numbers.
+
+Algebra is the language of relationships between quantities. Every physical law, every economic model, every geometric construction can be written as an algebraic equation, and once written, manipulated by these few rules.

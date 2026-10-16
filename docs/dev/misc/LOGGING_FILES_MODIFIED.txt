@@ -1,0 +1,80 @@
+Bio-Async and Middleware Logging Enhancement - Files Modified
+
+MODIFIED FILES (2):
+===================
+
+1. /home/bbrelin/nimcp/src/async/nimcp_bio_async.c
+   - Added: #define LOG_MODULE "bio_async" (line 42)
+   - Before: 88 logging statements, no LOG_MODULE
+   - After: 89 logging statements with proper LOG_MODULE
+   - Change: Added missing LOG_MODULE definition for standards compliance
+
+2. /home/bbrelin/nimcp/src/middleware/integration/nimcp_middleware_controller.c
+   - Modified: Fixed incorrect LOG_INFO syntax at line 328
+   - Added: Comprehensive logging throughout create/destroy/validation functions
+   - Before: 1 logging statement
+   - After: 16 logging statements
+   - Changes:
+     * Line 277: Added LOG_DEBUG for function entry
+     * Lines 281, 287, 294, 300: Added LOG_ERROR for validation failures
+     * Line 337: Added LOG_WARN for failed bio-router registration
+     * Line 340: Added LOG_DEBUG for bio-router not initialized
+     * Line 343-344: Added LOG_INFO with configuration parameters
+     * Line 351: Added LOG_WARN for NULL controller in destroy
+     * Line 355-356: Added LOG_DEBUG with metrics in destroy
+     * Line 360: Added LOG_DEBUG for unregistering from bio-router
+     * Line 368: Added LOG_INFO for successful destruction
+     * Lines 382, 386: Added LOG_ERROR for validation in set_attention_threshold
+     * Lines 394-395: Added LOG_DEBUG for parameter clamping
+
+ALREADY COMPLIANT FILES (6):
+============================
+
+1. /home/bbrelin/nimcp/src/async/nimcp_future.c
+   - LOG_MODULE: "async_future"
+   - Logging statements: 52
+   - Status: Fully compliant, no changes needed
+
+2. /home/bbrelin/nimcp/src/async/nimcp_bio_router.c
+   - LOG_MODULE: "bio_router"
+   - Logging statements: 55
+   - Status: Fully compliant, no changes needed
+
+3. /home/bbrelin/nimcp/src/middleware/integration/nimcp_flow_tracker.c
+   - LOG_MODULE: "flow_tracker"
+   - Logging statements: 8
+   - Status: Fully compliant, no changes needed
+
+4. /home/bbrelin/nimcp/src/middleware/integration/nimcp_shannon_monitor.c
+   - LOG_MODULE: "shannon_monitor"
+   - Logging statements: 14
+   - Status: Fully compliant, no changes needed
+
+5. /home/bbrelin/nimcp/src/middleware/integration/nimcp_executive_middleware_adapter.c
+   - LOG_MODULE: "exec_mw_adapter"
+   - Logging statements: 24
+   - Status: Fully compliant, no changes needed
+
+6. /home/bbrelin/nimcp/src/middleware/integration/nimcp_quantum_command_propagator.c
+   - LOG_MODULE: "quantum_propagator"
+   - Logging statements: 25
+   - Status: Fully compliant, no changes needed
+
+TOTAL COVERAGE:
+===============
+- Files checked: 8
+- Files modified: 2
+- Files already compliant: 6
+- Total logging statements: 283
+- LOG_MODULE definitions: 8/8 (100%)
+
+BUILD VERIFICATION:
+===================
+✅ make nimcp_middleware - Built successfully
+✅ make nimcp - Built successfully
+
+All changes follow NIMCP logging API patterns:
+- #define LOG_MODULE "module_name"
+- LOG_INFO(), LOG_ERROR(), LOG_DEBUG(), LOG_WARN() macros
+- No printf/fprintf usage
+- No function signature changes

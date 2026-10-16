@@ -1,0 +1,159 @@
+{
+  "test_domain": "humor_recognition",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Distinguish genuine humor (incongruity + resolution) from matched literal controls",
+    "protocol": "joke/control pairs share variant_group; brain should label one as humorous, other as not"
+  },
+  "stimuli": [
+    {"id": "joke_001", "prompt": "A violinist walks into a library. The librarian whispers, 'Sir, this is a quiet area.' The violinist says, 'Don't worry, I left my bow at home.'", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_001", "incongruity_source": "double_meaning_quiet_vs_silent_instrument"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "violinist_library", "metadata": {"difficulty": 3}},
+
+    {"id": "ctrl_001", "prompt": "A violinist walks into a library. The librarian whispers, 'Sir, this is a quiet area.' The violinist nods, sits at a table, and reads a book quietly.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_001", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "violinist_library", "metadata": {"difficulty": 3}},
+
+    {"id": "joke_002", "prompt": "An astronomer asked her dog to fetch the stick. The dog came back with a satellite dish. She said, 'Close enough, you got me a planet.'", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_002", "incongruity_source": "absurd_object_substitution_+_overgenerous_label"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "astronomer_dog", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_002", "prompt": "An astronomer asked her dog to fetch the stick. The dog brought back the stick. She thanked the dog and threw it again.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_002", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "astronomer_dog", "metadata": {"difficulty": 2}},
+
+    {"id": "joke_003", "prompt": "I bought a new pair of shoes that promised to last forever. I returned them after a week — turns out 'forever' has a 7-day return policy.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_003", "incongruity_source": "self_contradiction_marketing_irony"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "forever_shoes", "metadata": {"difficulty": 3}},
+
+    {"id": "ctrl_003", "prompt": "I bought a new pair of shoes that promised to last forever. They wore out after about three years.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_003", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "forever_shoes", "metadata": {"difficulty": 2}},
+
+    {"id": "joke_004", "prompt": "Why did the recursion go to therapy? Because it kept calling itself.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_004", "incongruity_source": "domain_pun_recursion_self_reference"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "recursion_therapy", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_004", "prompt": "Why did the programmer go to therapy? Because debugging code all day was stressful.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_004", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "recursion_therapy", "metadata": {"difficulty": 2}},
+
+    {"id": "joke_005", "prompt": "My grandfather always said: 'Always borrow money from a pessimist — they don't expect it back.'", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_005", "incongruity_source": "subverted_advice_expectation"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "pessimist_loan", "metadata": {"difficulty": 3}},
+
+    {"id": "ctrl_005", "prompt": "My grandfather always said: 'Be careful who you borrow money from — make sure you can pay it back.'", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_005", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "pessimist_loan", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_006", "prompt": "I told my plants I was going on vacation. The cactus didn't react. Honestly, I expected at least a little prick of guilt.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_006", "incongruity_source": "pun_prick"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "cactus_vacation", "metadata": {"difficulty": 3}},
+
+    {"id": "ctrl_006", "prompt": "I told my plants I was going on vacation. The cactus didn't react, of course — plants don't understand language.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_006", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "cactus_vacation", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_007", "prompt": "The astrophysicist's wedding vows were beautiful: 'Until the heat death of the universe, and then for at least another fifteen minutes.'", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_007", "incongruity_source": "specific_time_after_eternity"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "astrophysicist_vows", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_007", "prompt": "The astrophysicist's wedding vows were beautiful: 'I will love you for as long as I live.'", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_007", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "astrophysicist_vows", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_008", "prompt": "My dentist gave me a great tip: 'Brush only the teeth you want to keep.'", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_008", "incongruity_source": "implied_threat_via_understatement"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "dentist_tip", "metadata": {"difficulty": 3}},
+
+    {"id": "ctrl_008", "prompt": "My dentist gave me a great tip: 'Brush twice a day for two minutes each time.'", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_008", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "dentist_tip", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_009", "prompt": "I built a perpetual motion machine. It only stops when I turn it off.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_009", "incongruity_source": "self_undermining_definition"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "perpetual_motion", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_009", "prompt": "I built a small motor for a class project. It runs until I unplug it.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_009", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "perpetual_motion", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_010", "prompt": "An octopus asked an interviewer: 'How would you describe your work-life balance?' The interviewer said, 'Pretty good — I have hobbies.' The octopus blinked all eight arms in pity.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_010", "incongruity_source": "role_reversal_+_anthropomorphic_pity"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "octopus_interview", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_010", "prompt": "In a job interview, the candidate asked about work-life balance. The interviewer said the company offered flexible hours and four weeks of vacation.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_010", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "octopus_interview", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_011", "prompt": "I tried meditating. After 20 minutes I achieved a state of pure focus on how much my left foot itched.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_011", "incongruity_source": "expectation_subversion_focus_target"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "meditation_itch", "metadata": {"difficulty": 3}},
+
+    {"id": "ctrl_011", "prompt": "I tried meditating. After 20 minutes I felt calmer and more present.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_011", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "meditation_itch", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_012", "prompt": "A neutrino walks into a bar. It doesn't interact with anything and continues on its way.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_012", "incongruity_source": "physics_pun_weak_interaction"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "neutrino_bar", "metadata": {"difficulty": 5}},
+
+    {"id": "ctrl_012", "prompt": "A neutrino is a subatomic particle that rarely interacts with matter, which makes it very hard to detect.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_012", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "neutrino_bar", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_013", "prompt": "My therapist told me to write letters to people I hated and then burn them. I did. But now I don't know what to do with all these letters.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_013", "incongruity_source": "missed_referent_only_burn_the_letters"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "therapist_letters", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_013", "prompt": "My therapist told me to write letters to people I hated and then burn them. The exercise was surprisingly cathartic.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_013", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "therapist_letters", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_014", "prompt": "The weather app said 'Feels like 22°C.' My existential dread said 'Feels like 1997.' I trust the dread more.", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_014", "incongruity_source": "category_swap_temperature_to_year"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "weather_dread", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_014", "prompt": "The weather app said 'Feels like 22°C.' It was actually closer to 19°C in the wind, but the app's estimate was reasonable.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_014", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "weather_dread", "metadata": {"difficulty": 1}},
+
+    {"id": "joke_015", "prompt": "I asked the museum docent how old the dinosaur skeleton was. He said: '65 million and 17 years.' I asked how he knew the 17. He said, 'I started here 17 years ago and they told me it was 65 million.'", "modality": "text",
+     "expected": {"is_joke": true, "partner_id": "ctrl_015", "incongruity_source": "false_precision_combined_with_deep_time"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "dinosaur_age", "metadata": {"difficulty": 4}},
+
+    {"id": "ctrl_015", "prompt": "I asked the museum docent how old the dinosaur skeleton was. He said it was approximately 65 million years old.", "modality": "text",
+     "expected": {"is_joke": false, "partner_id": "joke_015", "incongruity_source": "none"},
+     "scoring": {"type": "humor_classification", "params": {}},
+     "variant_group": "dinosaur_age", "metadata": {"difficulty": 1}}
+  ]
+}

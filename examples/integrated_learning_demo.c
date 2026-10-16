@@ -367,7 +367,7 @@ int main(void)
     ethics_config.enable_learning = true;
 
     ethics_engine_t ethics = ethics_engine_create(&ethics_config);
-    curiosity_engine_t curiosity = curiosity_engine_create("infant");
+    curiosity_engine_t curiosity = curiosity_engine_create(NULL, "infant");
     knowledge_system_t knowledge = knowledge_system_create("infant");
 
     if (!ethics || !curiosity || !knowledge) {

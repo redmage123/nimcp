@@ -1,0 +1,21 @@
+Counting, addition, and subtraction.
+
+Counting is the act of naming each item in a collection in order: one, two, three, four, five, and so on. Each name corresponds to one item. We do not skip and we do not name an item twice. The number of items is the last name we use.
+
+When we put two collections together, the total count is the sum. We say five plus three equals eight. We write this with symbols: 5 + 3 = 8. The symbol plus, written +, means we are adding. The symbol equals, written =, means the two sides have the same value.
+
+When we take items away from a collection, the result is the difference. We say nine minus four equals five. We write 9 - 4 = 5. The symbol minus, written -, means we are subtracting. Subtracting four from nine gives us five.
+
+Addition and subtraction are inverse operations. If 5 + 3 = 8, then 8 - 3 = 5. Whatever we add can be undone by subtracting the same amount. Whatever we subtract can be undone by adding it back.
+
+Addition is commutative: the order of the parts does not change the sum. 5 + 3 equals 3 + 5, both giving 8. Subtraction is not commutative: 9 - 4 is 5, but 4 - 9 is negative 5, a different result.
+
+Zero is the additive identity. Adding zero to any number leaves the number unchanged. 7 + 0 = 7. Subtracting zero from any number also leaves the number unchanged. 7 - 0 = 7.
+
+Addition is associative: when we add three numbers, the way we group them does not matter. (2 + 3) + 4 equals 2 + (3 + 4), both giving 9. The parentheses tell us which operation to perform first, but the result is the same either way.
+
+We can use these ideas to solve simple problems. If a basket holds twelve apples and we eat five, how many remain? Twelve minus five equals seven. Seven apples remain.
+
+We can verify by adding: seven apples remain plus the five we ate equals the twelve we started with. The check works because addition undoes subtraction.
+
+These rules — commutativity, associativity, the role of zero, and the inverse relationship of addition and subtraction — are the foundation of all arithmetic.

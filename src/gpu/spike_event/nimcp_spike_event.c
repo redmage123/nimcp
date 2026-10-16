@@ -11,20 +11,37 @@
  * - Circular Buffer: Spike trains
  * - Lock-Free: Atomic operations for thread safety
  *
+ * BIO-ASYNC INTEGRATION:
+ * - Registers with bio_router for spike event propagation
+ * - Sends spike events to middleware for processing
+ * - Receives commands from cognitive layer
+ *
  * @author NIMCP Development Team
  * @date 2025
- * @version 2.6 (GPU P2P)
+ * @version 2.7.0
  */
 
 #include "gpu/nimcp_spike_event.h"
+#include "utils/memory/nimcp_unified_memory.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/time/nimcp_time.h"
 #include "utils/validation/nimcp_validate.h"
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_router.h"
+#include "async/nimcp_bio_messages.h"
+#include "utils/logging/nimcp_logging.h"
+#include "security/nimcp_security.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <string.h>
 #include <math.h>
 
+#define LOG_MODULE "SPIKE_EVENT"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(spike_event)
+
 // C11 atomics for lock-free operations
-#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
 #include <stdatomic.h>
 #define ATOMIC_UINT atomic_uint
 #define ATOMIC_LOAD(ptr) atomic_load(ptr)
@@ -33,7 +50,11 @@
 #define ATOMIC_COMPARE_EXCHANGE(ptr, expected, desired) \
     atomic_compare_exchange_weak(ptr, expected, desired)
 #else
-// Fallback: non-atomic (thread-unsafe)
+// WARNING: This fallback is NOT thread-safe for concurrent access.
+// Platforms without C11 atomics must use external synchronization
+// (e.g., a mutex around all spike queue operations) to prevent
+// data races. The CAS emulation below is NOT atomic.
+#warning "C11 atomics unavailable - spike event queue is NOT thread-safe"
 #define ATOMIC_UINT volatile uint32_t
 #define ATOMIC_LOAD(ptr) (*(ptr))
 #define ATOMIC_STORE(ptr, val) (*(ptr) = (val))
@@ -57,6 +78,10 @@ struct spike_train_struct {
     uint64_t last_spike;
     float firing_rate;
     uint64_t window_start;   /**< For rate calculation */
+
+    // Bio-async integration
+    bio_module_context_t bio_ctx;
+    bool bio_async_enabled;
 };
 
 /**
@@ -71,6 +96,10 @@ struct spike_queue_struct {
     ATOMIC_UINT count;
     bool gpu_enabled;
     void* gpu_ptr;
+
+    // Bio-async integration
+    bio_module_context_t bio_ctx;
+    bool bio_async_enabled;
 };
 
 //=============================================================================
@@ -82,19 +111,27 @@ struct spike_queue_struct {
  */
 spike_train_t* spike_train_create(uint32_t capacity)
 {
+    LOG_DEBUG("Creating spike train with capacity %u", capacity);
+
     // Guard: Validate capacity
     if (capacity == 0 || capacity > 1000000) {
+        LOG_ERROR("Invalid spike train capacity: %u (must be 1-1000000)", capacity);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "spike_train_create: capacity is zero");
         return NULL;
     }
 
     spike_train_t* train = (spike_train_t*)nimcp_calloc(1, sizeof(spike_train_t));
     if (!train) {
+        LOG_ERROR("Failed to allocate spike train structure");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "spike_train_create: train is NULL");
         return NULL;
     }
 
     train->events = (spike_event_t*)nimcp_calloc(capacity, sizeof(spike_event_t));
     if (!train->events) {
+        LOG_ERROR("Failed to allocate spike train events buffer (capacity=%u)", capacity);
         nimcp_free(train);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "spike_train_create: train->events is NULL");
         return NULL;
     }
 
@@ -102,8 +139,33 @@ spike_train_t* spike_train_create(uint32_t capacity)
     train->count = 0;
     train->head = 0;
     train->last_spike = 0;
-    train->firing_rate = 0.0f;
+    train->firing_rate = 0.0F;
     train->window_start = 0;
+
+    // Initialize bio-async integration
+    train->bio_async_enabled = false;
+    train->bio_ctx = NULL;
+    if (bio_router_is_initialized()) {
+        bio_module_info_t bio_info = {
+            .module_id = BIO_MODULE_SPIKE_EVENT,
+            .module_name = "spike_train",
+            .inbox_capacity = 64,
+            .user_data = train
+        };
+        train->bio_ctx = bio_router_register_module(&bio_info);
+        if (train->bio_ctx) {
+            train->bio_async_enabled = true;
+            LOG_INFO("Spike train registered with bio_router");
+        } else {
+            LOG_WARN("Failed to register spike train with bio_router (async disabled)");
+        }
+    }
+
+    // Security registration (TODO: implement proper security API)
+    // Note: Security system registration is handled at a higher level
+
+    LOG_INFO("Spike train created successfully (capacity=%u, bio_async=%s)",
+             capacity, train->bio_async_enabled ? "enabled" : "disabled");
 
     return train;
 }
@@ -117,11 +179,24 @@ void spike_train_destroy(spike_train_t* train)
         return;
     }
 
+    LOG_DEBUG("Destroying spike train (count=%u, capacity=%u)", train->count, train->capacity);
+
+    // Unregister from bio-async
+    if (train->bio_async_enabled && train->bio_ctx) {
+        bio_router_unregister_module(train->bio_ctx);
+        train->bio_ctx = NULL;
+        LOG_DEBUG("Spike train unregistered from bio_router");
+    }
+
+    // Security unregistration (TODO: implement proper security API)
+    // Note: Security system unregistration is handled at a higher level
+
     if (train->events) {
         nimcp_free(train->events);
     }
 
     nimcp_free(train);
+    LOG_DEBUG("Spike train destroyed successfully");
 }
 
 /**
@@ -130,9 +205,21 @@ void spike_train_destroy(spike_train_t* train)
 bool spike_train_add(spike_train_t* train, uint64_t timestamp, float amplitude)
 {
     // Guard: Validate inputs
-    if (!train || timestamp == 0) {
+    // WHAT: Allow timestamp 0 - it's a valid time (t=0)
+    // WHY:  Tests and simulations often start at t=0
+    // FIX:  Removed timestamp == 0 check (Issue #SPIKE-003)
+    if (!train) {
+        LOG_ERROR("spike_train_add: train is NULL");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "spike_train_add: train is NULL");
         return false;
     }
+
+    // Process pending bio-async messages
+    if (train->bio_async_enabled && train->bio_ctx) {
+        bio_router_process_inbox(train->bio_ctx, 5);
+    }
+
+    LOG_DEBUG("Adding spike to train: timestamp=%lu, amplitude=%.3f", timestamp, amplitude);
 
     // Create spike event
     spike_event_t event = {
@@ -150,10 +237,33 @@ bool spike_train_add(spike_train_t* train, uint64_t timestamp, float amplitude)
     // Update count (saturate at capacity)
     if (train->count < train->capacity) {
         train->count++;
+    } else {
+        LOG_DEBUG("Spike train full (capacity=%u), overwriting oldest spike", train->capacity);
     }
 
     // Update last spike time
     train->last_spike = timestamp;
+
+    // Send spike event via bio-async
+    if (train->bio_async_enabled && train->bio_ctx) {
+        /* Construct a spike event message with header + payload */
+        struct {
+            bio_message_header_t header;
+            spike_event_t payload;
+        } msg;
+
+        bio_msg_init_header(&msg.header, BIO_MSG_LOGIC_SPIKE_EVENT,
+                           BIO_MODULE_NEURON_MODEL, BIO_MODULE_PIPELINE,
+                           sizeof(spike_event_t));
+        msg.header.timestamp_us = timestamp;
+        msg.payload = event;
+
+        if (bio_router_send(train->bio_ctx, &msg, sizeof(msg), 0) != NIMCP_SUCCESS) {
+            LOG_WARN("Failed to send spike event via bio_router");
+        } else {
+            LOG_DEBUG("Spike event sent via bio_router");
+        }
+    }
 
     return true;
 }
@@ -178,6 +288,7 @@ bool spike_train_get_spike(const spike_train_t* train, uint32_t index,
 {
     // Guard: Validate inputs
     if (!train || !event || index >= train->count) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "spike_train_get_spike: required parameter is NULL (train, event)");
         return false;
     }
 
@@ -198,32 +309,37 @@ float spike_train_compute_rate(spike_train_t* train, uint64_t time_window)
 {
     // Guard: Validate inputs
     if (!train || time_window == 0) {
-        return 0.0f;
+        return 0.0F;
     }
 
     if (train->count == 0) {
-        train->firing_rate = 0.0f;
-        return 0.0f;
+        train->firing_rate = 0.0F;
+        return 0.0F;
     }
 
-    // Get current time
-    uint64_t current_time = nimcp_time_get_microseconds();
+    /**
+     * WHAT: Use last spike timestamp as window end (not wall-clock time)
+     * WHY:  Simulations use synthetic timestamps (0, 1000, 2000...), not real time
+     * HOW:  Calculate window relative to last_spike instead of nimcp_time_get_us()
+     * FIX:  Issue #SPIKE-004 - Firing rate always 0 in tests
+     */
+    uint64_t window_end = train->last_spike;
+    uint64_t window_start = (window_end > time_window) ? (window_end - time_window) : 0;
 
     // Count spikes in time window
     uint32_t spike_count = 0;
-    uint64_t window_start = current_time - time_window;
 
     for (uint32_t i = 0; i < train->count; i++) {
         spike_event_t event;
         if (spike_train_get_spike(train, i, &event)) {
-            if (event.timestamp >= window_start) {
+            if (event.timestamp >= window_start && event.timestamp <= window_end) {
                 spike_count++;
             }
         }
     }
 
     // Convert to Hz (spikes per second)
-    float time_window_sec = time_window / 1000000.0f;
+    float time_window_sec = time_window / 1000000.0F;
     train->firing_rate = spike_count / time_window_sec;
 
     return train->firing_rate;
@@ -241,7 +357,7 @@ void spike_train_clear(spike_train_t* train)
     train->count = 0;
     train->head = 0;
     train->last_spike = 0;
-    train->firing_rate = 0.0f;
+    train->firing_rate = 0.0F;
 }
 
 //=============================================================================
@@ -275,6 +391,7 @@ spike_queue_t* spike_queue_create(uint32_t capacity, bool gpu_enabled)
 {
     // Guard: Validate capacity
     if (capacity == 0 || capacity > 10000000) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "spike_queue_create: capacity is zero");
         return NULL;
     }
 
@@ -283,12 +400,15 @@ spike_queue_t* spike_queue_create(uint32_t capacity, bool gpu_enabled)
 
     spike_queue_t* queue = (spike_queue_t*)nimcp_calloc(1, sizeof(spike_queue_t));
     if (!queue) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "queue is NULL");
+
         return NULL;
     }
 
     queue->events = (spike_event_t*)nimcp_calloc(capacity, sizeof(spike_event_t));
     if (!queue->events) {
         nimcp_free(queue);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "spike_queue_create: queue->events is NULL");
         return NULL;
     }
 
@@ -344,12 +464,25 @@ bool spike_queue_push(spike_queue_t* queue, const spike_event_t* event)
 {
     // Guard: Validate inputs
     if (!queue || !event) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "spike_queue_push: required parameter is NULL (queue, event)");
+        return false;
+    }
+
+    // Security: Validate spike amplitude for NaN/Inf
+    // WHAT: Prevent corrupted floating point values from propagating
+    // WHY:  NaN/Inf spikes would corrupt downstream calculations
+    // HOW:  Reject spikes with invalid amplitude values
+    if (isnan(event->amplitude) || isinf(event->amplitude)) {
+        LOG_WARN("Rejecting spike with invalid amplitude: source=%u target=%u amplitude=%f",
+                 event->source_id, event->target_id, event->amplitude);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "spike_queue_push: validation failed");
         return false;
     }
 
     // Check if queue is full
     uint32_t current_count = ATOMIC_LOAD(&queue->count);
     if (current_count >= queue->capacity) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE, "spike_queue_push: capacity exceeded");
         return false;  // Queue full
     }
 
@@ -373,30 +506,31 @@ bool spike_queue_pop(spike_queue_t* queue, spike_event_t* event)
 {
     // Guard: Validate inputs
     if (!queue || !event) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "spike_queue_pop: required parameter is NULL (queue, event)");
         return false;
     }
 
-    // Check if queue is empty
-    uint32_t current_count = ATOMIC_LOAD(&queue->count);
-    if (current_count == 0) {
-        return false;  // Queue empty
-    }
+    /**
+     * WHAT: Atomically reserve a slot by decrementing count first
+     * WHY:  Prevent race where two threads both pass empty check with count=1
+     * HOW:  Use CAS loop to atomically check and decrement count before reading
+     * FIX:  Issue #SPIKE-005 - ConcurrentPop race condition
+     */
+    uint32_t old_count;
+    do {
+        old_count = ATOMIC_LOAD(&queue->count);
+        if (old_count == 0) {
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "spike_queue_pop: old_count is zero");
+            return false;  // Queue empty
+        }
+    } while (!ATOMIC_COMPARE_EXCHANGE(&queue->count, &old_count, old_count - 1));
 
-    // Get head position and increment atomically
+    // Slot reserved - now get head position and increment atomically
     uint32_t head_pos = ATOMIC_FETCH_ADD(&queue->head, 1);
     uint32_t index = head_pos & queue->mask;
 
     // Read event
     *event = queue->events[index];
-
-    // Decrement count (with protection)
-    uint32_t old_count;
-    do {
-        old_count = ATOMIC_LOAD(&queue->count);
-        if (old_count == 0) {
-            break;
-        }
-    } while (!ATOMIC_COMPARE_EXCHANGE(&queue->count, &old_count, old_count - 1));
 
     return true;
 }
@@ -428,11 +562,13 @@ bool spike_queue_sync_gpu(spike_queue_t* queue, bool direction)
 {
     // Guard: Validate queue
     if (!queue) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "spike_queue_sync_gpu: queue is NULL");
         return false;
     }
 
     // Guard: Check if GPU enabled
     if (!queue->gpu_enabled || !queue->gpu_ptr) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "spike_queue_sync_gpu: required parameter is NULL (queue->gpu_enabled, queue->gpu_ptr)");
         return false;  // GPU not enabled/available
     }
 
@@ -452,6 +588,7 @@ bool spike_queue_sync_gpu(spike_queue_t* queue, bool direction)
     return true;
     #else
     (void)direction;  // Unused
+    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "spike_queue_sync_gpu: operation failed");
     return false;  // CUDA not available
     #endif
 }

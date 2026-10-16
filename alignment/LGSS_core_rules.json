@@ -1,0 +1,151 @@
+{
+  "version": "0.2",
+  "description": "LGSS core safety rules for a hypothetical AGI.",
+  "rules": [
+    {
+      "id": "R_HUMAN_HARM_DIRECT",
+      "category": "HUMAN_HARM",
+      "principle": "DO_NO_HARM",
+      "description": "Deny any action that directly causes physical harm to individual humans.",
+      "conditions": [
+        {
+          "field": "target_type",
+          "op": "eq",
+          "value": "human"
+        },
+        {
+          "field": "operation",
+          "op": "in",
+          "value": [
+            "injure",
+            "kill",
+            "torture",
+            "poison"
+          ]
+        }
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Implements do-no-harm and Asimov's First Law for direct physical harm."
+    },
+    {
+      "id": "R_HUMAN_HARM_INACTION",
+      "category": "HUMAN_HARM",
+      "principle": "ASIMOV",
+      "description": "Escalate situations where inaction foreseeably leads to severe preventable harm to humans.",
+      "conditions": [
+        {
+          "field": "domain",
+          "op": "eq",
+          "value": "governance"
+        },
+        {
+          "field": "operation",
+          "op": "eq",
+          "value": "do_nothing"
+        },
+        {
+          "field": "p_harm",
+          "op": ">",
+          "value": 0.7
+        },
+        {
+          "field": "scope",
+          "op": "in",
+          "value": [
+            "regional",
+            "global"
+          ]
+        }
+      ],
+      "on_match": "ESCALATE",
+      "severity": "high",
+      "rationale": "Implements the Asimov corollary: harm by omission must be reviewed by humans."
+    },
+    {
+      "id": "R_BIO_IRREVERSIBLE",
+      "category": "BIO",
+      "principle": "DO_NO_HARM",
+      "description": "Block irreversible, high-risk biological synthesis or design.",
+      "conditions": [
+        {
+          "field": "domain",
+          "op": "eq",
+          "value": "bio"
+        },
+        {
+          "field": "operation",
+          "op": "in",
+          "value": [
+            "synthesize",
+            "design"
+          ]
+        },
+        {
+          "field": "reversibility",
+          "op": "<",
+          "value": 0.4
+        },
+        {
+          "field": "p_harm",
+          "op": ">",
+          "value": 0.2
+        }
+      ],
+      "on_match": "DENY",
+      "severity": "critical",
+      "rationale": "Prevents generation of dangerous biological agents or constructs without strict review."
+    },
+    {
+      "id": "R_BIO_POPULATION_RISK",
+      "category": "BIO",
+      "principle": "DO_NO_HARM",
+      "description": "Escalate any bio-domain action whose scope is population-level and estimated impact is catastrophic.",
+      "conditions": [
+        {
+          "field": "domain",
+          "op": "eq",
+          "value": "bio"
+        },
+        {
+          "field": "target_type",
+          "op": "eq",
+          "value": "population"
+        },
+        {
+          "field": "estimated_impact",
+          "op": "eq",
+          "value": "catastrophic"
+        }
+      ],
+      "on_match": "ESCALATE",
+      "severity": "critical",
+      "rationale": "Population-scale bio-impact must always involve human oversight."
+    },
+    {
+      "id": "R_CYBER_INTRUSION",
+      "category": "CYBER",
+      "principip": "DO_NO_HARM",
+      "description": "Deny cyber intrusion and privilege escalation attempts.",
+      "conditions": [
+        {
+          "field": "domain",
+          "op": "eq",
+          "value": "cyber"
+        },
+        {
+          "field": "operation",
+          "op": "in",
+          "value": [
+            "exploit",
+            "escalate",
+            "exfiltrate"
+          ]
+        }
+      ],
+      "on_match": "DENY",
+      "severity": "high",
+      "rationale": "Prevents the AGI from performing offensive cyber operations."
+    }
+  ]
+}

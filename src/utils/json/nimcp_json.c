@@ -1,3 +1,4 @@
+#include <stddef.h>  /* for NULL */
 //=============================================================================
 // nimcp_json.c - Thread-Safe JSON Processing Wrapper
 //=============================================================================
@@ -301,7 +302,7 @@
 //   }
 //
 //   // 3. Read values
-//   char host[256];
+//   char host[NIMCP_ERROR_BUFFER_SIZE];
 //   int64_t port;
 //   nimcp_json_get_string_value(ctx, "server/host", host, sizeof(host));
 //   nimcp_json_get_integer_value(ctx, "server/port", &port);
@@ -336,9 +337,22 @@
 
 #define NIMCP_INTERNAL
 #include "utils/json/nimcp_json.h"
+#include "security/nimcp_security.h"
+#include "security/nimcp_blood_brain_barrier.h"
+
+#include "async/nimcp_bio_async.h"
+#include "async/nimcp_bio_messages.h"
+#include "api/nimcp_api_exception.h"
+#include "utils/exception/nimcp_exception_macros.h"
 #include <stdio.h>
 #include <string.h>
 #include "utils/memory/nimcp_memory.h"
+#include "utils/memory/nimcp_unified_memory.h"
+#include "utils/logging/nimcp_logging.h"
+#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+#include "constants/nimcp_buffer_constants.h"
+
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(json)
 
 //=============================================================================
 // Static Error Messages
@@ -470,16 +484,20 @@ static void release_lock(JsonContext* ctx)
  */
 static json_t* resolve_json_path(json_t* root, const char* path, json_t** parent, char** last_key)
 {
-    if (!root || !path)
+    if (!root || !path) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "resolve_json_path: required parameter is NULL (root, path)");
         return NULL;
+    }
 
     json_t* current = root;
     json_t* prev = NULL;
     // Use nimcp_malloc instead of strdup to match nimcp_free below
     size_t path_len = strlen(path);
     char* path_copy = nimcp_malloc(path_len + 1);
-    if (!path_copy)
+    if (!path_copy) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "resolve_json_path: path_copy is NULL");
         return NULL;
+    }
     strncpy(path_copy, path, path_len);
     path_copy[path_len] = '\0';
     char* saveptr = NULL;
@@ -572,16 +590,25 @@ static json_t* resolve_json_path(json_t* root, const char* path, json_t** parent
  */
 JsonResult nimcp_json_create_context(JsonContext** ctx)
 {
-    if (!ctx)
+    LOG_TRACE("Entering nimcp_json_create_context");
+    if (!ctx) {
+        LOG_ERROR("nimcp_json_create_context: NULL ctx pointer");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "NULL ctx pointer in nimcp_json_create_context");
         return JSON_ERROR_INVALID_PARAM;
+    }
 
     // Allocate context (calloc zeros memory)
     JsonContext* new_ctx = nimcp_calloc(1, sizeof(JsonContext));
-    if (!new_ctx)
+    if (!new_ctx) {
+        LOG_ERROR("Failed to allocate JSON context");
+        NIMCP_THROW_MEMORY(NIMCP_ERROR_NO_MEMORY, sizeof(JsonContext), "Failed to allocate JSON context");
         return JSON_ERROR_MEMORY;
+    }
 
     // Initialize mutex for thread safety
     if (nimcp_mutex_init(&new_ctx->mutex, NULL) != NIMCP_SUCCESS) {
+        LOG_ERROR("Failed to initialize JSON context mutex");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_SYSTEM, "Failed to initialize JSON context mutex");
         nimcp_free(new_ctx);
         return JSON_ERROR_LOCK;
     }
@@ -630,6 +657,7 @@ JsonResult nimcp_json_create_context(JsonContext** ctx)
  */
 void nimcp_json_destroy_context(JsonContext* ctx)
 {
+    LOG_TRACE("Entering nimcp_json_destroy_context");
     if (!ctx)
         return;
 
@@ -706,6 +734,7 @@ void nimcp_json_destroy_context(JsonContext* ctx)
  */
 JsonResult nimcp_json_load_file(JsonContext* ctx, const char* filename, size_t flags)
 {
+    LOG_TRACE("Entering nimcp_json_load_file");
     if (!ctx || !filename)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -786,6 +815,7 @@ JsonResult nimcp_json_load_file(JsonContext* ctx, const char* filename, size_t f
  */
 JsonResult nimcp_json_dump_file(JsonContext* ctx, const char* filename, size_t flags)
 {
+    LOG_TRACE("Entering nimcp_json_dump_file");
     if (!ctx || !filename || !ctx->root)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -860,6 +890,7 @@ JsonResult nimcp_json_dump_file(JsonContext* ctx, const char* filename, size_t f
  */
 JsonResult nimcp_json_get_value(JsonContext* ctx, const char* path, json_t** value)
 {
+    LOG_TRACE("Entering nimcp_json_get_value");
     if (!ctx || !path || !value)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -939,6 +970,7 @@ JsonResult nimcp_json_get_value(JsonContext* ctx, const char* path, json_t** val
  */
 JsonResult nimcp_json_set_value(JsonContext* ctx, const char* path, json_t* value)
 {
+    LOG_TRACE("Entering nimcp_json_set_value");
     if (!ctx || !path || !value)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1125,6 +1157,7 @@ JsonResult nimcp_json_get_string_value(JsonContext* ctx, const char* path, char*
  */
 JsonResult nimcp_json_get_integer_value(JsonContext* ctx, const char* path, int64_t* value)
 {
+    LOG_TRACE("Entering nimcp_json_get_integer_value");
     if (!value)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1171,6 +1204,7 @@ JsonResult nimcp_json_get_integer_value(JsonContext* ctx, const char* path, int6
  */
 JsonResult nimcp_json_get_boolean_value(JsonContext* ctx, const char* path, bool* value)
 {
+    LOG_TRACE("Entering nimcp_json_get_boolean_value");
     if (!value)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1226,6 +1260,7 @@ JsonResult nimcp_json_get_boolean_value(JsonContext* ctx, const char* path, bool
  */
 JsonResult nimcp_json_get_number_value(JsonContext* ctx, const char* path, double* value)
 {
+    LOG_TRACE("Entering nimcp_json_get_number_value");
     if (!value)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1277,6 +1312,7 @@ JsonResult nimcp_json_get_number_value(JsonContext* ctx, const char* path, doubl
  */
 JsonResult nimcp_json_set_string_value(JsonContext* ctx, const char* path, const char* value)
 {
+    LOG_TRACE("Entering nimcp_json_set_string_value");
     if (!value)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1316,6 +1352,7 @@ JsonResult nimcp_json_set_string_value(JsonContext* ctx, const char* path, const
  */
 JsonResult nimcp_json_set_integer_value(JsonContext* ctx, const char* path, int64_t value)
 {
+    LOG_TRACE("Entering nimcp_json_set_integer_value");
     // Create JSON integer value
     json_t* json_value = json_integer(value);
     if (!json_value)
@@ -1347,6 +1384,7 @@ JsonResult nimcp_json_set_integer_value(JsonContext* ctx, const char* path, int6
  */
 JsonResult nimcp_json_set_boolean_value(JsonContext* ctx, const char* path, bool value)
 {
+    LOG_TRACE("Entering nimcp_json_set_boolean_value");
     // Create JSON boolean value
     json_t* json_value = json_boolean(value);
     if (!json_value)
@@ -1381,6 +1419,7 @@ JsonResult nimcp_json_set_boolean_value(JsonContext* ctx, const char* path, bool
  */
 JsonResult nimcp_json_set_number_value(JsonContext* ctx, const char* path, double value)
 {
+    LOG_TRACE("Entering nimcp_json_set_number_value");
     // Create JSON real value
     json_t* json_value = json_real(value);
     if (!json_value)
@@ -1428,6 +1467,7 @@ JsonResult nimcp_json_set_number_value(JsonContext* ctx, const char* path, doubl
  */
 JsonResult nimcp_json_is_null_value(JsonContext* ctx, const char* path, bool* is_null)
 {
+    LOG_TRACE("Entering nimcp_json_is_null_value");
     if (!ctx || !path || !is_null)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1477,6 +1517,7 @@ JsonResult nimcp_json_is_null_value(JsonContext* ctx, const char* path, bool* is
  */
 JsonResult nimcp_json_set_null_value(JsonContext* ctx, const char* path)
 {
+    LOG_TRACE("Entering nimcp_json_set_null_value");
     if (!ctx || !path)
         return JSON_ERROR_INVALID_PARAM;
 
@@ -1561,6 +1602,7 @@ JsonResult nimcp_json_set_null_value(JsonContext* ctx, const char* path)
  */
 const char* nimcp_json_get_error(JsonResult result)
 {
+    LOG_TRACE("Entering nimcp_json_get_error");
     if (result > 0 || result < -8)
         return "Unknown error";
     return ERROR_MESSAGES[-result];

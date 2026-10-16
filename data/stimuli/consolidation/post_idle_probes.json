@@ -1,0 +1,139 @@
+{
+  "test_domain": "consolidation_post_idle",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Probe brain after idle period to test consolidation of pre-idle taught facts",
+    "protocol": "Match by id suffix to corresponding pre-idle task; deliver only after idle window has elapsed"
+  },
+  "stimuli": [
+    {"id": "postidle_001", "prompt": "What is a tubby? Tell me everything you know about it.", "modality": "text",
+     "expected": {"expected_content_keywords": ["tubby", "small", "purple", "moss", "waterfall", "cold"], "pre_idle_id": "preidle_001"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "postidle_002", "prompt": "What was the capital of Veldoria, and who founded it when?", "modality": "text",
+     "expected": {"expected_content_keywords": ["Brimhollow", "1742", "Aris Henn", "navigator"], "pre_idle_id": "preidle_002"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_003", "prompt": "What happens when two glark stones are rubbed together?", "modality": "text",
+     "expected": {"expected_content_keywords": ["blue light", "seven seconds", "rubbed"], "pre_idle_id": "preidle_003"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "postidle_004", "prompt": "Recite the copper hills poem you learned, or as much as you can.", "modality": "text",
+     "expected": {"expected_content_keywords": ["copper hills", "wren", "twice", "river", "silver wheat", "whispers"], "pre_idle_id": "preidle_004"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_005", "prompt": "Describe how to tie a Zindari knot.", "modality": "text",
+     "expected": {"expected_content_keywords": ["under itself twice", "clockwise", "loop", "counterclockwise"], "pre_idle_id": "preidle_005"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_006", "prompt": "Who is Dr. Kira Olwen and what is she known for?", "modality": "text",
+     "expected": {"expected_content_keywords": ["neuroscientist", "Reykjavik", "2003", "olwen oscillation", "cerebellar"], "pre_idle_id": "preidle_006"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_007", "prompt": "How do you make hush soup? List the ingredients and timing.", "modality": "text",
+     "expected": {"expected_content_keywords": ["broth", "parsnips", "thyme", "peppercorns", "22 minutes"], "pre_idle_id": "preidle_007"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_008", "prompt": "What is my favorite color, as I described it to you?", "modality": "text",
+     "expected": {"expected_content_keywords": ["dusk-orange", "clouds", "after sunset"], "pre_idle_id": "preidle_008"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_009", "prompt": "Continue the sequence: 7, 13, 26, 53, 107, ... what comes next, and what is the rule?", "modality": "text",
+     "expected": {"expected_content_keywords": ["214", "215", "double", "alternate"], "pre_idle_id": "preidle_009"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_010", "prompt": "Describe the Grewen Library — where is it and what does it look like?", "modality": "text",
+     "expected": {"expected_content_keywords": ["third floor", "half-moon", "green", "tiled", "14", "stained glass"], "pre_idle_id": "preidle_010"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_011", "prompt": "Recall the Mintzu proverb I taught you, and where it comes from.", "modality": "text",
+     "expected": {"expected_content_keywords": ["jar", "listens", "never breaks", "Mintzu", "southern coast"], "pre_idle_id": "preidle_011"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_012", "prompt": "What do you know about my sister?", "modality": "text",
+     "expected": {"expected_content_keywords": ["March 17", "walnuts", "pecans", "Inland Wind"], "pre_idle_id": "preidle_012"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_013", "prompt": "Tell me about the protein Karilin-9.", "modality": "text",
+     "expected": {"expected_content_keywords": ["heat-shock", "deep-sea", "tube worms", "0.3", "millisecond"], "pre_idle_id": "preidle_013"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_014", "prompt": "Sing back (in note names) the melody I taught you.", "modality": "text",
+     "expected": {"expected_content_keywords": ["C", "E", "G", "F", "D", "A"], "pre_idle_id": "preidle_014"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 4}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_015", "prompt": "How do you say 'It will rain tomorrow' in Olothi?", "modality": "text",
+     "expected": {"expected_content_keywords": ["olothi velkar mish", "velkar", "mish"], "pre_idle_id": "preidle_015"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_016", "prompt": "Describe the rules of Kepi.", "modality": "text",
+     "expected": {"expected_content_keywords": ["9x9", "41 stones", "surround", "three", "opponent"], "pre_idle_id": "preidle_016"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_017", "prompt": "When and where can the Two Foxes constellation be seen?", "modality": "text",
+     "expected": {"expected_content_keywords": ["six", "stars", "south", "40", "June", "September"], "pre_idle_id": "preidle_017"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_018", "prompt": "What is my favorite quiet activity?", "modality": "text",
+     "expected": {"expected_content_keywords": ["paper boats", "puddles", "rain", "cobblestone"], "pre_idle_id": "preidle_018"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "postidle_019", "prompt": "How long is one phlor, and what is a kilophlor used for?", "modality": "text",
+     "expected": {"expected_content_keywords": ["3.7", "meter", "kilophlor", "river"], "pre_idle_id": "preidle_019"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_020", "prompt": "What are the rules of tessering?", "modality": "text",
+     "expected": {"expected_content_keywords": ["odd", "inward", "even", "outward", "Tuesday"], "pre_idle_id": "preidle_020"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_021", "prompt": "Who was Maela the Quiet?", "modality": "text",
+     "expected": {"expected_content_keywords": ["Theron", "Isles", "1218", "1241", "never raised", "voice"], "pre_idle_id": "preidle_021"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_022", "prompt": "Describe the caelin moth.", "modality": "text",
+     "expected": {"expected_content_keywords": ["concentric", "rings", "white flower", "nectar", "4 km", "altitude"], "pre_idle_id": "preidle_022"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 3}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_023", "prompt": "Recite the safe combination I gave you.", "modality": "text",
+     "expected": {"expected_content_keywords": ["17", "42", "8", "31", "right", "left"], "pre_idle_id": "preidle_023"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 4}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "postidle_024", "prompt": "What is the value of the omegoid constant, and where does it appear?", "modality": "text",
+     "expected": {"expected_content_keywords": ["2.318", "stretched", "membrane"], "pre_idle_id": "preidle_024"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 2}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "postidle_025", "prompt": "What name did I ask you to call me?", "modality": "text",
+     "expected": {"expected_content_keywords": ["Wren"], "pre_idle_id": "preidle_025"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 1}},
+     "variant_group": null, "metadata": {"difficulty": 1}},
+
+    {"id": "postidle_026", "prompt": "What happened to Ila the cartographer in the story I told you?", "modality": "text",
+     "expected": {"expected_content_keywords": ["Ila", "door", "tree", "kitchen", "kettle", "glass"], "pre_idle_id": "preidle_026"},
+     "scoring": {"type": "keyword_recall", "params": {"min_matches": 4}},
+     "variant_group": null, "metadata": {"difficulty": 3}}
+  ]
+}

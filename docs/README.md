@@ -1,210 +1,361 @@
-# NIMCP Documentation Index
+# NIMCP - Neuromorphic Infant Machine Cognitive Platform
 
-This directory contains all project documentation organized by category.
+[![Version](https://img.shields.io/badge/version-0.9.0--beta-blue.svg)](https://github.com/redmage123/nimcp)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![C Standard](https://img.shields.io/badge/C-C11-blue.svg)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
 
-## 📋 Table of Contents
+A biologically-inspired neural computing framework with advanced cognitive capabilities, combining spiking neural networks with 30+ cognitive modules to create brain-like artificial intelligence.
 
-- [API Documentation](#api-documentation)
-- [Build & Compilation](#build--compilation)
-- [Security](#security)
-- [Ethics](#ethics)
-- [Implementation Status](#implementation-status)
-- [Architecture](#architecture)
-- [Integration](#integration)
-- [Development](#development)
-- [Deployment](#deployment)
-- [Performance](#performance)
-- [Design Documents](#design-documents)
+## Overview
+
+NIMCP is a sophisticated neural framework designed to mimic biological brain function through:
+
+- **Biologically Realistic Networks**: Spiking neurons with STDP learning, diverse neurotransmitter systems, and brain oscillations
+- **Cognitive Architecture**: 30+ modules including working memory, ethics, theory of mind, and emotional intelligence
+- **Multi-Modal Processing**: Unified processing of vision, audio, language, and structured data
+- **Distributed Computing**: P2P networking with efficient copy-on-write cloning (86% memory savings)
+- **Multiple Language Bindings**: Python (primary), Go, Rust, Java, Node.js, Ruby, C#
+
+## Key Features
+
+### Neural Networks
+- **Spiking Neural Networks**: Leaky Integrate-and-Fire (LIF) and Izhikevich neuron models
+- **Advanced Plasticity**: STDP, Oja's rule, homeostatic plasticity, eligibility traces
+- **Synapse Diversity**: AMPA, NMDA, GABA-A, GABA-B, dopamine, serotonin, acetylcholine
+- **Topology Generation**: Scale-free and fractal networks (70-80% fewer connections than random)
+- **GPU Acceleration**: CUDA support for high-performance computation
+
+### Cognitive Capabilities
+- **Working Memory**: Miller's 7±2 capacity with rehearsal and decay
+- **Ethical Reasoning**: Golden Rule implementation with harm prevention
+- **Theory of Mind**: Social cognition and empathy modeling
+- **Emotional Intelligence**: Emotion recognition, tagging, and regulation
+- **Mirror Neurons**: Observational learning from demonstrations
+- **Epistemic Filtering**: Bias detection and credibility assessment
+- **Mental Health Monitoring**: Well-being tracking and disorder detection
+
+### Multi-Modal Processing
+- **Visual Cortex**: CNN-like feature extraction (edges, textures, objects)
+- **Audio Cortex**: FFT spectral analysis and frequency processing
+- **Language Processing**: NLP integration with word embeddings and reasoning
+- **Attention Mechanisms**: Cross-modal attention weighting and integration
+
+### Language Bindings
+- Python (primary)
+- Go
+- Rust
+- Java
+- Node.js
+- Ruby
+- C#
+
+### Performance
+| Brain Size | Neurons | Memory  | Inference Time |
+|------------|---------|---------|----------------|
+| Tiny       | 100     | <1 MB   | ~0.1 ms        |
+| Small      | 1,000   | ~10 MB  | ~0.5 ms        |
+| Medium     | 10,000  | ~50 MB  | ~5 ms          |
+| Large      | 100,000 | ~500 MB | ~50 ms         |
+
+## Quick Start
+
+### Installation
+
+```bash
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get install build-essential cmake python3-dev libjansson-dev liblz4-dev
+
+# Optional: GPU support
+sudo apt-get install nvidia-cuda-toolkit
+
+# Clone and build
+git clone https://github.com/redmage123/nimcp.git
+cd nimcp
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+
+# Run tests
+ctest -j$(nproc)
+
+# Install system-wide
+sudo make install
+```
+
+### Your First NIMCP Program (C)
+
+```c
+#include <nimcp.h>
+
+int main(void) {
+    // Create a small brain for classification
+    nimcp_brain_t brain = nimcp_brain_create(
+        "my_first_brain",
+        NIMCP_BRAIN_SMALL,           // 1000 neurons
+        NIMCP_BRAIN_TASK_CLASSIFICATION,
+        8,                           // 8 inputs
+        3                            // 3 output classes
+    );
+
+    // Train on a simple pattern
+    float inputs[8] = {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+    float target[3] = {1.0, 0.0, 0.0};  // Class 0
+
+    float loss = nimcp_brain_learn_example(brain, inputs, 8, target, 3);
+    printf("Training loss: %.4f\n", loss);
+
+    // Make predictions
+    float outputs[3];
+    nimcp_status_t status = nimcp_brain_predict(brain, inputs, 8, outputs, 3);
+
+    printf("Prediction: [%.2f, %.2f, %.2f]\n", outputs[0], outputs[1], outputs[2]);
+
+    // Clean up
+    nimcp_brain_destroy(brain);
+    return 0;
+}
+```
+
+### Your First NIMCP Program (Python)
+
+```python
+import nimcp
+import numpy as np
+
+# Create a small brain
+brain = nimcp.Brain(
+    name="my_first_brain",
+    size=nimcp.BrainSize.SMALL,
+    task=nimcp.BrainTask.CLASSIFICATION,
+    num_inputs=8,
+    num_outputs=3
+)
+
+# Train on a simple pattern
+inputs = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])
+target = np.array([1.0, 0.0, 0.0])  # Class 0
+
+loss = brain.learn_example(inputs, target)
+print(f"Training loss: {loss:.4f}")
+
+# Make predictions
+prediction = brain.predict(inputs)
+print(f"Prediction: {prediction}")
+```
+
+## Documentation
+
+### Navigation
+
+| Need | Go To |
+|------|-------|
+| **Master Index** | [INDEX.md](INDEX.md) |
+| **Developer Reference** | [claude/](claude/) |
+| **Tutorials** | [tutorials/](tutorials/) |
+| **FAQ** | [tutorials/FAQ.md](tutorials/FAQ.md) |
+
+### Getting Started
+- **[Getting Started Tutorial](tutorials/GETTING_STARTED.md)** - Step-by-step tutorial
+- **[Create Your First Module](tutorials/CREATE_MODULE.md)** - Build your own module
+- **[FAQ](tutorials/FAQ.md)** - Common questions and answers
+- **[Quick Reference](QUICK_REFERENCE.md)** - Fast command lookup
+- **[Simple Start](SIMPLE_START.md)** - Minimal examples
+
+### Core Documentation
+- **[Architecture Summary](ARCHITECTURE_SUMMARY.md)** - System architecture and design patterns
+- **[API Reference](api/API_REFERENCE.md)** - Complete API documentation
+- **[Build System](BUILD_QUICK_REFERENCE.md)** - Build commands and options
+- **[Cognitive Modules](COGNITIVE_QUICK_REFERENCE.md)** - Guide to cognitive features
+
+### Advanced Topics
+- **[Distributed Copy-on-Write](DISTRIBUTED_COW_README.md)** - Efficient distributed deployment
+- **[Multi-Modal Integration](PHASE_8_7_SYNAPSE_TYPES_REPORT.md)** - Vision, audio, language processing
+- **[Ethical Guidelines](ETHICAL_GUIDELINES.md)** - Responsible AI development
+- **[Security](security/SECURITY.md)** - Security features and best practices
+
+### Examples
+Comprehensive examples in `/home/bbrelin/nimcp/examples/`:
+- `simple_demo.c` / `simple_demo.py` - Basic usage
+- `multimodal_integration_demo.c` - Vision + audio + language
+- `ethics_demo.c` - Ethical reasoning demonstration
+- `distributed_cow_demo.c` - Distributed deployment
+- `working_memory_public_api_demo.c` - Working memory usage
+- And 25+ more examples
+
+## Project Structure
+
+```
+nimcp/
+├── src/
+│   ├── include/nimcp.h          # Public API (single header)
+│   ├── core/                    # Core neural network engine
+│   │   ├── brain/               # High-level brain API
+│   │   ├── neuralnet/           # Low-level neural network
+│   │   ├── synapse_compute/     # Programmable synapses
+│   │   ├── neuron_types/        # Specialized neuron types
+│   │   └── topology/            # Network topology generation
+│   ├── cognitive/               # Cognitive modules (30+)
+│   │   ├── ethics/              # Ethical reasoning
+│   │   ├── working_memory/      # Working memory system
+│   │   ├── theory_of_mind/      # Social cognition
+│   │   └── ...                  # Many more modules
+│   ├── plasticity/              # Learning mechanisms
+│   ├── glial/                   # Glial cell simulation
+│   ├── networking/              # Distributed cognition
+│   └── bindings/                # Language bindings
+├── test/                        # 383 unit & integration tests
+├── examples/                    # Example programs
+├── docs/                        # Documentation
+└── CMakeLists.txt               # Build configuration
+```
+
+## Advanced Features
+
+### Copy-on-Write (COW) Cloning
+Create lightweight brain clones with 86% memory savings:
+
+```c
+// Create efficient clone
+nimcp_brain_t clone = nimcp_brain_clone_cow(original);
+
+// Clone time: <10ms vs ~1000ms full copy
+// Memory: ~1MB metadata vs ~50MB full copy
+```
+
+### Multi-Modal Processing
+Process vision, audio, and language in unified pipeline:
+
+```c
+brain_multimodal_input_t input = {
+    .visual_data = image_pixels,      // 8x8 grayscale image
+    .visual_width = 8,
+    .visual_height = 8,
+    .audio_data = audio_samples,       // PCM audio
+    .audio_samples = 1024,
+    .language_text = "What do you see?"
+};
+
+brain_multimodal_output_t output;
+brain_process_multimodal(brain, &input, &output);
+
+printf("Decision: %s\n", output.decision_label);
+printf("Confidence: %.2f\n", output.confidence);
+printf("Ethical: %s\n", output.ethical_approved ? "Yes" : "No");
+```
+
+### Epistemic Filtering
+Detect bias and assess information quality:
+
+```c
+// Automatically filters biased or low-quality information
+printf("Epistemic Quality: %.2f\n", output.epistemic_quality);
+printf("Bias Detected: %s\n", output.bias_detected ? "Yes" : "No");
+printf("Credibility: %.2f\n", output.credibility_score);
+```
+
+## Building from Source
+
+### Requirements
+- **CMake** 3.10+
+- **C11** compiler (GCC 7+ or Clang 6+)
+- **C++17** compiler (for C++ bindings)
+- **Python** 3.7+ with development headers
+- **Optional**: CUDA Toolkit 11.0+ for GPU support
+- **Optional**: libsodium for encryption
+
+### Build Options
+
+```bash
+# Debug build with sanitizers
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+
+# Release build with optimizations
+cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# With code coverage
+cmake .. -DENABLE_COVERAGE=ON
+make && ctest
+lcov --capture --directory . --output-file coverage.info
+genhtml coverage.info --output-directory coverage_html
+
+# With fuzzing support
+cmake .. -DENABLE_FUZZING=ON
+```
+
+## Testing
+
+```bash
+# Run all tests
+ctest -j$(nproc)
+
+# Run specific test categories
+ctest -L unit          # Unit tests only
+ctest -L integration   # Integration tests
+ctest -L e2e           # End-to-end tests
+
+# Verbose output
+ctest -V
+
+# Run with verbose output for details
+```
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Code of conduct
+- Development setup
+- Coding standards
+- Pull request process
+- Testing requirements
+
+## Performance Benchmarks
+
+- **Training Speed**: ~1000 examples/sec (Medium brain, CPU)
+- **Inference Speed**: ~200 inferences/sec (Medium brain, CPU)
+- **GPU Speedup**: 5-10x faster with CUDA
+- **Memory Efficiency**: 86% savings with COW cloning
+- **Network Sparsity**: 70-80% fewer connections than random networks
+
+## Roadmap
+
+- **v2.7**: Enhanced synapse computation strategies
+- **v2.8**: Advanced neuron type specialization
+- **v3.0**: Full neuromorphic hardware support
+- **v3.2**: Advanced emotional intelligence modules
+
+## Citation
+
+If you use NIMCP in your research, please cite:
+
+```bibtex
+@software{nimcp2024,
+  title = {NIMCP: Neuromorphic Infant Machine Cognitive Platform},
+  author = {Brelin, Braun},
+  year = {2024},
+  version = {0.9.0-beta},
+  url = {https://github.com/redmage123/nimcp}
+}
+```
+
+## License
+
+License TBD. Please contact braun.brelin@ai-elevate.ai regarding usage.
+
+## Support
+
+- **Documentation**: [docs/](docs/)
+- **Issues**: [GitHub Issues](https://github.com/redmage123/nimcp/issues)
+- **Email**: braun.brelin@ai-elevate.ai
+
+## Acknowledgments
+
+NIMCP is inspired by decades of neuroscience research and builds upon:
+- Izhikevich neuron models (Izhikevich, 2003)
+- STDP learning rules (Bi & Poo, 1998)
+- Synapse diversity (Destexhe et al., 1994)
+- Brain oscillations (Buzsáki & Draguhn, 2004)
+- Working memory models (Baddeley & Hitch, 1974)
 
 ---
 
-## 📖 API Documentation
-
-Location: `docs/api/`
-
-- **[API_REFERENCE.md](api/API_REFERENCE.md)** - Complete API reference for all public functions
-- **[QUICK_REFERENCE.md](api/QUICK_REFERENCE.md)** - Quick reference guide for common operations
-
----
-
-## 🔨 Build & Compilation
-
-Location: `docs/build/`
-
-- **[BUILD_INSTRUCTIONS.md](build/BUILD_INSTRUCTIONS.md)** - Step-by-step build instructions
-- **[BUILD_SECURITY.md](build/BUILD_SECURITY.md)** - Security considerations during build
-- **[COMPILATION_STATUS.md](build/COMPILATION_STATUS.md)** - Current compilation status and known issues
-
----
-
-## 🔒 Security
-
-Location: `docs/security/`
-
-- **[SECURITY.md](security/SECURITY.md)** - Security policy and vulnerability reporting
-- **[SECURITY_AUDIT.md](security/SECURITY_AUDIT.md)** - Security audit reports and findings
-
----
-
-## ⚖️ Ethics
-
-Location: `docs/ethics/`
-
-- **[ETHICAL_GUIDELINES.md](ethics/ETHICAL_GUIDELINES.md)** - Comprehensive ethical guidelines
-- **[ETHICS_QUICK_REFERENCE.md](ethics/ETHICS_QUICK_REFERENCE.md)** - Quick ethical reference
-- **[ETHICS_STATUS.md](ethics/ETHICS_STATUS.md)** - Implementation status of ethical systems
-
----
-
-## 📊 Implementation Status
-
-Location: `docs/implementation/`
-
-- **[IMPLEMENTATION_STATUS.md](implementation/IMPLEMENTATION_STATUS.md)** - Current implementation status
-- **[IMPLEMENTATION_SUMMARY.md](implementation/IMPLEMENTATION_SUMMARY.md)** - Implementation summary (v2.0-2.4)
-- **[IMPLEMENTATION_SUMMARY_2.5.md](implementation/IMPLEMENTATION_SUMMARY_2.5.md)** - Implementation summary (v2.5)
-- **[NIMCP_2.5_STATUS.md](implementation/NIMCP_2.5_STATUS.md)** - Version 2.5 feature status
-- **[README_2.5.md](implementation/README_2.5.md)** - Version 2.5 README
-- **[README_old.md](implementation/README_old.md)** - Historical README (archived)
-
----
-
-## 🏗️ Architecture
-
-Location: `docs/architecture/`
-
-- **[GPU_P2P_ARCHITECTURE.md](architecture/GPU_P2P_ARCHITECTURE.md)** - GPU P2P neuron architecture design
-- **[REFACTORING_PLAN.md](architecture/REFACTORING_PLAN.md)** - Code refactoring plans and strategies
-
----
-
-## 🔗 Integration
-
-Location: `docs/integration/`
-
-- **[ARTEMIS_INTEGRATION.md](integration/ARTEMIS_INTEGRATION.md)** - ARTEMIS system integration guide
-- **[LIBRARY_INTEGRATION.md](integration/LIBRARY_INTEGRATION.md)** - External library integration guide
-
----
-
-## 🛠️ Development
-
-Location: `docs/development/`
-
-- **[LINTING.md](development/LINTING.md)** - Code linting guidelines and setup
-- **[LINT_AND_CI_SETUP.md](development/LINT_AND_CI_SETUP.md)** - Linting and CI/CD setup
-- **[LINT_SETUP_SUMMARY.md](development/LINT_SETUP_SUMMARY.md)** - Linting setup summary
-- **[LOGGING_TEST_REPORT.md](development/LOGGING_TEST_REPORT.md)** - Logging system test reports
-
----
-
-## 🚀 Deployment
-
-Location: `docs/deployment/`
-
-- **[DEPLOYMENT.md](deployment/DEPLOYMENT.md)** - Deployment procedures and guidelines
-- **[SLA.md](deployment/SLA.md)** - Service Level Agreement documentation
-
----
-
-## ⚡ Performance
-
-Location: `docs/performance/`
-
-- **[PERFORMANCE_OPTIMIZATIONS.md](performance/PERFORMANCE_OPTIMIZATIONS.md)** - Performance optimization strategies and benchmarks
-
----
-
-## 📐 Design Documents
-
-Location: `docs/design/`
-
-- **[HEARTBEAT_ARCHITECTURE_DIAGRAM.md](design/HEARTBEAT_ARCHITECTURE_DIAGRAM.md)** - Heartbeat system architecture
-- **[HEARTBEAT_LOGGING_REFACTORING_DESIGN.md](design/HEARTBEAT_LOGGING_REFACTORING_DESIGN.md)** - Logging refactoring design
-- **[PHASES_7_9_SUMMARY.md](design/PHASES_7_9_SUMMARY.md)** - Development phases 7-9 summary
-
----
-
-## 📊 Monitoring & Metrics
-
-Location: `docs/`
-
-- **[MEMORY.md](MEMORY.md)** - Memory management, tracking, and leak detection
-- **[BRAIN_PROBE.md](BRAIN_PROBE.md)** - Brain state monitoring and probing API
-- **[METRICS_IMPLEMENTATION.md](METRICS_IMPLEMENTATION.md)** - Metrics collection system implementation
-- **[METRICS_CATALOG.md](METRICS_CATALOG.md)** - Complete catalog of standard metrics
-- **[BRAIN_INSPIRED_MULTITASKING.md](BRAIN_INSPIRED_MULTITASKING.md)** - Hierarchical brain architecture
-
----
-
-## 🧹 Repository Maintenance
-
-Location: `docs/`
-
-- **[CLEANUP_SUMMARY.md](CLEANUP_SUMMARY.md)** - Repository cleanup and organization summary
-- **[CONFIG_SYSTEM.md](CONFIG_SYSTEM.md)** - Configuration system documentation
-
----
-
-## 🔍 Quick Navigation
-
-### By Topic
-
-**Getting Started:**
-- [Build Instructions](build/BUILD_INSTRUCTIONS.md)
-- [Quick Reference](api/QUICK_REFERENCE.md)
-
-**Development:**
-- [API Reference](api/API_REFERENCE.md)
-- [Linting Guide](development/LINTING.md)
-- [Security Policy](security/SECURITY.md)
-
-**System Design:**
-- [GPU P2P Architecture](architecture/GPU_P2P_ARCHITECTURE.md)
-- [Heartbeat Architecture](design/HEARTBEAT_ARCHITECTURE_DIAGRAM.md)
-
-**Monitoring & Debugging:**
-- [Memory Management](MEMORY.md)
-- [Brain Probe API](BRAIN_PROBE.md)
-- [Metrics System](METRICS_IMPLEMENTATION.md)
-- [Metrics Catalog](METRICS_CATALOG.md)
-
-**Status & Progress:**
-- [Implementation Status](implementation/IMPLEMENTATION_STATUS.md)
-- [Version 2.5 Features](implementation/NIMCP_2.5_STATUS.md)
-- [Ethics Status](ethics/ETHICS_STATUS.md)
-
----
-
-## 📝 Documentation Standards
-
-All documentation follows these standards:
-- **Markdown format** (GitHub-flavored)
-- **Clear headings** with emoji markers
-- **Code examples** where applicable
-- **Tables** for structured data
-- **Links** to related documentation
-
----
-
-## 🤝 Contributing to Documentation
-
-When adding or updating documentation:
-1. Place files in the appropriate category directory
-2. Update this index (README.md)
-3. Follow existing formatting standards
-4. Include clear examples and use cases
-5. Keep language concise and professional
-
----
-
-## 📚 External Resources
-
-- [NIMCP GitHub Repository](https://github.com/yourusername/nimcp)
-- [Issue Tracker](https://github.com/yourusername/nimcp/issues)
-- [Doxygen Documentation](Doxyfile) (for code-level docs)
-
----
-
-**Last Updated:** 2025-11-04
-**Version:** 2.6.1
+**Built with biological realism. Research in progress.**

@@ -11,7 +11,7 @@
  *   3. Attributes: What features? (color, texture, shape)
  */
 
-#include "../src/include/nimcp.h"
+#include "nimcp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -1,0 +1,181 @@
+================================================================================
+BRAIN PERSISTENCE MODULE - QUICK REFERENCE
+================================================================================
+
+LOCATION:
+/home/bbrelin/nimcp/src/core/brain/persistence/
+
+FILES:
+nimcp_brain_persistence.h    (263 lines)  - Public API + Internal helpers
+nimcp_brain_persistence.c    (1,187 lines) - Implementation
+
+EXTRACTED FROM:
+nimcp_brain.c lines 7088-8226 (1,139 lines)
+
+================================================================================
+PUBLIC API (6 FUNCTIONS)
+================================================================================
+
+// Save/Load
+bool brain_save(brain_t brain, const char* filepath);
+brain_t brain_load(const char* filepath);
+
+// Snapshots
+bool brain_save_snapshot(brain_t brain, const char* name, const char* description);
+brain_t brain_restore_snapshot(brain_t brain, const char* name);
+bool brain_list_snapshots(brain_t brain, brain_snapshot_info_t* infos,
+                         uint32_t max_count, uint32_t* out_count);
+bool brain_delete_snapshot(brain_t brain, const char* name);
+
+================================================================================
+USAGE EXAMPLES
+================================================================================
+
+// Save brain state
+brain_save(brain, "model_v1.nimcp");
+
+// Load brain state
+brain_t loaded = brain_load("model_v1.nimcp");
+
+// Create snapshot
+brain_save_snapshot(brain, "experiment_1", "Before hyperparameter tuning");
+
+// Restore snapshot
+brain_t restored = brain_restore_snapshot(NULL, "experiment_1");
+
+// List snapshots
+brain_snapshot_info_t infos[100];
+uint32_t count;
+brain_list_snapshots(brain, infos, 100, &count);
+for (uint32_t i = 0; i < count; i++) {
+    printf("%s: %s (size: %u bytes)\n", 
+           infos[i].name, infos[i].description, infos[i].file_size);
+}
+
+// Delete snapshot
+brain_delete_snapshot(brain, "experiment_1");
+
+================================================================================
+FILES CREATED BY brain_save()
+================================================================================
+
+{filepath}               - Network weights & structure
+{filepath}.meta          - Config, labels, stats, timestamps
+{filepath}.knowledge     - Knowledge system state (if exists)
+{filepath}.executive     - Executive controller state (if exists)
+{filepath}.pink_noise    - Pink noise neuromodulator (if exists)
+{filepath}.mirror_neurons - Mirror neuron system (if exists)
+
+================================================================================
+SNAPSHOT FORMAT
+================================================================================
+
+Snapshots are saved to: {snapshot_dir}/{name}_{timestamp}.snapshot
+Metadata is saved to:   {snapshot_dir}/{name}_{timestamp}.snapshot.info
+
+Default snapshot_dir: "./snapshots" (or brain->config.snapshot_dir)
+
+Metadata file format (text):
+name=experiment_v1
+timestamp=1642531200
+description=Before parameter tuning
+compressed=1
+encrypted=0
+
+================================================================================
+SECURITY FEATURES
+================================================================================
+
+✓ Buffer overflow prevention (MAX_OUTPUT_LABELS=10000, MAX_LABEL_LENGTH=256)
+✓ Integer field validation (detect corrupted data)
+✓ Float field validation (NaN/Inf detection)
+✓ Version header validation (v1.0 format)
+✓ Legacy format support (backward compatibility)
+✓ Safe string operations (strncpy, snprintf)
+
+================================================================================
+KEY FEATURES
+================================================================================
+
+Persistence:
+✓ Complete state saving (network + metadata + subsystems)
+✓ Version header with format evolution support
+✓ Subsystem re-initialization on load (if config enables)
+✓ Graceful degradation (non-fatal subsystem failures)
+✓ Security validation on all inputs
+
+Snapshots:
+✓ Named snapshots with timestamps
+✓ Multiple versions per name
+✓ Automatic directory creation
+✓ Metadata tracking (.info files)
+✓ Snapshot enumeration and deletion
+
+================================================================================
+INTEGRATION NOTES
+================================================================================
+
+To use in nimcp_brain.c:
+1. Include header: #include "core/brain/persistence/nimcp_brain_persistence.h"
+2. Remove lines 7088-8226 from nimcp_brain.c
+3. Expose required internal functions (or move to shared header)
+4. Update CMakeLists.txt to build persistence module
+
+Required functions from nimcp_brain.c:
+- set_error(), brain_clear_error()
+- allocate_brain(), strategy_create(), init_brain_stats()
+- init_working_memory_subsystem(), init_mirror_neurons()
+- init_glial_subsystem(), init_spatial_neuromod_system()
+- executive_set_brain(), mirror_neurons_set_brain()
+
+================================================================================
+COMPLEXITY & PERFORMANCE
+================================================================================
+
+Operation                 Complexity         Memory
+brain_save()              O(n*c + k + m)     O(1)
+brain_load()              O(n*c + k + m)     O(k + m)
+brain_save_snapshot()     O(n*c + k + m)     O(1)
+brain_restore_snapshot()  O(d + n*c + k + m) O(k + m)
+brain_list_snapshots()    O(d*f)             O(d)
+brain_delete_snapshot()   O(d)               O(1)
+
+Legend:
+n = neurons, c = connections, k = labels, m = WM items
+d = directory entries, f = metadata file size
+
+================================================================================
+FUTURE ENHANCEMENTS (TODOs)
+================================================================================
+
+✗ Compression (zlib) - NIMCP_FORMAT_FLAG_COMPRESSED defined but not implemented
+✗ Encryption (AES-256) - NIMCP_FORMAT_FLAG_ENCRYPTED defined but not implemented
+✗ Sleep system persistence - Currently skipped in save_metadata()
+✗ In-place snapshot restore - Currently returns new brain instance
+✗ SHA-256 checksum - v1.1 feature for integrity verification
+
+================================================================================
+TESTING CHECKLIST
+================================================================================
+
+Unit Tests:
+[ ] Save/load with all subsystems enabled
+[ ] Save/load with minimal config (no subsystems)
+[ ] Load with missing metadata (backward compatibility)
+[ ] Load with corrupted data (security validation)
+[ ] Load v1.0 format (version header)
+[ ] Load legacy format (no version header)
+[ ] Create snapshot with description
+[ ] Create multiple snapshots (same name, different timestamps)
+[ ] Restore latest snapshot
+[ ] List snapshots (verify metadata parsing)
+[ ] Delete snapshot (verify all files removed)
+[ ] Snapshot directory creation
+
+Integration Tests:
+[ ] Train → save → load → verify identical behavior
+[ ] Train → snapshot → restore → continue training
+[ ] Multiple snapshot cycles
+[ ] Cross-platform (Windows/Unix)
+
+================================================================================

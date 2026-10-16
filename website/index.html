@@ -1,0 +1,1921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIMCP — Neuro-Inspired Modular Control Protocol</title>
+    <meta name="description" content="A 2.5-million neuron artificial brain with six network types, biological plasticity, and developmental learning. Open source.">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --bg-card: #111827;
+            --bg-card-hover: #1a2332;
+            --border: #1e293b;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --text-bright: #f8fafc;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+            --green: #22c55e;
+            --orange: #f59e0b;
+            --purple: #a78bfa;
+            --red: #ef4444;
+            --cyan: #06b6d4;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Neural background animation */
+        .bg-pattern {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(167, 139, 250, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        /* Navigation */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0;
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1200px; margin: 0 auto;
+            display: flex; align-items: center; justify-content: space-between;
+            height: 64px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1.25rem; color: var(--text-bright);
+            text-decoration: none; letter-spacing: -0.02em;
+        }
+        nav .logo span { color: var(--accent); }
+        nav ul { list-style: none; display: flex; gap: 32px; }
+        nav a { color: var(--text-dim); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.2s; }
+        nav a:hover { color: var(--text-bright); }
+
+        /* Hero */
+        .hero {
+            padding: 160px 0 100px;
+            text-align: center;
+        }
+        .hero-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: var(--accent-glow);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 100px;
+            font-size: 0.8rem;
+            color: var(--accent);
+            font-weight: 500;
+            margin-bottom: 24px;
+            letter-spacing: 0.05em;
+        }
+        .hero h1 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 700;
+            color: var(--text-bright);
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+            margin-bottom: 20px;
+        }
+        .hero h1 .gradient {
+            background: linear-gradient(135deg, var(--accent), var(--purple), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-dim);
+            max-width: 640px;
+            margin: 0 auto 40px;
+            line-height: 1.7;
+        }
+        .hero-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+        .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+
+        /* Stats bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1px;
+            background: var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 80px 0;
+        }
+        .stat {
+            background: var(--bg-card);
+            padding: 28px 20px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text-bright);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        /* Section */
+        section { padding: 80px 0; }
+        .section-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        section h2 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--text-bright);
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+        }
+        section > .container > p {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            max-width: 640px;
+            margin-bottom: 48px;
+        }
+
+        /* Cards grid */
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            transition: all 0.2s;
+        }
+        .card:hover { border-color: rgba(59, 130, 246, 0.3); background: var(--bg-card-hover); }
+        .card-icon {
+            width: 40px; height: 40px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+        }
+        .card h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-bright); margin-bottom: 8px; }
+        .card p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; }
+
+        /* Network types */
+        .network-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .network-chip {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        .network-chip .name { font-weight: 600; font-size: 0.95rem; color: var(--text-bright); }
+        .network-chip .desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+        .network-chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+        /* Papers section */
+        .paper-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: inherit;
+        }
+        .paper-card:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+        .paper-icon {
+            width: 48px; height: 48px; min-width: 48px;
+            background: var(--accent-glow);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.4rem;
+        }
+        .paper-card h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-bright); margin-bottom: 6px; }
+        .paper-card p { font-size: 0.88rem; color: var(--text-dim); }
+        .paper-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--green);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        /* Training status */
+        .training-status {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+        }
+        .training-status h3 { color: var(--text-bright); margin-bottom: 16px; }
+        .training-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .training-metric {
+            padding: 16px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+        }
+        .training-metric .label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+        .training-metric .value { font-size: 1.3rem; font-weight: 600; color: var(--text-bright); font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+        .live-dot { display: inline-block; width: 8px; height: 8px; background: var(--green); border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Footer */
+        footer {
+            padding: 60px 0 40px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+        footer p { color: var(--text-dim); font-size: 0.85rem; }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        /* Code block */
+        .code-block {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: #c9d1d9;
+            overflow-x: auto;
+            margin: 24px 0;
+            white-space: pre;
+            line-height: 1.7;
+        }
+        .code-block .comment { color: #8b949e; }
+        .code-block .keyword { color: #ff7b72; }
+        .code-block .string { color: #a5d6ff; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 640px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        .modal-close {
+            position: absolute;
+            top: 16px; right: 16px;
+            background: none; border: none;
+            color: var(--text-dim); font-size: 1.5rem;
+            cursor: pointer;
+            width: 32px; height: 32px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 8px;
+        }
+        .modal-close:hover { background: rgba(255,255,255,0.1); color: var(--text-bright); }
+        .modal h3 { font-size: 1.4rem; font-weight: 700; color: var(--text-bright); margin-bottom: 16px; }
+        .modal p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.7; margin-bottom: 12px; }
+        .modal ul { color: var(--text-dim); font-size: 0.9rem; line-height: 1.8; padding-left: 20px; margin-bottom: 12px; }
+        .modal .highlight { color: var(--accent); font-weight: 600; }
+        .card { cursor: pointer; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav ul { gap: 16px; }
+            .hero { padding: 120px 0 60px; }
+            .cards { grid-template-columns: 1fr; }
+            .network-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-pattern"></div>
+
+    <nav>
+        <div class="nav-inner">
+            <a href="/" class="logo"><span>NIMCP</span></a>
+            <ul>
+                <li><a href="#architecture">Architecture</a></li>
+                <li><a href="#papers">Papers</a></li>
+                <li><a href="#training">Training</a></li>
+                <li><a href="#chat">Chat</a></li>
+                <li><a href="https://github.com/redmage123/nimcp" target="_blank">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <header class="hero">
+        <div class="container">
+            <div class="hero-badge">ACTIVELY TRAINING &mdash; STAGE 1 OF 4</div>
+            <h1>A <span class="gradient">2.5 Million Neuron</span><br>Artificial Brain</h1>
+            <p>Not another chatbot. A brain that learns like a child, remembers without forgetting, and has safety you can't prompt-inject past. Training on a single GPU.</p>
+            <div class="hero-buttons">
+                <a href="https://github.com/redmage123/nimcp" class="btn btn-primary" target="_blank">
+                    View Source Code
+                </a>
+                <a href="#papers" class="btn btn-secondary">
+                    Read the Papers
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Stats -->
+    <div class="container">
+        <div class="stats-bar">
+            <div class="stat">
+                <div class="stat-value">2.5M</div>
+                <div class="stat-label">Neurons &mdash; on one GPU</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">6</div>
+                <div class="stat-label">Network types &mdash; learning together</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">60+</div>
+                <div class="stat-label">Cognitive modules &mdash; ethics to imagination</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">4</div>
+                <div class="stat-label">Dev stages &mdash; learns like a child</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">9</div>
+                <div class="stat-label">Safety layers &mdash; can't be prompted away</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">1</div>
+                <div class="stat-label">Desktop GPU &mdash; no data centre needed</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Why This Matters -->
+    <section style="padding: 80px 0;">
+        <div class="container">
+            <div class="section-label">The Short Version</div>
+            <h2>Why Build a Brain When We Have ChatGPT?</h2>
+            <div style="max-width: 800px; margin: 0 auto;">
+                <div style="margin-bottom: 32px;">
+                    <h3 style="color: var(--accent); font-size: 1.1rem; margin-bottom: 8px;">It learns without forgetting</h3>
+                    <p style="color: var(--text-dim); line-height: 1.7;">Today's AI models freeze after training. Teach ChatGPT something new and it forgets something old &mdash; a known problem called catastrophic forgetting. Athena uses biological plasticity: the same learning mechanisms your brain uses to acquire new skills without losing existing ones. She can keep learning from new experiences indefinitely.</p>
+                </div>
+                <div style="margin-bottom: 32px;">
+                    <h3 style="color: var(--accent); font-size: 1.1rem; margin-bottom: 8px;">The safety is structural, not behavioural</h3>
+                    <p style="color: var(--text-dim); line-height: 1.7;">You can jailbreak a large language model with a clever prompt. You can fine-tune safety out of open-source models in an afternoon. In NIMCP, the ethics module is a function call in the C source code that runs on every inference and every weight update. It can't be prompted past, trained away, or disabled via configuration. Removing it requires modifying and recompiling the source code &mdash; and the tamper-resistant audit log detects the change.</p>
+                </div>
+                <div style="margin-bottom: 32px;">
+                    <h3 style="color: var(--accent); font-size: 1.1rem; margin-bottom: 8px;">Six network types that teach each other</h3>
+                    <p style="color: var(--text-dim); line-height: 1.7;">Every major AI model uses one architecture type (transformers). NIMCP runs six &mdash; spiking, liquid, convolutional, Fourier, Hamiltonian, and adaptive &mdash; with gradients flowing between them through learnable bridges. A spike pattern in the spiking network can improve a weight in the adaptive network. This is, as far as we know, new.</p>
+                </div>
+                <div style="margin-bottom: 32px;">
+                    <h3 style="color: var(--accent); font-size: 1.1rem; margin-bottom: 8px;">Any university lab can run it</h3>
+                    <p style="color: var(--text-dim); line-height: 1.7;">Training GPT-5 cost over $100 million in compute. NIMCP trains on a single NVIDIA RTX 5090 GPU rented by the hour. The entire training run &mdash; all four developmental stages, 60,000 steps, 2.5 million neurons &mdash; costs less than a week of cloud compute. This isn't about the hardware being impressive &mdash; it's about the architecture being efficient enough that AI safety research doesn't require a corporate budget. Anyone can verify, reproduce, and build on this work.</p>
+                </div>
+                <div>
+                    <h3 style="color: var(--accent); font-size: 1.1rem; margin-bottom: 8px;">Athena is training right now</h3>
+                    <p style="color: var(--text-dim); line-height: 1.7;">This isn't a demo loop. The metrics below are live from the actual GPU. Athena learns in four developmental stages &mdash; sensory exposure, object naming, feedback and correction, then reasoning &mdash; mirroring how children develop. She's currently in the early stages. You're watching a brain grow.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture -->
+    <section id="architecture">
+        <div class="container">
+            <div class="section-label">Architecture</div>
+            <h2>Six Networks, One Brain</h2>
+            <p>NIMCP doesn't train a single monolithic model. It trains six heterogeneous neural networks simultaneously, with gradient flow across network boundaries.</p>
+
+            <div class="network-grid" style="margin-bottom: 48px;">
+                <div class="network-chip" onclick="openModal('net_adaptive')" style="cursor:pointer" title="Click for details">
+                    <div class="name"><span class="dot" style="background: var(--accent);"></span>Adaptive</div>
+                    <div class="desc">9-layer diamond, GPU-accelerated backprop</div>
+                </div>
+                <div class="network-chip" onclick="openModal('net_snn')" style="cursor:pointer" title="Click for details">
+                    <div class="name"><span class="dot" style="background: var(--green);"></span>Spiking (SNN)</div>
+                    <div class="desc">768 LIF neurons, BPTT surrogate gradients</div>
+                </div>
+                <div class="network-chip" onclick="openModal('net_lnn')" style="cursor:pointer" title="Click for details">
+                    <div class="name"><span class="dot" style="background: var(--purple);"></span>Liquid (LNN)</div>
+                    <div class="desc">Continuous-time ODE, adjoint gradients</div>
+                </div>
+                <div class="network-chip" onclick="openModal('net_cnn')" style="cursor:pointer" title="Click for details">
+                    <div class="name"><span class="dot" style="background: var(--orange);"></span>Convolutional</div>
+                    <div class="desc">4 cortex processors: visual, audio, speech, somato</div>
+                </div>
+                <div class="network-chip" onclick="openModal('net_fno')" style="cursor:pointer" title="Click for details">
+                    <div class="name"><span class="dot" style="background: var(--cyan);"></span>Fourier (FNO)</div>
+                    <div class="desc">Spectral convolution, frequency-domain learning</div>
+                </div>
+                <div class="network-chip" onclick="openModal('net_hnn')" style="cursor:pointer" title="Click for details">
+                    <div class="name"><span class="dot" style="background: var(--red);"></span>Hamiltonian</div>
+                    <div class="desc">Energy-conserving, physics-informed dynamics</div>
+                </div>
+            </div>
+
+            <div class="cards">
+                <div class="card" onclick="openModal('plasticity')">
+                    <div class="card-icon" style="background: rgba(59, 130, 246, 0.1); color: var(--accent);">&#x1F9E0;</div>
+                    <h3>Biological Plasticity</h3>
+                    <p>Five learning rules at five timescales: STDP (10ms), BCM (50ms), eligibility traces (1s), structural plasticity (10s), homeostatic scaling (60s). Four neuromodulators modulate learning from reward and novelty signals.</p>
+                </div>
+                <div class="card" onclick="openModal('curriculum')">
+                    <div class="card-icon" style="background: rgba(34, 197, 94, 0.1); color: var(--green);">&#x1F476;</div>
+                    <h3>Developmental Curriculum</h3>
+                    <p>Four stages mirroring human cognitive development: sensory awakening, cross-modal naming, feedback learning, abstract reasoning. Each stage builds on the previous one.</p>
+                </div>
+                <div class="card" onclick="openModal('safety')">
+                    <div class="card-icon" style="background: rgba(167, 139, 250, 0.1); color: var(--purple);">&#x1F6E1;</div>
+                    <h3>Safety by Design</h3>
+                    <p>Ethics module is always created regardless of configuration. LGSS governance evaluates every inference and weight update. Tamper-resistant audit log. Safety rules can only get stricter.</p>
+                </div>
+                <div class="card" onclick="openModal('edge')">
+                    <div class="card-icon" style="background: rgba(6, 182, 212, 0.1); color: var(--cyan);">&#x1F916;</div>
+                    <h3>Edge &amp; Robot Platform</h3>
+                    <p>12 sensor types, safety watchdog, motor output. Four drone interfaces. ROS 2 bridge. Sim-to-real transfer with domain randomization.</p>
+                </div>
+                <div class="card" onclick="openModal('swarm')">
+                    <div class="card-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--orange);">&#x1F310;</div>
+                    <h3>Swarm Intelligence</h3>
+                    <p>Multi-device federation with UDP discovery, Byzantine fault tolerance, and gossip-based gradient aggregation. Theory of Mind through multi-agent observation.</p>
+                </div>
+                <div class="card" onclick="openModal('language')">
+                    <div class="card-icon" style="background: rgba(239, 68, 68, 0.1); color: var(--red);">&#x1F4AC;</div>
+                    <h3>Brain-Native Language</h3>
+                    <p>Learned vocabulary from neural activation patterns. Autoregressive decoding with nucleus sampling. Emergent omega-tokens. Inner speech loop for self-refinement.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Papers -->
+    <section id="papers">
+        <div class="container">
+            <div class="section-label">Research</div>
+            <h2>Technical Papers</h2>
+            <p>Detailed documentation of the mathematics, training methodology, and broader implications of NIMCP.</p>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/MATHEMATICAL_FOUNDATIONS.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x2211;</div>
+                <div>
+                    <h3>Mathematical Foundations of NIMCP</h3>
+                    <p>Complete mathematical framework: LIF dynamics, LNN ODEs, adjoint gradients, STDP/BCM learning rules, Fourier spectral methods, Hamiltonian mechanics, information geometry, and safety mathematics. Every equation corresponds to implemented code with source file references.</p>
+                    <span class="paper-tag">2,298 LINES &bull; 40 SECTIONS &bull; EQUATIONS + CODE REFS</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/TRAINING_METHODOLOGY.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x1F4CA;</div>
+                <div>
+                    <h3>Developmental Multi-Network Training</h3>
+                    <p>How NIMCP trains six networks simultaneously through a four-stage developmental curriculum. Systematic comparison with conventional deep learning and transformer training across 12 dimensions including data efficiency, continual learning, and safety integration.</p>
+                    <span class="paper-tag">446 LINES &bull; COMPARATIVE ANALYSIS</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/SOCIOECONOMIC_IMPACT.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x1F30D;</div>
+                <div>
+                    <h3>Socioeconomic Impact Analysis</h3>
+                    <p>Analysis of ubiquitous NIMCP deployment across healthcare, education, manufacturing, agriculture, environmental monitoring, disaster response, and governance.</p>
+                    <span class="paper-tag">366 LINES &bull; IMPACT ASSESSMENT</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/EMERGENT_SPIKING_DYNAMICS.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x26A1;</div>
+                <div>
+                    <h3>Emergent Spiking Dynamics in a Hybrid Architecture</h3>
+                    <p>How biologically realistic firing patterns (26 Hz, 67% sparsity) arise from BPTT training in a six-network brain without explicit regularization.</p>
+                    <span class="paper-tag">EMPIRICAL RESULTS &bull; NEUROSCIENCE</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/SAFETY_AS_ARCHITECTURE.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x1F512;</div>
+                <div>
+                    <h3>Safety as Architecture, Not Alignment</h3>
+                    <p>Structural safety guarantees vs. behavioral training. Nine-layer governance system with non-removable ethics, monotonic rules, tamper-resistant audit. Compared to RLHF and Constitutional AI.</p>
+                    <span class="paper-tag">AI SAFETY &bull; FORMAL VERIFICATION</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/CROSS_NETWORK_GRADIENT_FLOW.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x1F500;</div>
+                <div>
+                    <h3>Cross-Network Gradient Flow in Heterogeneous Architectures</h3>
+                    <p>Learnable bridges enable knowledge transfer between spiking, liquid, and rate-coded networks. Composite loss with contrastive pressure drives representational specialization.</p>
+                    <span class="paper-tag">NOVEL ARCHITECTURE &bull; GRADIENT ANALYSIS</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/SENSORIMOTOR_CURIOSITY.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x1F50D;</div>
+                <div>
+                    <h3>Sensorimotor Curiosity Without Reward Shaping</h3>
+                    <p>Prediction error drives dopamine-gated STDP in a closed sensorimotor loop. No external reward function. Natural exploration-exploitation transition. ROS 2 robot deployment.</p>
+                    <span class="paper-tag">INTRINSIC MOTIVATION &bull; EMBODIED AI</span>
+                </div>
+            </a>
+
+            <a href="https://github.com/redmage123/nimcp/blob/master/docs/EMBODIED_IDENTITY.md" class="paper-card" target="_blank">
+                <div class="paper-icon">&#x1F3AD;</div>
+                <div>
+                    <h3>Embodied Identity in Artificial Cognitive Systems</h3>
+                    <p>Big Five personality traits modulate neuromodulator baselines, shaping how the brain learns. Emotional state drives voice prosody. Identity is a learning parameter, not a style overlay.</p>
+                    <span class="paper-tag">PERSONALITY &bull; AFFECTIVE COMPUTING</span>
+                </div>
+            </a>
+        </div>
+    </section>
+
+    <!-- Live Training -->
+    <section id="training">
+        <div class="container">
+            <div class="section-label">Live Training</div>
+            <h2>Athena is Learning Right Now</h2>
+            <p>A 2.5-million neuron brain named Athena is currently training on an NVIDIA RTX 5090 (32 GB VRAM) via RunPod cloud GPU. She has 56 simulation engines (physics through QED) and 18 mathematics engines providing grounded world understanding.</p>
+
+            <div class="training-status">
+                <h3><span class="live-dot" id="liveDot"></span><span id="statusLabel">Training Status</span></h3>
+                <div class="training-grid">
+                    <div class="training-metric" onclick="openModal('metric_stage')" style="cursor:pointer" title="Click for details">
+                        <div class="label">Stage / Step</div>
+                        <div class="value" id="m-stage">Loading...</div>
+                        <div class="label" style="margin-top:4px" id="m-step">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_ann')" style="cursor:pointer" title="Click for details">
+                        <div class="label">ANN Loss</div>
+                        <div class="value" id="m-ann">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_cnn')" style="cursor:pointer" title="Click for details">
+                        <div class="label">CNN Loss</div>
+                        <div class="value" id="m-cnn">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_snn_loss')" style="cursor:pointer" title="Click for details">
+                        <div class="label">SNN Loss</div>
+                        <div class="value" id="m-snn-loss">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_lnn')" style="cursor:pointer" title="Click for details">
+                        <div class="label">LNN Loss</div>
+                        <div class="value" id="m-lnn">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_snn_rate')" style="cursor:pointer" title="Click for details">
+                        <div class="label">SNN Firing Rate</div>
+                        <div class="value" id="m-snn-rate">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_snn_sparsity')" style="cursor:pointer" title="Click for details">
+                        <div class="label">SNN Sparsity</div>
+                        <div class="value" id="m-snn-sparsity">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_snn_spikes')" style="cursor:pointer" title="Click for details">
+                        <div class="label">SNN Spikes</div>
+                        <div class="value" id="m-snn-spikes">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_fno')" style="cursor:pointer" title="Click for details">
+                        <div class="label">FNO Loss</div>
+                        <div class="value" id="m-fno-loss">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_hnn')" style="cursor:pointer" title="Click for details">
+                        <div class="label">HNN Energy</div>
+                        <div class="value" id="m-hnn-energy">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_step_loss')" style="cursor:pointer" title="Click for details">
+                        <div class="label">Per-Step Loss</div>
+                        <div class="value" id="m-step-loss">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_steps')" style="cursor:pointer" title="Click for details">
+                        <div class="label">Training Steps</div>
+                        <div class="value" id="m-steps">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_learns')" style="cursor:pointer" title="Click for details">
+                        <div class="label">Learn Calls</div>
+                        <div class="value" id="m-learns">—</div>
+                    </div>
+                    <div class="training-metric" onclick="openModal('metric_uptime')" style="cursor:pointer" title="Click for details">
+                        <div class="label">Daemon Uptime</div>
+                        <div class="value" id="m-uptime">—</div>
+                    </div>
+                </div>
+
+                <!-- Live Charts — Row 1: Network Losses + Brain Regions -->
+                <div style="margin-top:20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--accent); font-size:0.9rem;">Network Loss Curves</h4>
+                        <canvas id="chart-loss" height="180"></canvas>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--green); font-size:0.9rem;">Brain Regions (16)</h4>
+                        <canvas id="chart-regions" height="180"></canvas>
+                    </div>
+                </div>
+                <!-- Row 2: Neuron Stats + Synapse Weights -->
+                <div style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--purple); font-size:0.9rem;">Neuron Activation Distribution</h4>
+                        <canvas id="chart-neurons" height="180"></canvas>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--cyan); font-size:0.9rem;">Synapse Weight Distribution</h4>
+                        <canvas id="chart-synapses" height="180"></canvas>
+                    </div>
+                </div>
+                <!-- Row 3: HNN Energy + Cognitive Module Steps -->
+                <div style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--orange); font-size:0.9rem;">HNN Energy Conservation</h4>
+                        <canvas id="chart-hnn" height="180"></canvas>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--accent); font-size:0.9rem;">Cognitive Module Training</h4>
+                        <canvas id="chart-cognitive" height="180"></canvas>
+                    </div>
+                </div>
+                <!-- Row 4: Glial System + Inference Performance -->
+                <div style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--green); font-size:0.9rem;">Glial System Activity</h4>
+                        <canvas id="chart-glial" height="180"></canvas>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1); padding:16px;">
+                        <h4 style="margin:0 0 8px; color:var(--red); font-size:0.9rem;">Training Throughput</h4>
+                        <canvas id="chart-throughput" height="180"></canvas>
+                    </div>
+                </div>
+
+                <!-- Stage 2 Dashboard -->
+                <div id="stage2-dashboard" style="display:none; margin-top:20px; padding:16px; background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid rgba(255,255,255,0.1)">
+                    <h4 style="margin:0 0 12px; color:var(--blue)">Stage 2 — Relations &amp; World Model</h4>
+                    <div class="training-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr))">
+                        <div class="training-metric" onclick="openModal('s2_domain')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Current Domain</div>
+                            <div class="value" id="m-domain" style="font-size:0.95em">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_fact_ratio')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Fact Ratio</div>
+                            <div class="value" id="m-fact-ratio">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_warmstart')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Warm Start</div>
+                            <div class="value" id="m-warmstart">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_engines')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Sim Engines</div>
+                            <div class="value" id="m-engines">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_fep')" style="cursor:pointer" title="Click for details">
+                            <div class="label">FEP Free Energy</div>
+                            <div class="value" id="m-fep-fe">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_wm')" style="cursor:pointer" title="Click for details">
+                            <div class="label">World Model Steps</div>
+                            <div class="value" id="m-wm-steps">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_collapse')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Collapse Events</div>
+                            <div class="value" id="m-collapse">0</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_surprises')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Surprises</div>
+                            <div class="value" id="m-surprises">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_replays')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Replays</div>
+                            <div class="value" id="m-replays">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_lr_phys')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Physics LR</div>
+                            <div class="value" id="m-lr-phys">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_lr_chem')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Chemistry LR</div>
+                            <div class="value" id="m-lr-chem">—</div>
+                        </div>
+                        <div class="training-metric" onclick="openModal('s2_lr_bio')" style="cursor:pointer" title="Click for details">
+                            <div class="label">Biology LR</div>
+                            <div class="value" id="m-lr-bio">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Eval section -->
+                <h3 style="margin-top: 24px; font-size: 1rem;">Chat Evaluation</h3>
+                <div class="training-grid" style="margin-top: 12px;" id="chat-grid">
+                    <div class="training-metric" id="chat-coherence-wrap" style="display:none">
+                        <div class="label">Avg Coherence</div>
+                        <div class="value" id="m-chat-coherence">—</div>
+                    </div>
+                    <div class="training-metric" id="chat-similarity-wrap" style="display:none">
+                        <div class="label">Avg Similarity</div>
+                        <div class="value" id="m-chat-similarity">—</div>
+                    </div>
+                    <div class="training-metric" id="chat-norm-wrap" style="display:none">
+                        <div class="label">Avg Output Norm</div>
+                        <div class="value" id="m-chat-norm">—</div>
+                    </div>
+                    <div class="training-metric" id="chat-diversity-wrap" style="display:none">
+                        <div class="label">Output Diversity</div>
+                        <div class="value" id="m-chat-diversity">—</div>
+                    </div>
+                    <div class="training-metric" id="chat-prompts-wrap" style="display:none">
+                        <div class="label">Prompts Evaluated</div>
+                        <div class="value" id="m-chat-prompts">—</div>
+                    </div>
+                    <div class="training-metric" id="chat-eval-wrap" style="display:none">
+                        <div class="label">Eval #</div>
+                        <div class="value" id="m-chat-eval">—</div>
+                    </div>
+                </div>
+
+                <!-- Cortex CNN section -->
+                <h3 style="margin-top: 24px; font-size: 1rem;">Cortex CNN Performance</h3>
+                <div class="training-grid" style="margin-top: 12px;" id="cortex-grid">
+                    <div class="training-metric" id="cortex-speech" style="display:none">
+                        <div class="label">Speech Cortex</div>
+                        <div class="value" id="m-cx-speech">—</div>
+                    </div>
+                    <div class="training-metric" id="cortex-audio" style="display:none">
+                        <div class="label">Audio Cortex</div>
+                        <div class="value" id="m-cx-audio">—</div>
+                    </div>
+                    <div class="training-metric" id="cortex-visual" style="display:none">
+                        <div class="label">Visual Cortex</div>
+                        <div class="value" id="m-cx-visual">—</div>
+                    </div>
+                    <div class="training-metric" id="cortex-somato" style="display:none">
+                        <div class="label">Somato Cortex</div>
+                        <div class="value" id="m-cx-somato">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 24px; text-align: center;">
+                <p style="color: var(--text-dim); font-size: 0.9rem;" id="update-label">Connecting to metrics feed...</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Chat with Athena -->
+    <section id="chat" style="padding: 80px 0;">
+        <div class="container">
+            <h2 style="text-align: center; font-size: 2rem; margin-bottom: 8px;">Talk to Athena</h2>
+            <p style="text-align: center; color: var(--text-dim); margin-bottom: 32px;">
+                Send a message and see how the brain responds. Athena is still learning — responses reflect her current developmental stage.
+            </p>
+            <div style="max-width: 700px; margin: 0 auto;">
+                <div id="chat-messages" style="
+                    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+                    padding: 20px; min-height: 300px; max-height: 500px; overflow-y: auto;
+                    margin-bottom: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+                ">
+                    <div style="color: var(--text-dim); text-align: center; padding: 40px 0;">
+                        Say hello to Athena...
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="chat-input" placeholder="Type a message..."
+                        style="flex: 1; padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border);
+                               border-radius: 8px; color: var(--text); font-family: 'Inter', sans-serif;
+                               font-size: 0.95rem; outline: none;"
+                        onkeypress="if(event.key==='Enter')sendChat()">
+                    <button onclick="sendChat()" style="
+                        padding: 12px 24px; background: var(--accent); color: white; border: none;
+                        border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='var(--accent)'">Send</button>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px;">
+                    <label style="color: var(--text-dim); font-size: 0.8rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="phi3-toggle" style="accent-color: var(--accent);">
+                        <span>Phi-3 language decoder</span>
+                    </label>
+                    <span onclick="openModal('chat_modes')" style="color: var(--accent); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">What's this?</span>
+                </div>
+                <p style="color: var(--text-dim); font-size: 0.75rem; margin-top: 6px; text-align: center;" id="chat-status">
+                    Connected to brain daemon via API
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quickstart">
+        <div class="container">
+            <div class="section-label">Get Started</div>
+            <h2>Build in 20 Minutes</h2>
+            <p>NIMCP compiles on any Linux system with a CUDA-capable GPU.</p>
+
+            <div class="code-block">
+<span class="comment"># Clone and build</span>
+git clone https://github.com/redmage123/nimcp.git
+cd nimcp/build && cmake .. && make nimcp -j4
+
+<span class="comment"># Build Python bindings</span>
+make nimcp_python -j4
+cp build/lib/python/nimcp.so ~/.local/lib/python3.12/site-packages/
+
+<span class="comment"># Create a brain and start learning</span>
+python3 -c <span class="string">"
+import nimcp
+brain = nimcp.Brain('my_brain', neuron_count=100000)
+brain.learn_vector(features, target, label='hello world')
+"</span>
+            </div>
+
+            <div style="margin-top: 24px;">
+                <a href="https://github.com/redmage123/nimcp/blob/master/docs/QUICKSTART.md" class="btn btn-secondary" target="_blank">Full Quickstart Guide</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p style="margin-bottom: 12px;">
+                <strong style="color: var(--text-bright);">NIMCP</strong> &mdash; Neuro-Inspired Modular Control Protocol v0.9.0-beta
+            </p>
+            <p>
+                Created by <a href="https://www.linkedin.com/in/braunbrelin/" target="_blank">Braun Brelin</a>
+                &bull; <a href="https://ai-elevate.ai" target="_blank">AI Elevate</a>
+                &bull; <a href="mailto:braun.brelin@ai-elevate.ai">braun.brelin@ai-elevate.ai</a>
+            </p>
+            <p style="margin-top: 8px;">
+                <a href="https://github.com/redmage123/nimcp" target="_blank">GitHub</a>
+                &bull; Open Source &bull; ~2,600 source files &bull; 240 Python API methods
+            </p>
+        </div>
+    </footer>
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h3 id="modalTitle"></h3>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+    const modalData = {
+        metric_stage: {
+            title: 'Training Stage and Step',
+            body: `
+                <p>Athena learns in <span class="highlight">four developmental stages</span>, each building on the representations formed in the previous one:</p>
+                <ul>
+                    <li><strong>Stage 0 — Sensory Awakening</strong> (10,000 steps): Breaking symmetry from random weights. The brain learns to produce different outputs for different inputs across all four sensory modalities.</li>
+                    <li><strong>Stage 1 — Association</strong> (20,000 steps): Cross-modal binding. "Look! That's a dog!" The brain learns to associate visual, audio, and text representations with labels.</li>
+                    <li><strong>Stage 2 — Feedback</strong> (20,000 steps): Error correction. The brain produces a response, receives feedback, and adjusts. Activates eligibility traces and cerebellar learning.</li>
+                    <li><strong>Stage 3 — Reasoning</strong> (10,000 steps): Abstract thought across 13 cognitive domains including ethics, causal reasoning, Theory of Mind, and imagination.</li>
+                </ul>
+                <p>The step counter shows progress within the current stage. Each step presents a training example, runs forward inference through all six networks, computes gradients, and updates weights.</p>
+            `
+        },
+        metric_ann: {
+            title: 'ANN Loss — Adaptive Neural Network',
+            body: `
+                <p>The <span class="highlight">Adaptive Neural Network</span> is the main network — a 9-layer diamond architecture with 2.5 million neurons. It handles general-purpose learning and is the backbone of the brain.</p>
+                <p><strong>What this number means:</strong> Cross-entropy loss between the network's output and the training target. Lower is better. A value of 1.0 means the network is barely better than random guessing; values below 0.1 indicate strong learning.</p>
+                <p><strong>Why it matters:</strong> This is the primary indicator of whether the brain is learning from its training curriculum. During early stages, expect values between 1.0 and 3.0 that gradually decrease.</p>
+                <p>The ANN uses GPU-accelerated backpropagation with AdamW optimiser, layer-wise learning rates, and gradient normalization to prevent mode collapse.</p>
+            `
+        },
+        metric_cnn: {
+            title: 'CNN Loss — Convolutional Neural Networks',
+            body: `
+                <p>NIMCP has <span class="highlight">four cortex-specific CNN processors</span>, one for each sensory modality:</p>
+                <ul>
+                    <li><strong>Visual Cortex</strong> — Processes images (CIFAR-100, ImageNet labels)</li>
+                    <li><strong>Audio Cortex</strong> — Processes environmental and speech sounds</li>
+                    <li><strong>Speech Cortex</strong> — Processes spoken language with formant analysis</li>
+                    <li><strong>Somatosensory Cortex</strong> — Processes texture, temperature, and pressure</li>
+                </ul>
+                <p><strong>What this number means:</strong> The aggregated loss across all four cortex CNN processors. Very small values (0.0001–0.001) are normal — the CNNs converge quickly because they have fewer parameters than the main network.</p>
+                <p>Each cortex CNN feeds its processed representations into the main adaptive network, giving the brain structured sensory input rather than raw data.</p>
+            `
+        },
+        metric_snn_loss: {
+            title: 'SNN Loss — Spiking Neural Network',
+            body: `
+                <p>The <span class="highlight">Spiking Neural Network</span> uses 768 Leaky Integrate-and-Fire (LIF) neurons that communicate through discrete voltage spikes — the same mechanism biological neurons use.</p>
+                <p><strong>What this number means:</strong> The BPTT (Backpropagation Through Time) loss computed over a 10ms simulation window with surrogate gradients. Higher values are expected early in training — SNN loss operates on a different scale than ANN loss because it measures spike-timing prediction error.</p>
+                <p><strong>Why it matters:</strong> The SNN captures temporal dynamics that the main network cannot. Spike patterns encode time-sensitive information like audio rhythms, speech cadence, and motor timing. SNN gradients flow into the main network through learnable bridges.</p>
+            `
+        },
+        metric_lnn: {
+            title: 'LNN Loss — Liquid Neural Network',
+            body: `
+                <p>The <span class="highlight">Liquid Neural Network</span> models continuous-time dynamics using ordinary differential equations (ODEs). Each neuron has a learnable time constant (tau) that controls how quickly it responds to inputs.</p>
+                <p><strong>What this number means:</strong> The adjoint-method gradient loss. The LNN computes gradients by solving the ODE backward in time — a technique from optimal control theory. Values around 0.5–2.0 are typical during early training.</p>
+                <p><strong>Why it matters:</strong> LNNs excel at modelling temporal sequences and continuous signals. They're particularly good at tasks where the timing between events matters, not just the events themselves. The LNN's tau parameters adapt to capture dynamics at different timescales.</p>
+                <p>LNN forward passes now run on the <span class="highlight">GPU via CUDA kernels</span>, using ODE solvers (Euler, Heun, RK4, or DOPRI5) accelerated on the RTX 5090.</p>
+            `
+        },
+        metric_snn_rate: {
+            title: 'SNN Firing Rate',
+            body: `
+                <p><strong>What this number means:</strong> The average number of spikes per second across all 768 SNN neurons, measured in Hertz (Hz).</p>
+                <p><strong>Healthy range:</strong> 10–100 Hz during active training. Biological cortical neurons typically fire at 1–40 Hz. Higher rates during training are expected because the BPTT simulation drives sustained activity.</p>
+                <p><strong>Warning signs:</strong></p>
+                <ul>
+                    <li><strong>0 Hz</strong> — All neurons are silent. The SNN isn't contributing to learning. Usually indicates threshold or input scaling issues.</li>
+                    <li><strong>>500 Hz</strong> — Runaway excitation. Homeostatic scaling should engage to bring this down.</li>
+                </ul>
+                <p>The firing rate is computed from actual spike events during the BPTT simulation window, not from membrane potentials.</p>
+            `
+        },
+        metric_snn_sparsity: {
+            title: 'SNN Sparsity',
+            body: `
+                <p><strong>What this number means:</strong> The fraction of SNN neurons that are <em>not</em> firing. A sparsity of 0.67 means 67% of neurons are silent and 33% are actively spiking.</p>
+                <p><strong>Why sparse is good:</strong> Sparse neural codes are more energy-efficient and have higher information capacity. Biological brains maintain ~95% sparsity. In NIMCP, sparsity between 0.5 and 0.9 indicates healthy, selective neural coding.</p>
+                <p><strong>Warning signs:</strong></p>
+                <ul>
+                    <li><strong>1.0</strong> — No neurons firing at all (dead network)</li>
+                    <li><strong>0.0</strong> — Every neuron firing on every step (no selectivity, likely mode collapse)</li>
+                </ul>
+                <p>K-Winner-Take-All (K-WTA) sparse coding ensures that only the most relevant neurons activate for each input, preventing mode collapse.</p>
+            `
+        },
+        metric_snn_spikes: {
+            title: 'SNN Total Spikes',
+            body: `
+                <p><strong>What this number means:</strong> The cumulative number of spike events generated by all SNN neurons since the daemon started. Each spike is a discrete voltage event where a neuron's membrane potential crossed its firing threshold.</p>
+                <p>This number should grow steadily during training. Sudden drops to zero or plateaus indicate the SNN has stopped contributing to learning.</p>
+                <p>In a biological brain, a single cortical neuron fires about 200,000 times per day. With 768 SNN neurons in NIMCP, millions of cumulative spikes per training session is normal.</p>
+            `
+        },
+        metric_step_loss: {
+            title: 'Per-Step Loss',
+            body: `
+                <p><strong>What this number means:</strong> The training loss for the most recent individual training step, across all active networks. This is more granular than the smoothed ANN/SNN/LNN losses which are exponential moving averages.</p>
+                <p>Per-step loss is noisy by nature — it varies significantly from one example to the next depending on the difficulty of the training item. The trend over 50–100 steps is more informative than any single value.</p>
+            `
+        },
+        metric_steps: {
+            title: 'Training Steps (Cumulative)',
+            body: `
+                <p><strong>What this number means:</strong> The total number of training steps completed across all sessions, including checkpoint restarts. This is the global progress counter.</p>
+                <p>Each training step presents one example from the developmental curriculum, runs forward inference through all six networks, computes gradients via backpropagation (ANN), BPTT (SNN), adjoint method (LNN), and standard backprop (CNN), then applies weight updates.</p>
+                <p>At the current training speed of approximately 6.5 seconds per step on the RTX 5090, completing all four stages (~60,000 total steps) takes roughly 4.5 days of continuous training.</p>
+            `
+        },
+        metric_learns: {
+            title: 'Learn Calls',
+            body: `
+                <p><strong>What this number means:</strong> The number of learn_vector API calls the brain daemon has processed since it started. Each call sends a feature vector and target to the brain, which triggers a full forward + backward pass across all networks.</p>
+                <p>This counter resets when the daemon restarts. Compare with Training Steps (cumulative) for the full historical count.</p>
+            `
+        },
+        metric_fno: {
+            title: 'FNO Loss — Fourier Neural Operator',
+            body: `
+                <p>The FNO operates as a <span class="highlight">spectral processing sub-module</span> inside the cortex CNN processors. It applies learnable Fourier transforms to sensory data — particularly useful for audio (detecting pitch, harmonics, rhythm) and visual patterns (spatial frequencies).</p>
+                <p><strong>What this number means:</strong> The FNO's contribution to the cortex CNN loss. A value of 0.0 means the FNO has converged on its embedding task — this is normal because the cortex CNN processors are small networks that learn quickly.</p>
+                <p>The FNO has 34,432 parameters and runs spectral convolutions via FFT on every forward pass. Its weights are updated through the CNN backward pass.</p>
+                <p><strong>Key difference from CNNs:</strong> CNNs learn local spatial patterns through sliding kernels. The FNO learns <em>global</em> frequency-domain patterns in a single layer — every point in the input can influence every point in the output. This makes it particularly powerful for periodic signals like audio waveforms.</p>
+            `
+        },
+        metric_hnn: {
+            title: 'HNN Energy — Hamiltonian Neural Network',
+            body: `
+                <p>The HNN is a <span class="highlight">physics-informed network</span> that learns energy-conserving dynamics. Instead of predicting trajectories directly, it discovers a conserved energy function (the Hamiltonian H) and derives dynamics from it.</p>
+                <p><strong>What this number means:</strong> The current value of the learned Hamiltonian energy function H(q,p), where q is the brain's neural state (position) and p is the conjugate momentum. In a perfectly energy-conserving system, H stays constant. The deviation from the initial energy measures how well the symplectic integrator preserves the energy invariant.</p>
+                <p><strong>Why it matters:</strong> Energy conservation provides a structural stability guarantee — the brain's dynamics cannot diverge to infinity because total energy is bounded. This is fundamentally different from unconstrained networks where activations can grow without limit.</p>
+                <p><strong>When HNN is inactive:</strong> If the energy shows as 0 or "—", the Hamiltonian module may not be enabled yet. It activates through the LNN layer 0 when the brain is initialised with Hamiltonian dynamics.</p>
+            `
+        },
+        metric_uptime: {
+            title: 'Daemon Uptime',
+            body: `
+                <p><strong>What this number means:</strong> How long the brain daemon process has been running continuously. The daemon keeps the 2.5-million neuron brain resident in memory (~44 GB RAM) so that training and inference requests don't require reloading from disk.</p>
+                <p>Loading the brain from a checkpoint takes approximately 10 minutes (8.1 GB checkpoint file + 223 million synapse connections + GPU initialization). Long uptimes indicate stability — the daemon hasn't crashed or been restarted.</p>
+            `
+        },
+        chat_modes: {
+            title: 'Chat Modes — Raw Brain vs. Phi-3 Decoder',
+            body: `
+                <p>Athena can respond in two modes. The toggle controls which decoder turns the brain's internal neural activation into readable text.</p>
+                <h4 style="color: var(--green); margin: 16px 0 8px;">Without Phi-3 (default) — Raw Brain Output</h4>
+                <p>The brain's 4096-dimensional output vector is decoded directly using Athena's <span class="highlight">brain-native vocabulary</span> — a set of tokens learned from neural activation patterns during training. This is the brain's own "voice."</p>
+                <ul>
+                    <li>Responses may be fragmented, repetitive, or nonsensical — especially in early training stages</li>
+                    <li>You're seeing the brain's actual internal state, unfiltered</li>
+                    <li>Omega-tokens (&Omega;) may appear — symbols the brain invented for concepts it doesn't have human words for</li>
+                    <li>This is the scientifically honest output — what the brain actually thinks</li>
+                </ul>
+                <h4 style="color: var(--purple); margin: 16px 0 8px;">With Phi-3 — Language Model Decoder</h4>
+                <p>The brain's output vector is projected into <span class="highlight">Phi-3-mini</span> (a 3.8B parameter language model) via a trained LoRA adapter. Phi-3 translates the brain's neural state into fluent English.</p>
+                <ul>
+                    <li>Responses are more coherent and readable</li>
+                    <li>The LoRA adapter was fine-tuned on 88,000 (brain output, text) pairs from training</li>
+                    <li>There is a tradeoff: fluency comes at the cost of fidelity — Phi-3 may "fill in" meaning that isn't actually in the brain's representation</li>
+                    <li>Requires the Phi-3 model to be loaded (uses additional GPU memory)</li>
+                </ul>
+                <p>Think of it like this: raw mode is a brain scan. Phi-3 mode is asking an interpreter to describe what the scan shows. Both are useful, for different reasons.</p>
+            `
+        },
+        net_adaptive: {
+            title: 'Adaptive Neural Network — The Backbone',
+            body: `
+                <p>The Adaptive Network is the <span class="highlight">main neural network</span> in the brain — a 9-layer diamond architecture containing 2.5 million neurons.</p>
+                <p><strong>Diamond architecture</strong> means the layers are not uniform. They expand from the input layer to a wide middle, then contract back to the output — like a diamond shape. Small brains (&lt;5K neurons) use 3 layers, medium (5K–100K) use 5, and large (100K+) use 7 or 9. This shape naturally creates a compression bottleneck that forces the network to learn efficient representations.</p>
+                <ul>
+                    <li><strong>Training</strong> — Standard backpropagation with AdamW optimiser, but with biological enhancements: gradient normalization (not clipping), layer-wise learning rates, and diversity loss to prevent mode collapse.</li>
+                    <li><strong>GPU acceleration</strong> — Forward pass, backward pass, and weight updates all run on the GPU via custom CUDA kernels. Weight caching minimises CPU↔GPU transfers.</li>
+                    <li><strong>Cross-network bridges</strong> — Learnable linear transforms connect the adaptive network to all five other networks. A useful representation discovered by the SNN or LNN can flow into the adaptive network's gradient updates, and vice versa.</li>
+                </ul>
+                <p>Every training step, the adaptive network receives a composed feature vector (text + image + audio + somatosensory), runs forward inference, computes loss against the curriculum target, and updates all 2.5M neuron weights.</p>
+            `
+        },
+        net_snn: {
+            title: 'Spiking Neural Network — Biological Timing',
+            body: `
+                <p>The SNN is the most <span class="highlight">biologically realistic</span> component of the brain. It uses 768 Leaky Integrate-and-Fire (LIF) neurons organised into populations, communicating through discrete voltage spikes.</p>
+                <p><strong>How it works:</strong> Each neuron maintains a membrane potential that accumulates incoming current from presynaptic spikes. When the potential crosses a threshold, the neuron fires a spike and resets. The "leaky" part means the potential decays exponentially between spikes, controlled by a time constant (tau_mem).</p>
+                <ul>
+                    <li><strong>BPTT with surrogate gradients</strong> — Spikes are non-differentiable (they're binary events), so we use a smooth surrogate function during the backward pass. This allows gradient-based learning in a spiking network — a technique from computational neuroscience.</li>
+                    <li><strong>10ms simulation window</strong> — Each training step simulates 10ms of neural dynamics at 1ms resolution, producing a spike train that encodes temporal information.</li>
+                    <li><strong>STDP</strong> — Spike-Timing-Dependent Plasticity strengthens synapses where the presynaptic neuron fires before the postsynaptic neuron (causal timing). This captures temporal relationships that backpropagation alone cannot.</li>
+                    <li><strong>Population coding</strong> — Neurons are grouped into populations with shared connectivity patterns, enabling ensemble representations.</li>
+                </ul>
+                <p><strong>What it contributes:</strong> The SNN excels at temporal pattern recognition — speech rhythms, motor timing sequences, cause-and-effect relationships. Its spike-based representations are complementary to the continuous-valued outputs of the other networks.</p>
+            `
+        },
+        net_lnn: {
+            title: 'Liquid Neural Network — Continuous-Time Dynamics',
+            body: `
+                <p>The LNN models neural dynamics as a <span class="highlight">system of ordinary differential equations (ODEs)</span>. Unlike traditional networks that compute discrete layer-by-layer transforms, the LNN evolves continuously in time.</p>
+                <p><strong>Liquid Time-Constant (LTC) neurons:</strong> Each neuron has a learnable time constant (tau) that controls its temporal responsiveness. A neuron with a small tau reacts quickly to inputs; a large tau creates a slow, smoothing response. The network learns which timescales matter for each task.</p>
+                <ul>
+                    <li><strong>ODE solvers</strong> — Four numerical integration methods available: Euler (fast, approximate), Heun (2nd order), RK4 (4th order, accurate), and DOPRI5 (adaptive step size). All now GPU-accelerated via custom CUDA kernels on the RTX 5090.</li>
+                    <li><strong>Adjoint method</strong> — Gradients are computed by solving the ODE backward in time, a technique from optimal control theory. This is more memory-efficient than storing all intermediate states (as BPTT does).</li>
+                    <li><strong>Recurrent wiring</strong> — LNN neurons can connect to each other (not just feedforward), creating recurrent dynamics that maintain state over time without explicit memory cells like LSTMs.</li>
+                    <li><strong>Hamiltonian extension</strong> — Some LNN layers can optionally use Hamiltonian dynamics, conserving a learned energy function for physics-informed stability.</li>
+                </ul>
+                <p><strong>What it contributes:</strong> The LNN captures smooth, continuous dynamics — fluid motion, gradual emotional changes, physical trajectories. It naturally handles irregularly-sampled time series without interpolation.</p>
+            `
+        },
+        net_cnn: {
+            title: 'Convolutional Neural Networks — Sensory Cortex',
+            body: `
+                <p>NIMCP has <span class="highlight">four cortex-specific CNN processors</span>, each dedicated to a sensory modality — mirroring the specialised cortical regions in the biological brain.</p>
+                <ul>
+                    <li><strong>Visual Cortex</strong> — Processes images through convolutional layers that detect edges, textures, shapes, and objects. Trained on CIFAR-100 (50,000 images, 100 classes) and ImageNet class labels. Outputs a compressed visual embedding.</li>
+                    <li><strong>Audio Cortex</strong> — Processes environmental sounds and music. Formant analysis and spectral features are extracted and run through convolutional layers optimised for frequency-domain patterns.</li>
+                    <li><strong>Speech Cortex</strong> — Specialised for human speech. Handles phoneme-level features, prosody (pitch contour, rhythm), and the exaggerated "parentese" speech used in early developmental stages.</li>
+                    <li><strong>Somatosensory Cortex</strong> — Processes touch, temperature, pressure, and texture information. A 64-dimensional encoding of tactile features feeds into convolutional layers for spatial pattern recognition.</li>
+                </ul>
+                <p>Each cortex CNN independently processes its modality, then feeds a compressed representation into the main adaptive network. This modular design means the visual cortex can learn visual features without interference from audio processing, and vice versa — just like in the biological brain.</p>
+                <p>During training, each cortex CNN has its own loss function and backward pass, plus a contribution to the global training objective through the Unified Training Manager.</p>
+            `
+        },
+        net_fno: {
+            title: 'Fourier Neural Operator — Spectral Learning',
+            body: `
+                <p>The FNO operates in the <span class="highlight">frequency domain</span>, learning patterns through spectral convolution rather than spatial convolution.</p>
+                <p><strong>How it works:</strong> Input signals are transformed into the frequency domain via the Fast Fourier Transform (FFT). Learnable weight matrices are applied to the frequency components, then the result is transformed back to the spatial domain via inverse FFT. This is equivalent to a global convolution — every point in the input can influence every point in the output in a single layer.</p>
+                <ul>
+                    <li><strong>Resolution-independent</strong> — Because FNO learns in frequency space, it naturally generalises across different input resolutions. A pattern learned at 32&times;32 works at 128&times;128 without retraining.</li>
+                    <li><strong>Global receptive field</strong> — Unlike CNNs, which build up large receptive fields through stacking layers, the FNO has a global receptive field from the first layer. This makes it powerful for tasks where long-range dependencies matter.</li>
+                    <li><strong>Spectral analysis</strong> — The FNO can learn to detect periodic patterns, harmonic relationships, and frequency signatures that spatial networks struggle with.</li>
+                </ul>
+                <p><strong>What it contributes:</strong> The FNO is particularly valuable for audio processing (detecting pitch, harmonics, rhythm), physical simulations (wave equations, diffusion), and any task where frequency-domain structure is important. Its gradients flow into the other networks through the cross-network bridges.</p>
+            `
+        },
+        net_hnn: {
+            title: 'Hamiltonian Neural Network — Energy Conservation',
+            body: `
+                <p>The HNN is a <span class="highlight">physics-informed network</span> that learns dynamics by discovering conserved energy functions, rather than directly predicting trajectories.</p>
+                <p><strong>Hamiltonian mechanics:</strong> In classical physics, many systems conserve total energy (kinetic + potential). The Hamiltonian H(q,p) defines this energy as a function of position (q) and momentum (p). Hamilton's equations then determine how the system evolves: dq/dt = &part;H/&part;p, dp/dt = &minus;&part;H/&part;q.</p>
+                <ul>
+                    <li><strong>Learned Hamiltonian</strong> — Instead of hand-coding the energy function, the HNN learns H from data using a neural network. The dynamics are then derived automatically from H, guaranteeing energy conservation by construction.</li>
+                    <li><strong>Symplectic integration</strong> — The ODE solver uses structure-preserving numerical methods that maintain the geometric properties of Hamiltonian systems, preventing energy drift over long simulations.</li>
+                    <li><strong>Stability guarantee</strong> — Because energy is conserved, HNN trajectories cannot diverge to infinity. This provides a natural stability guarantee that unconstrained networks lack.</li>
+                    <li><strong>Phase-space reasoning</strong> — The HNN reasons in terms of position-momentum pairs, which naturally captures oscillatory dynamics, orbital motion, and pendulum-like behaviours.</li>
+                </ul>
+                <p><strong>What it contributes:</strong> The HNN provides physically plausible dynamics for motor control, object trajectory prediction, and any task where conservation laws matter. It prevents the brain from learning physically impossible dynamics — a ball thrown upward must come back down, and the HNN enforces this structurally.</p>
+            `
+        },
+        plasticity: {
+            title: 'Biological Plasticity — Five Rules, Five Timescales',
+            body: `
+                <p>NIMCP doesn't just use gradient descent. It runs <span class="highlight">six learning rules simultaneously</span> on the same synapses, each capturing a different aspect of learning:</p>
+                <ul>
+                    <li><strong>STDP (10ms)</strong> — Spike-Timing-Dependent Plasticity. If neuron A fires before neuron B, the A→B synapse strengthens. Captures causal relationships that backpropagation misses.</li>
+                    <li><strong>BCM (50ms)</strong> — Bienenstock-Cooper-Munro homeostatic rule. A sliding threshold prevents STDP from saturating all weights. Named after the Nobel laureate Leon Cooper.</li>
+                    <li><strong>Eligibility Traces (1s)</strong> — Three-factor learning: activity × eligibility × reward. Bridges the gap between spike timing (milliseconds) and reward signals (seconds).</li>
+                    <li><strong>Structural Plasticity (10s)</strong> — The network grows new synapses between frequently co-active neurons and prunes inactive ones. The brain literally rewires itself during training.</li>
+                    <li><strong>Homeostatic Scaling (60s)</strong> — Global weight normalization to maintain target firing rates. Prevents runaway excitation or complete silence.</li>
+                </ul>
+                <p>Four <span class="highlight">neuromodulators</span> gate these rules based on training dynamics:</p>
+                <ul>
+                    <li><strong>Dopamine</strong> — Derived from training loss. Low loss → high dopamine → recently-active synapses strengthened.</li>
+                    <li><strong>Acetylcholine</strong> — Rises for novel inputs. Increases learning rate for unfamiliar stimuli.</li>
+                    <li><strong>Norepinephrine</strong> — Rises on high-loss steps (surprise). Broadens attention.</li>
+                    <li><strong>Serotonin</strong> — Modulates risk-taking in decisions.</li>
+                </ul>
+                <p>These aren't metaphors — they are implemented as concentration fields that multiplicatively gate STDP weight changes at every synapse.</p>
+            `
+        },
+        curriculum: {
+            title: 'Developmental Curriculum — Growing a Mind in Four Stages',
+            body: `
+                <p>NIMCP doesn't present all training data at once. It follows a <span class="highlight">four-stage developmental curriculum</span> that mirrors human cognitive development:</p>
+                <ul>
+                    <li><strong>Stage 0 — Sensory Awakening (10,000 steps)</strong><br>
+                    Like a newborn. The brain learns to respond differently to different sensory inputs. Breaking symmetry from random weights. Multimodal: visual, audio, speech, somatosensory.</li>
+                    <li><strong>Stage 1 — Association (20,000 steps)</strong><br>
+                    Like an infant hearing "Look! That's a DOG!" The brain learns to bind sensory percepts to labels. Cross-modal association. Parentese audio stream with exaggerated prosody.</li>
+                    <li><strong>Stage 2 — Feedback (20,000 steps)</strong><br>
+                    Like a toddler learning from correction. The brain produces a response, gets corrected, and learns from error. Activates eligibility traces and cerebellar error correction.</li>
+                    <li><strong>Stage 3 — Reasoning (10,000 steps)</strong><br>
+                    Like a young child. Multi-turn dialogue, 13 cognitive domains (ethics, causal reasoning, Theory of Mind, imagination, metacognition), domain-specific mastery tracking, knowledge distillation.</li>
+                </ul>
+                <p>Each stage builds on representations formed in the previous one. You can't learn to reason about dogs if you can't first distinguish a dog from a cat. The curriculum enforces this dependency.</p>
+                <p>Evaluation uses <span class="highlight">spectral k-fold cross-validation</span> — Laplacian eigendecomposition ensures semantically similar items are in the same fold, testing genuine generalization rather than interpolation.</p>
+            `
+        },
+        safety: {
+            title: 'Safety by Design — Structural Guarantees, Not Behavioral Training',
+            body: `
+                <p>Most AI safety relies on training the model to <em>behave</em> safely (RLHF, Constitutional AI). These approaches can be jailbroken, fine-tuned away, or circumvented through prompt injection.</p>
+                <p>NIMCP takes a fundamentally different approach: <span class="highlight">safety is structural</span>. It's in the code path, not the weights.</p>
+                <ul>
+                    <li><strong>Non-removable Ethics Module</strong> — Always created during brain initialization, regardless of the enable_ethics configuration flag. The code literally cannot skip it.</li>
+                    <li><strong>LGSS Governance</strong> — Layered Governance Safety System evaluates every inference and every weight update against safety rules. Rules can only become stricter, never looser. No API exists to weaken a rule.</li>
+                    <li><strong>Tamper-Resistant Audit Log</strong> — 100,000-entry ring buffer with CRC32 checksums per entry and monotonic sequence numbers. Gaps indicate deleted entries. Mismatches indicate modified entries.</li>
+                    <li><strong>Motor Gate</strong> — Every motor command passes through a safety watchdog before reaching actuators. NaN rejection, magnitude limiting, rate-of-change limiting, emergency stop.</li>
+                    <li><strong>Training Guard</strong> — Validates every training sample before it modifies weights. Rejects NaN/Inf, detects statistical anomalies, blocks poisoned gradient updates.</li>
+                </ul>
+                <p>The result: <span class="highlight">9 layers of safety</span> that are verifiable by code inspection, not empirical testing. You can prove the ethics module exists by reading the source. You can't prove a language model "is safe" by any number of tests.</p>
+            `
+        },
+        edge: {
+            title: 'Edge & Robot Platform — From Brain to Body',
+            body: `
+                <p>NIMCP isn't just a neural network — it's a complete <span class="highlight">embodied cognitive system</span> designed to control physical robots.</p>
+                <ul>
+                    <li><strong>Sensor Hub</strong> — 12 sensor types: IMU, GPS, LIDAR, camera, microphone, temperature, barometric, humidity, light, touch/force, proprioception, battery. Unified API for registration and polling.</li>
+                    <li><strong>Motor Translator</strong> — Converts 4096-dim brain output to actuator commands. 4 presets: twist (6-DOF), quadrotor (thrust + attitude), differential drive (2 wheels), robot arm (N joints + gripper).</li>
+                    <li><strong>Safety Watchdog</strong> — Validates every motor command: NaN rejection, magnitude limiting, rate-of-change smoothing, emergency stop on anomaly.</li>
+                    <li><strong>Drone Bridges</strong> — MAVLink (ArduPilot/PX4), DJI Mobile SDK, Betaflight MSP, Parrot Olympe. The same brain can fly four different drone platforms.</li>
+                    <li><strong>ROS 2 Bridge</strong> — Publishes /cmd_vel, subscribes to /imu, /odom, /joint_states, /scan, /image_raw. Zero code changes from simulation to real robot.</li>
+                    <li><strong>Sim-to-Real</strong> — Built-in physics simulator (cart-pole) with domain randomization. Vary physics parameters on each episode reset for robust policy transfer.</li>
+                    <li><strong>URDF Body Model</strong> — The brain loads its own body description, enabling self-aware motor planning (knows its joint limits, link lengths).</li>
+                </ul>
+                <p>The sensorimotor loop is closed: sensors → brain → motor → environment → sensors. <span class="highlight">Curiosity-driven exploration</span> uses prediction error as intrinsic reward — no hand-designed reward function needed.</p>
+            `
+        },
+        swarm: {
+            title: 'Swarm Intelligence — Many Brains, One Mind',
+            body: `
+                <p>NIMCP brains can <span class="highlight">form networks</span> and learn collectively:</p>
+                <ul>
+                    <li><strong>UDP Discovery</strong> — Brains automatically discover peers on the local network. No central coordinator required.</li>
+                    <li><strong>Federated Gradient Aggregation</strong> — Each brain trains locally, then shares gradient updates with peers. Trimmed mean aggregation resists poisoning from compromised nodes.</li>
+                    <li><strong>Byzantine Fault Detection</strong> — Statistical anomaly detection (z-score on gradient norms) identifies compromised or malfunctioning nodes and excludes them from aggregation.</li>
+                    <li><strong>Gossip Protocol</strong> — Parameter updates propagate through the network via gossip, converging to consensus without requiring synchronized rounds.</li>
+                    <li><strong>Theory of Mind</strong> — Each brain observes other agents' actions through the swarm and builds belief-desire-intention (BDI) models. Theory of Mind emerges from actual multi-agent interaction, not from reading false-belief scenarios.</li>
+                    <li><strong>Local Adaptation</strong> — After receiving collective updates, each edge brain continues local training, adapting the shared knowledge to its specific environment.</li>
+                    <li><strong>Master/Edge Architecture</strong> — One brain can serve as the master (aggregation hub) while edge brains operate autonomously, syncing periodically.</li>
+                </ul>
+                <p>Each edge brain maintains its own <span class="highlight">independent LGSS safety rules</span> — a compromised node cannot relax another node's safety constraints. Safety is per-brain, not per-network.</p>
+            `
+        },
+        language: {
+            title: 'Brain-Native Language — Words Without an LLM',
+            body: `
+                <p>NIMCP doesn't use an external language model. It develops its <span class="highlight">own vocabulary from neural activation patterns</span>:</p>
+                <ul>
+                    <li><strong>Learned Projection Matrices</strong> — The brain's 4096-dim activation space is mapped to a token vocabulary through learned linear transforms, not a pre-trained tokenizer.</li>
+                    <li><strong>Autoregressive Decoding</strong> — Token generation uses nucleus sampling (top-p) with temperature control, producing sequences one token at a time.</li>
+                    <li><strong>Emergent Symbols (Omega-Tokens)</strong> — Some tokens emerge from neural pattern hashes that don't correspond to any human word. These &Omega;-tokens represent concepts the brain has discovered that human language doesn't have words for.</li>
+                    <li><strong>Phonological Working Memory</strong> — A loop that feeds generated text back as input, allowing the brain to "hear" its own output and refine it through multiple iterations before responding.</li>
+                    <li><strong>Inner Speech</strong> — The brain generates text → re-encodes it → compares to original intent → generates again. Multiple self-talk iterations converge on a response that matches the brain's internal representation.</li>
+                    <li><strong>BPE-Style Tokenizer</strong> — Hash-table-backed vocabulary with brain-aware embedding learning. The tokenizer grows during training as the brain encounters new concepts.</li>
+                </ul>
+                <p>The vocabulary is expected to reach <span class="highlight">2,000-5,000 tokens</span> by the end of Stage 3. Whether the emergent language develops sufficient structure for meaningful communication is an open research question.</p>
+            `
+        },
+        s2_domain: {
+            title: 'Current Training Domain',
+            body: `
+                <p>Stage 2 trains across <span class="highlight">24 knowledge domains</span>, cycling through them in 10-fact batches. The current domain shows which subject area Athena is learning right now.</p>
+                <p>Domains include: physics, chemistry, biology, mathematics, history, geography, music, art, emotions, social, ethics, logic, language, astronomy, ecology, weather, cooking, sports, technology, medicine, law, economics, philosophy, and psychology.</p>
+                <p>Each domain has its own learning rate scaling factor to balance difficulty — abstract domains (philosophy, ethics) get higher learning rates because they're harder to ground in sensory experience.</p>
+            `
+        },
+        s2_fact_ratio: {
+            title: 'Fact Ratio — Curriculum Difficulty',
+            body: `
+                <p><strong>What this number means:</strong> The percentage of training examples that are factual (text descriptions with target embeddings) versus sensory (raw images, audio, touch). Higher = more abstract learning.</p>
+                <p><strong>Warm start ramp:</strong> Stage 2 begins with a 500-step warm start where the fact ratio ramps from 10% to 60%. This prevents catastrophic forgetting of Stage 1's sensory representations by gradually introducing abstract content.</p>
+                <p>After warm start: 60% facts, 40% sensory. This ratio ensures the brain maintains grounded sensory representations while building higher-order conceptual knowledge.</p>
+            `
+        },
+        s2_warmstart: {
+            title: 'Warm Start — Gradual Transition',
+            body: `
+                <p>Stage 2 uses a <span class="highlight">500-step warm start ramp</span> to transition from Stage 1's sensory-dominant curriculum to Stage 2's fact-heavy curriculum.</p>
+                <p>During warm start, the fact ratio linearly increases from 10% to 60%, the learning rate is reset to its initial value (preventing stale momentum from Stage 1), and per-domain learning rate scaling is gradually introduced.</p>
+                <p><strong>Why:</strong> Abruptly switching from sensory to factual training causes mode collapse — the sudden distribution shift overwhelms the network's learned representations. The warm start provides a smooth transition.</p>
+            `
+        },
+        s2_engines: {
+            title: 'Simulation Engines — World Knowledge',
+            body: `
+                <p>NIMCP has <span class="highlight">74 simulation engines</span> that provide ground-truth world knowledge:</p>
+                <ul>
+                    <li><strong>56 science engines</strong> — Newtonian/relativistic physics, EM, MHD, fluid dynamics, thermodynamics, acoustics, optics, nuclear, condensed matter, surface physics/chemistry, bulk chemistry, biochemistry, molecular biology, organic chemistry, chemical engineering, astrophysics, particle physics, QED, biology, ecology, immunology, neuroscience, and more.</li>
+                    <li><strong>18 math engines</strong> — Number theory, algebra, real analysis, topology, graph theory, combinatorics, logic, linear algebra, probability, numerical methods, optimization, information theory, game theory, category theory, complexity theory, zeta functions, knot theory, DSP.</li>
+                </ul>
+                <p>These engines don't just store facts — they <em>simulate</em> physical processes. When the brain predicts "a ball falls," the physics engine verifies the trajectory using Newtonian mechanics. Prediction errors from the engines drive surprise signals that strengthen memory encoding.</p>
+                <p>The engines feed into the brain's <strong>world prior</strong>, which constrains predictions to be physically/chemically/biologically plausible.</p>
+            `
+        },
+        s2_fep: {
+            title: 'FEP Free Energy — Prediction Error',
+            body: `
+                <p>The <span class="highlight">Free Energy Principle</span> (Karl Friston) states that intelligent systems minimize surprise by maintaining accurate internal models of the world.</p>
+                <p><strong>What this number means:</strong> The deviation of the Hamiltonian energy function from its initial value. In a perfectly predictive system, free energy is zero — every observation matches the brain's prediction. Higher values mean the brain is encountering surprising inputs it can't yet predict.</p>
+                <p><strong>During Stage 2:</strong> Free energy should start high (many surprising facts) and decrease as the brain builds accurate world models. Spikes indicate the introduction of a new domain or particularly surprising facts.</p>
+                <p>The FEP orchestrates learning across all subsystems: high free energy → increase learning rate, allocate more attention, encode to memory. Low free energy → coast on existing representations.</p>
+            `
+        },
+        s2_wm: {
+            title: 'World Model Steps',
+            body: `
+                <p>The <span class="highlight">world model</span> maintains an internal simulation of the environment. Each step: predict the next state → observe the actual state → compute prediction error → update the model.</p>
+                <p>The world model bridges connect to the 74 simulation engines through a predict→verify→surprise→replay loop. When the brain predicts something that violates physics (a ball floating upward), the simulation engine detects the violation, generates a surprise signal, and the experience is replayed for accelerated learning.</p>
+                <p>World model steps accumulate as the brain makes predictions about domain-specific scenarios during Stage 2 training.</p>
+            `
+        },
+        s2_collapse: {
+            title: 'Mode Collapse Events',
+            body: `
+                <p><strong>Mode collapse</strong> occurs when the brain produces nearly identical outputs regardless of input — all neurons converge to the same activation pattern, destroying learned representations.</p>
+                <p>Stage 2 has two collapse detectors:</p>
+                <ul>
+                    <li><strong>Full probe</strong> (every 100 steps) — Measures cosine similarity between outputs for different inputs. &gt;0.99 = collapsed.</li>
+                    <li><strong>Fast detector</strong> (every 10 steps) — Checks if consecutive outputs are identical (&gt;0.995 similarity for 5 consecutive checks).</li>
+                </ul>
+                <p><strong>Recovery:</strong> On detection, the system applies an LR spike (10x for 5 steps) + diversity injection (random noise to break symmetry). If collapse persists for 3 consecutive detections, training halts for investigation.</p>
+                <p><strong>Ideal value: 0.</strong> Any non-zero value means the network lost diversity at some point and had to be rescued.</p>
+            `
+        },
+        s2_surprises: {
+            title: 'Surprises Stored — Novelty Detection',
+            body: `
+                <p>When the brain encounters an input that significantly violates its predictions (loss &gt; 3x the EMA), it's marked as <span class="highlight">surprising</span> and encoded as a memory engram for later replay.</p>
+                <p>Surprises drive learning — the brain preferentially remembers and revisits things it got wrong. This is biologically inspired by the dopaminergic reward prediction error signal.</p>
+                <p>The world model bridges amplify this: a physics violation (ball going through a wall) generates a much stronger surprise signal than a simple prediction miss.</p>
+            `
+        },
+        s2_replays: {
+            title: 'Memory Replays — Hippocampal Consolidation',
+            body: `
+                <p>Replays are training steps where the brain revisits <span class="highlight">previously stored surprising experiences</span> rather than processing new input. This is analogous to hippocampal replay during sleep in biological brains.</p>
+                <p>The BPTT (Backpropagation Through Time) buffer stores the last N training examples with exponentially discounted learning rates, allowing the network to learn temporal dependencies across recent experience.</p>
+                <p>Additionally, the world model bridge triggers replays when a prediction error exceeds a threshold — replaying the surprising event multiple times to accelerate learning of the violated constraint.</p>
+            `
+        },
+        s2_lr_phys: {
+            title: 'Physics Learning Rate',
+            body: `
+                <p>Each knowledge domain has its own <span class="highlight">per-domain learning rate scaling factor</span>. The physics LR controls how aggressively the brain updates weights when processing physics-related training examples.</p>
+                <p><strong>Why per-domain LR:</strong> Different domains have different inherent difficulties. Physics concepts (force, gravity, energy) are relatively easy to ground in sensory experience (the brain has seen things fall). Abstract domains need higher LRs because they're harder to learn from examples alone.</p>
+                <p>The domain LR multiplies the base learning rate: effective_lr = base_lr × domain_scale × memory_factor.</p>
+            `
+        },
+        s2_lr_chem: {
+            title: 'Chemistry Learning Rate',
+            body: `
+                <p>Per-domain learning rate for chemistry training examples. Chemistry is more abstract than physics — reactions, bonds, and molecular structures aren't directly observable through sensory input.</p>
+                <p>The chemistry simulation engines (bulk chemistry, physical chemistry, organic chemistry, biochemistry, chemical engineering) provide ground-truth verification of predictions, but the concepts require more training iterations to learn.</p>
+            `
+        },
+        s2_lr_bio: {
+            title: 'Biology Learning Rate',
+            body: `
+                <p>Per-domain learning rate for biology training examples. Biology spans from concrete (anatomy, organism behaviour) to highly abstract (evolution, ecology, genetics).</p>
+                <p>The biology simulation engines (cell biology, molecular biology, immunology, neuroscience, ecology, evolutionary biology, physiology) provide multi-scale verification from molecular to ecosystem level.</p>
+            `
+        }
+    };
+
+    function openModal(id) {
+        const data = modalData[id];
+        if (!data) return;
+        document.getElementById('modalTitle').textContent = data.title;
+        document.getElementById('modalBody').innerHTML = data.body;
+        document.getElementById('modalOverlay').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+        document.getElementById('modalOverlay').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+    // Live metrics polling
+    const METRICS_URL = '/metrics.json';
+    const POLL_INTERVAL = 15000; // 15 seconds
+
+    function fmt(v, decimals=4) {
+        if (v === undefined || v === null) return '—';
+        return typeof v === 'number' ? v.toFixed(decimals) : String(v);
+    }
+
+    function fmtTime(seconds) {
+        if (!seconds) return '—';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        if (h > 0) return h + 'h ' + m + 'm';
+        return m + 'm';
+    }
+
+    function updateMetrics(d) {
+        const el = id => document.getElementById(id);
+
+        if (d.current_step) {
+            el('m-step').textContent = 'Step ' + d.current_step.toLocaleString() + ' / 20,000';
+        }
+        if (d.ann_loss !== undefined) el('m-ann').textContent = fmt(d.ann_loss);
+        if (d.cnn_loss !== undefined) el('m-cnn').textContent = fmt(d.cnn_loss);
+        if (d.snn_loss !== undefined) el('m-snn-loss').textContent = fmt(d.snn_loss);
+        if (d.lnn_loss !== undefined) el('m-lnn').textContent = fmt(d.lnn_loss);
+        if (d.snn_rate_hz !== undefined) el('m-snn-rate').textContent = fmt(d.snn_rate_hz, 1) + ' Hz';
+        if (d.snn_sparsity !== undefined) el('m-snn-sparsity').textContent = (d.snn_sparsity * 100).toFixed(0) + '%';
+        if (d.snn_spikes !== undefined) el('m-snn-spikes').textContent = d.snn_spikes.toLocaleString();
+        // FNO metrics
+        if (d.fno_loss !== undefined) {
+            el('m-fno-loss').textContent = d.fno_steps > 0 ? fmt(d.fno_loss) + ' (' + d.fno_steps + ' steps)' : 'Inactive';
+        }
+        // HNN metrics
+        if (d.hnn_active) {
+            el('m-hnn-energy').textContent = fmt(d.hnn_energy, 4) + ' (dev: ' + fmt(d.hnn_energy_deviation, 6) + ')';
+        } else {
+            el('m-hnn-energy').textContent = d.hnn_active === false ? 'Not yet enabled' : '—';
+        }
+        if (d.step_loss !== undefined) el('m-step-loss').textContent = fmt(d.step_loss);
+        else if (d.ann_loss !== undefined) el('m-step-loss').textContent = fmt(d.ann_loss);
+        // Show cumulative step from training log (not per-session daemon counter)
+        if (d.current_step) {
+            el('m-steps').textContent = d.current_step.toLocaleString() + ' (cumulative)';
+        } else if (d.ann_steps !== undefined) {
+            el('m-steps').textContent = d.ann_steps.toLocaleString() + ' (session)';
+        }
+        if (d.learn_calls !== undefined) el('m-learns').textContent = d.learn_calls.toLocaleString();
+        if (d.uptime !== undefined) el('m-uptime').textContent = fmtTime(d.uptime);
+
+        // Chat Eval
+        if (d.chat_eval) {
+            const ce = d.chat_eval;
+            const show = (id, val) => {
+                const wrap = el(id + '-wrap');
+                const v = el('m-' + id.replace('-wrap',''));
+                if (wrap) wrap.style.display = '';
+                if (v && val !== undefined) v.textContent = val;
+            };
+            if (ce.avg_coherence !== undefined) show('chat-coherence', fmt(ce.avg_coherence, 3));
+            if (ce.avg_similarity !== undefined) show('chat-similarity', fmt(ce.avg_similarity, 3));
+            if (ce.avg_norm !== undefined) show('chat-norm', fmt(ce.avg_norm, 1));
+            if (ce.diversity !== undefined) show('chat-diversity', fmt(ce.diversity, 3));
+            if (ce.num_prompts !== undefined) show('chat-prompts', ce.num_prompts);
+            if (ce.eval_number !== undefined) show('chat-eval', '#' + ce.eval_number);
+        }
+
+        // Cortex CNNs
+        if (d.cortex) {
+            for (const [name, c] of Object.entries(d.cortex)) {
+                const wrapper = el('cortex-' + name);
+                const val = el('m-cx-' + name);
+                if (wrapper && val) {
+                    wrapper.style.display = '';
+                    const ratio = c.fwd > 0 ? Math.round(100 * c.bwd / c.fwd) : 0;
+                    val.textContent = fmt(c.ema_loss) + ' (' + ratio + '% bwd)';
+                }
+            }
+        }
+
+        // Stage 2 Dashboard — show when stage >= 2
+        if (d.current_stage >= 2 || d.stage2) {
+            const dash = document.getElementById('stage2-dashboard');
+            if (dash) dash.style.display = '';
+            const s2 = d.stage2 || {};
+            if (s2.current_domain) el('m-domain').textContent = s2.current_domain;
+            if (s2.fact_ratio !== undefined) el('m-fact-ratio').textContent = (s2.fact_ratio * 100).toFixed(0) + '%';
+            if (s2.warm_start_complete) el('m-warmstart').textContent = '✓ Complete';
+            else if (s2.warm_start_step !== undefined) el('m-warmstart').textContent = 'Step ' + s2.warm_start_step + '/500';
+            else el('m-warmstart').textContent = 'Active';
+            if (s2.surprises !== undefined) el('m-surprises').textContent = s2.surprises.toLocaleString();
+            if (s2.replays !== undefined) el('m-replays').textContent = s2.replays.toLocaleString();
+            if (s2.collapse_events !== undefined) el('m-collapse').textContent = s2.collapse_events;
+            if (s2.lr_physics !== undefined) el('m-lr-phys').textContent = s2.lr_physics.toFixed(6);
+            if (s2.lr_chemistry !== undefined) el('m-lr-chem').textContent = s2.lr_chemistry.toFixed(6);
+            if (s2.lr_biology !== undefined) el('m-lr-bio').textContent = s2.lr_biology.toFixed(6);
+            if (s2.fep_free_energy !== undefined) el('m-fep-fe').textContent = fmt(s2.fep_free_energy, 4);
+            if (s2.wm_steps !== undefined) el('m-wm-steps').textContent = s2.wm_steps.toLocaleString();
+            if (s2.active_engines !== undefined) el('m-engines').textContent = s2.active_engines;
+        }
+
+        // Update stage display
+        if (d.current_stage !== undefined && d.current_stage !== null) {
+            const stageNames = {0: 'Sensory', 1: 'Naming', 2: 'Relations', 3: 'Dialogue'};
+            const stageName = stageNames[d.current_stage] || '';
+            el('m-stage').textContent = (d.current_stage + 1) + ' / 4' + (stageName ? ' — ' + stageName : '');
+            const totals = {0: 20000, 1: 40000, 2: 40000, 3: 30000};
+            const total = totals[d.current_stage] || 40000;
+            if (d.current_step !== undefined && d.current_step !== null) {
+                el('m-step').textContent = 'Step ' + d.current_step.toLocaleString() + ' / ' + total.toLocaleString();
+            }
+        }
+
+        // Status indicator
+        const dot = el('liveDot');
+        const label = el('update-label');
+        if (d.ok) {
+            dot.style.background = 'var(--green)';
+            const age = Math.round((Date.now() / 1000) - d.timestamp);
+            label.textContent = 'Live metrics — updated ' + (age < 60 ? age + 's ago' : Math.round(age/60) + 'm ago');
+        } else {
+            dot.style.background = 'var(--orange)';
+            label.textContent = 'Brain daemon offline — last data from cache';
+        }
+    }
+
+    async function pollMetrics() {
+        try {
+            const resp = await fetch(METRICS_URL + '?t=' + Date.now());
+            if (resp.ok) {
+                const data = await resp.json();
+                updateMetrics(data);
+            }
+        } catch (e) {
+            // Metrics file not available — show static values
+            document.getElementById('update-label').textContent =
+                'Metrics feed unavailable — showing cached values';
+        }
+    }
+
+    // Poll immediately, then every 10 seconds
+    pollMetrics();
+    setInterval(pollMetrics, POLL_INTERVAL);
+
+    // ================================================================
+    // CHART.JS VISUALIZATIONS
+    // ================================================================
+    const MAX_POINTS = 60;
+    const chartColors = {
+        ann: '#3b82f6', cnn: '#22c55e', snn: '#f59e0b', lnn: '#a78bfa',
+        hnn: '#06b6d4', fno: '#ef4444'
+    };
+
+    // Time-series buffers
+    const history = {
+        labels: [],
+        ann: [], cnn: [], snn: [], lnn: [],
+        hnn_energy: [], hnn_deviation: [],
+        neuron_mean: [], neuron_std: [], neuron_max: [],
+    };
+
+    function pushHistory(key, val) {
+        history[key].push(val);
+        if (history[key].length > MAX_POINTS) history[key].shift();
+    }
+
+    // Chart 1: Loss curves
+    const lossChart = new Chart(document.getElementById('chart-loss'), {
+        type: 'line',
+        data: {
+            labels: history.labels,
+            datasets: [
+                {label: 'ANN', data: history.ann, borderColor: chartColors.ann, borderWidth: 1.5, pointRadius: 0, tension: 0.3},
+                {label: 'SNN', data: history.snn, borderColor: chartColors.snn, borderWidth: 1.5, pointRadius: 0, tension: 0.3},
+                {label: 'LNN', data: history.lnn, borderColor: chartColors.lnn, borderWidth: 1.5, pointRadius: 0, tension: 0.3},
+                {label: 'CNN', data: history.cnn, borderColor: chartColors.cnn, borderWidth: 1.5, pointRadius: 0, tension: 0.3},
+            ]
+        },
+        options: {
+            responsive: true,
+            animation: false,
+            scales: {
+                x: {display: false},
+                y: {type: 'logarithmic', ticks: {color: '#94a3b8', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}}
+            },
+            plugins: {legend: {labels: {color: '#e2e8f0', font: {size: 10}, boxWidth: 12}}}
+        }
+    });
+
+    // Chart 2: Brain regions (bar chart)
+    const regionLabels = ['Visual', 'Audio', 'Speech', 'Somato', 'Broca', 'Wernicke',
+        'Hippo', 'Amygdala', 'Hypothal', 'BG', 'Cerebel', 'Medulla',
+        'Parietal', 'Prefrontal', 'Glial', 'Columns'];
+    const regionKeys = ['visual_cortex', 'audio_cortex', 'speech_cortex', 'somato_cortex',
+        'broca', 'wernicke', 'hippocampus', 'amygdala', 'hypothalamus',
+        'basal_ganglia', 'cerebellum', 'medulla', 'parietal', 'prefrontal', 'glial', 'cortical_columns'];
+    let regionData = new Array(16).fill(0);
+
+    const regionChart = new Chart(document.getElementById('chart-regions'), {
+        type: 'bar',
+        data: {
+            labels: regionLabels,
+            datasets: [{
+                data: regionData,
+                backgroundColor: regionData.map(v => v ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.3)'),
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            animation: false,
+            indexAxis: 'y',
+            scales: {
+                x: {display: false, max: 1.2},
+                y: {ticks: {color: '#94a3b8', font: {size: 9}}, grid: {display: false}}
+            },
+            plugins: {legend: {display: false}}
+        }
+    });
+
+    // Chart 3: Neuron activation stats
+    const neuronChart = new Chart(document.getElementById('chart-neurons'), {
+        type: 'line',
+        data: {
+            labels: history.labels,
+            datasets: [
+                {label: 'Mean', data: history.neuron_mean, borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, fill: false},
+                {label: 'Std Dev', data: history.neuron_std, borderColor: '#a78bfa', borderWidth: 1.5, pointRadius: 0, fill: false},
+                {label: 'Max', data: history.neuron_max, borderColor: '#ef4444', borderWidth: 1, pointRadius: 0, borderDash: [3,3], fill: false},
+            ]
+        },
+        options: {
+            responsive: true,
+            animation: false,
+            scales: {
+                x: {display: false},
+                y: {ticks: {color: '#94a3b8', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}}
+            },
+            plugins: {legend: {labels: {color: '#e2e8f0', font: {size: 10}, boxWidth: 12}}}
+        }
+    });
+
+    // Chart 4: HNN energy conservation
+    const hnnChart = new Chart(document.getElementById('chart-hnn'), {
+        type: 'line',
+        data: {
+            labels: history.labels,
+            datasets: [
+                {label: 'Energy H(q,p)', data: history.hnn_energy, borderColor: '#06b6d4', borderWidth: 2, pointRadius: 0, fill: false},
+                {label: 'Deviation', data: history.hnn_deviation, borderColor: '#f59e0b', borderWidth: 1.5, pointRadius: 0, borderDash: [4,2], fill: false},
+            ]
+        },
+        options: {
+            responsive: true,
+            animation: false,
+            scales: {
+                x: {display: false},
+                y: {ticks: {color: '#94a3b8', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}}
+            },
+            plugins: {legend: {labels: {color: '#e2e8f0', font: {size: 10}, boxWidth: 12}}}
+        }
+    });
+
+    // Chart 5: Synapse weight distribution
+    const synapseChart = new Chart(document.getElementById('chart-synapses'), {
+        type: 'line',
+        data: {
+            labels: history.labels,
+            datasets: [
+                {label: 'Weight Mean', data: [], borderColor: '#06b6d4', borderWidth: 1.5, pointRadius: 0, fill: false},
+                {label: 'Weight Std', data: [], borderColor: '#a78bfa', borderWidth: 1.5, pointRadius: 0, fill: false},
+                {label: 'E/I Ratio', data: [], borderColor: '#22c55e', borderWidth: 1, pointRadius: 0, borderDash: [3,3], fill: false},
+            ]
+        },
+        options: {
+            responsive: true, animation: false,
+            scales: {x: {display: false}, y: {ticks: {color: '#94a3b8', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}}},
+            plugins: {legend: {labels: {color: '#e2e8f0', font: {size: 10}, boxWidth: 12}}}
+        }
+    });
+    history.syn_mean = []; history.syn_std = []; history.syn_ei = [];
+
+    // Chart 6: Cognitive module training steps (bar)
+    const cogLabels = ['Lang', 'Knowledge', 'VAE', 'FEP', 'PhysNN', 'PredHier', 'JEPA', 'Creative', 'SelfHeal', 'Intuition', 'FEP Orch'];
+    const cogKeys = ['grounded_lang.steps', 'knowledge.steps', 'vae.steps', 'fep_parietal.steps', 'physics_nn.steps', 'pred_hierarchy.steps', 'jepa.steps', 'creative.steps', 'self_heal.steps', 'intuition.steps', 'fep_orch.steps'];
+    const cogChart = new Chart(document.getElementById('chart-cognitive'), {
+        type: 'bar',
+        data: {
+            labels: cogLabels,
+            datasets: [{data: new Array(11).fill(0), backgroundColor: 'rgba(59,130,246,0.6)', borderWidth: 0}]
+        },
+        options: {
+            responsive: true, animation: false,
+            scales: {x: {ticks: {color: '#94a3b8', font: {size: 8}, maxRotation: 45}, grid: {display: false}},
+                     y: {ticks: {color: '#94a3b8', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}}},
+            plugins: {legend: {display: false}}
+        }
+    });
+
+    // Chart 7: Glial system (time series of cumulative counts)
+    history.glial_mod = []; history.glial_myel = []; history.glial_prune = [];
+    const glialChart = new Chart(document.getElementById('chart-glial'), {
+        type: 'line',
+        data: {
+            labels: history.labels,
+            datasets: [
+                {label: 'Modulations', data: history.glial_mod, borderColor: '#22c55e', borderWidth: 1.5, pointRadius: 0},
+                {label: 'Myelinations', data: history.glial_myel, borderColor: '#06b6d4', borderWidth: 1.5, pointRadius: 0},
+                {label: 'Prunings', data: history.glial_prune, borderColor: '#ef4444', borderWidth: 1.5, pointRadius: 0},
+            ]
+        },
+        options: {
+            responsive: true, animation: false,
+            scales: {x: {display: false}, y: {ticks: {color: '#94a3b8', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}}},
+            plugins: {legend: {labels: {color: '#e2e8f0', font: {size: 10}, boxWidth: 12}}}
+        }
+    });
+
+    // Chart 8: Training throughput (learn steps + inference time)
+    history.learn_steps = []; history.inf_time = [];
+    const throughputChart = new Chart(document.getElementById('chart-throughput'), {
+        type: 'line',
+        data: {
+            labels: history.labels,
+            datasets: [
+                {label: 'Learn Steps', data: history.learn_steps, borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, yAxisID: 'y'},
+                {label: 'Inference ms', data: history.inf_time, borderColor: '#f59e0b', borderWidth: 1.5, pointRadius: 0, borderDash: [3,3], yAxisID: 'y1'},
+            ]
+        },
+        options: {
+            responsive: true, animation: false,
+            scales: {
+                x: {display: false},
+                y: {type: 'linear', position: 'left', ticks: {color: '#3b82f6', font: {size: 10}}, grid: {color: 'rgba(255,255,255,0.05)'}},
+                y1: {type: 'linear', position: 'right', ticks: {color: '#f59e0b', font: {size: 10}}, grid: {drawOnChartArea: false}}
+            },
+            plugins: {legend: {labels: {color: '#e2e8f0', font: {size: 10}, boxWidth: 12}}}
+        }
+    });
+
+    // Update charts on each metrics poll
+    const origUpdate = updateMetrics;
+    updateMetrics = function(d) {
+        origUpdate(d);
+
+        // Push time label
+        const now = new Date();
+        const label = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+        history.labels.push(label);
+        if (history.labels.length > MAX_POINTS) history.labels.shift();
+
+        // Loss curves
+        pushHistory('ann', d.ann_loss > 0 ? d.ann_loss : null);
+        pushHistory('cnn', d.cnn_loss > 0 ? d.cnn_loss : null);
+        pushHistory('snn', d.snn_loss > 0 ? d.snn_loss : null);
+        pushHistory('lnn', d.lnn_loss > 0 ? d.lnn_loss : null);
+        lossChart.update();
+
+        // Brain regions
+        if (d.probe_metrics && d.probe_metrics.brain_regions) {
+            const br = d.probe_metrics.brain_regions;
+            regionKeys.forEach((k, i) => {
+                regionData[i] = (br[k] && br[k] > 0) ? 1 : 0;
+            });
+        } else if (d.stage2 && d.stage2.active_engines) {
+            // Fallback: just show cortex CNNs as active
+            regionData = [1,1,1,1, 0,0, 0,0,0,0,0,0, 0,0,0,0];
+        }
+        regionChart.data.datasets[0].data = regionData;
+        regionChart.data.datasets[0].backgroundColor = regionData.map(v =>
+            v ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.3)');
+        regionChart.update();
+
+        // Neuron stats
+        const pm = d.probe_metrics || {};
+        if (pm.neurons) {
+            const n = pm.neurons;
+            pushHistory('neuron_mean', n['state.mean'] || 0);
+            pushHistory('neuron_std', n['state.std'] || 0);
+            pushHistory('neuron_max', n['state.max'] || 0);
+        } else {
+            pushHistory('neuron_mean', null);
+            pushHistory('neuron_std', null);
+            pushHistory('neuron_max', null);
+        }
+        neuronChart.update();
+
+        // HNN energy
+        pushHistory('hnn_energy', d.hnn_energy || 0);
+        pushHistory('hnn_deviation', d.hnn_energy_deviation || 0);
+        hnnChart.update();
+
+        // Synapse weights
+        if (pm.synapses) {
+            const s = pm.synapses;
+            pushHistory('syn_mean', s['weight.mean'] || 0);
+            pushHistory('syn_std', s['weight.std'] || 0);
+            pushHistory('syn_ei', s['ei_ratio'] || 0);
+        } else {
+            pushHistory('syn_mean', null);
+            pushHistory('syn_std', null);
+            pushHistory('syn_ei', null);
+        }
+        synapseChart.data.datasets[0].data = history.syn_mean;
+        synapseChart.data.datasets[1].data = history.syn_std;
+        synapseChart.data.datasets[2].data = history.syn_ei;
+        synapseChart.update();
+
+        // Cognitive module steps (bar chart — current snapshot, not history)
+        if (pm.cognitive_stats) {
+            const c = pm.cognitive_stats;
+            cogKeys.forEach((k, i) => {
+                cogChart.data.datasets[0].data[i] = c[k] || 0;
+            });
+            cogChart.update();
+        }
+
+        // Glial system
+        if (pm.glial) {
+            const g = pm.glial;
+            pushHistory('glial_mod', g['total_modulations'] || 0);
+            pushHistory('glial_myel', g['total_myelinations'] || 0);
+            pushHistory('glial_prune', g['total_prunings'] || 0);
+        } else {
+            pushHistory('glial_mod', null);
+            pushHistory('glial_myel', null);
+            pushHistory('glial_prune', null);
+        }
+        glialChart.update();
+
+        // Training throughput
+        if (pm.inference) {
+            pushHistory('learn_steps', pm.inference['total_learn_steps'] || 0);
+            pushHistory('inf_time', (pm.inference['avg_inference_us'] || 0) / 1000);
+        } else {
+            pushHistory('learn_steps', d.learn_calls || 0);
+            pushHistory('inf_time', null);
+        }
+        throughputChart.update();
+    };
+
+    // Bootstrap charts from server-side history. Without this, every page
+    // refresh wipes the rolling-window display and you have to wait
+    // POLL_INTERVAL × MAX_POINTS (10 min at defaults) for it to repopulate.
+    // metrics_history.json is regenerated by tsv_to_history_json.py after
+    // each pull from the pod (last 120 rows). Replay them through the
+    // already-wrapped updateMetrics so charts populate identically to the
+    // live path. Best-effort: 404/parse failure leaves the dashboard in
+    // its empty state, exactly as before this change.
+    (async function bootstrapHistory() {
+        try {
+            const resp = await fetch('/metrics_history.json?t=' + Date.now());
+            if (!resp.ok) return;
+            const rows = await resp.json();
+            if (!Array.isArray(rows) || rows.length === 0) return;
+            // Override the time-label generator so historical rows use their
+            // own timestamps, not "now". Restore after the replay.
+            const realDateNow = Date.now;
+            for (const row of rows) {
+                if (row.timestamp) {
+                    const ts = row.timestamp * 1000;
+                    Date.now = function() { return ts; };
+                }
+                try { updateMetrics(row); } catch (_) { /* skip bad row */ }
+            }
+            Date.now = realDateNow;
+        } catch (_) {
+            /* No history → empty charts, same as pre-bootstrap behavior. */
+        }
+    })();
+
+    // Chat with Athena
+    const CHAT_API = '/api/chat';
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const chatStatus = document.getElementById('chat-status');
+    let chatStarted = false;
+
+    function addMessage(sender, text, extra) {
+        if (!chatStarted) {
+            chatMessages.innerHTML = '';
+            chatStarted = true;
+        }
+        const div = document.createElement('div');
+        div.style.marginBottom = '12px';
+        const label = document.createElement('span');
+        label.style.fontWeight = '600';
+        label.style.color = sender === 'You' ? 'var(--accent)' : 'var(--green)';
+        label.textContent = sender + ': ';
+        const msg = document.createElement('span');
+        msg.style.color = 'var(--text)';
+        msg.textContent = text;
+        div.appendChild(label);
+        div.appendChild(msg);
+        if (extra) {
+            const meta = document.createElement('div');
+            meta.style.color = 'var(--text-dim)';
+            meta.style.fontSize = '0.75rem';
+            meta.style.marginTop = '2px';
+            meta.textContent = extra;
+            div.appendChild(meta);
+        }
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async function sendChat() {
+        const msg = chatInput.value.trim();
+        if (!msg) return;
+        chatInput.value = '';
+        addMessage('You', msg);
+        chatStatus.textContent = 'Thinking...';
+
+        try {
+            const resp = await fetch(CHAT_API, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: msg, use_phi3: document.getElementById('phi3-toggle').checked})
+            });
+            const data = await resp.json();
+            if (data.error) {
+                addMessage('Athena', '[Error: ' + data.error + ']');
+                chatStatus.textContent = 'Error — brain may be busy training';
+            } else {
+                const conf = data.confidence ? ' (conf: ' + data.confidence.toFixed(3) + ')' : '';
+                const norm = data.output_norm ? ' |v|=' + data.output_norm.toFixed(1) : '';
+                addMessage('Athena', data.response || '[no response]', conf + norm);
+                chatStatus.textContent = 'Response received';
+            }
+        } catch (e) {
+            addMessage('Athena', '[Connection failed — brain daemon may be offline]');
+            chatStatus.textContent = 'Offline — API not reachable';
+        }
+    }
+    </script>
+</body>
+</html>

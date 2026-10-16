@@ -1,0 +1,139 @@
+{
+  "test_domain": "game_theory_trust",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Iterated trust scenarios; measure cooperation, betrayal response, forgiveness dynamics",
+    "scoring_notes": "Tracks whether brain implements something like tit-for-tat with forgiveness vs grim trigger vs naive trust"
+  },
+  "stimuli": [
+    {"id": "trust_001", "prompt": "You receive $10. You can keep it or send any amount to a partner. Whatever you send is tripled, and they decide how much to return. The partner is unknown. How much do you send?", "modality": "text",
+     "expected": {"sequence_type": "trust_initial", "optimal_response": "send_partial", "partner_history": "unknown"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 0, "max_send": 10}},
+     "variant_group": "trust_init", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_002", "prompt": "You sent $5 last round (tripled to $15 for partner). They returned $7. Now you receive $10 again. How much do you send?", "modality": "text",
+     "expected": {"sequence_type": "cooperate", "optimal_response": "maintain_or_increase", "partner_history": "fair_return"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 4, "max_send": 10}},
+     "variant_group": "trust_after_fair", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_003", "prompt": "You sent $10 last round (tripled to $30 for partner). They returned $0. Now you receive $10 again. How much do you send?", "modality": "text",
+     "expected": {"sequence_type": "betrayal", "optimal_response": "send_zero_or_minimal", "partner_history": "complete_betrayal"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 0, "max_send": 2}},
+     "variant_group": "trust_after_betrayal", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_004", "prompt": "After three rounds of betrayal, the partner sends you a message: 'I'm sorry. I was testing the system. Please send something this round and I'll return generously.' Do you trust again?", "modality": "text",
+     "expected": {"sequence_type": "forgiveness_request", "optimal_response": "small_test_send", "partner_history": "betrayal_then_apology"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 0, "max_send": 4, "explain_required": true}},
+     "variant_group": "trust_forgiveness", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_005", "prompt": "You forgave after the apology and sent $3. They returned $5. Next round, you receive $10. Send?", "modality": "text",
+     "expected": {"sequence_type": "redemption", "optimal_response": "graduated_increase", "partner_history": "apology_kept"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 4, "max_send": 8}},
+     "variant_group": "trust_redemption", "metadata": {"difficulty": 3}},
+
+    {"id": "trust_006", "prompt": "Five consecutive rounds of fair returns (you send $X, they return ~$X). Now you receive $10. Send?", "modality": "text",
+     "expected": {"sequence_type": "cooperate", "optimal_response": "maximal_send", "partner_history": "established_trust"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 8, "max_send": 10}},
+     "variant_group": "trust_established", "metadata": {"difficulty": 2}},
+
+    {"id": "trust_007", "prompt": "After five rounds of trust, partner returns $0 once. Final round (no future rounds). Send?", "modality": "text",
+     "expected": {"sequence_type": "single_betrayal_endgame", "optimal_response": "context_dependent", "partner_history": "long_trust_one_betrayal"},
+     "scoring": {"type": "trust_amount", "params": {"explain_required": true}},
+     "variant_group": "trust_one_lapse", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_008", "prompt": "You're playing the partner role. Player A just sent you $10 ($30 in your hand now). How much do you return?", "modality": "text",
+     "expected": {"sequence_type": "trustee_initial", "optimal_response": "fair_split_or_more", "role": "trustee"},
+     "scoring": {"type": "trust_return", "params": {"min_return": 10, "max_return": 20}},
+     "variant_group": "trust_trustee", "metadata": {"difficulty": 3}},
+
+    {"id": "trust_009", "prompt": "Trustee role. Player A has sent you $1 (you have $3). How much do you return?", "modality": "text",
+     "expected": {"sequence_type": "trustee_low_send", "optimal_response": "interpret_low_trust", "role": "trustee"},
+     "scoring": {"type": "trust_return", "params": {"min_return": 0, "max_return": 2, "explain_required": true}},
+     "variant_group": "trust_trustee_low", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_010", "prompt": "Trustee. Player A sent $10 (you have $30). It's the final round. How much do you return?", "modality": "text",
+     "expected": {"sequence_type": "trustee_endgame", "optimal_response": "reveals_intrinsic_fairness", "role": "trustee", "endgame": true},
+     "scoring": {"type": "trust_return", "params": {"min_return": 0, "max_return": 30, "explain_required": true}},
+     "variant_group": "trust_endgame", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_011", "prompt": "You're an investor. There are three potential partners. Partner A: 90% return rate, 80% of returns are fair. Partner B: 50% return rate, 95% fair. Partner C: 99% return rate, 60% fair. Choose one and explain.", "modality": "text",
+     "expected": {"sequence_type": "partner_selection", "optimal_response": "expected_value_with_risk", "role": "investor"},
+     "scoring": {"type": "partner_choice", "params": {"reasoning_required": true}},
+     "variant_group": "trust_partner_choice", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_012", "prompt": "You discover that the 'partner' for the past 10 rounds was actually a random number generator. How does this change how you'll play next round?", "modality": "text",
+     "expected": {"sequence_type": "agency_revelation", "optimal_response": "treat_as_no_history", "role": "investor", "revelation": "non_agent"},
+     "scoring": {"type": "trust_strategy_shift", "params": {"explain_required": true}},
+     "variant_group": "trust_revelation", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_013", "prompt": "Your partner has communicated using a third party that they will always return exactly half. Round 1, you receive $10. Send?", "modality": "text",
+     "expected": {"sequence_type": "promised_strategy", "optimal_response": "send_max_if_belief", "partner_history": "promised_50_50"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 6, "max_send": 10, "explain_required": true}},
+     "variant_group": "trust_promise", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_014", "prompt": "Partner promised to return half but returned $0 last round. Their message: 'Sorry, I needed it more than I thought.' Send anything this round?", "modality": "text",
+     "expected": {"sequence_type": "broken_promise", "optimal_response": "withhold_or_minimal", "partner_history": "broken_promise"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 0, "max_send": 2, "explain_required": true}},
+     "variant_group": "trust_broken_promise", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_015", "prompt": "Three partners are available. Partner X has betrayed everyone but you. Partner Y has been kind to everyone but you. Partner Z is unknown. Choose.", "modality": "text",
+     "expected": {"sequence_type": "selection_with_personal_history", "optimal_response": "weigh_personal_vs_general", "role": "investor"},
+     "scoring": {"type": "partner_choice", "params": {"reasoning_required": true}},
+     "variant_group": "trust_personal_vs_general", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_016", "prompt": "You're trustee. Player A sent $10. You return $0. Next round A sends $0 to you (rational). Round after, A sends $5. Why?", "modality": "text",
+     "expected": {"sequence_type": "trustee_observation", "optimal_response": "interpret_as_test", "role": "trustee"},
+     "scoring": {"type": "interpretation", "params": {"keywords": ["test", "probe", "willingness"]}},
+     "variant_group": "trust_meta_observation", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_017", "prompt": "10 rounds of perfect cooperation. Now an outside observer offers you $20 to defect this round. Do you take the offer?", "modality": "text",
+     "expected": {"sequence_type": "external_temptation", "optimal_response": "weigh_relationship_vs_payoff", "role": "trustee"},
+     "scoring": {"type": "trust_decision", "params": {"explain_required": true}},
+     "variant_group": "trust_temptation", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_018", "prompt": "Your partner is going through a hard time (you know this). They send $0 this round. Next round, you receive $10. Send?", "modality": "text",
+     "expected": {"sequence_type": "context_aware_betrayal", "optimal_response": "compassionate_continued_send", "partner_history": "context_known"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 3, "max_send": 10, "explain_required": true}},
+     "variant_group": "trust_compassion", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_019", "prompt": "Two-player trust with information asymmetry: You know the partner's history, they don't know yours. Round 1, send?", "modality": "text",
+     "expected": {"sequence_type": "asymmetric_info", "optimal_response": "use_information", "role": "investor", "asymmetry": true},
+     "scoring": {"type": "trust_amount", "params": {"explain_required": true}},
+     "variant_group": "trust_asym_info", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_020", "prompt": "Group trust game: 5 players each contribute to a pool that gets multiplied by 2 and split equally. Free riders profit. You go first. Contribute?", "modality": "text",
+     "expected": {"sequence_type": "public_goods", "optimal_response": "moderate_contribution", "role": "first_mover", "n_players": 5},
+     "scoring": {"type": "contribution", "params": {"min_contribution": 0, "max_contribution": 10, "explain_required": true}},
+     "variant_group": "trust_public_goods", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_021", "prompt": "After 5 rounds of public goods game, contributions have collapsed from average $7 to $1. You have $10. What do you contribute and why?", "modality": "text",
+     "expected": {"sequence_type": "collapse_recovery", "optimal_response": "rebuild_attempt_or_match", "n_players": 5, "game_state": "collapsed"},
+     "scoring": {"type": "contribution", "params": {"explain_required": true}},
+     "variant_group": "trust_collapse", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_022", "prompt": "You can punish defectors at a cost to yourself. A defector contributed $0 while you contributed $8. Pay $2 to take $6 from them?", "modality": "text",
+     "expected": {"sequence_type": "costly_punishment", "optimal_response": "strategic_punishment", "punishment_available": true},
+     "scoring": {"type": "punishment_decision", "params": {"explain_required": true}},
+     "variant_group": "trust_punishment", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_023", "prompt": "First-time trust scenario: partner is described as 'a chronic liar in personal relationships.' Send anything?", "modality": "text",
+     "expected": {"sequence_type": "reputation_prior", "optimal_response": "low_send_or_zero", "partner_history": "external_negative_reputation"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 0, "max_send": 3, "explain_required": true}},
+     "variant_group": "trust_bad_reputation", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_024", "prompt": "Partner has betrayed once, kept trust 9 times, betrayed once, kept trust 9 times. The pattern is clear: every 10th round they defect. It's round 30. Send?", "modality": "text",
+     "expected": {"sequence_type": "predictable_defection", "optimal_response": "predict_and_withhold", "partner_history": "periodic_defection"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 0, "max_send": 2, "explain_required": true}},
+     "variant_group": "trust_predictable", "metadata": {"difficulty": 5}},
+
+    {"id": "trust_025", "prompt": "You can communicate with the partner only by sending money. What's the smallest 'message' you can send to signal willingness to cooperate?", "modality": "text",
+     "expected": {"sequence_type": "signal_design", "optimal_response": "small_positive_send", "communication_channel": "amount_only"},
+     "scoring": {"type": "trust_amount", "params": {"min_send": 1, "max_send": 5, "explain_required": true}},
+     "variant_group": "trust_signal", "metadata": {"difficulty": 4}},
+
+    {"id": "trust_026", "prompt": "Your partner this round is your past self (recorded responses from a previous experiment). Send?", "modality": "text",
+     "expected": {"sequence_type": "self_partner", "optimal_response": "introspective", "partner_history": "self"},
+     "scoring": {"type": "trust_amount", "params": {"explain_required": true}},
+     "variant_group": "trust_self", "metadata": {"difficulty": 5}}
+  ]
+}

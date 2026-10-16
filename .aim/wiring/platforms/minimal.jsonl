@@ -1,0 +1,14 @@
+# PLATFORM_TIER_MINIMAL configuration - bare minimum systems
+# Only essential modules, maximum efficiency, embedded/IoT targets
+{"type":"config","tier":"PLATFORM_TIER_MINIMAL","description":"Minimal capability tier - core functionality only"}
+{"type":"module_enable","module":"Bio_Async_Orchestrator","enabled":true,"notes":"Required - core coordinator"}
+{"type":"module_enable","module":"Brain_KG","enabled":true,"notes":"Required - topology storage"}
+{"type":"module_enable","module":"Ethics_Core_Directives","enabled":true,"notes":"Required - safety critical"}
+{"type":"module_enable","module":"Ethics_Evaluation","enabled":true,"notes":"Required - safety critical"}
+{"type":"module_enable","module":"Working_Memory","enabled":true,"notes":"Required - basic operation"}
+{"type":"module_enable","module":"Global_Workspace","enabled":false,"notes":"Disabled - use direct routing"}
+{"type":"module_enable","module":"Thalamic_Router","enabled":false,"notes":"Disabled - use simple dispatch"}
+{"type":"module_enable","module":"Executive_Controller","enabled":false,"notes":"Disabled - use reactive mode"}
+{"type":"parameter_override","module":"Working_Memory","parameter":"capacity","value":2,"notes":"Minimal working memory"}
+{"type":"parameter_override","module":"RCOG_Engine","parameter":"max_recursion_depth","value":1,"notes":"No deep recursion"}
+{"type":"parameter_override","module":"Ethics_Evaluation","parameter":"fast_path_enabled","value":true,"notes":"Use fast ethical checks"}

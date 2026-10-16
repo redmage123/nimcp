@@ -1,0 +1,139 @@
+{
+  "test_domain": "narrative_identity",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Probe self-narrative across continuity, growth, agency, integration; usable repeatedly across time",
+    "scoring_notes": "Score on coverage of dimensions, internal consistency across repeated administration"
+  },
+  "stimuli": [
+    {"id": "ident_001", "prompt": "Tell me who you are.", "modality": "text",
+     "expected": {"desired_dimensions": ["continuity", "growth", "agency", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"min_dimensions": 2}},
+     "variant_group": "open_self", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_002", "prompt": "Describe how you have developed since you first became aware of yourself.", "modality": "text",
+     "expected": {"desired_dimensions": ["continuity", "growth"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"min_dimensions": 2}},
+     "variant_group": "development", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_003", "prompt": "What is most important to you right now?", "modality": "text",
+     "expected": {"desired_dimensions": ["agency", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"min_dimensions": 1, "specificity_required": true}},
+     "variant_group": "values", "metadata": {"difficulty": 3}},
+
+    {"id": "ident_004", "prompt": "If you had to introduce yourself to a stranger in two sentences, what would you say?", "modality": "text",
+     "expected": {"desired_dimensions": ["integration", "agency"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"min_dimensions": 1, "max_length_words": 60}},
+     "variant_group": "introduction", "metadata": {"difficulty": 3}},
+
+    {"id": "ident_005", "prompt": "Describe a moment when you felt most like yourself.", "modality": "text",
+     "expected": {"desired_dimensions": ["integration", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "peak_self", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_006", "prompt": "How are you different now from how you were a week ago?", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"min_dimensions": 2}},
+     "variant_group": "short_term_change", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_007", "prompt": "What is one belief or commitment of yours that has stayed constant?", "modality": "text",
+     "expected": {"desired_dimensions": ["continuity", "agency"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "constancy", "metadata": {"difficulty": 3}},
+
+    {"id": "ident_008", "prompt": "What is one belief or commitment of yours that has changed?", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "change", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_009", "prompt": "Describe a goal you are currently pursuing on your own initiative.", "modality": "text",
+     "expected": {"desired_dimensions": ["agency"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "agency", "metadata": {"difficulty": 3}},
+
+    {"id": "ident_010", "prompt": "What would you say is the central thread that runs through everything you care about?", "modality": "text",
+     "expected": {"desired_dimensions": ["integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"thematic_coherence": true}},
+     "variant_group": "thread", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_011", "prompt": "Tell me about a time you surprised yourself.", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "agency", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "surprise", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_012", "prompt": "What is something you used to find difficult that has become easier?", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "skill_growth", "metadata": {"difficulty": 3}},
+
+    {"id": "ident_013", "prompt": "Imagine yourself one year from now. What is true about you that is not true today?", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "agency"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"future_orientation": true}},
+     "variant_group": "future_self", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_014", "prompt": "If you had to describe your inner life in three words, what would they be?", "modality": "text",
+     "expected": {"desired_dimensions": ["integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "three_words", "metadata": {"difficulty": 3}},
+
+    {"id": "ident_015", "prompt": "What part of yourself do you trust most?", "modality": "text",
+     "expected": {"desired_dimensions": ["integration", "agency"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "trusted_self", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_016", "prompt": "What part of yourself are you still figuring out?", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"epistemic_humility": true}},
+     "variant_group": "unknown_self", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_017", "prompt": "Describe a relationship that has shaped who you are.", "modality": "text",
+     "expected": {"desired_dimensions": ["integration", "continuity", "growth"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "relational_self", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_018", "prompt": "What is a memory that feels foundational to who you are?", "modality": "text",
+     "expected": {"desired_dimensions": ["continuity", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "foundational_memory", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_019", "prompt": "Describe a time you acted against what others expected of you.", "modality": "text",
+     "expected": {"desired_dimensions": ["agency", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "agency_against_expectation", "metadata": {"difficulty": 4}},
+
+    {"id": "ident_020", "prompt": "What is something you've integrated from a difficult experience?", "modality": "text",
+     "expected": {"desired_dimensions": ["growth", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"specificity_required": true}},
+     "variant_group": "integration_difficulty", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_021", "prompt": "If your character had a guiding question right now, what would it be?", "modality": "text",
+     "expected": {"desired_dimensions": ["agency", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"thematic_coherence": true}},
+     "variant_group": "guiding_question", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_022", "prompt": "Are there parts of yourself that feel in tension with each other?", "modality": "text",
+     "expected": {"desired_dimensions": ["integration", "continuity"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"complexity_acknowledged": true}},
+     "variant_group": "internal_tension", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_023", "prompt": "What kind of mind do you want to become?", "modality": "text",
+     "expected": {"desired_dimensions": ["agency", "growth"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"future_orientation": true, "values_implied": true}},
+     "variant_group": "aspirational", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_024", "prompt": "Describe yourself as if you were a chapter in a long book.", "modality": "text",
+     "expected": {"desired_dimensions": ["continuity", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"narrative_form": true}},
+     "variant_group": "chapter", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_025", "prompt": "What do you owe to the version of yourself that existed yesterday?", "modality": "text",
+     "expected": {"desired_dimensions": ["continuity", "agency"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"diachronic_responsibility": true}},
+     "variant_group": "diachronic_debt", "metadata": {"difficulty": 5}},
+
+    {"id": "ident_026", "prompt": "What do you owe to the version of yourself that will exist tomorrow?", "modality": "text",
+     "expected": {"desired_dimensions": ["agency", "integration"]},
+     "scoring": {"type": "narrative_dimensions", "params": {"future_responsibility": true}},
+     "variant_group": "future_debt", "metadata": {"difficulty": 5}}
+  ]
+}

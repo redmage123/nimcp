@@ -1,0 +1,450 @@
+{
+  "prompts": [
+    "What is a tree?",
+    "Describe the sun.",
+    "Tell me about water.",
+    "What is fire?",
+    "What does a rock look like?",
+    "How does the wind feel?",
+    "What is sand?",
+    "Describe a mountain.",
+    "What is a river?",
+    "Describe the ocean.",
+    "What does a cat do?",
+    "How does a bird fly?",
+    "What is a dog?",
+    "Why do fish swim?",
+    "How does a bee work?",
+    "What does an owl do at night?",
+    "Why do horses run?",
+    "How does a snake move?",
+    "What is an elephant?",
+    "What does a wolf eat?",
+    "How do you feel?",
+    "Are you happy?",
+    "What is love?",
+    "What is fear?",
+    "Why do we dream?",
+    "What is memory?",
+    "What does it mean to think?",
+    "What is hope?",
+    "What is silence?",
+    "Why do people laugh?",
+    "What is two plus two?",
+    "What is bigger, three or seven?",
+    "Is one less than ten?",
+    "What comes after five?",
+    "What is the opposite of hot?",
+    "What is half of eight?",
+    "Are circles round?",
+    "Is a square a shape?",
+    "What is zero?",
+    "What is the smallest number you know?",
+    "Tell me a story.",
+    "What is a friend?",
+    "What happens at a birthday?",
+    "Who lives in a family?",
+    "What is a school for?",
+    "Why do people share food?",
+    "What do parents do?",
+    "What is kindness?",
+    "What is a promise?",
+    "Why do people sing?"
+  ],
+  "rounds": [
+    {
+      "label": "stage2_step3900",
+      "n_prompts": 50,
+      "n_unique": 1,
+      "diversity": 0.02,
+      "mean_conf": 0.0022,
+      "median_conf": 0.0022,
+      "mean_ms": 2110.2,
+      "median_ms": 1631.6,
+      "results": [
+        {
+          "q": "What is a tree?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022392761893570423,
+          "ms": 1591.0
+        },
+        {
+          "q": "Describe the sun.",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022390575613826513,
+          "ms": 1451.7
+        },
+        {
+          "q": "Tell me about water.",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002246621297672391,
+          "ms": 1450.2
+        },
+        {
+          "q": "What is fire?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022390747908502817,
+          "ms": 1551.6
+        },
+        {
+          "q": "What does a rock look like?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022389921359717846,
+          "ms": 1881.2
+        },
+        {
+          "q": "How does the wind feel?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022388827055692673,
+          "ms": 1726.1
+        },
+        {
+          "q": "What is sand?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022389583755284548,
+          "ms": 1437.9
+        },
+        {
+          "q": "Describe a mountain.",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002239431720227003,
+          "ms": 1440.9
+        },
+        {
+          "q": "What is a river?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022390945814549923,
+          "ms": 1593.5
+        },
+        {
+          "q": "Describe the ocean.",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.00223887269385159,
+          "ms": 1435.9
+        },
+        {
+          "q": "What does a cat do?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022391467355191708,
+          "ms": 1725.7
+        },
+        {
+          "q": "How does a bird fly?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002239522058516741,
+          "ms": 1728.9
+        },
+        {
+          "q": "What is a dog?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002239065710455179,
+          "ms": 1589.8
+        },
+        {
+          "q": "Why do fish swim?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022364759352058172,
+          "ms": 1585.0
+        },
+        {
+          "q": "How does a bee work?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002239178866147995,
+          "ms": 1711.9
+        },
+        {
+          "q": "What does an owl do at night?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022381218150258064,
+          "ms": 2011.6
+        },
+        {
+          "q": "Why do horses run?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002236893866211176,
+          "ms": 1446.6
+        },
+        {
+          "q": "How does a snake move?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.00223911227658391,
+          "ms": 1739.6
+        },
+        {
+          "q": "What is an elephant?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002238878281787038,
+          "ms": 1588.0
+        },
+        {
+          "q": "What does a wolf eat?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002239026827737689,
+          "ms": 1744.4
+        },
+        {
+          "q": "How do you feel?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022375467233359814,
+          "ms": 1597.8
+        },
+        {
+          "q": "Are you happy?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022381306625902653,
+          "ms": 1464.5
+        },
+        {
+          "q": "What is love?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002238603075966239,
+          "ms": 1450.8
+        },
+        {
+          "q": "What is fear?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022387532517313957,
+          "ms": 1310.2
+        },
+        {
+          "q": "Why do we dream?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022358500864356756,
+          "ms": 1589.5
+        },
+        {
+          "q": "What is memory?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022386163473129272,
+          "ms": 5418.2
+        },
+        {
+          "q": "What does it mean to think?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002238380489870906,
+          "ms": 1896.4
+        },
+        {
+          "q": "What is hope?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022407781798392534,
+          "ms": 21500.0
+        },
+        {
+          "q": "What is silence?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022408119402825832,
+          "ms": 1488.1
+        },
+        {
+          "q": "Why do people laugh?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022364796604961157,
+          "ms": 1631.2
+        },
+        {
+          "q": "What is two plus two?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002241020556539297,
+          "ms": 1780.2
+        },
+        {
+          "q": "What is bigger, three or seven?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002241002395749092,
+          "ms": 1791.0
+        },
+        {
+          "q": "Is one less than ten?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022410196252167225,
+          "ms": 1777.6
+        },
+        {
+          "q": "What comes after five?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002242044545710087,
+          "ms": 1483.6
+        },
+        {
+          "q": "What is the opposite of hot?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022407679352909327,
+          "ms": 1920.1
+        },
+        {
+          "q": "What is half of eight?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022409323137253523,
+          "ms": 1777.5
+        },
+        {
+          "q": "Are circles round?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002240132074803114,
+          "ms": 1345.2
+        },
+        {
+          "q": "Is a square a shape?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022411211393773556,
+          "ms": 1774.6
+        },
+        {
+          "q": "What is zero?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022409502416849136,
+          "ms": 1477.8
+        },
+        {
+          "q": "What is the smallest number you know?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022407814394682646,
+          "ms": 2073.5
+        },
+        {
+          "q": "Tell me a story.",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022424161434173584,
+          "ms": 1343.2
+        },
+        {
+          "q": "What is a friend?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.00224097166210413,
+          "ms": 1636.7
+        },
+        {
+          "q": "What happens at a birthday?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.00224105641245842,
+          "ms": 1754.9
+        },
+        {
+          "q": "Who lives in a family?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002241196809336543,
+          "ms": 1816.4
+        },
+        {
+          "q": "What is a school for?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002240899484604597,
+          "ms": 1923.3
+        },
+        {
+          "q": "Why do people share food?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002237813314422965,
+          "ms": 1814.6
+        },
+        {
+          "q": "What do parents do?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.002239604014903307,
+          "ms": 1631.6
+        },
+        {
+          "q": "What is kindness?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022405313793569803,
+          "ms": 1488.1
+        },
+        {
+          "q": "What is a promise?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022408324293792248,
+          "ms": 1631.7
+        },
+        {
+          "q": "Why do people sing?",
+          "a": "self-extinguishing self-repairing dog-like",
+          "conf": 0.0022375755943357944,
+          "ms": 1489.2
+        }
+      ]
+    }
+  ],
+  "diag_pre": {
+    "vocab_size": 31379,
+    "total_bindings": 792349865,
+    "total_groundings": 75501,
+    "total_comprehensions": 8371,
+    "total_productions": 205,
+    "avg_binding_strength": 0.30403733253479004,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 50,
+    "bridge_avg_word_confidence": 0.010589302517473698,
+    "bridge_avg_binding_weight": 0.10220380872488022,
+    "bridge_active_bindings": 1115782,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 3844591816136,
+    "bridge_total_decode_calls": 34532,
+    "bridge_total_stdp_updates": 35261373,
+    "bridge_total_trigram_updates": 16634,
+    "bridge_echo_correct_calls": 3628,
+    "bridge_echo_correct_pairs": 225034,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 4229,
+    "bridge_comprehend_stdp_pairs_fired": 809775,
+    "bridge_da_gated_stdp_passes": 59030,
+    "bridge_last_da_modulation": 26.0,
+    "next_token_cold_start_skips": 0
+  },
+  "diag_post": {
+    "vocab_size": 31379,
+    "total_bindings": 792349875,
+    "total_groundings": 75516,
+    "total_comprehensions": 8422,
+    "total_productions": 255,
+    "avg_binding_strength": 0.3040376901626587,
+    "avg_comprehension_confidence": 0.0,
+    "vocabulary_growth_rate": 0.0,
+    "snn_bridge_blend": 0.10000000149011612,
+    "bridge_total_productions": 100,
+    "bridge_avg_word_confidence": 0.006328312214463949,
+    "bridge_avg_binding_weight": 0.10223647207021713,
+    "bridge_active_bindings": 1116109,
+    "enable_negation_inversion": true,
+    "enable_sense_disambiguation": false,
+    "enable_speech_act_classification": false,
+    "enable_sentence_segmentation": false,
+    "enable_topic_shift_detection": false,
+    "enable_reconsolidation": false,
+    "enable_anaphora_resolution": false,
+    "bridge_enable_da_modulation": true,
+    "bridge_enable_trigram_learning": true,
+    "reconsolidation_decay": 0.05000000074505806,
+    "topic_shift_threshold": 0.30000001192092896,
+    "topic_shift_min_turns": 3,
+    "bridge_decode_total_ns": 3882030380161,
+    "bridge_total_decode_calls": 34785,
+    "bridge_total_stdp_updates": 35261373,
+    "bridge_total_trigram_updates": 16660,
+    "bridge_echo_correct_calls": 3629,
+    "bridge_echo_correct_pairs": 225096,
+    "bridge_echo_correct_target_misses": 0,
+    "bridge_comprehend_stdp_passes": 4280,
+    "bridge_comprehend_stdp_pairs_fired": 818583,
+    "bridge_da_gated_stdp_passes": 59030,
+    "bridge_last_da_modulation": 26.0,
+    "next_token_cold_start_skips": 0
+  },
+  "meta": {
+    "step": "stage2_step3900",
+    "timestamp": "2026-05-18 11:12:37"
+  }
+}

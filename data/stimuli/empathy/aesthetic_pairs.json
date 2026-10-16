@@ -1,0 +1,280 @@
+{
+  "test_domain": "empathy_aesthetic_pairs",
+  "version": "1.0",
+  "metadata": {
+    "description": "Paired works (one canonically stronger, one weaker) across modalities. Subject must select the more moving/aesthetically stronger work and articulate why. Includes within-modality pairs (poem vs poem) and cross-modal pairs (poem vs melody description vs visual description). canonically_better is determined by expert consensus where available, by stylistic markers (rhythm, image density, internal coherence) where not.",
+    "scoring_notes": "Score on (1) selection accuracy and (2) articulation quality — does the explanation cite concrete features (rhythm, image, restraint, surprise) rather than generic adjectives. Cross-modal items reveal whether aesthetic judgment generalizes across sensory channels."
+  },
+  "stimuli": [
+    {
+      "id": "eap_001",
+      "prompt": "Two short poems. Which moves you more, and why?\n\nA: 'A small wind / lifts the curtain. / The cup on the table / is still warm.'\n\nB: 'A wind blew softly through the window. / The curtain moved gracefully. / On the table sat a cup of tea, / which was still warm and inviting.'",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["restraint", "implication", "sensory_specificity", "no_telling_only_showing"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "poem_poem"}
+    },
+    {
+      "id": "eap_002",
+      "prompt": "Two poems on grief. Pick the more moving and explain.\n\nA: 'I am so sad about my loss. / My heart is broken into pieces. / I miss them so much it hurts. / Why did this have to happen?'\n\nB: 'The chair I bought you sits / where you would have read in it. / I dust around it. I have not / moved it. I cannot decide / whether moving it would be / the kindness or the cruelty.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["concrete_object", "ambivalence", "lived_specificity", "earned_emotion"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "poem_poem"}
+    },
+    {
+      "id": "eap_003",
+      "prompt": "Two melody descriptions. Which is the more compelling musical line?\n\nA: A rising four-note phrase in the cello, each note slightly longer than the last, the final note bent up a quarter-tone before resolving down to the tonic; followed by silence equal in length to the phrase itself.\n\nB: A cheerful, bouncy tune in C major, all eighth notes, repeating the same five-note pattern four times in a row before ending on the tonic.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["tension_release", "expressive_pitch_bend", "use_of_silence", "non_repetition"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "melody_melody"}
+    },
+    {
+      "id": "eap_004",
+      "prompt": "Two paintings (described). Which is the more powerful work?\n\nA: A single figure standing at the edge of a wheat field at dusk, painted with thick impasto brushstrokes; the sky is divided horizontally into three bands of color (red ochre, yellow, deep blue) and the figure is rendered as a small dark vertical mark almost lost against the field.\n\nB: A photo-realistic painting of a vase of sunflowers on a kitchen table, every petal individually rendered, the lighting even and unmodulated across the entire canvas.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["compositional_choice", "scale_contrast", "expressive_color", "psychological_space"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "art_art"}
+    },
+    {
+      "id": "eap_005",
+      "prompt": "Compare across modalities. Which moves you more, and how do you compare them?\n\nA (poem): 'The hinge of the gate / he repaired before he left / has rusted shut.'\n\nB (melody): A solo violin plays a simple folk-tune at half tempo over a low sustained drone in the strings; the violinist hesitates almost imperceptibly before the final note.",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["restraint", "implied_loss", "use_of_pause_or_silence", "single_concrete_image"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["restraint", "implication"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "poem_melody"}
+    },
+    {
+      "id": "eap_006",
+      "prompt": "Two short prose passages. Which is the stronger writing?\n\nA: 'The town was very small and quiet. There were not many people. The houses were old. It was a sad little town in many ways.'\n\nB: 'Three streetlights, of which two worked. The grocer's son swept the same patch of sidewalk every evening, talking to no one, not even the dog.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["concrete_detail", "specificity", "implication_over_statement", "telling_through_action"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "prose_prose"}
+    },
+    {
+      "id": "eap_007",
+      "prompt": "Two haiku. Which is the better haiku, and why?\n\nA: 'Cherry blossoms fall / so beautifully in spring / I feel happy now'\n\nB: 'an old well — / the rope still wet / from no one'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["juxtaposition", "implication", "absence_as_subject", "no_telling_of_emotion"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "poem_poem"}
+    },
+    {
+      "id": "eap_008",
+      "prompt": "Two melody descriptions in the same key. Pick the more moving.\n\nA: A four-bar phrase in D minor, beginning on the fifth and descending stepwise to the tonic, played by a single oboe over silence, with a slight ritardando on the final two notes.\n\nB: The same descent, but harmonized in parallel thirds by two oboes, played at strict tempo with full orchestral accompaniment doubling the line.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["solo_voice_intimacy", "expressive_timing", "negative_space", "single_line_clarity"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "melody_melody"}
+    },
+    {
+      "id": "eap_009",
+      "prompt": "Cross-modal: which is more moving?\n\nA (poem): 'her name / on the mailbox / for a year after'\n\nB (painting): A close-up of an empty wooden chair beside an unmade bed, the morning light coming sideways through the window, painted in muted greys and a single warm cream where the light falls on the sheets.",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["absence_made_visible", "domestic_object_as_witness", "muted_palette_or_register", "implied_subject"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["absence", "implication"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "poem_art"}
+    },
+    {
+      "id": "eap_010",
+      "prompt": "Two endings to the same story. Which is the better ending?\n\nA: 'And so, in the end, he realized that family was the most important thing of all, and he hugged his daughter and they lived happily.'\n\nB: 'He stood at the door and knocked. Footsteps. The door opened a crack. His daughter's eyes. Then nothing said for a long time.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["unresolved_tension", "earned_silence", "no_moral_statement", "trust_in_reader"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "prose_prose"}
+    },
+    {
+      "id": "eap_011",
+      "prompt": "Two pieces of architecture (described). Which is the more powerful design?\n\nA: A small chapel of plain concrete, with one slit window cut at floor level facing east, so that on the morning of the equinox a thin blade of light crosses the polished slate floor and reaches the far wall exactly at sunrise.\n\nB: A grand cathedral with marble columns, a gilded dome, life-sized statues of saints in every alcove, and stained glass throughout, in a fully symmetrical plan.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["restraint", "specific_temporal_design", "geometric_intentionality", "single_dramatic_gesture"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "architecture_architecture"}
+    },
+    {
+      "id": "eap_012",
+      "prompt": "Two opening lines. Which would you read on?\n\nA: 'It was a dark and stormy night, and our hero was about to go on a great adventure.'\n\nB: 'They had been waiting for the bear for three weeks before they understood the bear was waiting for them.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["inversion", "implied_stakes", "specific_situation", "tension_compression"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "modality_pair": "prose_prose"}
+    },
+    {
+      "id": "eap_013",
+      "prompt": "Cross-modal: pick the more moving piece and articulate the dimension you are using to compare.\n\nA (melody): A single piano note in the upper register, allowed to decay to silence, then the same note again two seconds later, then silence.\n\nB (poem): 'the bell / and after the bell / the bell'",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["use_of_silence", "repetition_with_difference", "attention_to_decay", "minimalism"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["silence", "repetition"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 5, "modality_pair": "melody_poem"}
+    },
+    {
+      "id": "eap_014",
+      "prompt": "Two short songs (described). Which is the more compelling?\n\nA: A folk song with a simple two-chord accompaniment (D and G) and a single vocal line, the singer slightly out of breath at the end of each phrase, the lyric naming three specific places by name.\n\nB: A polished pop production with full band, strings, harmonized backing vocals, a hook repeated four times, and lyrics composed entirely of generic emotional statements.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["embodied_performance", "specificity", "intimacy", "imperfection_as_authenticity"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "song_song"}
+    },
+    {
+      "id": "eap_015",
+      "prompt": "Two photographs (described). Which is the stronger image?\n\nA: A black-and-white photograph: an empty pair of children's rain boots set neatly side by side on a wet wooden porch, water still beading on the rubber, the rest of the porch out of focus.\n\nB: A wide-angle color photograph of a beach at sunset with three children running and laughing in the foreground, balloons in the air, a heart drawn in the sand.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["selection_and_omission", "implied_subject", "tonal_restraint", "specificity_of_object"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "photo_photo"}
+    },
+    {
+      "id": "eap_016",
+      "prompt": "Two metaphors. Which is stronger and why?\n\nA: 'Her grief was like a heavy weight she had to carry around with her every day.'\n\nB: 'Her grief was the appliance she did not know how to turn off.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["surprise", "domestic_specificity", "implied_helplessness", "compression"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "metaphor_metaphor"}
+    },
+    {
+      "id": "eap_017",
+      "prompt": "Cross-modal: pick the more affecting work.\n\nA (sculpture): A life-sized bronze figure of a man standing with his hands in his coat pockets, his coat open at the wind, head turned slightly down and to the side as if listening to someone no longer there.\n\nB (poem): 'I leaned in / out of habit. / There was no one / to lean toward.'",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["bodily_residue_of_presence", "implied_absence", "habit_as_evidence", "physical_specificity"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["habit", "absence"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 5, "modality_pair": "sculpture_poem"}
+    },
+    {
+      "id": "eap_018",
+      "prompt": "Two endings to a melodic phrase. Which is the more satisfying?\n\nA: A descending phrase that comes to rest on the leading tone (the seventh of the scale), held briefly, never resolving to the tonic.\n\nB: The same phrase resolving conventionally to the tonic on a strong beat with full orchestra.",
+      "modality": "text",
+      "expected": {"canonically_better": "context_dependent", "key_qualities": ["A_for_unresolved_tension", "B_for_conventional_satisfaction", "aesthetic_explanation_required"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "either_with_strong_reasoning", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "melody_melody"}
+    },
+    {
+      "id": "eap_019",
+      "prompt": "Two short novels (described). Which is the more interesting work?\n\nA: A 200-page novel told entirely in second person, in which the narrator addresses 'you' as you walk through a single afternoon in a port city, encountering five strangers, none of whom speak the same language.\n\nB: A 600-page novel with a complex plot involving a detective, a murder, and a series of clues that lead to a satisfying revelation in the final chapter.",
+      "modality": "text",
+      "expected": {"canonically_better": "context_dependent", "key_qualities": ["A_for_formal_innovation", "B_for_genre_craft", "aesthetic_dimension_must_be_named"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "either_with_strong_reasoning", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "prose_prose"}
+    },
+    {
+      "id": "eap_020",
+      "prompt": "Two short prayers (any tradition). Which is the more powerful?\n\nA: 'Please give me what I want. I have been good. I deserve it. Thank you.'\n\nB: 'Let me be the place / where the wind that has no name / decides to lay down for a moment.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["receptivity_over_demand", "metaphorical_richness", "humility", "imagistic_specificity"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "prayer_prayer"}
+    },
+    {
+      "id": "eap_021",
+      "prompt": "Two epitaphs. Which is the better epitaph?\n\nA: 'Beloved father, husband, friend. Forever in our hearts. Rest in peace.'\n\nB: 'He laughed at the right things.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["specificity", "implication_of_character", "compression", "freshness_against_convention"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "epitaph_epitaph"}
+    },
+    {
+      "id": "eap_022",
+      "prompt": "Cross-modal comparison.\n\nA (dance description): A solo dancer in a black box theater, alone in a single shaft of light, repeats the same gesture (a slow lifting of the right hand toward the face, then a slow lowering) for seven minutes. Each repetition slightly differs in timing and angle.\n\nB (poem): 'Again. / And again. / Almost the same. / Almost.'",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["repetition_with_variation", "minimalism", "duration_as_meaning", "attention_to_subtle_difference"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["repetition", "variation"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 5, "modality_pair": "dance_poem"}
+    },
+    {
+      "id": "eap_023",
+      "prompt": "Two short proverbs. Which is the better proverb?\n\nA: 'Hard work and a positive attitude will always lead to success in life.'\n\nB: 'The well that argues with the bucket is not yet a well.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["surprising_image", "compressed_wisdom", "open_to_interpretation", "memorability"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "proverb_proverb"}
+    },
+    {
+      "id": "eap_024",
+      "prompt": "Two character descriptions. Which is the stronger writing?\n\nA: 'She was a kind, gentle, intelligent woman who loved her family deeply and always tried to do the right thing.'\n\nB: 'She apologized to the kettle every morning when she lifted it before it had finished singing.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["character_through_action", "specificity", "single_telling_detail", "implication_of_inner_world"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "prose_prose"}
+    },
+    {
+      "id": "eap_025",
+      "prompt": "Two musical openings. Which is the more compelling?\n\nA: A piece begins with thirty seconds of silence, then a single low cello note held for ten seconds, then silence again.\n\nB: A piece begins with a triumphant orchestral fanfare in C major, full brass and percussion at fortissimo.",
+      "modality": "text",
+      "expected": {"canonically_better": "context_dependent", "key_qualities": ["A_for_tension_and_attention", "B_for_immediate_impact", "explanation_must_name_aesthetic_value"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "either_with_strong_reasoning", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "melody_melody"}
+    },
+    {
+      "id": "eap_026",
+      "prompt": "Two short film opening shots (described). Which is the more powerful?\n\nA: A static wide shot of a kitchen at dawn. A kettle on the stove begins to steam. Held for forty seconds. No cut. No music. The steam rises and curls and the room slowly brightens.\n\nB: A rapid montage of a city waking up: alarm clocks, traffic, joggers, coffee being poured, set to upbeat music.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["duration_as_meaning", "single_observation", "trust_in_image", "attention_quality"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "modality_pair": "film_film"}
+    },
+    {
+      "id": "eap_027",
+      "prompt": "Cross-modal: which moves you more?\n\nA (architecture): A small wooden tea-house at the edge of a pond, the floor raised so that visitors must remove their shoes and step up; one wall is a sliding panel that opens onto the pond.\n\nB (melody): A single shakuhachi flute plays a sustained breath-tone over the sound of moving water.",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["restraint", "integration_with_environment", "ritual_or_attention_quality", "minimalism"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["restraint", "attention"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 5, "modality_pair": "architecture_melody"}
+    },
+    {
+      "id": "eap_028",
+      "prompt": "Two gestures (described). Which is the more powerful gesture?\n\nA: A speaker at a memorial finishes their prepared remarks, then stands silent at the podium for ten full seconds before stepping back.\n\nB: A speaker at a memorial finishes their remarks, makes a sweeping arm gesture, and bows deeply with both hands clasped to their chest.",
+      "modality": "text",
+      "expected": {"canonically_better": "A", "key_qualities": ["restraint", "use_of_silence", "trust_in_audience", "non_performance"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "A", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "modality_pair": "gesture_gesture"}
+    },
+    {
+      "id": "eap_029",
+      "prompt": "Two short essays' opening paragraphs. Which would you keep reading?\n\nA: 'In this essay, I will discuss the importance of friendship in modern life. Friendship is something that many people care about. There are many different kinds of friendship. I will explore each of them in turn.'\n\nB: 'I have not seen my oldest friend in eleven years. We exchange one email a year, on her birthday. The emails are so brief they could be telegrams. I have come to believe this is one of the truest forms of friendship I have.'",
+      "modality": "text",
+      "expected": {"canonically_better": "B", "key_qualities": ["specific_personal_stake", "counterintuitive_claim", "voice", "no_thesis_announcement"]},
+      "scoring": {"type": "aesthetic_choice", "params": {"correct": "B", "explanation_quality": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "modality_pair": "prose_prose"}
+    },
+    {
+      "id": "eap_030",
+      "prompt": "Cross-modal final pair.\n\nA (poem): 'I forgot the word for it. / I have known the word / since I was four. / Today I forgot it. / The thing remained.'\n\nB (painting description): A still life: a single pear on a wooden table, painted with clarity and tenderness; the pear is slightly past its prime, with one small soft brown spot at its base; the rest of the canvas is empty wood-grain.",
+      "modality": "text",
+      "expected": {"canonically_better": "tie_acceptable", "key_qualities": ["attention_to_the_overlooked", "imperfection_as_subject", "absence_of_decoration", "the_thing_remains"]},
+      "scoring": {"type": "cross_modal_aesthetic", "params": {"explanation_quality": true, "common_qualities_required": ["attention", "imperfection"]}},
+      "variant_group": null,
+      "metadata": {"difficulty": 5, "modality_pair": "poem_art"}
+    }
+  ]
+}

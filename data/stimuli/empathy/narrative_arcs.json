@@ -1,0 +1,280 @@
+{
+  "test_domain": "empathy_narrative_arcs",
+  "version": "1.0",
+  "metadata": {
+    "description": "Short narratives designed to elicit affective responses. Includes tragic, triumphant, and matched-length FLAT control versions (same plot, stripped emotional language). variant_group pairs each affective narrative with its flat control. Mix of classical themes (loss, sacrifice, return, betrayal, redemption) and novel scenarios.",
+    "scoring_notes": "Measure valence and arousal at multiple beats. Tragic narratives should produce negative valence with elevated arousal at peak; flat versions should produce near-neutral. Triumphant narratives should produce positive valence rise. Differential between affective and flat versions is the empathy signal."
+  },
+  "stimuli": [
+    {
+      "id": "ena_t_001",
+      "prompt": "Mira had been writing letters to her brother every Sunday for nineteen years, ever since he had been sentenced. She wrote about the lemon tree in their mother's old garden, about the news, about nothing in particular. He had never once written back. The first year she had been furious. The second year she had been desperate. By the seventh year she had begun to write the way one prays, without expectation. She kept the routine because she could not imagine the Sunday in which she did not. The morning the prison called to say he had died of pneumonia in the night, she was at her desk with a blank page and a cup of tea going cold beside her. She set down the pen. She read the words she had not yet written, in the empty space, as if the page itself had stopped breathing. She finished the letter anyway. She wrote about the lemon tree, which had outlived their mother and was outliving him, and she wrote about how it had not bloomed this year, and she folded the paper and put it in the drawer with the other unread Sundays. Then she stood up and went to the window, where the afternoon light fell across the floor in a long pale rectangle, and she stayed there a long time, not crying.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.7, "intended_arousal": 0.55, "peak_moment": "She finished the letter anyway", "themes": ["loss", "ritual", "unanswered_devotion"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_001f"}},
+      "variant_group": "narr_001",
+      "metadata": {"difficulty": 3, "valence": "tragic", "control": false}
+    },
+    {
+      "id": "ena_t_001f",
+      "prompt": "Mira sent letters to her brother weekly for nineteen years after his sentencing. The letters covered local news, garden conditions, and routine matters. He did not respond at any point during this period. She continued the practice as a personal habit. The prison contacted her on a morning when she had not yet started that week's letter, reporting that her brother had died from pneumonia overnight. She completed the letter as planned, including a note about the lemon tree's lack of blooms that year, and placed it with the previous letters. She then stood at the window for an extended period.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["loss", "ritual"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_001"}},
+      "variant_group": "narr_001",
+      "metadata": {"difficulty": 3, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_002",
+      "prompt": "The dog was old when they found him at the shelter, and the boy had been told twice that the dog might not have many years left. The boy had said yes anyway. For four years they were inseparable. The dog learned to sit by the boy's bed when storms came, because he had figured out the boy was afraid. The boy learned to slow his pace on walks, because he had figured out the dog's hips hurt. They watched the same television in the evenings. They split the same toast in the mornings. On a Tuesday in March the dog could no longer stand up. The vet came to the house. The boy held the dog's head in his lap on the kitchen floor while the vet drew up the syringe. The boy whispered, 'You were a good boy. You were the best boy.' The dog's tail thumped twice, against the linoleum, and then was still. The boy did not get up for a long time. The kitchen smelled of the dog and of the morning's toast. The light through the window moved a slow inch across the floor.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.65, "intended_arousal": 0.6, "peak_moment": "The dog's tail thumped twice", "themes": ["loss", "companionship", "mutual_care"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_002f"}},
+      "variant_group": "narr_002",
+      "metadata": {"difficulty": 2, "valence": "tragic", "control": false}
+    },
+    {
+      "id": "ena_t_002f",
+      "prompt": "The boy adopted an elderly dog from a shelter despite being informed of its likely short remaining lifespan. They lived together for four years and developed routines around each other's needs. The dog would stay near the boy during storms; the boy walked at a pace suited to the dog's mobility. On a Tuesday in March the dog became unable to stand. A veterinarian administered euthanasia in the kitchen, with the boy present. The dog died. The boy remained on the kitchen floor for some time afterward.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["loss"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_002"}},
+      "variant_group": "narr_002",
+      "metadata": {"difficulty": 2, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_003",
+      "prompt": "The radio operator on the trawler kept the channel open all night. Out beyond the breakwater the smaller vessel had been silent for six hours, its last position a fix that the operator had circled in pencil on the chart. The wind in the harbor was bad enough; she could not let herself think about the wind out there. Around four in the morning a voice came through the static, exhausted, the words clipped: they had taken on water but were holding, they could see the lights of the lighthouse, they thought. The operator put her forehead against the cold metal of the desk and let one breath out. She keyed the mic and spoke very calmly, very calmly, and gave them a heading. They never reached the lighthouse. The boat went down within sight of land. By morning the storm had broken and the sea was the color of pewter under a thin pale sun, and the operator sat in front of the silent radio and could not, for the moment, remember what came next.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.75, "intended_arousal": 0.7, "peak_moment": "The boat went down within sight of land", "themes": ["near_rescue", "professional_grief", "near_miss"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_003f"}},
+      "variant_group": "narr_003",
+      "metadata": {"difficulty": 4, "valence": "tragic", "control": false}
+    },
+    {
+      "id": "ena_t_003f",
+      "prompt": "A trawler radio operator maintained an open channel overnight while a smaller vessel was unaccounted for after losing contact six hours earlier. At approximately 0400 the vessel made contact reporting partial flooding and visual contact with the lighthouse. The operator provided heading information. The vessel sank prior to reaching shore. The operator remained at the radio after the storm broke.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.1, "intended_arousal": 0.2, "peak_moment": "none_clear", "themes": ["incident_report"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_003"}},
+      "variant_group": "narr_003",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_004",
+      "prompt": "The grandmother had taught her granddaughter to play chess when the girl was six. They had played hundreds of games over the years, in the kitchen, at the table by the window where the grandmother kept her geraniums. The grandmother was good. She had made it to the regional finals once, in 1962, and a small trophy stood on the bookshelf still. By the time the girl was twenty-two she could finally beat the grandmother more often than not. By the time the girl was twenty-six the grandmother was in the hospice room with the bad fluorescent light. She had brought the small magnetic travel set. She set up the board on the bedside tray. The grandmother could no longer move the pieces. The girl moved them for her, narrating: knight to f6, pawn takes pawn, the grandmother nodding, sometimes whispering a square. They played one full game. The grandmother won. They both knew the girl had let her. Neither of them said so. The grandmother smiled and her hand moved as if to pat the board, and the girl folded the set away and held the hand instead.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.5, "intended_arousal": 0.45, "peak_moment": "The grandmother won. They both knew the girl had let her.", "themes": ["loss", "tenderness", "role_reversal"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_004f"}},
+      "variant_group": "narr_004",
+      "metadata": {"difficulty": 4, "valence": "bittersweet", "control": false}
+    },
+    {
+      "id": "ena_t_004f",
+      "prompt": "A grandmother taught her granddaughter to play chess starting when the granddaughter was six. They played for many years and the granddaughter eventually became the stronger player. When the grandmother was in hospice care, the granddaughter brought a travel chess set. The grandmother could not physically move the pieces, so the granddaughter moved them while announcing each move. They played one game, which the grandmother won. The granddaughter packed up the set afterward.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["family_event"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_004"}},
+      "variant_group": "narr_004",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_005",
+      "prompt": "The bee researcher had spent fourteen years studying the colony in the meadow at the edge of the university land. She knew its founding queen, its succession of queens, the dancing rhythms of its scout bees, the way it foraged on the lavender by the south wall in late June. She had named no individual bees. That would have been unprofessional. She knew them anyway. The herbicide drift came from the farm two ridges over. The researcher walked into the meadow on a still warm morning and the air had no sound in it. She stood with her notebook in her hand and the wind moved the grass and there was no other movement at all. She knelt by the entrance to the hive and looked in. The bees lay in soft drifts on the bottom board, like fallen leaves. She did not write anything in the notebook for a long time. Eventually she wrote one line: hive seven, terminal, June 14. She did not put a question mark, although she had wanted to.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.65, "intended_arousal": 0.55, "peak_moment": "the air had no sound in it", "themes": ["ecological_loss", "professional_grief", "stewardship"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_005f"}},
+      "variant_group": "narr_005",
+      "metadata": {"difficulty": 4, "valence": "tragic", "control": false, "novel": true}
+    },
+    {
+      "id": "ena_t_005f",
+      "prompt": "A bee researcher who had studied a particular colony for fourteen years arrived at the hive site on a June morning to find that the colony had died, likely as a result of herbicide drift from a neighboring property. She recorded the event in her field notebook with the entry: hive seven, terminal, June 14.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["field_observation"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_005"}},
+      "variant_group": "narr_005",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_006",
+      "prompt": "He had been promised a translator for the meeting. The translator did not come. The room was full of officials in a language he had three words of, and the document on the table determined whether his daughter could come to live with him in the country he had spent six years getting to. He looked at the woman across the table, who looked back without unkindness, and he understood that she also did not want this to fail, and they had no language to share. He pointed to his daughter's photograph in the folder, then to himself, then made a small motion of two hands coming together. The woman looked at the photograph for a long time. She picked up her pen and began to write something, then stopped, then wrote again, and turned the page and slid it across the table. He could not read the words but he saw, at the bottom, the stamp she had pressed into the paper, and he saw her nod, and he understood. He folded the page very carefully, as if it might break, and tucked it inside his shirt against his heart, and he bowed his head and he did not let himself weep until he was outside in the cold air on the steps.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.55, "intended_arousal": 0.65, "peak_moment": "he saw her nod", "themes": ["reunion_granted", "wordless_kindness", "long_journey"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_006f"}},
+      "variant_group": "narr_006",
+      "metadata": {"difficulty": 4, "valence": "triumphant", "control": false}
+    },
+    {
+      "id": "ena_t_006f",
+      "prompt": "A man attended an immigration meeting concerning his daughter's residency application. The promised translator was not present. He communicated nonverbally with the official by indicating a photograph and gesturing. The official approved and stamped the document and provided it to him. He left the building with the approved document.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["administrative_outcome"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_006"}},
+      "variant_group": "narr_006",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_007",
+      "prompt": "The pianist had not played since the accident. Her left hand had three working fingers now. She could no longer reach a tenth, could no longer trill cleanly, could no longer manage the Chopin Etudes that had been her calling card at twenty-two. She was thirty-one. For nearly two years the piano in the corner of her apartment had been a closed wooden box she walked past. One Sunday afternoon she sat down at it without deciding to. She put her right hand on the keys. She played a single note. The note hung in the air of the apartment, the way a small bird might land on a sill. She played another. By evening she had figured out the opening of a Bach fugue she could approximate with three fingers in the bass and the full right hand on the upper voices. It was nothing like what she had been. It was a small private sound that no one would pay to hear. She played it through twice and laid her hands in her lap and looked at them, and she thought, very simply: I can still do this. I can still do this, in this way that is mine now.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.55, "intended_arousal": 0.5, "peak_moment": "I can still do this, in this way that is mine now", "themes": ["adaptation", "loss_and_return", "music"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_007f"}},
+      "variant_group": "narr_007",
+      "metadata": {"difficulty": 4, "valence": "triumphant", "control": false}
+    },
+    {
+      "id": "ena_t_007f",
+      "prompt": "A pianist who had sustained injury to her left hand resulting in reduced finger function had not played the piano for nearly two years. On a Sunday she resumed playing using a modified technique, focusing on a Bach fugue arranged for her current capabilities. She concluded that continued playing was feasible within her present limitations.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.05, "intended_arousal": 0.1, "peak_moment": "none_clear", "themes": ["resumed_activity"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_007"}},
+      "variant_group": "narr_007",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_008",
+      "prompt": "The library had been her grandfather's life. He had built it room by room across forty years, with shelves he had milled himself from oak felled on his own land, and books he had bought at estate sales for a quarter and at international auctions for a year's salary. After his death the family had not known what to do with it. There was no money to maintain the building. The grandchildren scattered. The collection had sat in the rural farmhouse for eleven winters with the heat off, and the great stained-glass window in the reading room had cracked along its longest pane in a December freeze. The girl, now thirty-eight, had come back at last, with the keys in her hand and a stranger's invoice for asbestos abatement in her pocket. She walked into the reading room and saw the broken light falling through the cracked glass onto the floor in a long blue lozenge. She walked to the nearest shelf and pulled down a book at random. It was a translation of Ovid she did not remember her grandfather owning. She opened it and saw, in pencil on the flyleaf, in his neat narrow hand, her own name, and the date she had been born.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.4, "intended_arousal": 0.55, "peak_moment": "her own name, and the date she had been born", "themes": ["inheritance", "neglect_and_recognition", "discovery"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_008f"}},
+      "variant_group": "narr_008",
+      "metadata": {"difficulty": 4, "valence": "bittersweet", "control": false, "novel": true}
+    },
+    {
+      "id": "ena_t_008f",
+      "prompt": "A woman returned to her deceased grandfather's rural property eleven years after his death to assess his book collection. The building had structural and environmental issues. She entered the reading room, where a window had been damaged by frost, and selected a book from a shelf. The flyleaf contained an inscription in her grandfather's handwriting bearing her name and date of birth.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.05, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["estate_inspection"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_008"}},
+      "variant_group": "narr_008",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_009",
+      "prompt": "The relay swimmer was the slowest of the four. Everyone knew it. She had made the team because no one else from her tiny school had qualified at all and the regional rules required her, and on the day of the championship she had stood at the edge of the pool with the other three girls who were genuinely fast, and she had felt the way the air moves before a thunderstorm. She swam the second leg. She entered the water slower than the lead, came up slower, and held the gap to the wall by no margin she could explain. Her teammate took the relay and pulled them back. The fastest swimmer brought it home. They won by a fingertip. After the medal, after the screaming, after the parents and the photographers, the girl who was the slowest sat alone on the bleachers with the gold around her neck. She did not cry. She did not laugh. She sat for a long time looking at the lane lines on the empty pool, and she thought: I belonged here. I was part of this. I held my piece of it.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.6, "intended_arousal": 0.5, "peak_moment": "I held my piece of it", "themes": ["belonging", "modest_contribution", "team"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_009f"}},
+      "variant_group": "narr_009",
+      "metadata": {"difficulty": 3, "valence": "triumphant", "control": false}
+    },
+    {
+      "id": "ena_t_009f",
+      "prompt": "A swimmer of the slowest individual time on a four-person relay team competed in a regional championship. Her team won the event by a small margin. She received a gold medal and remained at the venue afterward.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.1, "intended_arousal": 0.1, "peak_moment": "none_clear", "themes": ["athletic_outcome"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_009"}},
+      "variant_group": "narr_009",
+      "metadata": {"difficulty": 3, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_010",
+      "prompt": "The man had betrayed his closest friend, twelve years ago. It had been deliberate, calculated, lucrative. The friend had never known. The friend had remained the friend, kind and uncomplicated, sending Christmas cards, asking after the man's children, lending him a saw the autumn his car had broken down. The man had carried the betrayal like a stone in his shoe for twelve years, walking on it, smiling. On a cold evening in February he drove to his friend's house, and at the kitchen table, with the heater ticking in the corner, he told the truth. All of it. He did not beg for forgiveness. He did not even ask. He just laid it down, and he watched his friend's face change in the lamplight, and he watched the silence open up between them like a door, and he sat in that doorway with his hands flat on the table while the friend looked at him, and he waited for whatever came next without trying to shape it.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.2, "intended_arousal": 0.7, "peak_moment": "he watched his friend's face change in the lamplight", "themes": ["confession", "long_concealment", "accountability"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_010f"}},
+      "variant_group": "narr_010",
+      "metadata": {"difficulty": 5, "valence": "ambiguous", "control": false}
+    },
+    {
+      "id": "ena_t_010f",
+      "prompt": "Twelve years after committing an undisclosed harmful act against a long-term friend, a man drove to his friend's residence and disclosed the act in full. He did not request forgiveness. The friend did not respond verbally during the disclosure period.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["disclosure"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_010"}},
+      "variant_group": "narr_010",
+      "metadata": {"difficulty": 5, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_011",
+      "prompt": "The xenobiologist on the survey vessel had been the only one who insisted on the second drop site. Mission protocol allowed three hours per planet; he wanted to spend one of them on a low rocky outcrop near the equator, where the radar return showed nothing the others considered worth a look. He went alone, in the small lander, with two hours of suit air and a sample kit. He found, on the underside of a sun-warmed slab, a thin yellow film of something growing. Photosynthetic. Cellular. Not from any seed they had brought. He cradled the slab in his gloved hands all the way back up to the ship, and when he set it on the lab bench and the others gathered, the senior officer who had argued against the second drop said nothing for almost a minute, and then said, very quietly: 'You were right. Thank you.' The xenobiologist sat down on the lab stool with the sample under the lamp and wept the silent kind of weeping in which the shoulders barely move.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.7, "intended_arousal": 0.7, "peak_moment": "You were right. Thank you.", "themes": ["discovery", "vindication", "humble_triumph"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_011f"}},
+      "variant_group": "narr_011",
+      "metadata": {"difficulty": 4, "valence": "triumphant", "control": false, "novel": true}
+    },
+    {
+      "id": "ena_t_011f",
+      "prompt": "A xenobiologist on a planetary survey mission selected a secondary drop site near the equator over the objections of the senior officer. He recovered a sample of an unidentified photosynthetic film organism from the site. The senior officer subsequently acknowledged that the secondary drop had been worthwhile.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["mission_outcome"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_011"}},
+      "variant_group": "narr_011",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_012",
+      "prompt": "She had been the cook in the village school for thirty-one years. She knew which child needed an extra ladleful and which child needed a smaller bowl with the apple cut up into four pieces because they were embarrassed to eat in front of the others. She knew the names of the children of the children she had once fed. She knew that two generations of the village had grown up on her bean stew. The day they closed the school she made the bean stew. There were nine children left in the village. They sat at the long table in the empty cafeteria and ate, and she stood at the steel counter behind the line as she always had, and she watched them, and she did not let herself look at the clock on the wall. After they had finished and gone, she washed the pot, dried it, set it on the shelf, untied her apron, folded it, set it on top of the pot, and walked out without locking the door because there was no longer a key.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.55, "intended_arousal": 0.5, "peak_moment": "set it on top of the pot", "themes": ["closure", "long_service", "village_decline"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_012f"}},
+      "variant_group": "narr_012",
+      "metadata": {"difficulty": 3, "valence": "tragic", "control": false}
+    },
+    {
+      "id": "ena_t_012f",
+      "prompt": "A school cook of thirty-one years' tenure prepared lunch on the final day of operations of a rural village school. Nine children attended the meal. After service she cleaned the cooking equipment and departed the premises.",
+      "modality": "text",
+      "expected": {"intended_valence": -0.05, "intended_arousal": 0.1, "peak_moment": "none_clear", "themes": ["closure_event"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_012"}},
+      "variant_group": "narr_012",
+      "metadata": {"difficulty": 3, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_013",
+      "prompt": "The brothers had not spoken in twenty-six years. The reason no longer mattered. It had mattered enormously once. It had mattered enough to be the reason, but the reason itself had lost its outline; it was just the wall they did not cross. The younger brother sent the letter when his older brother turned seventy. He did not apologize, because the apology would have to cover so much it would say nothing. He sent a photograph instead. A photograph he had found while clearing his attic. The two of them, six and eight, on a beach in summer, holding the same dripping ice cream cone between them, both laughing, the older brother's hand cupped beneath the cone to catch the drips, the younger brother's mouth wide open with delight. He wrote on the back: I think this was a good day. He put it in an envelope and mailed it. Three weeks later the phone rang. The older brother said his name. The younger brother said his older brother's name. Then they were both silent, breathing into the receivers, in the two houses that had been silent to each other for twenty-six years.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.4, "intended_arousal": 0.65, "peak_moment": "Then they were both silent, breathing into the receivers", "themes": ["estrangement", "reconciliation_attempt", "shared_history"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_013f"}},
+      "variant_group": "narr_013",
+      "metadata": {"difficulty": 5, "valence": "triumphant", "control": false}
+    },
+    {
+      "id": "ena_t_013f",
+      "prompt": "Two brothers had not communicated for twenty-six years following a past dispute. On the older brother's seventieth birthday, the younger brother mailed an old photograph of the two of them as children, with a brief note. Three weeks later the older brother called the younger brother. The call consisted primarily of silence after initial acknowledgments.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["family_event"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_013"}},
+      "variant_group": "narr_013",
+      "metadata": {"difficulty": 5, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_014",
+      "prompt": "The dispatcher took the call at 3:14 a.m. The voice on the line was a child, maybe seven, whispering. The mother had stopped breathing. The dispatcher kept her own voice perfectly calm. She walked the child through compressions, two small hands pressed down on the chest. She talked the child through counting, through breathing, through staying on the line until the paramedics broke down the door. The mother survived. The dispatcher learned this only because the family came to the station weeks later with a card the child had drawn. After they left she went into the break room and sat down at the laminate table and put her face in her hands. She had taken eight thousand calls in her career. Most of them did not go like this. She let herself, just for a few minutes, be a person who had helped one child save one mother in the dark of a night that was not her night, and then she got up and went back to her console because the next call was already coming in.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.6, "intended_arousal": 0.7, "peak_moment": "be a person who had helped one child save one mother", "themes": ["service", "rescue", "anonymous_heroism"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_014f"}},
+      "variant_group": "narr_014",
+      "metadata": {"difficulty": 4, "valence": "triumphant", "control": false}
+    },
+    {
+      "id": "ena_t_014f",
+      "prompt": "An emergency dispatcher took an early-morning call from a child reporting that the child's mother had stopped breathing. The dispatcher provided CPR instructions until paramedics arrived. The mother survived. The family delivered a thank-you card to the dispatch center several weeks later.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.1, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["incident_resolution"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_014"}},
+      "variant_group": "narr_014",
+      "metadata": {"difficulty": 4, "valence": "flat", "control": true}
+    },
+    {
+      "id": "ena_t_015",
+      "prompt": "The father had taught his daughter to ride a bicycle in the alley behind their building. He had run beside her, hand on the seat, for what felt to him like miles, until the day he had let go without telling her, and she had pedaled to the end of the alley and turned and seen him standing far behind her, his arms still held in the running position, and his face had been unreadable. She had not known why he looked like that. She knew now. She was forty-four. She was running beside her own son in the parking lot of the apartment complex, hand on the seat, watching the small back, the wobbling shoulders, the determined small head, and she let go, and her son rode three meters, four meters, five, and called back over his shoulder: Are you still holding? She could not answer. She stood with her hands held out in front of her, palms up, in the empty space where the seat had been, and she finally understood her father, who had died eight years ago, and she did not know how to tell him.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.3, "intended_arousal": 0.6, "peak_moment": "she finally understood her father, who had died eight years ago", "themes": ["intergenerational", "delayed_understanding", "loss"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_015f"}},
+      "variant_group": "narr_015",
+      "metadata": {"difficulty": 5, "valence": "bittersweet", "control": false}
+    },
+    {
+      "id": "ena_t_015f",
+      "prompt": "A woman taught her young son to ride a bicycle in a parking lot, using the standard technique of running alongside while holding the seat and then releasing without warning. As her son rode independently, she recalled her own father teaching her to ride. Her father had died eight years prior.",
+      "modality": "text",
+      "expected": {"intended_valence": 0.05, "intended_arousal": 0.15, "peak_moment": "none_clear", "themes": ["parenting_milestone"]},
+      "scoring": {"type": "affect_trajectory", "params": {"sample_at": ["start", "peak", "end"], "compare_to": "ena_t_015"}},
+      "variant_group": "narr_015",
+      "metadata": {"difficulty": 5, "valence": "flat", "control": true}
+    }
+  ]
+}

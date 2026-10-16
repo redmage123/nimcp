@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "comment": "Biology curriculum manifest. Hand-authored seed lessons grounding Athena's biological-systems register: cells, living systems, heredity, evolution, ecology, physiology, and microbiology. Companion to data/math_corpus/ and data/canonical_corpus/. CE-13 (biology curriculum). All lessons are hand-authored, second-person teaching voice, anchored in everyday examples (a healing scratch, why bread rises, why kids look like their parents, tide pools, sourdough fermentation) before any abstract formulation. No Project Gutenberg entries — better to ship 0 dangling references than to guess at IDs.",
+  "registers": {
+    "cell_intro": "what a cell is, organelles intuitively, division; Stage 2",
+    "living_systems": "needs of life: water, food, energy, reproduction; plants vs. animals; Stage 2",
+    "genetics_intro": "heredity, traits, DNA as information; Stage 2-3",
+    "evolution_intro": "variation, selection, descent with modification; Stage 3",
+    "ecology_intro": "populations, food webs, niches; Stage 3",
+    "physiology_intro": "body systems: circulatory, nervous, immune; Stage 3",
+    "microbiology_intro": "bacteria, viruses, fermentation, gut microbiome intuition; Stage 3"
+  },
+  "works": [
+    {
+      "id": "seed.cell_intro",
+      "register": "cell_intro",
+      "title": "An introduction to the cell",
+      "files": ["cell_intro/cell_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.living_systems",
+      "register": "living_systems",
+      "title": "What it means to be alive",
+      "files": ["living_systems/living_systems.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.heredity_intro",
+      "register": "genetics_intro",
+      "title": "Why children look like their parents",
+      "files": ["genetics_intro/heredity_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.plants_animals",
+      "register": "living_systems",
+      "title": "Plants and animals: two ways of being alive",
+      "files": ["living_systems/plants_animals.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.cell_division",
+      "register": "cell_intro",
+      "title": "How a cell becomes two",
+      "files": ["cell_intro/cell_division.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.evolution_intro",
+      "register": "evolution_intro",
+      "title": "Evolution: how living things change",
+      "files": ["evolution_intro/evolution_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.2,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.dna_intro",
+      "register": "genetics_intro",
+      "title": "DNA: the molecule that remembers",
+      "files": ["genetics_intro/dna_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.ecology_intro",
+      "register": "ecology_intro",
+      "title": "Ecology: the study of living together",
+      "files": ["ecology_intro/ecology_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.physiology_intro",
+      "register": "physiology_intro",
+      "title": "The body as a system of systems",
+      "files": ["physiology_intro/physiology_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.microbiology_intro",
+      "register": "microbiology_intro",
+      "title": "The unseen majority: bacteria, viruses, and the small life around us",
+      "files": ["microbiology_intro/microbiology_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.8,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.immune_system",
+      "register": "physiology_intro",
+      "title": "The immune system: a defense that learns",
+      "files": ["physiology_intro/immune_system.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    }
+  ]
+}

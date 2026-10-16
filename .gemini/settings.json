@@ -1,0 +1,13 @@
+{
+  "general": {
+    "previewFeatures": true,
+    "contextFileName": "GEMINI.md"
+  },
+  "mcpServers": {
+    "mcp-memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "trust": true
+    }
+  }
+}

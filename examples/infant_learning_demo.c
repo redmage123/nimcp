@@ -48,8 +48,8 @@
 
 // Note: These headers would be included when implementations are complete
 // #include "cognitive/ethics/nimcp_ethics.h"
-// #include "../src/include/nimcp_curiosity.h"
-// #include "../src/include/nimcp_knowledge.h"
+// #include "nimcp_curiosity.h"
+// #include "nimcp_knowledge.h"
 #include "core/brain/nimcp_brain.h"
 
 //=============================================================================

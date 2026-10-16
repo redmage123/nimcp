@@ -208,7 +208,7 @@ set(NIMCP_CORE_SOURCES
 ```cmake
 # examples/CMakeLists.txt needs:
 add_executable(infant_demo infant_learning_demo.c)
-target_link_libraries(infant_demo nimcp_core)
+target_link_libraries(infant_demo nimcp)
 ```
 
 ## File Count Summary
@@ -319,7 +319,7 @@ brew install cmake python googletest
 
 ### Build Commands
 ```bash
-cd /home/bbrelin/repos/nimcp
+cd /home/bbrelin/nimcp
 
 # Build
 mkdir -p build && cd build
@@ -338,7 +338,7 @@ make test
 
 ### Try Python Bindings
 ```bash
-cd /home/bbrelin/repos/nimcp/bindings/python
+cd /home/bbrelin/nimcp/bindings/python
 
 # Set library path
 export LD_LIBRARY_PATH=../../build/src/lib:$LD_LIBRARY_PATH

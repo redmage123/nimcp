@@ -280,8 +280,8 @@ Created comprehensive test file: `src/tests/test_performance_optimizations.cpp`
 
 ### Compilation: ✓ PASS
 ```bash
-$ make nimcp_core
-[100%] Built target nimcp_core
+$ make nimcp
+[100%] Built target nimcp
 ```
 
 ### Existing Tests: ✓ PASS (8/8)

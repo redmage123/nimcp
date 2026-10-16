@@ -1,0 +1,400 @@
+/**
+ * COW Panel Styles
+ */
+
+.cow-panel {
+  background: #1a1a1a;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  border: 1px solid #333;
+}
+
+.cow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.cow-header h2 {
+  color: #61dafb;
+  margin: 0;
+  font-size: 24px;
+}
+
+.btn-refresh {
+  background: #2a2a2a;
+  color: #61dafb;
+  border: 1px solid #61dafb;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-refresh:hover:not(:disabled) {
+  background: #61dafb;
+  color: #0a0a0a;
+}
+
+.btn-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.info-text {
+  color: #888;
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.error-message {
+  background: #4a1a1a;
+  border: 1px solid #ff4444;
+  color: #ff6666;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-message button {
+  background: transparent;
+  border: none;
+  color: #ff6666;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+/* Memory Summary */
+.memory-summary {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.memory-summary h3 {
+  color: #61dafb;
+  margin: 0 0 16px 0;
+  font-size: 18px;
+}
+
+.memory-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.stat-card.highlight {
+  border-color: #61dafb;
+  background: #0a2a2a;
+}
+
+.stat-label {
+  color: #888;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  color: #fff;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.stat-card.highlight .stat-value {
+  color: #61dafb;
+}
+
+/* Brain Hierarchy */
+.brain-hierarchy {
+  margin-bottom: 24px;
+}
+
+.brain-hierarchy h3 {
+  color: #61dafb;
+  margin: 0 0 16px 0;
+  font-size: 18px;
+}
+
+.brain-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.brain-node {
+  position: relative;
+}
+
+.brain-node.root {
+  margin-left: 0;
+}
+
+.brain-node.clone {
+  margin-left: 40px;
+  padding-left: 20px;
+  border-left: 2px solid #61dafb;
+}
+
+.brain-card {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.brain-card:hover {
+  border-color: #61dafb;
+  box-shadow: 0 0 10px rgba(97, 218, 251, 0.2);
+}
+
+.brain-card.selected {
+  border-color: #61dafb;
+  background: #0a2a2a;
+}
+
+.brain-info {
+  flex: 1;
+}
+
+.brain-name {
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brain-icon {
+  font-size: 20px;
+}
+
+.brain-meta {
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.clone-count {
+  display: inline-block;
+  background: #61dafb;
+  color: #0a0a0a;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-top: 8px;
+  font-weight: bold;
+}
+
+.clone-badge {
+  display: inline-block;
+  background: #2a4a5a;
+  color: #61dafb;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-top: 8px;
+  border: 1px solid #61dafb;
+}
+
+.brain-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.brain-actions button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.btn-clone {
+  background: #61dafb;
+  color: #0a0a0a;
+}
+
+.btn-clone:hover:not(:disabled) {
+  background: #4fa8c5;
+  box-shadow: 0 2px 8px rgba(97, 218, 251, 0.3);
+}
+
+.btn-details {
+  background: #2a2a2a;
+  color: #61dafb;
+  border: 1px solid #61dafb;
+}
+
+.btn-details:hover {
+  background: #61dafb;
+  color: #0a0a0a;
+}
+
+.btn-delete {
+  background: #4a1a1a;
+  color: #ff6666;
+  border: 1px solid #ff4444;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #ff4444;
+  color: #fff;
+}
+
+.brain-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.brain-children {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Brain Details Panel */
+.brain-details {
+  background: #2a2a2a;
+  border: 1px solid #61dafb;
+  border-radius: 8px;
+  margin-top: 24px;
+  overflow: hidden;
+}
+
+.details-header {
+  background: #1a1a1a;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #61dafb;
+}
+
+.details-header h3 {
+  color: #61dafb;
+  margin: 0;
+  font-size: 18px;
+}
+
+.details-header button {
+  background: transparent;
+  border: none;
+  color: #61dafb;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 8px;
+  transition: color 0.2s;
+}
+
+.details-header button:hover {
+  color: #fff;
+}
+
+.details-content {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.detail-section {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.detail-section h4 {
+  color: #61dafb;
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stats-table tbody tr {
+  border-bottom: 1px solid #333;
+}
+
+.stats-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.stats-table td {
+  padding: 8px 4px;
+  font-size: 13px;
+}
+
+.stats-table td:first-child {
+  color: #888;
+  width: 50%;
+}
+
+.stats-table td:last-child {
+  color: #fff;
+  font-weight: 500;
+  text-align: right;
+}
+
+.stats-table td.highlight {
+  color: #61dafb;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .memory-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .brain-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .brain-actions {
+    width: 100%;
+  }
+
+  .brain-actions button {
+    flex: 1;
+  }
+
+  .details-content {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "comment": "Chemistry curriculum manifest. Hand-authored seed lessons covering atoms, states of matter, reactions, bonds, acids/bases, organic chemistry, and chemical thermodynamics. Companion to data/math_corpus/ and data/physics_corpus/; this seeds Athena's chemistry register across stages 2 and 3.",
+  "registers": {
+    "atoms_molecules": "atomic structure, elements, periodic table intuition; Stage 2",
+    "states_of_matter": "solid/liquid/gas, phase transitions, water's anomalies; Stage 2",
+    "chemical_reactions": "reactants, products, balance, energy of reaction; Stage 2-3",
+    "bonds_intro": "ionic, covalent, metallic, hydrogen bonding; Stage 3",
+    "acids_bases": "pH, neutralization, household examples; Stage 3",
+    "organic_intro": "carbon chains, functional groups, why life uses carbon; Stage 3",
+    "thermodynamics_chem": "exothermic/endothermic, equilibrium intuition; Stage 3"
+  },
+  "works": [
+    {
+      "id": "seed.atoms_intro",
+      "register": "atoms_molecules",
+      "title": "Atoms and molecules: the building blocks",
+      "files": ["atoms_molecules/atoms_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.elements_periodic",
+      "register": "atoms_molecules",
+      "title": "Elements and the periodic table",
+      "files": ["atoms_molecules/elements_periodic.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.states_of_matter",
+      "register": "states_of_matter",
+      "title": "Solid, liquid, gas: the states of matter",
+      "files": ["states_of_matter/states_intro.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.water_special",
+      "register": "states_of_matter",
+      "title": "Why water is strange",
+      "files": ["states_of_matter/water_special.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.reactions_basics",
+      "register": "chemical_reactions",
+      "title": "Chemical reactions: rearranging atoms",
+      "files": ["chemical_reactions/reactions_basics.txt"],
+      "language": "en",
+      "stage": 2,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.bonds_intro",
+      "register": "bonds_intro",
+      "title": "Chemical bonds: ionic, covalent, metallic, hydrogen",
+      "files": ["bonds_intro/bonds_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.2,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.acids_bases",
+      "register": "acids_bases",
+      "title": "Acids, bases, and pH",
+      "files": ["acids_bases/acids_bases.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.organic_carbon",
+      "register": "organic_intro",
+      "title": "Why life uses carbon",
+      "files": ["organic_intro/organic_carbon.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 1.0,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.functional_groups",
+      "register": "organic_intro",
+      "title": "Functional groups: the personalities of molecules",
+      "files": ["organic_intro/functional_groups.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.equilibrium_intro",
+      "register": "thermodynamics_chem",
+      "title": "Chemical equilibrium: the two-way arrow",
+      "files": ["thermodynamics_chem/equilibrium_intro.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.9,
+      "source": "hand_authored"
+    },
+    {
+      "id": "seed.energy_of_reaction",
+      "register": "chemical_reactions",
+      "title": "Energy of reaction: exothermic and endothermic",
+      "files": ["chemical_reactions/energy_of_reaction.txt"],
+      "language": "en",
+      "stage": 3,
+      "weight": 0.8,
+      "source": "hand_authored"
+    }
+  ]
+}

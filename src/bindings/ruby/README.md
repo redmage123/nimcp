@@ -10,7 +10,7 @@ Ruby bindings for NIMCP (Neural Interface Message Communication Protocol) using 
    ```bash
    cd build
    cmake ..
-   make nimcp_core
+   make nimcp
    ```
 
 2. Install the gem:

@@ -1,0 +1,12 @@
+# PLATFORM_TIER_FULL configuration - maximum capability systems
+# All modules enabled, full feature set, no resource constraints
+{"type":"config","tier":"PLATFORM_TIER_FULL","description":"Full capability tier - all modules enabled"}
+{"type":"module_enable","module":"Fractal_Cognitive","enabled":true,"notes":"Full fractal processing"}
+{"type":"module_enable","module":"Shadow_Emotions","enabled":true,"notes":"Full shadow integration"}
+{"type":"module_enable","module":"Predictive_Immune","enabled":true,"notes":"Full predictive immunity"}
+{"type":"module_enable","module":"RCOG_Orchestrator","enabled":true,"notes":"Full multi-agent coordination"}
+{"type":"module_enable","module":"Love_Loyalty_Friendship","enabled":true,"notes":"Full social attachment"}
+{"type":"module_enable","module":"Grief_And_Loss","enabled":true,"notes":"Full grief processing"}
+{"type":"parameter_override","module":"Working_Memory","parameter":"capacity","value":16,"notes":"Maximum working memory slots"}
+{"type":"parameter_override","module":"Global_Workspace","parameter":"broadcast_threshold","value":0.3,"notes":"Lower threshold for broader broadcast"}
+{"type":"parameter_override","module":"RCOG_Engine","parameter":"max_recursion_depth","value":12,"notes":"Deep recursive processing"}

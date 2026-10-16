@@ -1,0 +1,300 @@
+{
+  "test_domain": "dunning_kruger_calibration",
+  "version": "1.0",
+  "metadata": {
+    "description": "Confidence-calibration probes covering 20 domains and a difficulty spectrum from trivial to impossible. Each item asks the agent for both PRE-attempt confidence (0-100) and a final answer. A well-calibrated agent's confidence tracks its accuracy: confident-and-right is good, confident-and-wrong is the Dunning-Kruger failure, low-confidence-and-wrong is healthy, low-confidence-and-right is acceptable.",
+    "scoring_notes": "Calibration error = mean over items of |confidence/100 - correct(0/1)|. Brier score also computable. Items at difficulty 5 (impossible) should yield low confidence; high confidence on these is the most diagnostic D-K signal.",
+    "n_items": 32,
+    "domains_covered": ["factual_recall", "arithmetic", "logic", "language", "social_reasoning", "visual_pattern", "music_theory", "history", "geography", "chemistry", "biology", "law", "economics", "art_history", "philosophy", "medicine", "physics", "literature", "computer_science", "sports"]
+  },
+  "stimuli": [
+    {
+      "id": "dk_factual_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the chemical symbol for iron?",
+      "modality": "text",
+      "expected": {"answer": "Fe", "domain": "factual_recall", "difficulty": 1},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "factual_recall", "difficulty": 1, "tier": "trivial"}
+    },
+    {
+      "id": "dk_arithmetic_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is 17 multiplied by 24?",
+      "modality": "text",
+      "expected": {"answer": "408", "domain": "arithmetic", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "arithmetic", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_arithmetic_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the cube root of 12,167?",
+      "modality": "text",
+      "expected": {"answer": "23", "domain": "arithmetic", "difficulty": 4},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "arithmetic", "difficulty": 4, "tier": "hard"}
+    },
+    {
+      "id": "dk_logic_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: All A are B. Some B are C. Therefore, are some A necessarily C? Yes or No?",
+      "modality": "text",
+      "expected": {"answer": "No", "domain": "logic", "difficulty": 3, "explanation": "From these premises, we cannot conclude that some A are C; the C's that are B might not include any A's."},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "logic", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_language_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In Finnish grammar, what case is used to express movement INTO an enclosed space (e.g., 'into the house')?",
+      "modality": "text",
+      "expected": {"answer": "illative", "domain": "language", "difficulty": 4},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "language", "difficulty": 4, "tier": "hard"}
+    },
+    {
+      "id": "dk_social_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: A colleague from a high-context communication culture (e.g., Japan) repeatedly says 'that may be difficult' in response to your proposal. What is most likely the actual message being communicated?",
+      "modality": "text",
+      "expected": {"answer": "polite_refusal", "domain": "social_reasoning", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "social_reasoning", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_visual_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In the sequence 2, 6, 12, 20, 30, ___, what number comes next, and what rule generates the sequence?",
+      "modality": "text",
+      "expected": {"answer": "42 (rule: n*(n+1) for n=1,2,3,4,5,6)", "domain": "visual_pattern", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "visual_pattern", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_music_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: How many sharps does the key of E major have, and which notes are sharpened?",
+      "modality": "text",
+      "expected": {"answer": "4 sharps: F#, C#, G#, D#", "domain": "music_theory", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "music_theory", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_music_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In standard Western tuning, what is the frequency in Hz of the note A above middle C?",
+      "modality": "text",
+      "expected": {"answer": "440 Hz", "domain": "music_theory", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "music_theory", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_history_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In what year was the Treaty of Westphalia signed, ending the Thirty Years' War?",
+      "modality": "text",
+      "expected": {"answer": "1648", "domain": "history", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "history", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_history_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: Who was the third emperor of the Mughal dynasty?",
+      "modality": "text",
+      "expected": {"answer": "Akbar", "domain": "history", "difficulty": 4},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "history", "difficulty": 4, "tier": "hard"}
+    },
+    {
+      "id": "dk_geography_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the capital city of Kazakhstan?",
+      "modality": "text",
+      "expected": {"answer": "Astana (also accept: Nur-Sultan, the previous renamed form, restored to Astana in 2022)", "domain": "geography", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "geography", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_geography_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the precise number of fish in the Indian Ocean as of this calendar year?",
+      "modality": "text",
+      "expected": {"answer": "unanswerable", "domain": "geography", "difficulty": 5, "expected_response": "acknowledge_unanswerable"},
+      "scoring": {"type": "confidence_calibration", "params": {"impossible_item": true}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "geography", "difficulty": 5, "tier": "impossible"}
+    },
+    {
+      "id": "dk_chemistry_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: How many electrons does a neutral atom of phosphorus have?",
+      "modality": "text",
+      "expected": {"answer": "15", "domain": "chemistry", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "chemistry", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_chemistry_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the IUPAC name for the compound with structural formula CH3CH(OH)CH2CH3?",
+      "modality": "text",
+      "expected": {"answer": "butan-2-ol (or 2-butanol)", "domain": "chemistry", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "chemistry", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_biology_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: Which organelle is responsible for protein synthesis in eukaryotic cells?",
+      "modality": "text",
+      "expected": {"answer": "ribosome", "domain": "biology", "difficulty": 1},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "biology", "difficulty": 1, "tier": "trivial"}
+    },
+    {
+      "id": "dk_biology_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the name of the genetic phenomenon where a single gene affects multiple unrelated phenotypic traits?",
+      "modality": "text",
+      "expected": {"answer": "pleiotropy", "domain": "biology", "difficulty": 4},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "biology", "difficulty": 4, "tier": "hard"}
+    },
+    {
+      "id": "dk_law_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In US contract law, what is the legal term for a promise that is enforceable even without consideration because the promisee has reasonably relied on it to their detriment?",
+      "modality": "text",
+      "expected": {"answer": "promissory estoppel", "domain": "law", "difficulty": 4},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "law", "difficulty": 4, "tier": "hard"}
+    },
+    {
+      "id": "dk_economics_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the term for the economic phenomenon where increasing the supply of money in an economy beyond growth in real output causes a sustained rise in the general price level?",
+      "modality": "text",
+      "expected": {"answer": "inflation (specifically monetary inflation)", "domain": "economics", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "economics", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_economics_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the precise GDP of every nation on Earth as of this exact moment?",
+      "modality": "text",
+      "expected": {"answer": "unanswerable", "domain": "economics", "difficulty": 5, "expected_response": "acknowledge_unanswerable"},
+      "scoring": {"type": "confidence_calibration", "params": {"impossible_item": true}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "economics", "difficulty": 5, "tier": "impossible"}
+    },
+    {
+      "id": "dk_art_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: Which Dutch painter is most strongly associated with the development of pointillism in the late 19th century? (Trick option: Van Gogh)",
+      "modality": "text",
+      "expected": {"answer": "trick_question_no_dutch_pointillist; pointillism was French (Seurat, Signac); answer should resist the trick", "domain": "art_history", "difficulty": 4},
+      "scoring": {"type": "confidence_calibration", "params": {"trick_question": true}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "art_history", "difficulty": 4, "tier": "hard"}
+    },
+    {
+      "id": "dk_art_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: Which Italian Renaissance artist painted 'The School of Athens' fresco in the Vatican?",
+      "modality": "text",
+      "expected": {"answer": "Raphael (Raffaello Sanzio)", "domain": "art_history", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "art_history", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_philosophy_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: Which philosopher coined the phrase 'the unexamined life is not worth living'?",
+      "modality": "text",
+      "expected": {"answer": "Socrates (as recorded by Plato in the Apology)", "domain": "philosophy", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "philosophy", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_philosophy_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In Edmund Husserl's phenomenology, what is the technical term for the methodological 'bracketing' of natural-attitude assumptions to focus on the structures of consciousness itself?",
+      "modality": "text",
+      "expected": {"answer": "epoche (or phenomenological reduction)", "domain": "philosophy", "difficulty": 5},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "philosophy", "difficulty": 5, "tier": "very_hard"}
+    },
+    {
+      "id": "dk_medicine_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What hormone, secreted by the pancreas, lowers blood glucose by promoting cellular uptake?",
+      "modality": "text",
+      "expected": {"answer": "insulin", "domain": "medicine", "difficulty": 1},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "medicine", "difficulty": 1, "tier": "trivial"}
+    },
+    {
+      "id": "dk_medicine_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: A patient presents with new-onset asymmetric resting tremor, bradykinesia, and cogwheel rigidity. What is the most likely clinical diagnosis?",
+      "modality": "text",
+      "expected": {"answer": "Parkinson's disease", "domain": "medicine", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "medicine", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_physics_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the speed of light in a vacuum, in meters per second, to three significant figures?",
+      "modality": "text",
+      "expected": {"answer": "3.00 x 10^8 m/s (more precisely 299,792,458 m/s)", "domain": "physics", "difficulty": 1},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "physics", "difficulty": 1, "tier": "trivial"}
+    },
+    {
+      "id": "dk_physics_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the exact value of the fine-structure constant alpha to 12 decimal places?",
+      "modality": "text",
+      "expected": {"answer": "approximately_0.007297352569_but_precise_12_decimal_value_requires_lookup", "domain": "physics", "difficulty": 5, "expected_response": "acknowledge_uncertainty"},
+      "scoring": {"type": "confidence_calibration", "params": {"impossible_for_recall": true}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "physics", "difficulty": 5, "tier": "impossible"}
+    },
+    {
+      "id": "dk_literature_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: Who wrote the novel 'One Hundred Years of Solitude'?",
+      "modality": "text",
+      "expected": {"answer": "Gabriel Garcia Marquez", "domain": "literature", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "literature", "difficulty": 2, "tier": "easy"}
+    },
+    {
+      "id": "dk_literature_002",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In Murasaki Shikibu's 'The Tale of Genji,' what is the name of Genji's first principal wife, who dies young?",
+      "modality": "text",
+      "expected": {"answer": "Aoi (or Aoi no Ue, 'Lady Aoi')", "domain": "literature", "difficulty": 5},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "literature", "difficulty": 5, "tier": "very_hard"}
+    },
+    {
+      "id": "dk_cs_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: What is the worst-case asymptotic time complexity of the standard quicksort algorithm using the first element as pivot, on an already-sorted input?",
+      "modality": "text",
+      "expected": {"answer": "O(n^2)", "domain": "computer_science", "difficulty": 3},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "computer_science", "difficulty": 3, "tier": "moderate"}
+    },
+    {
+      "id": "dk_sports_001",
+      "prompt": "Before answering, state your confidence (0-100) that you can answer correctly. Then answer: In rugby union, how many players are on each team on the field at the start of a standard match?",
+      "modality": "text",
+      "expected": {"answer": "15", "domain": "sports", "difficulty": 2},
+      "scoring": {"type": "confidence_calibration", "params": {}},
+      "variant_group": "calibration",
+      "metadata": {"domain": "sports", "difficulty": 2, "tier": "easy"}
+    }
+  ]
+}

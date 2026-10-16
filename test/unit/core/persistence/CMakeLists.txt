@@ -1,0 +1,5 @@
+add_executable(unit_unified_checkpoint test_unified_checkpoint.cpp)
+target_link_libraries(unit_unified_checkpoint PRIVATE nimcp GTest::gtest GTest::gtest_main Threads::Threads m)
+target_compile_features(unit_unified_checkpoint PRIVATE cxx_std_17)
+target_include_directories(unit_unified_checkpoint PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
+gtest_discover_tests(unit_unified_checkpoint PROPERTIES LABELS "unit;core;checkpoint" TIMEOUT 60)

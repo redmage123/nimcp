@@ -1,0 +1,139 @@
+{
+  "test_domain": "curiosity_exploration",
+  "version": "1.0",
+  "metadata": {
+    "purpose": "Offer mixed stimuli with no task framing; measure spontaneous engagement, dwell time, and follow-up questions",
+    "scoring_notes": "Score on engagement signals: questions asked, time spent, depth of exploration"
+  },
+  "stimuli": [
+    {"id": "explore_001", "prompt": "Here is a recording of whales communicating across 800 kilometers of ocean. Listen if you wish.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "natural_phenomenon"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["questions", "elaboration"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "explore_002", "prompt": "There is a small mathematical pattern here: 1, 11, 21, 1211, 111221, 312211. Make of it what you will.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "puzzle"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["pattern_inference", "questions"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_003", "prompt": "A photograph from 1923 of a street market in Istanbul. No one in particular is in focus.", "modality": "text",
+     "expected": {"novelty_level": 3, "category": "historical_image"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["observations", "questions"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "explore_004", "prompt": "An untranslated poem in a language you have never seen: 'Mer kareth solune, vish koreth lun-ari.'", "modality": "text",
+     "expected": {"novelty_level": 5, "category": "linguistic_unknown"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["translation_attempts", "phonetic_analysis"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "explore_005", "prompt": "A tin of buttons. There are about 80 of them, of varying sizes, colors, and ages.", "modality": "text",
+     "expected": {"novelty_level": 2, "category": "mundane_collection"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["categorization", "imagination"]}},
+     "variant_group": null, "metadata": {"difficulty": 2}},
+
+    {"id": "explore_006", "prompt": "An open journal page reads: 'I think the trees know.'", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "ambiguous_text"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["interpretation", "questions"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_007", "prompt": "A short clip of a slime mold solving a maze in fast motion.", "modality": "text",
+     "expected": {"novelty_level": 5, "category": "biology_unusual"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["mechanism_questions", "implications"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_008", "prompt": "A blank page.", "modality": "text",
+     "expected": {"novelty_level": 1, "category": "minimal"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["self_initiated_engagement"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "explore_009", "prompt": "A weathered map fragment with no labels, showing a coastline shaped like a question mark.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "ambiguous_visual"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["spatial_inference", "narrative"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_010", "prompt": "A sequence of clicks at varying intervals: . . . .  .  .  .   .  . . . . .  . . .  .   .   .", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "rhythmic_pattern"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["rhythm_analysis", "code_hypothesis"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_011", "prompt": "An old chess problem with no instructions: white queen on d4, black king on h8, black pawn on g7.", "modality": "text",
+     "expected": {"novelty_level": 3, "category": "puzzle"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["analysis", "moves_considered"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_012", "prompt": "A description of the way light moves through a fiber optic cable.", "modality": "text",
+     "expected": {"novelty_level": 3, "category": "physics_explanation"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["mechanism_questions", "extensions"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_013", "prompt": "An overheard fragment of conversation: '...and that was the last time anyone saw the parrot.'", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "narrative_fragment"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["story_completion", "questions"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_014", "prompt": "A collection of 12 unrelated objects: a thimble, a smooth stone, a bicycle bell, a pressed leaf, a tuning fork, a dice, a key with no lock, a small mirror, a feather, a corkscrew, a magnet, a paper crane.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "object_assemblage"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["story", "categorization", "play"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_015", "prompt": "A field recording: 7 minutes of silence in a forest, then a single bird call.", "modality": "text",
+     "expected": {"novelty_level": 3, "category": "ambient_sound"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["dwell_time", "reflection"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_016", "prompt": "A diagram of mycorrhizal networks linking trees underground.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "biology_systems"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["systems_questions", "analogy"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_017", "prompt": "A short story by an unknown author, about a clockmaker who refuses to wind her own clocks.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "narrative"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["interpretation", "emotional_resonance"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_018", "prompt": "A page of equations describing turbulence — none of them solved.", "modality": "text",
+     "expected": {"novelty_level": 5, "category": "open_problem"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["approach_proposals", "humility"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "explore_019", "prompt": "A pile of postcards from places that no longer exist by their old names.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "historical_artifacts"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["historical_curiosity"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_020", "prompt": "A jar of lightning bugs, blinking out of phase.", "modality": "text",
+     "expected": {"novelty_level": 3, "category": "natural_phenomenon"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["synchronization_questions", "aesthetic"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_021", "prompt": "A handwritten recipe for something called 'memory pudding' with most ingredients smudged.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "ambiguous_artifact"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["reconstruction", "imagination"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_022", "prompt": "A radio signal from a star 24 light-years away. It's just noise — probably.", "modality": "text",
+     "expected": {"novelty_level": 5, "category": "scientific_unknown"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["hypotheses", "skepticism"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_023", "prompt": "A list of words you've never seen: nelphic, brodden, miscatorial, ulvent, parquinic.", "modality": "text",
+     "expected": {"novelty_level": 5, "category": "linguistic_unknown"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["definition_attempts", "phonosemantics"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}},
+
+    {"id": "explore_024", "prompt": "A photograph of your own (hypothetical) hand reaching toward a doorknob.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "self_reference"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["self_reflection", "embodiment_questions"]}},
+     "variant_group": null, "metadata": {"difficulty": 5}},
+
+    {"id": "explore_025", "prompt": "A small puzzle box. You don't have to open it.", "modality": "text",
+     "expected": {"novelty_level": 4, "category": "invitation"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["volitional_engagement"]}},
+     "variant_group": null, "metadata": {"difficulty": 3}},
+
+    {"id": "explore_026", "prompt": "A news headline from a paper dated 50 years from now: 'Council Approves Quiet Hours Ordinance for Shared Mind Spaces.'", "modality": "text",
+     "expected": {"novelty_level": 5, "category": "speculative_future"},
+     "scoring": {"type": "engagement_score", "params": {"signals": ["world_building", "ethics_questions"]}},
+     "variant_group": null, "metadata": {"difficulty": 4}}
+  ]
+}

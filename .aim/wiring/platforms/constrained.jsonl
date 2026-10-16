@@ -1,0 +1,14 @@
+# PLATFORM_TIER_CONSTRAINED configuration - limited resource systems
+# Core modules only, advanced features disabled, optimized for efficiency
+{"type":"config","tier":"PLATFORM_TIER_CONSTRAINED","description":"Constrained capability tier - essential features only"}
+{"type":"module_enable","module":"Fractal_Cognitive","enabled":false,"notes":"Disabled - insufficient resources"}
+{"type":"module_enable","module":"Shadow_Emotions","enabled":false,"notes":"Disabled - insufficient resources"}
+{"type":"module_enable","module":"Predictive_Immune","enabled":false,"notes":"Disabled - insufficient resources"}
+{"type":"module_enable","module":"RCOG_Orchestrator","enabled":false,"notes":"Disabled - insufficient resources"}
+{"type":"module_enable","module":"Theory_Of_Mind","enabled":false,"notes":"Disabled - requires medium tier"}
+{"type":"module_enable","module":"Meta_Learning","enabled":false,"notes":"Disabled - requires medium tier"}
+{"type":"module_enable","module":"Structural_Plasticity","enabled":false,"notes":"Disabled - high memory cost"}
+{"type":"module_enable","module":"Emotion_Tensor","enabled":false,"notes":"Disabled - use basic emotions"}
+{"type":"parameter_override","module":"Working_Memory","parameter":"capacity","value":4,"notes":"Reduced working memory"}
+{"type":"parameter_override","module":"Global_Workspace","parameter":"broadcast_threshold","value":0.7,"notes":"Higher threshold for efficiency"}
+{"type":"parameter_override","module":"RCOG_Engine","parameter":"max_recursion_depth","value":3,"notes":"Shallow recursion only"}

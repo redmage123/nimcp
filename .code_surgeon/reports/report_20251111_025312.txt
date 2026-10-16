@@ -1,0 +1,54 @@
+
+╔══════════════════════════════════════════════════════════════
+║ PARALLEL CODE SURGEON - AGGREGATED REPORT
+║ Generated: 2025-11-11T02:53:12.754237
+╠══════════════════════════════════════════════════════════════
+║ EXECUTION METRICS
+╠══════════════════════════════════════════════════════════════
+║ Total Tasks:          3
+║ Completed:            0 (0.0%)
+║ Failed:               3
+║ Timeout:              0
+╠══════════════════════════════════════════════════════════════
+║ TIMING
+╠══════════════════════════════════════════════════════════════
+║ Total Duration:       10.43s
+║ Average Duration:     3.48s
+║ Min Duration:         3.39s
+║ Max Duration:         3.61s
+║ Throughput:           0.00 tasks/sec
+╠══════════════════════════════════════════════════════════════
+║ TEST RESULTS
+╠══════════════════════════════════════════════════════════════
+║ Tests Created:        0
+║ Tests Passed:         3
+║ Tests Failed:         3
+║ Pass Rate:            50.0%
+╠══════════════════════════════════════════════════════════════
+║ COVERAGE
+╠══════════════════════════════════════════════════════════════
+║ Line Coverage:        0.0% (0/0)
+║ Branch Coverage:      0.0% (0/0)
+║ Function Coverage:    0.0% (0/0)
+╚══════════════════════════════════════════════════════════════
+
+WORKER BREAKDOWN:
+
+  worker_00:
+    Tasks: 1
+    Duration: 3.61s
+    Tests: 0
+  worker_01:
+    Tasks: 1
+    Duration: 3.39s
+    Tests: 0
+  worker_02:
+    Tasks: 1
+    Duration: 3.42s
+    Tests: 0
+
+TASK SUMMARY:
+
+  [1] ✗ src/security/nimcp_security.c  (3.39s, 0 tests)
+  [2] ✗ src/api/nimcp.c  (3.42s, 0 tests)
+  [3] ✗ src/networking/p2p/nimcp_p2pnode.c  (3.61s, 0 tests)

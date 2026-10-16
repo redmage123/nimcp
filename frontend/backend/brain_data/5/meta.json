@@ -1,0 +1,40 @@
+{
+  "name": "titanic",
+  "created_at": "2026-02-20T12:37:15Z",
+  "dataset": null,
+  "parent_id": null,
+  "num_inputs": 0,
+  "num_outputs": 0,
+  "size": 1,
+  "task": 0,
+  "stats": {
+    "total_inferences": 0,
+    "total_learning_steps": 0,
+    "total_correct": 0,
+    "last_loss": 0.0,
+    "losses": []
+  },
+  "specialization": {
+    "level": 0,
+    "level_label": "Pending",
+    "detected_task": null,
+    "detected_num_inputs": null,
+    "detected_num_outputs": null,
+    "detected_domain": null,
+    "recommended_strategy": null,
+    "unique_labels_seen": [],
+    "label_distribution": {},
+    "total_data_points_seen": 0,
+    "reconfiguration_count": 0,
+    "milestones": [
+      {
+        "event": "created",
+        "timestamp": "2026-02-20T12:37:15Z",
+        "level": 0,
+        "level_label": "Pending",
+        "mode": "auto-detect"
+      }
+    ],
+    "is_materialized": false
+  }
+}

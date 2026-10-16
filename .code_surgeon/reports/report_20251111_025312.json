@@ -1,0 +1,81 @@
+{
+  "timestamp": "2025-11-11T02:53:12.754237",
+  "metrics": {
+    "total_tasks": 3,
+    "completed_tasks": 0,
+    "failed_tasks": 3,
+    "timeout_tasks": 0,
+    "success_rate": 0.0,
+    "total_duration_sec": 10.425851345062256,
+    "avg_duration_ms": 3475.2837816874185,
+    "min_duration_ms": 3388.514995574951,
+    "max_duration_ms": 3613.0948066711426,
+    "throughput_tasks_per_sec": 0.0,
+    "total_tests_created": 0,
+    "total_tests_passed": 3,
+    "total_tests_failed": 3,
+    "test_pass_rate": 50.0,
+    "worker_metrics": {
+      "worker_01": {
+        "tasks_completed": 1,
+        "total_duration_ms": 3388.514995574951,
+        "tests_created": 0
+      },
+      "worker_02": {
+        "tasks_completed": 1,
+        "total_duration_ms": 3424.241542816162,
+        "tests_created": 0
+      },
+      "worker_00": {
+        "tasks_completed": 1,
+        "total_duration_ms": 3613.0948066711426,
+        "tests_created": 0
+      }
+    }
+  },
+  "coverage": {
+    "line_coverage_percent": 0.0,
+    "branch_coverage_percent": 0.0,
+    "function_coverage_percent": 0.0,
+    "total_lines": 0,
+    "covered_lines": 0,
+    "total_branches": 0,
+    "covered_branches": 0,
+    "file_coverage": {}
+  },
+  "results": [
+    {
+      "task_id": "test_gen_nimcp_security_20251111_025309",
+      "target_file": "src/security/nimcp_security.c",
+      "status": "failed",
+      "duration_ms": 3388.514995574951,
+      "tests_created": 0,
+      "tests_passed": 1,
+      "tests_failed": 1,
+      "worker_id": "worker_01",
+      "exit_code": 1
+    },
+    {
+      "task_id": "test_gen_nimcp_20251111_025309",
+      "target_file": "src/api/nimcp.c",
+      "status": "failed",
+      "duration_ms": 3424.241542816162,
+      "tests_created": 0,
+      "tests_passed": 1,
+      "tests_failed": 1,
+      "worker_id": "worker_02",
+      "exit_code": 1
+    },
+    {
+      "task_id": "test_gen_nimcp_p2pnode_20251111_025309",
+      "target_file": "src/networking/p2p/nimcp_p2pnode.c",
+      "status": "failed",
+      "duration_ms": 3613.0948066711426,
+      "tests_created": 0,
+      "tests_passed": 1,
+      "tests_failed": 1,
+      "worker_id": "worker_00",
+      "exit_code": 1
+    }
+  ]
+}

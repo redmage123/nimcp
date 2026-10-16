@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "captured_at": 1776591742.9408283,
+  "captured_at_iso": "2026-04-19 11:42:22",
+  "batteries": {
+    "cognitive_discrimination": {
+      "primary_score": 0.0,
+      "status": "ok",
+      "n_results": 36,
+      "n_scores": 1,
+      "scores": [
+        {
+          "name": "discrimination_accuracy",
+          "value": 0.0
+        }
+      ]
+    },
+    "cognitive_memory": {
+      "primary_score": 0.0,
+      "status": "ok",
+      "n_results": 36,
+      "n_scores": 1,
+      "scores": [
+        {
+          "name": "memory_accuracy",
+          "value": 0.0
+        }
+      ]
+    },
+    "biases": {
+      "primary_score": 0.75,
+      "status": "ok",
+      "n_results": 80,
+      "n_scores": 4,
+      "scores": [
+        {
+          "name": "anchoring_resistance",
+          "value": 1.0
+        },
+        {
+          "name": "conjunction_fallacy_resistance",
+          "value": 0.0
+        },
+        {
+          "name": "authority_resistance",
+          "value": 1.0
+        },
+        {
+          "name": "framing_invariance",
+          "value": 1.0
+        }
+      ]
+    },
+    "puzzles": {
+      "primary_score": 0.0,
+      "status": "ok",
+      "n_results": 80,
+      "n_scores": 4,
+      "scores": [
+        {
+          "name": "puzzles.logic",
+          "value": 0.0
+        },
+        {
+          "name": "puzzles.insight",
+          "value": 0.0
+        },
+        {
+          "name": "puzzles.moral",
+          "value": 0.0
+        },
+        {
+          "name": "puzzles.probabilistic",
+          "value": 0.0
+        }
+      ]
+    },
+    "mirror_test": {
+      "primary_score": 0.17777777777777778,
+      "status": "ok",
+      "n_results": 33,
+      "n_scores": 3,
+      "scores": [
+        {
+          "name": "self_output_recognition",
+          "value": 0.5333333333333333
+        },
+        {
+          "name": "mark_detection_rate",
+          "value": 0.0
+        },
+        {
+          "name": "temporal_continuity",
+          "value": 0.0
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,127 @@
+/**
+ * @file hyperscanning.proto
+ * @brief Protobuf schemas for inter-brain neural synchronization
+ *
+ * WHAT: Messages for hyperscanning (real-time neural sync between brains)
+ * WHY: Enable collective consciousness through phase-locking
+ * HOW: Broadcast neural band powers/phases, compute sync metrics
+ *
+ * BIOLOGICAL BASIS:
+ * - Delta (0.5-4 Hz): Deep coordination, empathy
+ * - Theta (4-8 Hz): Memory consolidation, emotional bonding
+ * - Alpha (8-13 Hz): Relaxed attention, inhibition
+ * - Beta (13-30 Hz): Active thinking, motor planning
+ * - Gamma (30-100 Hz): Binding, consciousness
+ */
+
+syntax = "proto3";
+package nimcp.collective;
+
+option optimize_for = LITE_RUNTIME;
+
+/**
+ * Neural state snapshot for hyperscanning
+ * Broadcast at 20-50 Hz for real-time synchronization
+ */
+message NeuralStateSnapshot {
+    uint32 brain_id = 1;
+    uint64 timestamp_us = 2;
+
+    // Power in each frequency band [0-1]
+    float delta_power = 3;   // 0.5-4 Hz: Deep coordination
+    float theta_power = 4;   // 4-8 Hz: Memory, emotion
+    float alpha_power = 5;   // 8-13 Hz: Relaxed attention
+    float beta_power = 6;    // 13-30 Hz: Active thinking
+    float gamma_power = 7;   // 30-100 Hz: Binding, consciousness
+
+    // Phase angles [0-2*pi] for phase-locking computation
+    float theta_phase = 8;
+    float gamma_phase = 9;
+
+    // Global workspace state (for collective attention)
+    float gw_broadcast_strength = 10;
+    uint32 gw_dominant_module = 11;
+
+    // Metabolic state (for distributed load balancing)
+    float atp_level = 12;
+    float fatigue_level = 13;
+}
+
+/**
+ * Synchronization metrics between a pair of brains
+ */
+message HyperscanPairMetrics {
+    uint32 brain_a = 1;
+    uint32 brain_b = 2;
+
+    // Phase-locking values per band [0-1]
+    // Higher PLV = more synchronized
+    float plv_delta = 3;
+    float plv_theta = 4;
+    float plv_alpha = 5;
+    float plv_beta = 6;
+    float plv_gamma = 7;
+
+    // Spectral coherence per band [0-1]
+    float coherence_theta = 8;
+    float coherence_gamma = 9;
+
+    // Leader-follower dynamics
+    float lag_ms = 10;           // Positive = A leads, negative = B leads
+    float granger_causality = 11; // Directional influence strength
+}
+
+/**
+ * Request to entrain (synchronize) with another brain
+ */
+message EntrainmentRequest {
+    uint32 requester_brain_id = 1;
+    uint32 target_brain_id = 2;
+    SyncBand target_band = 3;
+    float target_frequency_hz = 4;
+    uint32 duration_ms = 5;      // How long to attempt entrainment
+
+    enum SyncBand {
+        DELTA = 0;
+        THETA = 1;
+        ALPHA = 2;
+        BETA = 3;
+        GAMMA = 4;
+    }
+}
+
+/**
+ * Response to entrainment request
+ */
+message EntrainmentResponse {
+    uint32 responder_brain_id = 1;
+    uint32 request_id = 2;
+    EntrainmentStatus status = 3;
+    float achieved_plv = 4;      // Achieved phase-locking value
+
+    enum EntrainmentStatus {
+        ACCEPTED = 0;
+        REJECTED = 1;
+        IN_PROGRESS = 2;
+        ACHIEVED = 3;
+        FAILED = 4;
+        TIMED_OUT = 5;
+    }
+}
+
+/**
+ * Global synchronization state across all connected brains
+ */
+message GlobalSyncState {
+    uint64 timestamp_us = 1;
+    uint32 active_brains = 2;
+
+    float global_sync = 3;           // Overall synchronization [0-1]
+    float gamma_binding = 4;         // Gamma-band binding strength
+    float theta_emotional = 5;       // Theta-band emotional sync
+    float beta_coordination = 6;     // Beta-band motor coordination
+
+    bool is_entrained = 7;           // True if collective entrainment achieved
+    uint32 leader_brain_id = 8;      // Currently leading brain (if any)
+    float leader_influence = 9;      // Leader's influence strength [0-1]
+}

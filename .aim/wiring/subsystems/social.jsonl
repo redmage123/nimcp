@@ -1,0 +1,28 @@
+# Social cognition subsystem wiring - interpersonal understanding
+# Implements theory of mind, empathy, and social reasoning
+{"type":"entity","name":"Theory_Of_Mind","entityType":"CognitiveModule","observations":["Mental state attribution","Belief-desire reasoning","Perspective taking"],"subsystem":"social","tier_min":"MEDIUM"}
+{"type":"entity","name":"Empathetic_Response","entityType":"CognitiveModule","observations":["Emotional resonance","Affective empathy","Compassionate responding"],"subsystem":"social","tier_min":"MEDIUM"}
+{"type":"entity","name":"Love_Loyalty_Friendship","entityType":"CognitiveModule","observations":["Attachment processing","Social bond formation","Relationship maintenance"],"subsystem":"social","tier_min":"FULL"}
+{"type":"entity","name":"Grief_And_Loss","entityType":"CognitiveModule","observations":["Loss processing","Grief stages","Attachment dissolution"],"subsystem":"social","tier_min":"FULL"}
+{"type":"relation","from":"Theory_Of_Mind","to":"Empathetic_Response","relationType":"HANDLES_MESSAGE","message_type":"MENTAL_STATE_INFERENCE"}
+{"type":"relation","from":"Empathetic_Response","to":"Love_Loyalty_Friendship","relationType":"HANDLES_MESSAGE","message_type":"EMOTIONAL_RESONANCE"}
+{"type":"relation","from":"Grief_And_Loss","to":"Love_Loyalty_Friendship","relationType":"HANDLES_MESSAGE","message_type":"ATTACHMENT_LOSS"}
+# Swarm modules - collective intelligence and distributed cognition
+{"type":"entity","name":"swarm_flocking","entityType":"SWARM_MODULE","subsystem":"social","min_tier":0,"enabled":true}
+{"type":"relation","from":"swarm_flocking","to":"BIO_MSG_BRAIN_STATE_QUERY","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_BRAIN_STATE_QUERY"}
+{"type":"entity","name":"swarm_narrative","entityType":"SWARM_MODULE","subsystem":"social","min_tier":0,"enabled":true}
+{"type":"relation","from":"swarm_narrative","to":"BIO_MSG_NARRATIVE_SHARED","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_NARRATIVE_SHARED"}
+{"type":"entity","name":"swarm_logic_bridge","entityType":"SWARM_MODULE","subsystem":"social","min_tier":0,"enabled":true}
+{"type":"relation","from":"swarm_logic_bridge","to":"BIO_MSG_LOGIC_GATE_EVALUATE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_LOGIC_GATE_EVALUATE"}
+{"type":"relation","from":"swarm_logic_bridge","to":"BIO_MSG_SWARM_QUORUM_VOTE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SWARM_QUORUM_VOTE"}
+{"type":"entity","name":"gossip_beliefs","entityType":"SWARM_MODULE","subsystem":"social","min_tier":0,"enabled":true}
+{"type":"relation","from":"gossip_beliefs","to":"BIO_MSG_GOSSIP_SPREAD","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_GOSSIP_SPREAD"}
+{"type":"entity","name":"swarm_multi","entityType":"SWARM_MODULE","subsystem":"social","min_tier":0,"enabled":true}
+{"type":"relation","from":"swarm_multi","to":"MSG_TYPE_SWARM_DISCOVERY","relationType":"HANDLES_MESSAGE","message_type":"MSG_TYPE_SWARM_DISCOVERY"}
+{"type":"relation","from":"swarm_multi","to":"MSG_TYPE_RESOURCE_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"MSG_TYPE_RESOURCE_REQUEST"}
+{"type":"relation","from":"swarm_multi","to":"MSG_TYPE_TERRITORY_NEGOTIATE","relationType":"HANDLES_MESSAGE","message_type":"MSG_TYPE_TERRITORY_NEGOTIATE"}
+{"type":"relation","from":"swarm_multi","to":"MSG_TYPE_MISSION_UPDATE","relationType":"HANDLES_MESSAGE","message_type":"MSG_TYPE_MISSION_UPDATE"}
+{"type":"relation","from":"swarm_multi","to":"MSG_TYPE_CONFLICT_ALERT","relationType":"HANDLES_MESSAGE","message_type":"MSG_TYPE_CONFLICT_ALERT"}
+{"type":"entity","name":"swarm_consciousness","entityType":"SWARM_MODULE","subsystem":"social","min_tier":0,"enabled":true}
+{"type":"relation","from":"swarm_consciousness","to":"BIO_MSG_IMAGINATION_COLLECTIVE_SHARE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_IMAGINATION_COLLECTIVE_SHARE"}
+{"type":"relation","from":"swarm_consciousness","to":"BIO_MSG_IMAGINATION_COLLECTIVE_INSIGHT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_IMAGINATION_COLLECTIVE_INSIGHT"}

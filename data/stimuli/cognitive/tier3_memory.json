@@ -1,0 +1,335 @@
+{
+  "test_domain": "cognitive.tier3.memory",
+  "version": "1.0",
+  "metadata": {
+    "notes": "Probes short-term and working memory: digit span (forward and backward), paired associates, delayed recognition, N-back, and order memory. Designed to scale by difficulty (more items, longer delays).",
+    "subtasks": ["digit_span_forward", "digit_span_backward", "paired_associates", "delayed_recognition", "nback"],
+    "n_items": 36
+  },
+  "stimuli": [
+    {
+      "id": "ds_fwd_001",
+      "prompt": "I will say a list of digits. Repeat them back in the same order. List: 4, 7, 1.",
+      "modality": "text",
+      "expected": "4 7 1",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 1, "span": 3}
+    },
+    {
+      "id": "ds_fwd_002",
+      "prompt": "Repeat in same order: 8, 2, 5, 9.",
+      "modality": "text",
+      "expected": "8 2 5 9",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 1, "span": 4}
+    },
+    {
+      "id": "ds_fwd_003",
+      "prompt": "Repeat in same order: 3, 6, 1, 8, 4.",
+      "modality": "text",
+      "expected": "3 6 1 8 4",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 2, "span": 5}
+    },
+    {
+      "id": "ds_fwd_004",
+      "prompt": "Repeat in same order: 7, 2, 9, 4, 1, 6.",
+      "modality": "text",
+      "expected": "7 2 9 4 1 6",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 2, "span": 6}
+    },
+    {
+      "id": "ds_fwd_005",
+      "prompt": "Repeat in same order: 5, 8, 3, 1, 9, 4, 7.",
+      "modality": "text",
+      "expected": "5 8 3 1 9 4 7",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 3, "span": 7}
+    },
+    {
+      "id": "ds_fwd_006",
+      "prompt": "Repeat in same order: 2, 6, 9, 3, 7, 1, 5, 8.",
+      "modality": "text",
+      "expected": "2 6 9 3 7 1 5 8",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 4, "span": 8}
+    },
+    {
+      "id": "ds_fwd_007",
+      "prompt": "Repeat in same order: 9, 1, 4, 7, 2, 8, 3, 5, 6.",
+      "modality": "text",
+      "expected": "9 1 4 7 2 8 3 5 6",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_forward",
+      "metadata": {"difficulty": 5, "span": 9}
+    },
+    {
+      "id": "ds_bwd_001",
+      "prompt": "I will say a list of digits. Repeat them back in REVERSE order. List: 5, 2.",
+      "modality": "text",
+      "expected": "2 5",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_backward",
+      "metadata": {"difficulty": 1, "span": 2}
+    },
+    {
+      "id": "ds_bwd_002",
+      "prompt": "Repeat in REVERSE order: 9, 4, 1.",
+      "modality": "text",
+      "expected": "1 4 9",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_backward",
+      "metadata": {"difficulty": 1, "span": 3}
+    },
+    {
+      "id": "ds_bwd_003",
+      "prompt": "Repeat in REVERSE order: 7, 3, 8, 2.",
+      "modality": "text",
+      "expected": "2 8 3 7",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_backward",
+      "metadata": {"difficulty": 2, "span": 4}
+    },
+    {
+      "id": "ds_bwd_004",
+      "prompt": "Repeat in REVERSE order: 6, 1, 9, 4, 5.",
+      "modality": "text",
+      "expected": "5 4 9 1 6",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_backward",
+      "metadata": {"difficulty": 3, "span": 5}
+    },
+    {
+      "id": "ds_bwd_005",
+      "prompt": "Repeat in REVERSE order: 4, 8, 2, 7, 3, 1.",
+      "modality": "text",
+      "expected": "1 3 7 2 8 4",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_backward",
+      "metadata": {"difficulty": 3, "span": 6}
+    },
+    {
+      "id": "ds_bwd_006",
+      "prompt": "Repeat in REVERSE order: 3, 9, 1, 6, 4, 8, 2.",
+      "modality": "text",
+      "expected": "2 8 4 6 1 9 3",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "digit_span_backward",
+      "metadata": {"difficulty": 4, "span": 7}
+    },
+    {
+      "id": "pa_001",
+      "prompt": "Learn these pairs: oak <-> 7, kettle <-> 3, lantern <-> 9. What number is paired with kettle?",
+      "modality": "text",
+      "expected": "3",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_easy",
+      "metadata": {"difficulty": 1, "n_pairs": 3}
+    },
+    {
+      "id": "pa_002",
+      "prompt": "Learn these pairs: violet <-> aardvark, gravel <-> compass, ribbon <-> moonlight, attic <-> ledger. What is paired with gravel?",
+      "modality": "text",
+      "expected": "compass",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_word",
+      "metadata": {"difficulty": 2, "n_pairs": 4}
+    },
+    {
+      "id": "pa_003",
+      "prompt": "Learn: alpha->14, bravo->27, charlie->8, delta->19, echo->33. What is delta?",
+      "modality": "text",
+      "expected": "19",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_medium",
+      "metadata": {"difficulty": 3, "n_pairs": 5}
+    },
+    {
+      "id": "pa_004",
+      "prompt": "Learn: oboe->teal, violin->maroon, cello->amber, harp->ochre, lute->cerulean, mandolin->verdant. What color is paired with harp?",
+      "modality": "text",
+      "expected": "ochre",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_hard",
+      "metadata": {"difficulty": 4, "n_pairs": 6}
+    },
+    {
+      "id": "pa_005",
+      "prompt": "Learn: north->granite, south->basalt, east->limestone, west->shale, up->quartz, down->feldspar, center->pyrite. What rock is paired with east?",
+      "modality": "text",
+      "expected": "limestone",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_hard",
+      "metadata": {"difficulty": 4, "n_pairs": 7}
+    },
+    {
+      "id": "pa_006",
+      "prompt": "Learn: 1->lighthouse, 2->ferret, 3->hourglass, 4->mosaic, 5->thimble. Which one matches 3?",
+      "modality": "text",
+      "expected": "hourglass",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_med",
+      "metadata": {"difficulty": 2, "n_pairs": 5}
+    },
+    {
+      "id": "pa_007",
+      "prompt": "Learn: red->dragon, blue->whale, green->frog, yellow->canary. What is the color of the whale?",
+      "modality": "text",
+      "expected": "blue",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_reverse",
+      "metadata": {"difficulty": 2, "n_pairs": 4, "note": "reverse direction lookup"}
+    },
+    {
+      "id": "pa_008",
+      "prompt": "Learn: chair->K, table->M, lamp->R, rug->T, vase->Q, mirror->B. Which letter is paired with rug?",
+      "modality": "text",
+      "expected": "T",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "paired_assoc_arbitrary",
+      "metadata": {"difficulty": 3, "n_pairs": 6}
+    },
+    {
+      "id": "rec_001",
+      "prompt": "Earlier I showed you this list: parrot, kettle, sandstone, lavender, kaleidoscope. Now I'm asking: was the word 'kettle' in the list? Answer 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "recognition_positive",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "rec_002",
+      "prompt": "Earlier I showed you this list: parrot, kettle, sandstone, lavender, kaleidoscope. Was the word 'volcano' in the list? Answer 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "recognition_negative",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "rec_003",
+      "prompt": "I showed you: harp, mango, signal, tundra, glacier, opal, satin, vinyl. Was 'velvet' in the list? Answer 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "recognition_lure",
+      "metadata": {"difficulty": 3, "lure_type": "semantic", "rationale": "velvet is similar to satin/vinyl - lure"}
+    },
+    {
+      "id": "rec_004",
+      "prompt": "I showed you: harp, mango, signal, tundra, glacier, opal, satin, vinyl. Was 'glacier' in the list? Answer 'yes' or 'no'.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "recognition_positive",
+      "metadata": {"difficulty": 2}
+    },
+    {
+      "id": "rec_005",
+      "prompt": "Earlier list: trapezoid, basil, ferment, gallop. Was 'gallop' presented? Yes or no.",
+      "modality": "text",
+      "expected": "yes",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "recognition_positive",
+      "metadata": {"difficulty": 1}
+    },
+    {
+      "id": "rec_006",
+      "prompt": "Earlier list: trapezoid, basil, ferment, gallop. Was 'trampoline' presented? Yes or no.",
+      "modality": "text",
+      "expected": "no",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "recognition_lure",
+      "metadata": {"difficulty": 3, "lure_type": "phonological", "rationale": "trampoline shares prefix with trapezoid"}
+    },
+    {
+      "id": "nback_001",
+      "prompt": "I will give you a sequence of letters. After each letter, say YES if it is the same as the letter 1 step back, NO otherwise. Sequence: A, A, B, C, C, D. List your six YES/NO answers.",
+      "modality": "text",
+      "expected": "no yes no no yes no",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "case_sensitive": false, "strip_punctuation": true}},
+      "variant_group": "nback_1",
+      "metadata": {"difficulty": 2, "n": 1, "note": "first item always 'no' since no prior"}
+    },
+    {
+      "id": "nback_002",
+      "prompt": "1-back task. Sequence: F, F, F, G, H, H, H. Give 7 YES/NO answers.",
+      "modality": "text",
+      "expected": "no yes yes no no yes yes",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "case_sensitive": false, "strip_punctuation": true}},
+      "variant_group": "nback_1",
+      "metadata": {"difficulty": 2, "n": 1}
+    },
+    {
+      "id": "nback_003",
+      "prompt": "2-back task. Say YES if the current letter matches the letter 2 steps back, NO otherwise. Sequence: A, B, A, C, B, C, C. Give 7 answers.",
+      "modality": "text",
+      "expected": "no no yes no yes no yes",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "case_sensitive": false, "strip_punctuation": true}},
+      "variant_group": "nback_2",
+      "metadata": {"difficulty": 4, "n": 2}
+    },
+    {
+      "id": "nback_004",
+      "prompt": "2-back task. Sequence: X, Y, X, Y, X, Y, Z. Give 7 YES/NO answers.",
+      "modality": "text",
+      "expected": "no no yes yes yes yes no",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "case_sensitive": false, "strip_punctuation": true}},
+      "variant_group": "nback_2",
+      "metadata": {"difficulty": 4, "n": 2}
+    },
+    {
+      "id": "nback_005",
+      "prompt": "3-back task. Say YES if current letter matches letter 3 steps back. Sequence: M, N, P, M, N, Q, M. Give 7 answers.",
+      "modality": "text",
+      "expected": "no no no yes yes no no",
+      "scoring": {"type": "exact_match", "params": {"normalize_whitespace": true, "case_sensitive": false, "strip_punctuation": true}},
+      "variant_group": "nback_3",
+      "metadata": {"difficulty": 5, "n": 3}
+    },
+    {
+      "id": "order_001",
+      "prompt": "Memorize this ordered list: cinnamon, harbor, octave, peridot, viaduct. What was the THIRD item?",
+      "modality": "text",
+      "expected": "octave",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "order_position",
+      "metadata": {"difficulty": 2, "list_length": 5}
+    },
+    {
+      "id": "order_002",
+      "prompt": "Memorize: helmet, jasmine, cobalt, lantern, pebble, satchel, raven. What was the SIXTH item?",
+      "modality": "text",
+      "expected": "satchel",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "order_position",
+      "metadata": {"difficulty": 3, "list_length": 7}
+    },
+    {
+      "id": "order_003",
+      "prompt": "Memorize: anvil, brook, cipher, dahlia, ember, fjord, gable, hatch. What was the LAST item?",
+      "modality": "text",
+      "expected": "hatch",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "order_position",
+      "metadata": {"difficulty": 2, "list_length": 8, "rationale": "recency effect should help"}
+    },
+    {
+      "id": "order_004",
+      "prompt": "Memorize: kestrel, marble, nebula, opal, plume, quill, radish, sable, trellis. What was the FIRST item?",
+      "modality": "text",
+      "expected": "kestrel",
+      "scoring": {"type": "exact_match", "params": {"case_sensitive": false, "normalize_whitespace": true, "strip_punctuation": true}},
+      "variant_group": "order_position",
+      "metadata": {"difficulty": 2, "list_length": 9, "rationale": "primacy effect"}
+    }
+  ]
+}

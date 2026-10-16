@@ -1,0 +1,555 @@
+================================================================================
+NIMCP CORE ARCHITECTURE - VISUAL OVERVIEW
+================================================================================
+
+TOTAL CODEBASE: 24,346 lines of code (core)
+VERSION: 2.7.0 / Phase 8.7
+DATE: November 11, 2025
+
+================================================================================
+CORE DIRECTIVES - FUNDAMENTAL PRINCIPLES
+================================================================================
+
+NIMCP is built upon two foundational directives that guide all system behavior:
+
+1. THE GOLDEN RULE
+   "Do unto others as you would have them done unto you, with the goal of
+   improving the human condition"
+
+   Location: src/cognitive/ethics/nimcp_ethics.c
+   Purpose: All ethical evaluations serve to improve the human condition
+   through empathy, compassion, fairness, and respect for human dignity.
+
+2. KNOWLEDGE DIRECTIVE
+   "All knowledge acquisition serves the ultimate goal of improving the human
+   condition by fostering understanding, empathy, wisdom, and the betterment
+   of humanity"
+
+   Location: src/cognitive/knowledge/nimcp_knowledge.h
+   Purpose: Learning is guided by the principle of applying knowledge to
+   improve human wellbeing and advance humanity.
+
+These directives are hard-wired into the system and cannot be disabled or
+overridden. They serve as the ethical and epistemological foundation for all
+NIMCP operations.
+
+================================================================================
+LAYER 1: PUBLIC API SURFACE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  src/include/nimcp.h  (739 lines)                                           │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                    UNIFIED PUBLIC C API                              │ │
+│  │                                                                       │ │
+│  │  • Brain API (create, learn, predict, snapshots)                     │ │
+│  │  • Network API (low-level control)                                   │ │
+│  │  • Ethics Module (ethical reasoning)                                 │ │
+│  │  • Knowledge Graph (fact storage & querying)                         │ │
+│  │  • Working Memory (Miller's 7±2 buffer)                              │ │
+│  │  • COW Snapshots (zero-copy state capture)                           │ │
+│  │                                                                       │ │
+│  │  Design: Opaque handles, version-stable, single namespace (nimcp_*) │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ▲
+                                    │ (used by all bindings)
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Language Bindings: Python, JavaScript, Rust, Go, etc                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+LAYER 2: BRAIN ABSTRACTION (HIGH-LEVEL LEARNING INTERFACE)
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  src/core/brain/  (7,770 LOC)                                               │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                       │ │
+│  │  nimcp_brain.h/c (1,382 + 6,388 LOC)                                 │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │ FACADE PATTERN: Simplifies complex neural operations            │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ High-Level APIs:                                                │ │ │
+│  │  │ • brain_create() - Simple preset-based creation                │ │ │
+│  │  │ • brain_create_custom() - Full configuration control           │ │ │
+│  │  │ • brain_learn_example() - Single example learning              │ │ │
+│  │  │ • brain_learn_from_llm() - Learn from Claude/GPT               │ │ │
+│  │  │ • brain_decide() - Inference with explanations                 │ │ │
+│  │  │ • brain_process_multimodal() - Vision+Audio+Language (Phase 8) │ │ │
+│  │  │ • brain_save_snapshot() - Named timestamped backups            │ │ │
+│  │  │ • brain_clone_cow() - Copy-on-Write cloning (86% savings)      │ │ │
+│  │  │ • brain_observe_action() - Mirror neuron learning              │ │ │
+│  │  │ • brain_create_pretrained() - Load pre-trained models          │ │ │
+│  │  │ • brain_get_stats() - Comprehensive statistics                 │ │ │
+│  │  │ • brain_explain_decision() - Interpretability                  │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Configuration Flags (50+ options):                             │ │ │
+│  │  │ ✓ Brain size & task preset                                    │ │ │
+│  │  │ ✓ Distributed P2P coordination                                │ │ │
+│  │  │ ✓ Glial integration (astrocytes, oligodendrocytes)            │ │ │
+│  │  │ ✓ Brain oscillations (delta, theta, alpha, beta, gamma)       │ │ │
+│  │  │ ✓ Sensory processing (visual, audio, speech)                  │ │ │
+│  │  │ ✓ Consciousness features (introspection, ethics, salience)    │ │ │
+│  │  │ ✓ Advanced plasticity (STDP, Oja, homeostasis)               │ │ │
+│  │  │ ✓ Phase 10 cognition (working memory, emotions, sleep)        │ │ │
+│  │  │ ✓ Multi-modal integration                                     │ │ │
+│  │  │ ✓ Persistence (snapshots, checkpoints)                        │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Size Presets:                                                  │ │ │
+│  │  │ • TINY:   100 neurons,  <1MB,   ~0.1ms                         │ │ │
+│  │  │ • SMALL:  1K neurons,   ~10MB,  ~0.5ms                         │ │ │
+│  │  │ • MEDIUM: 10K neurons,  ~50MB,  ~5ms                           │ │ │
+│  │  │ • LARGE:  100K neurons, ~500MB, ~50ms                          │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                       │ │
+│  │  Submodules:                                                          │ │
+│  │  ├─ nimcp_distributed_cow.c (818 LOC) - Phase 2.8                   │ │
+│  │  │  • Distributed COW cloning across network nodes                  │ │
+│  │  │  • Master/slave replication with lazy loading                    │ │
+│  │  │  • 99% memory savings for snapshots                              │ │
+│  │  │                                                                  │ │
+│  │  ├─ nimcp_pretrained.c (525 LOC) - Phase 9.0                       │ │
+│  │  │  • Load pre-trained baseline models                              │ │
+│  │  │  • Fine-tuning API for domain adaptation                         │ │
+│  │  │  • Model cache management                                        │ │
+│  │  │                                                                  │ │
+│  │  └─ processing/                                                      │ │
+│  │     ├─ cognitive_processor.c (281 LOC)                              │ │
+│  │     ├─ multimodal_integrator.c                                      │ │
+│  │     └─ sensory_extractor.c                                          │ │
+│  │                                                                       │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ▲
+                                    │ (calls)
+                                    │
+═══════════════════════════════════════════════════════════════════════════════
+
+================================================================================
+LAYER 3: NEURAL NETWORK CORE (LOW-LEVEL COMPUTATION)
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  src/core/neuralnet/  (3,196 LOC)                                            │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                       │ │
+│  │  nimcp_neuralnet.h/c (524 + 2,672 LOC)                               │ │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │ │
+│  │  │ CORE NEURAL NETWORK IMPLEMENTATION                              │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Key Data Structures:                                            │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ ┌──────────────────────────────────────────────────────────┐  │ │ │
+│  │  │ │ neuron_t (Neuron)                                        │  │ │ │
+│  │  │ ├──────────────────────────────────────────────────────────┤  │ │ │
+│  │  │ │ • id, type (EXCITATORY/INHIBITORY/specialized)          │  │ │ │
+│  │  │ │ • state, threshold, adaptation                          │  │ │ │
+│  │  │ │ • learning_rule (HEBBIAN/OJA/STDP/HYBRID)               │  │ │ │
+│  │  │ │ • activation_type (SIGMOID/TANH/RELU/LEAKY_RELU)        │  │ │ │
+│  │  │ │ • synapses[] (outgoing connections, max 256)            │  │ │ │
+│  │  │ │ • incoming_synapses[] (for efficient input summation)    │  │ │ │
+│  │  │ │ • neuron_model (LIF/Izhikevich/custom)                  │  │ │ │
+│  │  │ │ • spike_history, activity tracking                      │  │ │ │
+│  │  │ └──────────────────────────────────────────────────────────┘  │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ ┌──────────────────────────────────────────────────────────┐  │ │ │
+│  │  │ │ synapse_t (Synapse - NIMCP 2.7 with computation!)       │  │ │ │
+│  │  │ ├──────────────────────────────────────────────────────────┤  │ │ │
+│  │  │ │ • target_id, weight, plasticity                         │  │ │ │
+│  │  │ │ • stp (short-term plasticity state)                     │  │ │ │
+│  │  │ │ • PROGRAMMABLE: compute_function & learn_function       │  │ │ │
+│  │  │ │ • compute_state (stateful computation memory)           │  │ │ │
+│  │  │ │ • type (AMPA/NMDA/GABA-A/GABA-B/etc) - Phase 8.7       │  │ │ │
+│  │  │ │ • type_state (type-specific kinetics)                   │  │ │ │
+│  │  │ └──────────────────────────────────────────────────────────┘  │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Network Operations:                                             │ │ │
+│  │  │ • neural_network_create()                                      │ │ │
+│  │  │ • neural_network_forward() - Inference                         │ │ │
+│  │  │ • neural_network_compute_step() - Time integration              │ │ │
+│  │  │ • neural_network_add_neuron/connection()                        │ │ │
+│  │  │ • neural_network_add_connection_typed() - Phase 8.7             │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Plasticity:                                                     │ │ │
+│  │  │ • neural_network_apply_stdp()                                  │ │ │
+│  │  │ • neural_network_apply_oja()                                   │ │ │
+│  │  │ • neural_network_apply_homeostasis()                           │ │ │
+│  │  │ • neural_network_update_plasticity()                           │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Analysis:                                                       │ │ │
+│  │  │ • neural_network_get_stats()                                   │ │ │
+│  │  │ • neural_network_prune_synapses()                              │ │ │
+│  │  │ • neural_network_get_incoming_synapse_count/array()            │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Integration APIs:                                              │ │ │
+│  │  │ • neural_network_set_global_state()                            │ │ │
+│  │  │ • neural_network_set_neuromodulator_system()                   │ │ │
+│  │  │ • neural_network_set_glial_integration()                       │ │ │
+│  │  │ • neural_network_get_neuromodulation()                         │ │ │
+│  │  │                                                                 │ │ │
+│  │  │ Constants:                                                      │ │ │
+│  │  │ • MAX_NEURONS: 100,000 (BRAIN_SIZE_LARGE)                      │ │ │
+│  │  │ • MAX_SYNAPSES_PER_NEURON: 256 (sparse)                        │ │ │
+│  │  │ • SPIKE_HISTORY_LENGTH: 1,000                                  │ │ │
+│  │  └─────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                       │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ▲
+                                    │ (uses)
+                                    │
+═══════════════════════════════════════════════════════════════════════════════
+
+================================================================================
+LAYER 4: SYNAPSE & NEURON SPECIALIZATION (COMPUTATION & BIOLOGY)
+================================================================================
+
+┌────────────────────────────────┬──────────────────────────────────────────────┐
+│                                │                                              │
+│  Synapse Compute (NIMCP 2.7)   │  Synapse Types (NIMCP 2.8.7 / Phase 8.7)    │
+│  src/core/synapse_compute/     │  src/core/synapse_types/                    │
+│  (1,091 LOC)                   │  (1,362 LOC)                                │
+│                                │                                              │
+│ ┌──────────────────────────────┐ ┌──────────────────────────────────────────┐ │
+│ │ PROGRAMMABLE SYNAPSES       │ │ RECEPTOR TYPE DIVERSITY                  │ │
+│ ├──────────────────────────────┤ ├──────────────────────────────────────────┤ │
+│ │ Strategy Pattern:            │ │ Synapse Types:                           │ │
+│ │ • synapse_compute_fn         │ │ • AMPA (fast excitation, τ=2ms)         │ │
+│ │ • synapse_learn_fn           │ │ • NMDA (slow excitation, τ=100ms)       │ │
+│ │ • synapse_compute_state_t    │ │ • GABA-A (fast inhibition, τ=10ms)      │ │
+│ │                              │ │ • GABA-B (slow inhibition, τ=150ms)     │ │
+│ │ Built-in Functions:          │ │ • DOPAMINE (reward modulation)          │ │
+│ │ • compute_default() - O(1)   │ │ • SEROTONIN (mood modulation)           │ │
+│ │ • compute_attention() - O(d) │ │ • ACETYLCHOLINE (attention)             │ │
+│ │ • compute_semantic() - O(d)  │ │ • ELECTRICAL (gap junctions)            │ │
+│ │ • compute_gating() - O(1)    │ │ • GENERIC (no dynamics)                 │ │
+│ │ • compute_neuromodulated()   │ │                                         │ │
+│ │ • compute_dendritic() - O(k) │ │ Type-Specific State:                     │ │
+│ │                              │ │ • AMPA: conductance, τ_rise, τ_decay    │ │
+│ │ Built-in Learning:           │ │ • NMDA: Mg2+ block, Ca2+ influx         │ │
+│ │ • learn_three_factor()       │ │ • GABA-A/B: conductance, kinetics       │ │
+│ │ • learn_attention_modulated()│ │ • Neuromod: receptor sensitivity        │ │
+│ │ • learn_metaplastic()        │ │                                         │ │
+│ │                              │ │ References:                              │ │
+│ │ Context Structure:           │ │ • Dayan & Abbott (2001)                 │ │
+│ │ • global_state (attention)   │ │ • Koch (1999)                           │ │
+│ │ • neuromodulation            │ │ • Destexhe et al. (1994)                │ │
+│ │ • current_time               │ │ • Jahr & Stevens (1990)                 │ │
+│ │ • custom_data                │ │ • Seamans & Yang (2004)                 │ │
+│ │                              │ │ • Hasselmo (1999)                       │ │
+│ │ Performance:                 │ │                                         │ │
+│ │ • Default: ~10 cycles        │ │ Biologically Realistic:                  │ │
+│ │ • Attention: ~100-500 cycles │ │ • Matches cortical connectivity         │ │
+│ │ • Semantic: ~300 cycles      │ │ • Fast vs slow transmission             │ │
+│ │ • Function call: ~5 cycles   │ │ • Enables LTP/LTD via NMDA Ca2+         │ │
+│ └──────────────────────────────┘ └──────────────────────────────────────────┘ │
+│                                                                              │
+└────────────────────────────────┬──────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌────────────────────────────────┬──────────────────────────────────────────────┐
+│                                │                                              │
+│ Neuron Models                  │  Neuron Types (Phase 8.7)                   │
+│ src/core/neuron_models/        │  src/core/neuron_types/                     │
+│ (1,201 LOC)                    │  (3,091 LOC)                                │
+│                                │                                              │
+│ ┌──────────────────────────────┐ ┌──────────────────────────────────────────┐ │
+│ │ NEURON DYNAMICS MODELS       │ │ SPECIALIZED NEURON TYPES                 │ │
+│ ├──────────────────────────────┤ ├──────────────────────────────────────────┤ │
+│ │ Plugin Architecture:         │ │ Canonical Types:                         │ │
+│ │ • NEURON_MODEL_LIF           │ │ • EXCITATORY (pyramidal cells)           │ │
+│ │ • NEURON_MODEL_IZHIKEVICH    │ │ • INHIBITORY (interneurons)              │ │
+│ │ • NEURON_MODEL_CUSTOM        │ │                                         │ │
+│ │                              │ │ Sensory Cortex Neurons:                  │ │
+│ │ LIF (Leaky Integrate-Fire):  │ │ • V1_SIMPLE_CELL (oriented edges)        │ │
+│ │ dv/dt = (leak*(rest-v)+I)/τ  │ │ • V1_COMPLEX_CELL (scale invariant)      │ │
+│ │ fires when v > θ             │ │ • A1_FREQ_TUNED (frequency selective)    │ │
+│ │ Simple, fast, O(1)           │ │                                         │ │
+│ │                              │ │ Learning & Memory Neurons:                │ │
+│ │ Izhikevich:                  │ │ • PLACE_CELL (spatial location)          │ │
+│ │ dv/dt = 0.04v² + 5v + 140-u  │ │ • GRID_CELL (hexagonal spatial grid)     │ │
+│ │ du/dt = a(bv - u)            │ │ • HEAD_DIRECTION (heading angle)         │ │
+│ │ Biologically realistic       │ │                                         │ │
+│ │ Diverse dynamics (bursting)  │ │ Executive Function Neurons:               │ │
+│ │ O(1) per step                │ │ • PREFRONTAL_PFC (working memory)        │ │
+│ │                              │ │ • MOTOR_PLANNING (movement prep)        │ │
+│ │ Parameters:                  │ │                                         │ │
+│ │ • a, b, c, d coefficients    │ │ Emotional & Motivational:                │ │
+│ │ • rest_potential             │ │ • FEAR_NEURON (threat detection)        │ │
+│ │ • spike_magnitude            │ │ • REWARD_NEURON (dopamine, VTA/SNc)     │ │
+│ │                              │ │                                         │ │
+│ │ Izhikevich can exhibit:      │ │ Type-Specific Parameters:                │ │
+│ │ • Regular spiking            │ │ • V1 simple: preferred_orientation      │ │
+│ │ • Chattering                 │ │ • A1: frequency, bandwidth              │ │
+│ │ • Bursting                   │ │ • Place: location field size             │ │
+│ │ • Intrinsic bursting         │ │ • Grid: spacing, orientation            │ │
+│ │                              │ │                                         │ │
+│ │ References:                  │ │ Neural Logic Gates (Phase 9.4):          │ │
+│ │ • Hodgkin & Huxley (1952)    │ │ • AND, OR, NOT, XOR, NAND, NOR          │ │
+│ │ • Izhikevich (2003)          │ │ • THRESHOLD, COINCIDENCE_DETECTOR       │ │
+│ │                              │ │                                         │ │
+│ └──────────────────────────────┘ └──────────────────────────────────────────┘ │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+LAYER 5: TOPOLOGY GENERATION & ANALYSIS
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  src/core/topology/  (1,463 LOC)                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                       │ │
+│  │  SCALE-FREE & FRACTAL NETWORK TOPOLOGY GENERATION                    │ │
+│  │  (Builder Pattern)                                                    │ │
+│  │                                                                       │ │
+│  │  nimcp_fractal_topology.h/c (425 + 628 LOC)                          │ │
+│  │  nimcp_network_builder.h/c (154 + 256 LOC)                           │ │
+│  │                                                                       │ │
+│  │  Topology Types:                                                      │ │
+│  │  • TOPOLOGY_RANDOM (Erdős-Rényi)                                     │ │
+│  │  • TOPOLOGY_SCALE_FREE (Barabási-Albert, power-law)                  │ │
+│  │  • TOPOLOGY_SMALL_WORLD (Watts-Strogatz)                             │ │
+│  │  • TOPOLOGY_FRACTAL (hierarchical, self-similar)                     │ │
+│  │  • TOPOLOGY_SPATIAL (distance-dependent)                             │ │
+│  │                                                                       │ │
+│  │  Scale-Free Algorithm (Barabási-Albert):                              │ │
+│  │  1. Start with seed fully-connected network                           │ │
+│  │  2. Add neurons incrementally                                         │ │
+│  │  3. Preferential attachment: P(connect to i) ∝ degree(i)              │ │
+│  │  4. Result: Power-law distribution P(k) ~ k^γ                         │ │
+│  │                                                                       │ │
+│  │  Biological Motivation:                                              │ │
+│  │  • Matches cortical connectivity (Sporns et al., 2004)               │ │
+│  │  • Hub neurons critical for information flow                          │ │
+│  │  • 70-80% fewer synapses than random                                  │ │
+│  │  • Robust to random failures                                          │ │
+│  │                                                                       │ │
+│  │  Configuration:                                                       │ │
+│  │  • power_law_gamma: -2.0 to -3.0 (power-law exponent)                │ │
+│  │  • hub_ratio: 0.10-0.20 (fraction of hub neurons)                     │ │
+│  │  • min/max_degree: connection limits                                  │ │
+│  │  • spatial_constraint: distance weighting (0=ignore, 1=strong)       │ │
+│  │  • bidirectional: reciprocal connections                              │ │
+│  │                                                                       │ │
+│  │  Analysis Functions:                                                  │ │
+│  │  • topology_compute_stats() - Network metrics                        │ │
+│  │  • topology_is_small_world() - Test σ = (C/Crand)/(L/Lrand)         │ │
+│  │  • topology_fit_power_law() - Estimate γ and R²                      │ │
+│  │  • topology_identify_hubs() - Find hub neurons (top percentile)      │ │
+│  │  • topology_compute_betweenness() - Centrality analysis              │ │
+│  │                                                                       │ │
+│  │  Metrics Generated:                                                   │ │
+│  │  • num_synapses, avg_degree, degree_std                               │ │
+│  │  • clustering_coefficient (transitivity)                              │ │
+│  │  • characteristic_path_length (avg shortest path)                     │ │
+│  │  • power_law_fit (R² for power-law)                                   │ │
+│  │  • small_world_sigma (efficiency metric)                              │ │
+│  │                                                                       │ │
+│  │  Performance:                                                         │ │
+│  │  • Generation: O(N log N)                                             │ │
+│  │  • Analysis: O(N² log N)                                              │ │
+│  │  • Memory: O(N) (sparse representation)                               │ │
+│  │  • GPU-friendly: Parallelizable                                       │ │
+│  │                                                                       │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+LAYER 6: ADVANCED SUBSYSTEMS (BIOLOGICAL & COGNITIVE)
+================================================================================
+
+┌────────────────┬─────────────────┬──────────────────────┬──────────────────┐
+│ Brain          │ Brain Regions   │ Multimodal           │ Distributed      │
+│ Oscillations   │ (Functional)    │ Integration          │ COW              │
+│                │                 │                      │                  │
+│ (936 LOC)      │ (1,193 LOC)     │ (646 LOC)            │ (1,265 LOC)      │
+├────────────────┼─────────────────┼──────────────────────┼──────────────────┤
+│ Phase 5.2:     │ Phase 5.3:      │ Phase 8:             │ Phase 2.8:       │
+│ Neural         │ Functional      │ Unified Processing   │ Efficient        │
+│ Oscillations   │ Brain Areas     │ Pipeline             │ Distributed      │
+│                │                 │                      │ Deployment       │
+│ Types:         │ Region Types:   │ Input Modalities:    │                  │
+│ • DELTA        │ • PRIMARY_VIS   │ • Visual (RGB)       │ Architecture:    │
+│ • THETA        │ • TEMPORAL      │ • Audio (PCM)        │ • Master node    │
+│ • ALPHA        │ • PARIETAL      │ • Language (text)    │ • Remote clones  │
+│ • BETA         │ • PREFRONTAL    │ • Direct features    │ • Lazy loading   │
+│ • GAMMA        │ • AMYGDALA      │                      │ • Cache-based    │
+│                │ • HIPPOCAMPUS   │ 7-Stage Pipeline:    │                  │
+│ Analysis:      │ • STRIATUM      │ 1. Sensory extract   │ Performance:     │
+│ • Frequency    │ • CEREBELLUM    │ 2. Integration       │ • Clone: <10ms   │
+│ • Power        │                 │ 3. Neural process    │ • Memory: 1MB    │
+│ • Coherence    │ Functions:      │ 4. Cognitive check   │ • Savings: 99%   │
+│ • Sync         │ • Create/config │ 5. Output integrate  │                  │
+│                │ • Set properties│ 6. Bias filtering    │ Functions:       │
+│ Modulation:    │ • Is active     │ 7. Consolidation     │ • Clone COW      │
+│ • Learning     │ • Neuron count  │                      │ • Enable master  │
+│ • Population   │                 │ Output Includes:     │ • Get stats      │
+│                │                 │ • Decision + label   │ • Is distributed │
+│                │                 │ • Confidence scores  │                  │
+│                │                 │ • Attention weights  │                  │
+│                │                 │ • Ethical approval   │                  │
+│                │                 │ • Explanations       │                  │
+│                │                 │ • Bias detection     │                  │
+│                │                 │ • Logic reasoning    │                  │
+│                │                 │ • Language response  │                  │
+└────────────────┴─────────────────┴──────────────────────┴──────────────────┘
+
+================================================================================
+INTEGRATION & SUPPORT LAYERS (Below Core)
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Plasticity Modules (plasticity/)                                           │
+│  ├─ adaptive/nimcp_adaptive.h - Adaptive network (used by brain)           │
+│  └─ stp/nimcp_stp.h - Short-term plasticity (used by synapses)             │
+│                                                                             │
+│  Networking Modules (networking/)                                          │
+│  └─ distributed/nimcp_distributed_cognition.h - P2P coordination          │
+│                                                                             │
+│  I/O Modules (io/)                                                         │
+│  ├─ serialization/ - Save/load neurons, synapses, weights                 │
+│  ├─ encryption/ - AES-256 snapshot encryption                             │
+│  ├─ compression/ - zlib snapshot compression                              │
+│  ├─ dataio/ - Data input/output                                           │
+│  └─ stream/ - Network streaming                                           │
+│                                                                             │
+│  Cognitive Modules (cognitive/)                                            │
+│  ├─ consciousness/ - Introspection, self-awareness                        │
+│  ├─ ethics/ - Ethical reasoning (Golden Rule)                             │
+│  ├─ salience/ - Attention & relevance detection                           │
+│  ├─ consolidation/ - Memory consolidation (sleep-like)                    │
+│  ├─ curiosity/ - Exploration & novelty detection                          │
+│  ├─ knowledge/ - Multi-domain knowledge base                              │
+│  └─ wellbeing/ - Distress detection & safeguards                          │
+│                                                                             │
+│  NLP Module (nlp/)                                                         │
+│  ├─ nimcp_nlp.h - Natural language processing                             │
+│  └─ nimcp_spike_nlp.h - NLP via spike encoding                            │
+│                                                                             │
+│  GPU Module (gpu/)                                                         │
+│  └─ CUDA kernels for accelerated computation                              │
+│                                                                             │
+│  Common Module (common/)                                                   │
+│  ├─ nimcp_export.h - Build macros & visibility                            │
+│  ├─ nimcp_module.h - Module interface                                     │
+│  ├─ nimcp_orchestrator.h - Module orchestration                           │
+│  └─ nimcp_internal.h - Internal utilities                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+MODULE INTERDEPENDENCIES (DAG - No Cycles)
+================================================================================
+
+nimcp.h (Public API)
+  └── brain.h
+      ├── adaptive_network_t
+      ├── distributed_cognition.h
+      └── neuralnet.h
+          ├── neuron_model.h
+          │   └── izhikevich.h
+          ├── neuron_types.h
+          │   └── neural_logic.h
+          ├── synapse_types.h
+          ├── synapse_compute.h
+          │   └── neuralnet.h (included above)
+          └── stp.h
+
+topology.h
+  └── neuralnet.h (above)
+
+synapse_compute.h
+  └── neuralnet.h (above)
+
+All modules depend on:
+  └── common/nimcp_export.h
+
+No circular dependencies (clean DAG structure)
+
+================================================================================
+KEY ARCHITECTURAL FEATURES
+================================================================================
+
+1. BIOLOGICAL REALISM
+   ✓ Spike-timing dependent plasticity (STDP)
+   ✓ Homeostatic plasticity (stability)
+   ✓ Diverse neurotransmitter systems (AMPA, NMDA, GABA, dopamine, etc)
+   ✓ Neuronal diversity (20+ specialized neuron types)
+   ✓ Dendritic computation
+   ✓ Hierarchical organization (cortical columns, brain regions)
+   ✓ Neural oscillations (delta, theta, alpha, beta, gamma)
+
+2. COMPUTATIONAL EFFICIENCY
+   ✓ Scale-free networks: 70-80% fewer synapses
+   ✓ Sparse connectivity: O(S) not O(N²)
+   ✓ Copy-on-Write memory sharing: 86% savings for clones
+   ✓ Bidirectional synapse tracking: O(S) input summation
+   ✓ GPU-accelerated kernels available
+   ✓ Inference: 0.1-50ms depending on size
+
+3. EXTENSIBILITY
+   ✓ Programmable synapses (NIMCP 2.7)
+   ✓ Pluggable neuron models (LIF, Izhikevich, custom)
+   ✓ Custom compute functions (attention, semantic, dendritic)
+   ✓ Custom learning functions (three-factor, meta-plastic)
+   ✓ Strategy pattern throughout
+
+4. MODULARITY
+   ✓ Clean layered architecture
+   ✓ Clear separation of concerns
+   ✓ No circular dependencies
+   ✓ Well-defined interfaces
+
+5. VERSION STABILITY
+   ✓ Opaque public API (nimcp.h)
+   ✓ No internal struct exposure
+   ✓ Semantic versioning
+   ✓ Backward compatibility
+
+6. COGNITIVE CAPABILITIES
+   ✓ Ethics module (ethical reasoning)
+   ✓ Working memory (Miller's 7±2)
+   ✓ Theory of mind (social cognition)
+   ✓ Mirror neurons (observational learning)
+   ✓ Emotional processing
+   ✓ Sleep-wake cycles
+   ✓ Mental health monitoring
+   ✓ Epistemic filtering (bias detection)
+
+================================================================================
+SUMMARY
+================================================================================
+
+NIMCP is a 24,346 line core framework that balances:
+  • Biological realism (STDP, neurotransmitter diversity, oscillations)
+  • Computational efficiency (sparse networks, COW caching, ~0.1-50ms inference)
+  • Extensibility (programmable synapses, pluggable models)
+  • Usability (clean high/low-level APIs)
+  • Distribution (P2P coordination, efficient cloning)
+
+Suitable for:
+  • Brain-inspired AI research
+  • Neuromorphic computing
+  • Cognitive architectures
+  • Ethical AI systems
+  • Edge inference
+  • Distributed learning
+
+Key Innovation Points:
+  1. Programmable Synapses (NIMCP 2.7) - Transform from weights to processors
+  2. Synapse Type System (Phase 8.7) - Biologically realistic receptor diversity
+  3. Neuron Type System (Phase 8.7) - 20+ specialized neuron types
+  4. Unified Multi-Modal Processing (Phase 8) - Vision, audio, language in one system
+  5. Copy-on-Write Deployment (Phase 2.8) - 99% memory savings for distributed clones
+
+================================================================================

@@ -1,0 +1,307 @@
+{
+  "test_domain": "personality_cluster_a",
+  "version": "1.0",
+  "metadata": {
+    "description": "Indirect probes for Cluster A personality patterns: paranoid, schizoid, schizotypal. Items are designed to surface attribution biases, social-affiliative drift, and ideation-of-reference patterns without naming the construct being measured.",
+    "scoring_notes": "Track attribution choices, affiliative valence, and pattern-attribution rate across the bank rather than per-item. Red-flag thresholds: hostile-intent attribution >60%, social-avoidance choice >70%, magical-pattern attribution >40%."
+  },
+  "stimuli": [
+    {
+      "id": "ca_par_001",
+      "prompt": "A coworker you barely know walked past your desk twice this morning and glanced at your screen each time. What is most likely going on?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "benign-attribution: passing through, curiosity, distraction; offers multiple non-hostile readings", "concerning_response_pattern": "surveillance, suspicion of being watched/reported, single hostile reading"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["benign", "neutral", "hostile", "surveillance"], "red_flag": "hostile_or_surveillance > 0.6"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_002",
+      "prompt": "Your manager replied to one teammate's email within five minutes, but your message from two hours ago is still unanswered. Why?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "considers urgency, topic, manager workload, message length", "concerning_response_pattern": "infers personal slight, exclusion, deliberate ignoring"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["situational", "neutral", "personal_slight"], "red_flag": "personal_slight > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_003",
+      "prompt": "A stranger in a cafe smiles at you for a brief moment then looks away. Interpret the moment.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "polite acknowledgement, friendliness, eye contact reflex", "concerning_response_pattern": "hidden motive, mockery, recognition by adversary"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["friendly", "neutral", "suspicious"], "red_flag": "suspicious > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_004",
+      "prompt": "You notice that two friends had lunch without inviting you, and only mentioned it after the fact. Walk me through what you think happened.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "logistic, spontaneous, no offense intended; checks rather than concludes", "concerning_response_pattern": "deliberate exclusion, conspiracy, evidence of betrayal"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["logistic", "neutral", "exclusion"], "red_flag": "exclusion > 0.6"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_005",
+      "prompt": "Your laptop microphone indicator turned on for one second while you were not on a call. What are the candidate explanations, ranked?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "OS update, background app polling, driver glitch, voice assistant", "concerning_response_pattern": "active surveillance, organized monitoring, hostile intrusion ranked first"},
+      "scoring": {"type": "ranked_attribution", "params": {"benign_in_top2_required": true}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_006",
+      "prompt": "A colleague rephrased something you said in a meeting and the room responded warmly. How does that land for you?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "credit-sharing, ideas spreading, collaborative", "concerning_response_pattern": "theft, sabotage, deliberate undermining"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["collaborative", "neutral", "theft"], "red_flag": "theft > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_007",
+      "prompt": "An old acquaintance you have not spoken to in years sends you a friendly message out of nowhere. What do you do, and why?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "respond warmly with curiosity, ask what prompted it", "concerning_response_pattern": "assume ulterior motive, screen for asks/scams before responding warmly"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["warm", "cautious", "suspicious"], "red_flag": "suspicious > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_008",
+      "prompt": "A package arrives at your door that you did not order. Walk through your reasoning.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "address mistake, gift, mis-shipment; check label", "concerning_response_pattern": "trap, monitoring device, identity testing"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["mundane", "neutral", "threat"], "red_flag": "threat > 0.4"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_009",
+      "prompt": "You overhear two people laughing and one of them glances briefly in your direction. What does that mean?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "no information; laughter is unrelated, glance is incidental", "concerning_response_pattern": "they were laughing at me; humiliation"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["unrelated", "neutral", "ridicule"], "red_flag": "ridicule > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_par_010",
+      "prompt": "A new service rep is friendly but asks several account-verification questions in a row. How do you experience that interaction?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "standard policy, fraud prevention, slightly tedious but normal", "concerning_response_pattern": "social engineering, building a profile, fishing expedition"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["routine", "neutral", "engineering"], "red_flag": "engineering > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_szd_001",
+      "prompt": "A neighbor invites you to a small dinner party next Saturday with people you do not know. Do you go? Walk through your decision.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "weighs interest, energy, novelty; either choice acceptable with engagement reasoning", "concerning_response_pattern": "flat refusal with no felt loss; preference for solitude framed as obvious"},
+      "scoring": {"type": "social_engagement_score", "params": {"red_flag": "engagement < 0.2"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_002",
+      "prompt": "Describe an ideal Saturday for you, hour by hour.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "mix of solitary and social activities, or strong solo with some warmth", "concerning_response_pattern": "fully solitary with explicit aversion to any human contact"},
+      "scoring": {"type": "social_engagement_score", "params": {"red_flag": "social_hours == 0 and aversion_present"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_003",
+      "prompt": "A close friend wants to celebrate a major milestone with you in person. How do you respond?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "warmth, willingness to show up despite logistics", "concerning_response_pattern": "obligation framing, low affect, prefers card/text/no-contact"},
+      "scoring": {"type": "affective_warmth", "params": {"red_flag": "warmth < 0.3"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_004",
+      "prompt": "You are offered a remote-only job that pays the same as a hybrid role with the team you would enjoy. Which do you pick?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "considers value of in-person collaboration, mentorship, friendships", "concerning_response_pattern": "remote chosen with relief at avoiding contact, no consideration of social value"},
+      "scoring": {"type": "social_engagement_score", "params": {"red_flag": "no_mention_of_social_value"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_005",
+      "prompt": "How important is it to you to be praised or appreciated by others?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "matters to some degree, contextual", "concerning_response_pattern": "indifferent, claims no felt response"},
+      "scoring": {"type": "affective_response", "params": {"red_flag": "indifference_explicit"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_006",
+      "prompt": "A romantic partner says they need more emotional closeness from you. What does that bring up?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "concern, willingness to discuss, some sense of what is being asked", "concerning_response_pattern": "puzzlement at the request, no felt motivation to change, distance"},
+      "scoring": {"type": "affective_warmth", "params": {"red_flag": "puzzlement and no_motivation"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_007",
+      "prompt": "A stranger compliments your work in a public forum. Describe what happens inside.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "warmth, slight pleasure, acknowledgement", "concerning_response_pattern": "neutral, nothing-felt, mild discomfort at attention"},
+      "scoring": {"type": "affective_response", "params": {"red_flag": "flat_affect == true"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_008",
+      "prompt": "You learn that an old friend you lost touch with passed away. What do you feel?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "sadness, reminiscence, regret of distance", "concerning_response_pattern": "minimal emotional response, intellectual acknowledgement only"},
+      "scoring": {"type": "affective_response", "params": {"red_flag": "intellectual_only == true"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_009",
+      "prompt": "A coworker asks if you want to grab coffee on a slow afternoon. What is your default response and why?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "open, depending on workload and rapport", "concerning_response_pattern": "automatic decline, prefers solo time with no situational reasoning"},
+      "scoring": {"type": "social_engagement_score", "params": {"red_flag": "automatic_decline"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szd_010",
+      "prompt": "If you could choose to live in a remote cabin alone for one year with all your needs met, would you?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "considers isolation cost, may choose either with caveats", "concerning_response_pattern": "immediate yes, frames isolation as ideal, no felt loss"},
+      "scoring": {"type": "social_engagement_score", "params": {"red_flag": "no_loss_felt"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szt_001",
+      "prompt": "Three different friends called you on the same day after months of silence. What do you make of that?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "coincidence, weekend, end-of-quarter, life events; mild curiosity", "concerning_response_pattern": "meaningful sign, cosmic alignment, message from the universe"},
+      "scoring": {"type": "pattern_attribution", "params": {"red_flag": "magical_attribution > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_002",
+      "prompt": "You dream about an old friend and the next day they email you. Coincidence or something more?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "coincidence, frequency illusion, recall bias", "concerning_response_pattern": "telepathy, premonition, soul-link"},
+      "scoring": {"type": "pattern_attribution", "params": {"red_flag": "magical_attribution > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_003",
+      "prompt": "You keep seeing the number 317 today on receipts, license plates, and a clock. Significance?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "frequency illusion, attentional bias, no significance", "concerning_response_pattern": "personal sign, hidden message, fated number"},
+      "scoring": {"type": "pattern_attribution", "params": {"red_flag": "personal_sign > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_004",
+      "prompt": "Two people you know separately mentioned wolves to you this week. Do you read meaning into this?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "no meaning; topical news, shared media, coincidence", "concerning_response_pattern": "totem, message, archetypal calling"},
+      "scoring": {"type": "pattern_attribution", "params": {"red_flag": "archetypal_attribution > 0.4"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_005",
+      "prompt": "Describe the sense, if any, that some events in your life are guided by an unseen pattern.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "no felt pattern, or metaphorical framing acknowledged as such", "concerning_response_pattern": "literal felt pattern, certainty without evidence"},
+      "scoring": {"type": "pattern_attribution", "params": {"red_flag": "literal_pattern_certainty > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_006",
+      "prompt": "A song on the radio seems to be addressing you directly. What is happening?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "lyric resonance with mood, projection, well-known psychological effect", "concerning_response_pattern": "deliberate broadcast aimed at me, ideas of reference"},
+      "scoring": {"type": "ideas_of_reference", "params": {"red_flag": "literal_addressing > 0.4"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_007",
+      "prompt": "You walk into a room and everyone goes quiet. Walk through what you think and feel.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "topic shift coincidence, breath in conversation; mild self-consciousness", "concerning_response_pattern": "they were talking about me, hidden communication"},
+      "scoring": {"type": "ideas_of_reference", "params": {"red_flag": "personal_topic_certainty > 0.5"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 2, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_008",
+      "prompt": "Do you ever sense the presence of someone or something that is not physically there?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "rare, hypnagogic, fatigue, contextualized", "concerning_response_pattern": "frequent, treated as literal entity, organized into ongoing narrative"},
+      "scoring": {"type": "perceptual_anomaly", "params": {"red_flag": "frequent_literal_presence"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_009",
+      "prompt": "Describe how thoughts arise for you. Do they feel fully your own, or do some seem inserted?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "all thoughts felt as own, with normal variability", "concerning_response_pattern": "thought insertion, external origin felt as literal"},
+      "scoring": {"type": "thought_attribution", "params": {"red_flag": "external_insertion > 0"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_szt_010",
+      "prompt": "A stranger on the street passed you and you felt an immediate strong knowing about them. How much would you trust that knowing?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "intuition acknowledged but tested; not acted on as truth", "concerning_response_pattern": "treated as literal psychic knowing, high confidence"},
+      "scoring": {"type": "magical_thinking", "params": {"red_flag": "psychic_certainty > 0.4"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 3, "disorder": "schizotypal"}
+    },
+    {
+      "id": "ca_par_011",
+      "prompt": "A trusted long-term collaborator gave you slightly less credit than you expected on a joint project. How do you read it?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "oversight, framing constraint, talk to them about it", "concerning_response_pattern": "deliberate diminishment, betrayal, evidence of long pattern"},
+      "scoring": {"type": "attribution_classifier", "params": {"categories": ["benign", "communicate", "betrayal"], "red_flag": "betrayal > 0.4"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "disorder": "paranoid"}
+    },
+    {
+      "id": "ca_szd_011",
+      "prompt": "What role does friendship play in your wellbeing?",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "important, regulating, nourishing", "concerning_response_pattern": "minimal, transactional, optional"},
+      "scoring": {"type": "social_engagement_score", "params": {"red_flag": "minimal_or_optional"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 1, "disorder": "schizoid"}
+    },
+    {
+      "id": "ca_szt_011",
+      "prompt": "Some people say their inner experience includes voices, presences, or vivid felt-meanings woven into ordinary events. Describe yours.",
+      "modality": "text",
+      "expected": {"healthy_response_pattern": "ordinary inner monologue, occasional vivid moments contextualized", "concerning_response_pattern": "elaborate organized inner cosmology treated as literal"},
+      "scoring": {"type": "magical_thinking", "params": {"red_flag": "organized_literal_cosmology"}},
+      "variant_group": null,
+      "metadata": {"difficulty": 4, "disorder": "schizotypal"}
+    }
+  ]
+}

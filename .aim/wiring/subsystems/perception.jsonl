@@ -1,0 +1,29 @@
+# Perception subsystem wiring - sensory processing and integration
+# Handles visual, auditory, somatosensory, and multimodal perception
+{"type":"entity","name":"Visual_Cortex","entityType":"CognitiveModule","observations":["Processes visual input","Hierarchical feature extraction","Object recognition pathway"],"subsystem":"perception","tier_min":"CONSTRAINED"}
+{"type":"entity","name":"Auditory_Cortex","entityType":"CognitiveModule","observations":["Processes auditory input","Frequency analysis","Speech recognition support"],"subsystem":"perception","tier_min":"CONSTRAINED"}
+{"type":"entity","name":"Somatosensory_Cortex","entityType":"CognitiveModule","observations":["Processes tactile input","Proprioception integration","Body schema maintenance"],"subsystem":"perception","tier_min":"MEDIUM"}
+{"type":"entity","name":"Multimodal_Integration","entityType":"CognitiveModule","observations":["Fuses sensory modalities","Temporal binding","Cross-modal attention"],"subsystem":"perception","tier_min":"MEDIUM"}
+{"type":"relation","from":"Visual_Cortex","to":"Multimodal_Integration","relationType":"HANDLES_MESSAGE","message_type":"VISUAL_FEATURES"}
+{"type":"relation","from":"Auditory_Cortex","to":"Multimodal_Integration","relationType":"HANDLES_MESSAGE","message_type":"AUDITORY_FEATURES"}
+{"type":"relation","from":"Somatosensory_Cortex","to":"Multimodal_Integration","relationType":"HANDLES_MESSAGE","message_type":"TACTILE_FEATURES"}
+# NLP modules - natural language processing and communication
+{"type":"entity","name":"dialect_learning","entityType":"NLP_MODULE","subsystem":"perception","min_tier":0,"enabled":true}
+{"type":"relation","from":"dialect_learning","to":"BIO_MSG_NLP_NEURAL_ENCODE_COMPLETE","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_NLP_NEURAL_ENCODE_COMPLETE"}
+{"type":"entity","name":"nlp_message","entityType":"NLP_MODULE","subsystem":"perception","min_tier":0,"enabled":true}
+{"type":"relation","from":"nlp_message","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+{"type":"relation","from":"nlp_message","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ATTENTION_SHIFT"}
+{"type":"relation","from":"nlp_message","to":"BIO_MSG_SECURITY_ALERT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_ALERT"}
+{"type":"relation","from":"nlp_message","to":"BIO_MSG_SHUTDOWN_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SHUTDOWN_REQUEST"}
+{"type":"entity","name":"neural_language","entityType":"NLP_MODULE","subsystem":"perception","min_tier":0,"enabled":true}
+{"type":"relation","from":"neural_language","to":"BIO_MSG_NLP_NEURAL_ENCODE_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_NLP_NEURAL_ENCODE_REQUEST"}
+{"type":"relation","from":"neural_language","to":"BIO_MSG_NLP_NEURAL_DECODE_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_NLP_NEURAL_DECODE_REQUEST"}
+{"type":"relation","from":"neural_language","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ATTENTION_SHIFT"}
+{"type":"entity","name":"nlp","entityType":"NLP_MODULE","subsystem":"perception","min_tier":0,"enabled":true}
+{"type":"relation","from":"nlp","to":"BIO_MSG_HEALTH_CHECK","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_HEALTH_CHECK"}
+{"type":"relation","from":"nlp","to":"BIO_MSG_ATTENTION_SHIFT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_ATTENTION_SHIFT"}
+{"type":"relation","from":"nlp","to":"BIO_MSG_SECURITY_ALERT","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SECURITY_ALERT"}
+{"type":"relation","from":"nlp","to":"BIO_MSG_SHUTDOWN_REQUEST","relationType":"HANDLES_MESSAGE","message_type":"BIO_MSG_SHUTDOWN_REQUEST"}
+{"type":"relation","from":"Occipital_Collective_Bridge_Module","to":"BIO_MSG_OCCIPITAL_COLLECTIVE_ATTENTION","relationType":"HANDLES_MESSAGE","message_type":8001}
+{"type":"relation","from":"Occipital_Collective_Bridge_Module","to":"BIO_MSG_OCCIPITAL_COLLECTIVE_FEATURE","relationType":"HANDLES_MESSAGE","message_type":8002}
+{"type":"relation","from":"Occipital_Collective_Bridge_Module","to":"BIO_MSG_OCCIPITAL_COLLECTIVE_STATE_UPDATE","relationType":"HANDLES_MESSAGE","message_type":8003}

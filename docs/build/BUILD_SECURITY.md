@@ -60,15 +60,15 @@ make -j$(nproc)
 **Verification:**
 ```bash
 # Check if PIE is enabled
-readelf -h build-release/src/lib/libnimcp_core.so | grep "Type:"
+readelf -h build-release/src/lib/libnimcp.so | grep "Type:"
 # Should show: Type: DYN (Shared object file)
 
 # Check for stack canaries
-objdump -d build-release/src/lib/libnimcp_core.so | grep stack_chk_fail
+objdump -d build-release/src/lib/libnimcp.so | grep stack_chk_fail
 # Should show multiple references if enabled
 
 # Check RELRO
-readelf -l build-release/src/lib/libnimcp_core.so | grep GNU_RELRO
+readelf -l build-release/src/lib/libnimcp.so | grep GNU_RELRO
 # Should show: GNU_RELRO
 ```
 

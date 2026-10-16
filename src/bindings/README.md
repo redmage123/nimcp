@@ -39,7 +39,7 @@ Internal APIs (brain, neuralnet, ethics, knowledge, etc.)
    ```bash
    cd build
    cmake ..
-   make nimcp_core
+   make nimcp
    ```
 
 ### Python
