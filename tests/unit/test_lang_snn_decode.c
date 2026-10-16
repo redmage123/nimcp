@@ -43,13 +43,8 @@ static int g_failures = 0;
 /* MUST match lang_ensemble_neuron() in nimcp_snn_language_bridge.c. */
 static uint32_t ens(uint32_t pop_idx, uint32_t j, uint32_t n_neurons) {
     if (n_neurons == 0) return 0;
-    uint64_t z = (uint64_t)pop_idx * 0x9E3779B97F4A7C15ULL + 0xD1B54A32D192ED03ULL;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    z =  z ^ (z >> 31);
-    uint32_t base   = (uint32_t)(z % n_neurons);
-    uint32_t stride = (uint32_t)((z >> 17) % n_neurons) | 1u;
-    return (uint32_t)(((uint64_t)base + (uint64_t)j * stride) % n_neurons);
+    /* Disjoint contiguous blocks (2026-06-09 collision fix, 53866c7c5). */
+    return (uint32_t)(((uint64_t)pop_idx * SNN_LANG_NEURONS_PER_POP + j) % n_neurons);
 }
 
 #define NN 256u

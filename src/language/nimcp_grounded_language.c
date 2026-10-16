@@ -5642,6 +5642,9 @@ static int gl_build_clause_frame(grounded_language_t* gl,
  * producer). Opt-in only — reached when gl->produce_via_snn is ON. */
 static uint32_t gl_produce_candidates_via_snn(grounded_language_t* gl,
                                               const float* intent, uint32_t intent_dim,
+                                              const uint64_t* seed_concepts,
+                                              const float* seed_acts,
+                                              uint32_t seed_count,
                                               const char** out_words, float* out_scores,
                                               uint32_t max_words) {
     if (!gl || !gl->snn_bridge || !intent || !out_words || !out_scores || max_words == 0)
@@ -5660,8 +5663,52 @@ static uint32_t gl_produce_candidates_via_snn(grounded_language_t* gl,
      * even though single-concept selectivity is excellent. Tunable live. */
     uint32_t seed_n = gl->snn_gen_max_concepts ? gl->snn_gen_max_concepts : 2u;
     if (seed_n > 8u) seed_n = 8u;
-    uint32_t n_concepts = grounded_language_top_concepts_for_intent(
-        gl, intent, intent_dim, concept_ids, seed_n);
+    uint32_t n_concepts = 0;
+
+    /* Phase 3 intent grounding (2026-06-14): seed the generator with the
+     * concepts COMPREHENSION actually resolved from the prompt
+     * (comp.activated_concepts), NOT with concepts re-derived by cosine-ranking
+     * word distributional vectors. probe_pod_cosines shows those distributional
+     * embeddings are structureless noise (within≈between≈0 separation), so
+     * top_concepts_for_intent ranks them near-randomly and a fixed set of rare
+     * words ("thoriated"/"chalcedon") wins every prompt regardless of meaning;
+     * the now-clean isolated readout then faithfully speaks that garbage.
+     * Seeding the grounded resolved concepts puts the RIGHT concept into
+     * Wernicke. Env gate NIMCP_LANG_SEED_FROM_COMPREHEND=0 restores the legacy
+     * cosine path. */
+    static int seed_from_comp = -1;
+    if (seed_from_comp < 0) {
+        const char* e = getenv("NIMCP_LANG_SEED_FROM_COMPREHEND");
+        seed_from_comp = (e && e[0] == '0') ? 0 : 1;
+    }
+    if (seed_from_comp && seed_concepts && seed_count > 0) {
+        /* Pick the strongest seed_n distinct concepts by activation (descending).
+         * activation_levels carry polarity*effective from comprehend; the
+         * highest-activation entries are the content concepts (function words
+         * score low and/or are guarded upstream). */
+        for (uint32_t pick = 0; pick < seed_n; pick++) {
+            int   best = -1;
+            float best_act = -1e30f;
+            for (uint32_t s = 0; s < seed_count; s++) {
+                uint64_t cid = seed_concepts[s];
+                if (cid == 0) continue;
+                int dup = 0;
+                for (uint32_t k = 0; k < n_concepts; k++)
+                    if (concept_ids[k] == cid) { dup = 1; break; }
+                if (dup) continue;
+                float a = seed_acts ? seed_acts[s] : 1.0f;
+                if (a > best_act) { best_act = a; best = (int)s; }
+            }
+            if (best < 0) break;
+            concept_ids[n_concepts++] = seed_concepts[best];
+        }
+    }
+    if (n_concepts == 0) {
+        /* No grounded seed available (or gate off) → legacy cosine ranking of
+         * the intent vector over the word distributional space. */
+        n_concepts = grounded_language_top_concepts_for_intent(
+            gl, intent, intent_dim, concept_ids, seed_n);
+    }
     if (n_concepts == 0) return 0;   /* no grounded concept → lexicon fallback */
 
     /* (2) Seed → step → decode via the bridge's stored network handles
@@ -5694,9 +5741,26 @@ static uint32_t gl_produce_candidates_via_snn(grounded_language_t* gl,
     return out;
 }
 
+/* Internal produce with optional grounded seed concepts (Phase 3, 2026-06-14).
+ * seed_concepts/seed_acts/seed_count come from the comprehension result so the
+ * SNN generator is seeded with the concepts the prompt actually resolved,
+ * bypassing the noise-ranked cosine selection. The public
+ * grounded_language_produce() wrapper passes NULL/0 (legacy behavior). */
+static int gl_produce_impl(grounded_language_t* gl, const float* intent,
+                           uint32_t intent_dim, gl_production_mode_t mode,
+                           const uint64_t* seed_concepts, const float* seed_acts,
+                           uint32_t seed_count, gl_production_result_t* result);
+
 int grounded_language_produce(grounded_language_t* gl, const float* intent,
                                uint32_t intent_dim, gl_production_mode_t mode,
                                gl_production_result_t* result) {
+    return gl_produce_impl(gl, intent, intent_dim, mode, NULL, NULL, 0, result);
+}
+
+static int gl_produce_impl(grounded_language_t* gl, const float* intent,
+                           uint32_t intent_dim, gl_production_mode_t mode,
+                           const uint64_t* seed_concepts, const float* seed_acts,
+                           uint32_t seed_count, gl_production_result_t* result) {
     (void)mode;
     if (!gl || !intent || !result) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
@@ -5735,6 +5799,7 @@ int grounded_language_produce(grounded_language_t* gl, const float* intent,
     uint32_t n = 0;
     if (gl->produce_via_snn && gl->snn_bridge) {
         n = gl_produce_candidates_via_snn(gl, intent, intent_dim,
+                                          seed_concepts, seed_acts, seed_count,
                                           topk_words, topk_scores, GL_PRODUCE_TOPK);
     }
     if (n == 0) {
@@ -6412,8 +6477,14 @@ int grounded_language_respond(grounded_language_t* gl, const char* input_text,
     gl_production_result_t prod = {0};
     int rc = -1;
     if (!counterclaim_emitted && comp_rc == 0 && comp.semantic_vector) {
-        rc = grounded_language_produce(gl, comp.semantic_vector, gl->semantic_dim,
-                                        GL_PRODUCE_RESPOND, &prod);
+        /* Phase 3 grounding: pass the concepts comprehension resolved from the
+         * prompt (comp.activated_concepts + activation_levels) so the SNN
+         * generator is seeded with the RIGHT concept instead of one re-derived
+         * by cosine-ranking the structureless distributional embeddings. */
+        rc = gl_produce_impl(gl, comp.semantic_vector, gl->semantic_dim,
+                             GL_PRODUCE_RESPOND,
+                             comp.activated_concepts, comp.activation_levels,
+                             comp.concept_count, &prod);
     }
 
     if (counterclaim_emitted) {
