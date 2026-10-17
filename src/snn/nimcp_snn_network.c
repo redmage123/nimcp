@@ -4669,6 +4669,7 @@ int snn_network_finalize_connections(snn_network_t* network) {
                     if (snn_csr_prepare_gpu(pop->incoming_csr, pop_offsets,
                                             network->n_populations) == 0) {
                         gpu_prepared++;
+                        // LOG_INFO("[DEBUG-CALLER] Returned from snn_csr_prepare_gpu for pop %u", p);
                     }
                 }
             }
