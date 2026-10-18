@@ -4663,19 +4663,35 @@ int snn_network_finalize_connections(snn_network_t* network) {
                     (network->populations[p] ? network->populations[p]->n_neurons : 0);
             }
             int gpu_prepared = 0;
+            int gpu_uploaded = 0;
             for (uint32_t p = 0; p < network->n_populations; p++) {
                 snn_population_t* pop = network->populations[p];
                 if (pop && pop->lightweight && pop->incoming_csr) {
                     if (snn_csr_prepare_gpu(pop->incoming_csr, pop_offsets,
                                             network->n_populations) == 0) {
                         gpu_prepared++;
-                        // LOG_INFO("[DEBUG-CALLER] Returned from snn_csr_prepare_gpu for pop %u", p);
+
+                        /* Upload to GPU immediately to reduce peak host memory.
+                         * After upload, free topology arrays (flat_col_idx, src_pop_idx)
+                         * since they're now GPU-resident and immutable. Keep weights
+                         * for plasticity sync. This reduces peak memory by ~8 bytes/synapse
+                         * per population (e.g., 480MB for a 60M-synapse population). */
+                        if (network->gpu_ctx && snn_csr_upload_to_gpu(
+                                pop->incoming_csr, network->gpu_ctx) == 0) {
+                            gpu_uploaded++;
+                            /* Free topology arrays — GPU has them, plasticity doesn't modify */
+                            nimcp_free(pop->incoming_csr->flat_col_idx);
+                            pop->incoming_csr->flat_col_idx = NULL;
+                            nimcp_free(pop->incoming_csr->src_pop_idx);
+                            pop->incoming_csr->src_pop_idx = NULL;
+                        }
                     }
                 }
             }
-            NIMCP_LOGGING_INFO("GPU CSR prepared for %d populations "
+            NIMCP_LOGGING_INFO("GPU CSR prepared for %d populations, "
+                               "%d uploaded+freed topology arrays "
                                "(%zu total neurons, flat index range 0-%u)",
-                               gpu_prepared, total_neurons,
+                               gpu_prepared, gpu_uploaded, total_neurons,
                                pop_offsets[network->n_populations]);
             nimcp_free(pop_offsets);
         }
