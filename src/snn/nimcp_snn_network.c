@@ -4664,34 +4664,55 @@ int snn_network_finalize_connections(snn_network_t* network) {
             }
             int gpu_prepared = 0;
             int gpu_uploaded = 0;
-            for (uint32_t p = 0; p < network->n_populations; p++) {
-                snn_population_t* pop = network->populations[p];
-                if (pop && pop->lightweight && pop->incoming_csr) {
-                    if (snn_csr_prepare_gpu(pop->incoming_csr, pop_offsets,
-                                            network->n_populations) == 0) {
-                        gpu_prepared++;
+            const uint32_t BATCH_SIZE = 12;  /* Process 12 populations per batch to limit peak memory */
+            uint32_t batch_start = 0;
 
-                        /* Upload to GPU immediately to reduce peak host memory.
-                         * After upload, free topology arrays (flat_col_idx, src_pop_idx)
-                         * since they're now GPU-resident and immutable. Keep weights
-                         * for plasticity sync. This reduces peak memory by ~8 bytes/synapse
-                         * per population (e.g., 480MB for a 60M-synapse population). */
-                        if (network->gpu_ctx && snn_csr_upload_to_gpu(
-                                pop->incoming_csr, network->gpu_ctx) == 0) {
-                            gpu_uploaded++;
-                            /* Free topology arrays — GPU has them, plasticity doesn't modify */
-                            nimcp_free(pop->incoming_csr->flat_col_idx);
-                            pop->incoming_csr->flat_col_idx = NULL;
-                            nimcp_free(pop->incoming_csr->src_pop_idx);
-                            pop->incoming_csr->src_pop_idx = NULL;
+            while (batch_start < network->n_populations) {
+                uint32_t batch_end = batch_start + BATCH_SIZE;
+                if (batch_end > network->n_populations) {
+                    batch_end = network->n_populations;
+                }
+
+                /* Process one batch: prepare + upload + free */
+                for (uint32_t p = batch_start; p < batch_end; p++) {
+                    snn_population_t* pop = network->populations[p];
+                    if (pop && pop->lightweight && pop->incoming_csr) {
+                        if (snn_csr_prepare_gpu(pop->incoming_csr, pop_offsets,
+                                                network->n_populations) == 0) {
+                            gpu_prepared++;
+
+                            /* Upload to GPU immediately to reduce peak host memory.
+                             * After upload, free topology arrays (flat_col_idx, src_pop_idx)
+                             * since they're now GPU-resident and immutable. Keep weights
+                             * for plasticity sync. This reduces peak memory by ~8 bytes/synapse
+                             * per population (e.g., 480MB for a 60M-synapse population). */
+                            if (network->gpu_ctx && snn_csr_upload_to_gpu(
+                                    pop->incoming_csr, network->gpu_ctx) == 0) {
+                                gpu_uploaded++;
+                                /* Free topology arrays — GPU has them, plasticity doesn't modify */
+                                nimcp_free(pop->incoming_csr->flat_col_idx);
+                                pop->incoming_csr->flat_col_idx = NULL;
+                                nimcp_free(pop->incoming_csr->src_pop_idx);
+                                pop->incoming_csr->src_pop_idx = NULL;
+                            }
                         }
                     }
                 }
+
+                /* Memory barrier: sync GPU operations and let CUDA clean up host-side
+                 * structures before next batch. This prevents pile-up of pending transfers
+                 * and host-side metadata that caused OOM during continuous upload. */
+                if (network->gpu_ctx && gpu_uploaded > 0) {
+                    extern int nimcp_gpu_synchronize(void* gpu_ctx);
+                    nimcp_gpu_synchronize(network->gpu_ctx);
+                }
+
+                batch_start = batch_end;
             }
             NIMCP_LOGGING_INFO("GPU CSR prepared for %d populations, "
-                               "%d uploaded+freed topology arrays "
+                               "%d uploaded+freed topology arrays in batches of %u "
                                "(%zu total neurons, flat index range 0-%u)",
-                               gpu_prepared, gpu_uploaded, total_neurons,
+                               gpu_prepared, gpu_uploaded, BATCH_SIZE, total_neurons,
                                pop_offsets[network->n_populations]);
             nimcp_free(pop_offsets);
         }
