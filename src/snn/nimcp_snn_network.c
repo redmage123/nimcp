@@ -4703,8 +4703,7 @@ int snn_network_finalize_connections(snn_network_t* network) {
                  * structures before next batch. This prevents pile-up of pending transfers
                  * and host-side metadata that caused OOM during continuous upload. */
                 if (network->gpu_ctx && gpu_uploaded > 0) {
-                    extern int nimcp_gpu_synchronize(void* gpu_ctx);
-                    nimcp_gpu_synchronize(network->gpu_ctx);
+                    nimcp_gpu_context_synchronize((nimcp_gpu_context_t*)network->gpu_ctx);
                 }
 
                 batch_start = batch_end;
