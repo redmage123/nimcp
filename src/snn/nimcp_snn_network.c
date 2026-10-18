@@ -4664,7 +4664,7 @@ int snn_network_finalize_connections(snn_network_t* network) {
             }
             int gpu_prepared = 0;
             int gpu_uploaded = 0;
-            const uint32_t BATCH_SIZE = 12;  /* Process 12 populations per batch to limit peak memory */
+            const uint32_t BATCH_SIZE = 6;  /* Process 6 populations per batch to limit peak memory */
             uint32_t batch_start = 0;
 
             while (batch_start < network->n_populations) {
