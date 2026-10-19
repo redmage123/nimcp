@@ -23,7 +23,7 @@ echo "========================================"
 
 # Start encoder server in background on GPU 1
 echo "Starting encoder server on GPU 1..."
-python3 scripts/encoder_server.py > /tmp/encoder_server.log 2>&1 &
+python3 /root/nimcp/scripts/encoder_server.py > /tmp/encoder_server.log 2>&1 &
 ENCODER_PID=$!
 echo "Encoder server PID: $ENCODER_PID"
 
