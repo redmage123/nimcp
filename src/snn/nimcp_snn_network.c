@@ -1453,6 +1453,14 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
     if (!network || !network->gpu_ctx[0] || !network->gpu_lif_state) return -1;
     if (snn_tune_get_conductance_enabled() == 0.0f) return -1;
     if (snn_tune_get_cb_gpu_enabled() == 0.0f) return -1;
+
+    /* Dual-GPU hybrid mode: CSR distributed across GPUs (reduces init memory),
+     * but execution uses GPU 0 kernels + CPU fallback for GPU 1 populations.
+     * Full dual-GPU execution requires per-GPU LIF states (future work). */
+    const bool dual_gpu_mode = (network->n_gpu_devices > 1);
+    if (dual_gpu_mode) {
+        NIMCP_LOGGING_DEBUG("Dual-GPU hybrid: GPU 0 kernel + CPU fallback for GPU 1 pops");
+    }
     /* NOTE: substrate spike-survival dropout is stochastic on CPU; the
      * GPU kernel is deterministic. We do NOT gate on this tune knob —
      * its production default is ON, and gating would force every step
@@ -1619,10 +1627,14 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
             /* CB-GPU-7: skip the host CSR walk only when BOTH the CSR is
              * GPU-resident AND the per-pop synapse_type table is uploaded.
              * The pre-step lazy-upload block above settles both flags
-             * BEFORE this loop runs, so this gate is reliable. */
+             * BEFORE this loop runs, so this gate is reliable.
+             *
+             * Dual-GPU hybrid: populations on GPU 1 use CPU deposit path.
+             * Only GPU 0 populations use GPU kernel path. */
             .cb_gpu_csr_path = (pop->incoming_csr &&
                                 pop->incoming_csr->gpu_resident &&
-                                pop->d_synapse_type_per_src != NULL),
+                                pop->d_synapse_type_per_src != NULL &&
+                                pop->device_id == 0),
         };
 
         /* AHP/pump hyp arrays — kernel does not use them (Stage A
@@ -4702,10 +4714,18 @@ int snn_network_finalize_connections(snn_network_t* network) {
                                                 network->n_populations) == 0) {
                             gpu_prepared++;
 
-                            /* Multi-GPU: Select GPU context based on population's device_id.
-                             * Upload to the appropriate GPU to split memory across devices. */
+                            /* Dual-GPU hybrid: Only upload GPU 0 populations to GPU.
+                             * GPU 1 populations keep CSR on CPU and use CPU deposit path. */
                             uint32_t device_id = (network->n_gpu_devices == 2 && pop->device_id < 2)
                                                ? pop->device_id : 0;
+
+                            /* Skip GPU upload for populations on GPU 1 (use CPU path) */
+                            if (network->n_gpu_devices > 1 && device_id == 1) {
+                                LOG_INFO("Population %u (device %u) keeping CSR on CPU for hybrid mode",
+                                         p, device_id);
+                                continue;  /* Keep CSR on CPU, don't upload or free */
+                            }
+
                             nimcp_gpu_context_t* gpu_ctx = (nimcp_gpu_context_t*)network->gpu_ctx[device_id];
 
                             /* Upload to GPU immediately to reduce peak host memory.
