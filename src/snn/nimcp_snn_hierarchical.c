@@ -249,6 +249,7 @@ snn_network_t* snn_create_hierarchical_network(
     cfg.learning_rate = 0.001f;
     cfg.train_mode = SNN_TRAIN_R_STDP;
     cfg.enable_stdp = true;
+    cfg.enable_dual_gpu = true;  /* Enable dual-GPU mode for hierarchical SNN population distribution */
     cfg.encoder.time_window = 100.0f;  /* 100ms encoding window */
     cfg.decoder.time_window = 100.0f;  /* 100ms decoding window (rate-based) */
 

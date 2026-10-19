@@ -764,14 +764,16 @@ snn_network_t* snn_network_create(const snn_config_t* config) {
                 NIMCP_LOGGING_INFO("snn_network_create: GPU 0 LIF state created for %zu neurons",
                                    total_neurons);
 
-                /* Try to create context on GPU 1 for dual-GPU mode */
-                nimcp_gpu_context_t* gpu1 = nimcp_gpu_context_create(1);
-                if (gpu1) {
-                    network->gpu_ctx[1] = gpu1;
-                    network->n_gpu_devices = 2;
-                    NIMCP_LOGGING_INFO("snn_network_create: GPU 1 context created - dual-GPU mode enabled");
-                } else {
-                    NIMCP_LOGGING_INFO("snn_network_create: GPU 1 unavailable, using single-GPU mode");
+                /* Only create GPU 1 context if dual-GPU mode is explicitly enabled (for hierarchical SNN) */
+                if (config->enable_dual_gpu) {
+                    nimcp_gpu_context_t* gpu1 = nimcp_gpu_context_create(1);
+                    if (gpu1) {
+                        network->gpu_ctx[1] = gpu1;
+                        network->n_gpu_devices = 2;
+                        NIMCP_LOGGING_INFO("snn_network_create: GPU 1 context created - dual-GPU mode enabled");
+                    } else {
+                        NIMCP_LOGGING_WARN("snn_network_create: Dual-GPU requested but GPU 1 unavailable, using single-GPU mode");
+                    }
                 }
             } else {
                 NIMCP_LOGGING_INFO("snn_network_create: GPU LIF state creation failed, using CPU fallback");

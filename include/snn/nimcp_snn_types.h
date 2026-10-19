@@ -677,6 +677,7 @@ struct snn_config_s {
     /* Parallelization */
     bool enable_simd;               /**< Enable SIMD vectorization */
     uint32_t n_threads;             /**< Number of worker threads */
+    bool enable_dual_gpu;           /**< Enable dual-GPU mode (only for main hierarchical SNN) */
 };
 
 /**
