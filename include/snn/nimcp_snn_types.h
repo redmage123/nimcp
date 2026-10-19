@@ -362,6 +362,7 @@ struct snn_population_s {
     /* Identity */
     uint32_t id;                    /**< Population ID */
     char name[64];                  /**< Human-readable name */
+    uint32_t device_id;             /**< GPU device ID (0 or 1 for dual-GPU, ignored if CPU-only) */
 
     /* Neuron references (NOT owned - owned by neural_network_t) */
     uint32_t* neuron_ids;           /**< Array of neuron IDs in this population */
@@ -823,9 +824,10 @@ struct snn_network_s {
     /* Thread safety */
     void* mutex;                    /**< nimcp_mutex_t* */
 
-    /* GPU acceleration */
+    /* GPU acceleration - Multi-GPU support */
     void* gpu_lif_state;            /**< nimcp_lif_state_t* for GPU SNN (NULL if CPU-only) */
-    void* gpu_ctx;                  /**< nimcp_gpu_context_t* for GPU SNN (NULL if CPU-only) */
+    void* gpu_ctx[2];               /**< nimcp_gpu_context_t*[2] for dual-GPU SNN (NULL if CPU-only, [0]=GPU0, [1]=GPU1) */
+    uint32_t n_gpu_devices;         /**< Number of active GPU devices (0=CPU-only, 1=single-GPU, 2=dual-GPU) */
 
     /* Persistent GPU tensors for I_syn computation (allocated once, reused per step).
      * Eliminates per-step tensor create/upload/download/destroy overhead. */

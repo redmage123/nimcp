@@ -78,8 +78,11 @@ else:
 # CUDA_VISIBLE_DEVICES at call time (during Brain()), not import time.
 # So we hide it only for the PyTorch import, then restore it before
 # Brain() is created.
+# EXCEPTION: Multi-GPU mode (ENCODER_GPU set) needs PyTorch to see both GPUs
 _saved_cuda_vis = os.environ.get("CUDA_VISIBLE_DEVICES")
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+if not os.environ.get("ENCODER_GPU"):
+    # Single-GPU mode: hide GPU from PyTorch
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 from claude_teacher import ClaudeTeacher, encode_text, batch_encode_texts
 from talk_to_athena import extract_embedding_from_output
 from neural_decoder import NeuralDecoder
@@ -2078,22 +2081,43 @@ class ParallelDataLoader:
             self._workers.append(t)
 
     def _worker(self):
+        import logging
+        import traceback
+        consecutive_failures = 0
+        max_failures = 10
+
         while not self._stop:
-            descs = []
-            for _ in range(self.batch_size):
-                if random.random() < 0.5:
-                    descs.append(self.source.get_sensory())
-                else:
-                    desc, _ = generate_sensory_exposure()
-                    descs.append(desc)
-            targets = batch_make_semantic_targets(descs)
-            features_list = [self.composer.compose(text=d, modality="text") for d in descs]
-            batch = list(zip(descs, features_list, targets))
             try:
+                descs = []
+                for _ in range(self.batch_size):
+                    if random.random() < 0.5:
+                        descs.append(self.source.get_sensory())
+                    else:
+                        desc, _ = generate_sensory_exposure()
+                        descs.append(desc)
+                targets = batch_make_semantic_targets(descs)
+                features_list = [self.composer.compose(text=d, modality="text") for d in descs]
+                batch = list(zip(descs, features_list, targets))
+
                 self.queue.put(batch, timeout=10)
-            except Exception:
+                consecutive_failures = 0  # Reset on success
+
+            except Exception as e:
+                consecutive_failures += 1
                 if self._stop:
                     break
+
+                logging.error(f"[ParallelDataLoader] Worker failed (attempt {consecutive_failures}/{max_failures}): {e}")
+                if consecutive_failures <= 3:  # Only log full traceback for first few failures
+                    logging.error(f"[ParallelDataLoader] Traceback:\n{traceback.format_exc()}")
+
+                if consecutive_failures >= max_failures:
+                    logging.error(f"[ParallelDataLoader] Worker dying after {max_failures} consecutive failures")
+                    break
+
+                # Back off exponentially
+                import time
+                time.sleep(min(2 ** consecutive_failures, 30))
 
     def get_batch(self):
         return self.queue.get(timeout=60)
@@ -6840,7 +6864,18 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
         _spectral_splitter = None
 
     losses = []
-    prefetcher = ParallelDataLoader(source, composer, num_workers=2, prefetch_batches=4, batch_size=64)
+
+    # Clear GPU cache to free memory before starting prefetcher
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print("  [GPU] Cleared CUDA cache before training", flush=True)
+    except Exception as e:
+        print(f"  [GPU] Could not clear cache: {e}", flush=True)
+
+    # Reduced batch_size from 64 to 16 to reduce GPU memory pressure during encoding
+    prefetcher = ParallelDataLoader(source, composer, num_workers=2, prefetch_batches=4, batch_size=16)
     batch = []
     batch_idx = 0
     lr_scheduler = CosineAnnealingLR(lr_max=BASE_LEARNING_RATE, lr_min=MIN_LEARNING_RATE,

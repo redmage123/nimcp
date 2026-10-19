@@ -720,7 +720,8 @@ int brain_kg_add_metadata(
     brain_kg_node_t* node = find_node_by_id_unlocked(kg, id);
     if (!node || node->metadata_count >= BRAIN_KG_MAX_METADATA) {
         nimcp_mutex_unlock(kg->mutex);
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_BUFFER_OVERFLOW, "brain_kg_add_metadata: node is NULL");
+        /* Log warning instead of throwing - likely stale hash table entry */
+        NIMCP_LOGGING_WARN("brain_kg_add_metadata: node ID %u not found (stale hash?) or metadata full", id);
         return -1;
     }
 

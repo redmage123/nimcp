@@ -44,6 +44,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include "utils/thread/nimcp_thread.h"
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "utils/bridge/nimcp_bridge_boilerplate.h"
 #include "mesh/nimcp_mesh_participant.h"
@@ -178,13 +179,56 @@ static void log_security_config(brain_kg_t* kg) {
  * 5. Connect to immune system
  * 6. Verify initial integrity
  */
+
+/* Static mutex for thread-safe KG initialization */
+static nimcp_mutex_t* kg_init_mutex = NULL;
+static volatile int kg_mutex_init_done = 0;
+static volatile brain_kg_t* global_initialized_kg = NULL;
+
 bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
     if (!brain) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
-
                 "nimcp_brain_factory_init_internal_kg_subsystem: brain is NULL");
+        return false;
+    }
 
-            return false;
+    /* DIAGNOSTIC: Log brain pointer and current kg state */
+    fprintf(stderr, "[INTERNAL_KG] Called with brain=%p, internal_kg=%p\n",
+            (void*)brain, (void*)brain->internal_kg);
+
+    /* Initialize mutex once using atomic flag */
+    if (!kg_mutex_init_done) {
+        if (__sync_bool_compare_and_swap(&kg_mutex_init_done, 0, 1)) {
+            kg_init_mutex = nimcp_mutex_create(NULL);
+            fprintf(stderr, "[INTERNAL_KG] Mutex created by this thread\n");
+        } else {
+            /* Wait for mutex creation by other thread */
+            while (!kg_init_mutex) { /* spin */ }
+            fprintf(stderr, "[INTERNAL_KG] Mutex created by other thread, acquired\n");
+        }
+    }
+
+    /* Acquire lock for thread-safe initialization */
+    nimcp_mutex_lock(kg_init_mutex);
+    fprintf(stderr, "[INTERNAL_KG] Lock acquired, internal_kg=%p, global_kg=%p\n",
+            (void*)brain->internal_kg, (void*)global_initialized_kg);
+
+    /* Check if KG was already initialized globally (handles multiple brain instances) */
+    if (global_initialized_kg != NULL) {
+        /* Reuse the globally initialized KG */
+        brain->internal_kg = (brain_kg_t*)global_initialized_kg;
+        brain->internal_kg_enabled = true;
+        nimcp_mutex_unlock(kg_init_mutex);
+        fprintf(stderr, "[INTERNAL_KG] Already initialized globally (brain=%p), reusing KG\n", (void*)brain);
+        return true;
+    }
+
+    /* Double-check brain's own kg field */
+    if (brain->internal_kg != NULL) {
+        global_initialized_kg = brain->internal_kg;
+        nimcp_mutex_unlock(kg_init_mutex);
+        fprintf(stderr, "[INTERNAL_KG] Brain already has KG, marking as global\n");
+        return true;
     }
 
     /* Check if internal KG is disabled in config */
@@ -261,6 +305,9 @@ bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
     brain->internal_kg = kg;
     brain->internal_kg_enabled = true;
 
+    /* Mark as globally initialized so other brain instances reuse it */
+    global_initialized_kg = kg;
+
     /* W6: register memory-family root nodes + cognitive umbrella while we
      * still have ADMIN access. memory_kg_init_roots() handles its own
      * elevate/restore so it also works if called later, but doing it now
@@ -316,6 +363,9 @@ bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
     brain_kg_set_access_level(kg, BRAIN_KG_ACCESS_READ, 0);
 
     fprintf(stderr, "[INTERNAL_KG] Internal knowledge graph initialization complete\n");
+
+    /* Release mutex */
+    nimcp_mutex_unlock(kg_init_mutex);
 
     return true;
 }

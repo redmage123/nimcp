@@ -25,12 +25,30 @@ def _get_embed_model():
     global _embed_model
     if _embed_model is not None:
         return _embed_model
+
+    import os
+    import torch
+
+    # Multi-GPU: Piggyback on NIMCP's existing CUDA context
+    # Don't let PyTorch initialize - use the context NIMCP already created
+    encoder_device = os.environ.get('ENCODER_GPU', 'cuda:1')
+
+    if encoder_device.startswith('cuda'):
+        gpu_id = int(encoder_device.split(':')[1] if ':' in encoder_device else 0)
+        # Set device in existing CUDA context (don't initialize)
+        try:
+            torch.cuda.set_device(gpu_id)
+            logger.info(f"Set PyTorch to use existing CUDA context on GPU {gpu_id}")
+        except Exception as e:
+            logger.warning(f"Could not set GPU {gpu_id}, falling back to CPU: {e}")
+            encoder_device = 'cpu'
+
+    # Import and load model
     from sentence_transformers import SentenceTransformer
-    # Force CPU for embeddings — GPU VRAM is reserved for nimcp brain training.
-    # PyTorch 2.8+: low_cpu_mem_usage=True (default) uses meta tensors which
-    # crash on .to('cpu'). Disable to use real tensors from the start.
-    _embed_model = SentenceTransformer('BAAI/bge-large-en-v1.5', device='cpu',
+    logger.info(f"Loading SentenceTransformer on {encoder_device}")
+    _embed_model = SentenceTransformer('BAAI/bge-large-en-v1.5', device=encoder_device,
                                        model_kwargs={'low_cpu_mem_usage': False})
+    logger.info(f"Encoder loaded on device: {_embed_model.device}")
     return _embed_model
 
 

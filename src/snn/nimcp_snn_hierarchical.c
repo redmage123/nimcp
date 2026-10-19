@@ -322,6 +322,16 @@ snn_network_t* snn_create_hierarchical_network(
                 goto wire_connections;
             }
             pop_map[flat_idx] = (uint32_t)rc;  /* rc is the population index */
+
+            /* Multi-GPU: Assign device_id in round-robin fashion (even=GPU0, odd=GPU1) */
+            if (net->n_gpu_devices == 2 && (uint32_t)rc < net->n_populations) {
+                net->populations[rc]->device_id = flat_idx % 2;
+                LOG_INFO("Assigned population %s (idx %u) to GPU %u",
+                         pop_name, flat_idx, flat_idx % 2);
+            } else if (net->n_gpu_devices >= 1 && (uint32_t)rc < net->n_populations) {
+                net->populations[rc]->device_id = 0;  /* Single GPU mode */
+            }
+
             (void)snn_network_set_pop_subclass(net, (uint32_t)rc,
                                                TIER_SUBCLASS[t]);
             /* Wave E FFI fix — tier pyramidal pops get a 1-step axonal

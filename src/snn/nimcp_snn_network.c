@@ -737,12 +737,15 @@ snn_network_t* snn_network_create(const snn_config_t* config) {
         nimcp_mutex_init((nimcp_mutex_t*)network->mutex, NULL);
     }
 
-    /* GPU acceleration: try to create LIF state on GPU */
+    /* Multi-GPU acceleration: try to create LIF state on GPU 0 and GPU 1 */
     network->gpu_lif_state = NULL;
-    network->gpu_ctx = NULL;
+    network->gpu_ctx[0] = NULL;
+    network->gpu_ctx[1] = NULL;
+    network->n_gpu_devices = 0;
     {
-        nimcp_gpu_context_t* gpu = nimcp_gpu_context_create_auto();
-        if (gpu) {
+        /* Try to create context on GPU 0 */
+        nimcp_gpu_context_t* gpu0 = nimcp_gpu_context_create(0);
+        if (gpu0) {
             size_t total_neurons = (size_t)config->n_inputs + config->n_hidden + config->n_outputs;
             nimcp_lif_params_t lif_params = {
                 .tau_mem   = config->tau_mem,
@@ -753,15 +756,26 @@ snn_network_t* snn_network_create(const snn_config_t* config) {
                 .dt        = config->dt,
                 .hard_reset = true
             };
-            nimcp_lif_state_t* lif_state = nimcp_lif_state_create(gpu, total_neurons, &lif_params);
+            nimcp_lif_state_t* lif_state = nimcp_lif_state_create(gpu0, total_neurons, &lif_params);
             if (lif_state) {
                 network->gpu_lif_state = lif_state;
-                network->gpu_ctx = gpu;
-                NIMCP_LOGGING_INFO("snn_network_create: GPU LIF state created for %zu neurons",
+                network->gpu_ctx[0] = gpu0;
+                network->n_gpu_devices = 1;
+                NIMCP_LOGGING_INFO("snn_network_create: GPU 0 LIF state created for %zu neurons",
                                    total_neurons);
+
+                /* Try to create context on GPU 1 for dual-GPU mode */
+                nimcp_gpu_context_t* gpu1 = nimcp_gpu_context_create(1);
+                if (gpu1) {
+                    network->gpu_ctx[1] = gpu1;
+                    network->n_gpu_devices = 2;
+                    NIMCP_LOGGING_INFO("snn_network_create: GPU 1 context created - dual-GPU mode enabled");
+                } else {
+                    NIMCP_LOGGING_INFO("snn_network_create: GPU 1 unavailable, using single-GPU mode");
+                }
             } else {
                 NIMCP_LOGGING_INFO("snn_network_create: GPU LIF state creation failed, using CPU fallback");
-                nimcp_gpu_context_destroy(gpu);
+                nimcp_gpu_context_destroy(gpu0);
             }
         } else {
             NIMCP_LOGGING_DEBUG("snn_network_create: no GPU available, using CPU path");
@@ -824,8 +838,8 @@ void snn_network_destroy(snn_network_t* network) {
 
     /* CB-GPU-7: free network-level scratch tensors BEFORE destroying
      * gpu_ctx — they were allocated against this context. */
-    if (network->gpu_ctx) {
-        nimcp_gpu_context_t* g = (nimcp_gpu_context_t*)network->gpu_ctx;
+    if (network->gpu_ctx[0]) {
+        nimcp_gpu_context_t* g = (nimcp_gpu_context_t*)network->gpu_ctx[0];
         if (network->gpu_cb_spike_flat) {
             nimcp_gpu_free(g, network->gpu_cb_spike_flat);
             network->gpu_cb_spike_flat = NULL;
@@ -841,10 +855,15 @@ void snn_network_destroy(snn_network_t* network) {
         nimcp_lif_state_destroy((nimcp_lif_state_t*)network->gpu_lif_state);
         network->gpu_lif_state = NULL;
     }
-    if (network->gpu_ctx) {
-        nimcp_gpu_context_destroy((nimcp_gpu_context_t*)network->gpu_ctx);
-        network->gpu_ctx = NULL;
+
+    /* Destroy both GPU contexts */
+    for (int i = 0; i < 2; i++) {
+        if (network->gpu_ctx[i]) {
+            nimcp_gpu_context_destroy((nimcp_gpu_context_t*)network->gpu_ctx[i]);
+            network->gpu_ctx[i] = NULL;
+        }
     }
+    network->n_gpu_devices = 0;
 
     /* Destroy mutex */
     if (network->mutex) {
@@ -927,11 +946,11 @@ int snn_network_reset(snn_network_t* network) {
      * because its neurons stayed charged on-device). Resetting v to v_rest is
      * the dominant carry-over; i_syn/spikes are recomputed/overwritten each
      * step. No-op when running CPU-only (gpu_lif_state NULL). */
-    if (network->gpu_lif_state && network->gpu_ctx) {
+    if (network->gpu_lif_state && network->gpu_ctx[0]) {
         nimcp_lif_state_t* lif = (nimcp_lif_state_t*)network->gpu_lif_state;
         if (lif->v) {
             (void)nimcp_gpu_snn_reset_state(
-                (nimcp_gpu_context_t*)network->gpu_ctx,
+                (nimcp_gpu_context_t*)network->gpu_ctx[0],
                 lif->v, network->config.v_rest);
         }
     }
@@ -1429,7 +1448,7 @@ static void snn_cb_post_spike_pop(snn_population_t* pop, float dt_ms,
 static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
     extern float snn_tune_get_conductance_enabled(void);
     extern float snn_tune_get_cb_gpu_enabled(void);
-    if (!network || !network->gpu_ctx || !network->gpu_lif_state) return -1;
+    if (!network || !network->gpu_ctx[0] || !network->gpu_lif_state) return -1;
     if (snn_tune_get_conductance_enabled() == 0.0f) return -1;
     if (snn_tune_get_cb_gpu_enabled() == 0.0f) return -1;
     /* NOTE: substrate spike-survival dropout is stochastic on CPU; the
@@ -1439,7 +1458,7 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
      * spikes; CPU path applies stochastic survival when substrate +
      * se_axon are present. Production accepts this for the perf win. */
 
-    nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_ctx;
+    nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_ctx[0];
     nimcp_lif_state_t*   lif = (nimcp_lif_state_t*)network->gpu_lif_state;
 
     /* Total neurons + Stage A eligibility check. Bail to CPU if any pop
@@ -2048,7 +2067,7 @@ int snn_network_step(snn_network_t* network, float dt) {
     if (!gpu_executed
         && network->gpu_lif_state && network->gpu_ctx
         && snn_tune_get_conductance_enabled() == 0.0f) {
-        nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_ctx;
+        nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_ctx[0];
         nimcp_lif_state_t* lif_state = (nimcp_lif_state_t*)network->gpu_lif_state;
 
         /* Compute total neuron count across all populations */
@@ -4491,7 +4510,7 @@ int snn_network_connect_populations(snn_network_t* network,
         if (dst->d_synapse_type_per_src) {
             nimcp_gpu_context_t* st_gpu =
                 (nimcp_gpu_context_t*)dst->d_synapse_type_gpu_ctx;
-            if (!st_gpu) st_gpu = (nimcp_gpu_context_t*)network->gpu_ctx;
+            if (!st_gpu) st_gpu = (nimcp_gpu_context_t*)network->gpu_ctx[0];
             if (st_gpu) {
                 nimcp_gpu_free(st_gpu, dst->d_synapse_type_per_src);
             }
@@ -4632,7 +4651,7 @@ int snn_network_finalize_connections(snn_network_t* network) {
         }
 
         /* Create new state for full neuron count */
-        if (network->gpu_ctx) {
+        if (network->gpu_ctx[0]) {
             nimcp_lif_params_t lif_params = {
                 .tau_mem   = network->config.tau_mem,
                 .tau_syn   = network->config.tau_syn > 0.0f ? network->config.tau_syn : 5.0f,
@@ -4643,7 +4662,7 @@ int snn_network_finalize_connections(snn_network_t* network) {
                 .hard_reset = true
             };
             nimcp_lif_state_t* lif_state = nimcp_lif_state_create(
-                (nimcp_gpu_context_t*)network->gpu_ctx, total_neurons, &lif_params);
+                (nimcp_gpu_context_t*)network->gpu_ctx[0], total_neurons, &lif_params);
             if (lif_state) {
                 network->gpu_lif_state = lif_state;
                 NIMCP_LOGGING_INFO("GPU LIF state re-created for %zu total neurons "
@@ -4681,19 +4700,26 @@ int snn_network_finalize_connections(snn_network_t* network) {
                                                 network->n_populations) == 0) {
                             gpu_prepared++;
 
+                            /* Multi-GPU: Select GPU context based on population's device_id.
+                             * Upload to the appropriate GPU to split memory across devices. */
+                            uint32_t device_id = (network->n_gpu_devices == 2 && pop->device_id < 2)
+                                               ? pop->device_id : 0;
+                            nimcp_gpu_context_t* gpu_ctx = (nimcp_gpu_context_t*)network->gpu_ctx[device_id];
+
                             /* Upload to GPU immediately to reduce peak host memory.
                              * After upload, free topology arrays (flat_col_idx, src_pop_idx)
                              * since they're now GPU-resident and immutable. Keep weights
                              * for plasticity sync. This reduces peak memory by ~8 bytes/synapse
                              * per population (e.g., 480MB for a 60M-synapse population). */
-                            if (network->gpu_ctx && snn_csr_upload_to_gpu(
-                                    pop->incoming_csr, network->gpu_ctx) == 0) {
+                            if (gpu_ctx && snn_csr_upload_to_gpu(pop->incoming_csr, gpu_ctx) == 0) {
                                 gpu_uploaded++;
                                 /* Free topology arrays — GPU has them, plasticity doesn't modify */
                                 nimcp_free(pop->incoming_csr->flat_col_idx);
                                 pop->incoming_csr->flat_col_idx = NULL;
                                 nimcp_free(pop->incoming_csr->src_pop_idx);
                                 pop->incoming_csr->src_pop_idx = NULL;
+
+                                LOG_INFO("Uploaded population %u CSR to GPU %u", p, device_id);
                             }
                         }
                     }
@@ -4701,9 +4727,14 @@ int snn_network_finalize_connections(snn_network_t* network) {
 
                 /* Memory barrier: sync GPU operations and let CUDA clean up host-side
                  * structures before next batch. This prevents pile-up of pending transfers
-                 * and host-side metadata that caused OOM during continuous upload. */
-                if (network->gpu_ctx && gpu_uploaded > 0) {
-                    nimcp_gpu_context_synchronize((nimcp_gpu_context_t*)network->gpu_ctx);
+                 * and host-side metadata that caused OOM during continuous upload.
+                 * In dual-GPU mode, sync both devices. */
+                if (gpu_uploaded > 0) {
+                    for (uint32_t dev = 0; dev < network->n_gpu_devices && dev < 2; dev++) {
+                        if (network->gpu_ctx[dev]) {
+                            nimcp_gpu_context_synchronize((nimcp_gpu_context_t*)network->gpu_ctx[dev]);
+                        }
+                    }
                 }
 
                 batch_start = batch_end;
