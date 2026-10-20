@@ -1525,17 +1525,19 @@ static void snn_cb_post_spike_pop(snn_population_t* pop, float dt_ms,
 static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
     extern float snn_tune_get_conductance_enabled(void);
     extern float snn_tune_get_cb_gpu_enabled(void);
-    if (!network || !network->gpu_ctx[0] || !network->gpu_lif_state) return -1;
+    if (!network || !network->gpu_manager || !network->gpu_manager->contexts[0] || !network->gpu_lif_state) return -1;
     if (snn_tune_get_conductance_enabled() == 0.0f) return -1;
     if (snn_tune_get_cb_gpu_enabled() == 0.0f) return -1;
 
-    /* Dual-GPU hybrid mode: CSR distributed across GPUs (reduces init memory),
-     * but execution uses GPU 0 kernels + CPU fallback for GPU 1 populations.
-     * Full dual-GPU execution requires per-GPU LIF states (future work). */
-    const bool dual_gpu_mode = (network->n_gpu_devices > 1);
+    /* Dual-GPU mode: CSR distributed across GPUs, device-aware execution */
+    const bool dual_gpu_mode = (network->gpu_manager->n_devices > 1);
     if (dual_gpu_mode) {
-        NIMCP_LOGGING_DEBUG("Dual-GPU hybrid: GPU 0 kernel + CPU fallback for GPU 1 pops");
+        NIMCP_LOGGING_DEBUG("Dual-GPU mode active: %d GPUs", network->gpu_manager->n_devices);
     }
+
+    /* Ensure device 0 before GPU operations */
+    snn_gpu_ensure_device(network->gpu_manager, 0);
+
     /* NOTE: substrate spike-survival dropout is stochastic on CPU; the
      * GPU kernel is deterministic. We do NOT gate on this tune knob —
      * its production default is ON, and gating would force every step
@@ -1543,7 +1545,7 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
      * spikes; CPU path applies stochastic survival when substrate +
      * se_axon are present. Production accepts this for the perf win. */
 
-    nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_ctx[0];
+    nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_manager->contexts[0];
     nimcp_lif_state_t*   lif = (nimcp_lif_state_t*)network->gpu_lif_state;
 
     /* Total neurons + Stage A eligibility check. Bail to CPU if any pop
@@ -4604,7 +4606,9 @@ int snn_network_connect_populations(snn_network_t* network,
         if (dst->d_synapse_type_per_src) {
             nimcp_gpu_context_t* st_gpu =
                 (nimcp_gpu_context_t*)dst->d_synapse_type_gpu_ctx;
-            if (!st_gpu) st_gpu = (nimcp_gpu_context_t*)network->gpu_ctx[0];
+            if (!st_gpu && network->gpu_manager && network->gpu_manager->contexts[0]) {
+                st_gpu = (nimcp_gpu_context_t*)network->gpu_manager->contexts[0];
+            }
             if (st_gpu) {
                 nimcp_gpu_free(st_gpu, dst->d_synapse_type_per_src);
             }
@@ -4745,7 +4749,8 @@ int snn_network_finalize_connections(snn_network_t* network) {
         }
 
         /* Create new state for full neuron count */
-        if (network->gpu_ctx[0]) {
+        if (network->gpu_manager && network->gpu_manager->contexts[0]) {
+            snn_gpu_ensure_device(network->gpu_manager, 0);
             nimcp_lif_params_t lif_params = {
                 .tau_mem   = network->config.tau_mem,
                 .tau_syn   = network->config.tau_syn > 0.0f ? network->config.tau_syn : 5.0f,
@@ -4756,7 +4761,7 @@ int snn_network_finalize_connections(snn_network_t* network) {
                 .hard_reset = true
             };
             nimcp_lif_state_t* lif_state = nimcp_lif_state_create(
-                (nimcp_gpu_context_t*)network->gpu_ctx[0], total_neurons, &lif_params);
+                (nimcp_gpu_context_t*)network->gpu_manager->contexts[0], total_neurons, &lif_params);
             if (lif_state) {
                 network->gpu_lif_state = lif_state;
                 NIMCP_LOGGING_INFO("GPU LIF state re-created for %zu total neurons "
@@ -4827,11 +4832,11 @@ int snn_network_finalize_connections(snn_network_t* network) {
                 /* Memory barrier: sync GPU operations and let CUDA clean up host-side
                  * structures before next batch. This prevents pile-up of pending transfers
                  * and host-side metadata that caused OOM during continuous upload.
-                 * In dual-GPU mode, sync both devices. */
-                if (gpu_uploaded > 0) {
-                    for (uint32_t dev = 0; dev < network->n_gpu_devices && dev < 2; dev++) {
-                        if (network->gpu_ctx[dev]) {
-                            nimcp_gpu_context_synchronize((nimcp_gpu_context_t*)network->gpu_ctx[dev]);
+                 * In dual-GPU mode, sync all active devices. */
+                if (gpu_uploaded > 0 && network->gpu_manager) {
+                    for (int dev = 0; dev < network->gpu_manager->n_devices && dev < 2; dev++) {
+                        if (network->gpu_manager->contexts[dev]) {
+                            nimcp_gpu_context_synchronize((nimcp_gpu_context_t*)network->gpu_manager->contexts[dev]);
                         }
                     }
                 }
@@ -6212,7 +6217,8 @@ snn_network_t* snn_network_load(const char* path) {
                 nimcp_lif_state_destroy((nimcp_lif_state_t*)net->gpu_lif_state);
                 net->gpu_lif_state = NULL;
             }
-            if (net->gpu_ctx) {
+            if (net->gpu_manager && net->gpu_manager->contexts[0]) {
+                snn_gpu_ensure_device(net->gpu_manager, 0);
                 nimcp_lif_params_t lp = {
                     .tau_mem = net->config.tau_mem,
                     .tau_syn = net->config.tau_syn > 0.0f ? net->config.tau_syn : 5.0f,
@@ -6223,7 +6229,7 @@ snn_network_t* snn_network_load(const char* path) {
                     .hard_reset = true
                 };
                 nimcp_lif_state_t* ls = nimcp_lif_state_create(
-                    (nimcp_gpu_context_t*)net->gpu_ctx, total_n, &lp);
+                    (nimcp_gpu_context_t*)net->gpu_manager->contexts[0], total_n, &lp);
                 if (ls) {
                     net->gpu_lif_state = ls;
                     NIMCP_LOGGING_INFO("GPU LIF state created for %zu neurons (from checkpoint)", total_n);

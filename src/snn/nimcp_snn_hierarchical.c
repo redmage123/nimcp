@@ -28,6 +28,7 @@
 #include "core/neuron_types/nimcp_neuron_types.h"
 #include "core/synapse_types/nimcp_synapse_types.h"
 #include "utils/logging/nimcp_logging.h"
+#include "gpu/context/nimcp_gpu_context.h"  /* for GPU context cleanup */
 #include <string.h>
 
 #define LOG_MODULE "SNN_HIERARCHICAL"
@@ -985,6 +986,22 @@ wire_connections:
                              SNN_SIDECAR_PATH);
                 }
             }
+        }
+    }
+
+    /* EXPERIMENTAL: Destroy GPU 1 context after init to test if its presence
+     * during execution corrupts GPU 0. GPU 1 was used for CSR distribution
+     * during init (reduces memory pressure), but we destroy it before step
+     * execution to isolate corruption. */
+    if (net->gpu_manager && net->gpu_manager->n_devices > 1 && net->gpu_manager->contexts[1]) {
+        LOG_INFO("Destroying GPU 1 context after init (CSR already uploaded)");
+        nimcp_gpu_context_destroy((nimcp_gpu_context_t*)net->gpu_manager->contexts[1]);
+        net->gpu_manager->contexts[1] = NULL;
+        net->gpu_manager->n_devices = 1;
+        /* Reset to device 0 to ensure clean state */
+        if (net->gpu_manager->contexts[0]) {
+            nimcp_gpu_context_set_device((nimcp_gpu_context_t*)net->gpu_manager->contexts[0]);
+            net->gpu_manager->active_device = 0;
         }
     }
 
