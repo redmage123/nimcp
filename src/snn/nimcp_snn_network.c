@@ -2286,16 +2286,30 @@ int snn_network_step(snn_network_t* network, float dt) {
                     nimcp_gpu_tensor_t* d_spk_gpu0 = NULL;
                     nimcp_gpu_tensor_t* d_spk_gpu1 = NULL;
 
+                    NIMCP_LOGGING_INFO("[MULTI-GPU] Uploading spike vector (%zu neurons) to GPU 0", total_neurons);
                     snn_gpu_ensure_device(network->gpu_manager, 0);
                     d_spk_gpu0 = nimcp_gpu_tensor_from_host(
                         (nimcp_gpu_context_t*)network->gpu_manager->contexts[0],
                         h_spk_flat, spk_dims, 1, NIMCP_GPU_PRECISION_FP32);
 
+                    if (!d_spk_gpu0) {
+                        NIMCP_LOGGING_ERROR("[MULTI-GPU] Spike vector upload to GPU 0 FAILED!");
+                    } else {
+                        NIMCP_LOGGING_INFO("[MULTI-GPU] GPU 0 spike vector ready");
+                    }
+
                     if (network->gpu_manager->n_devices > 1) {
+                        NIMCP_LOGGING_INFO("[MULTI-GPU] Uploading spike vector to GPU 1");
                         snn_gpu_ensure_device(network->gpu_manager, 1);
                         d_spk_gpu1 = nimcp_gpu_tensor_from_host(
                             (nimcp_gpu_context_t*)network->gpu_manager->contexts[1],
                             h_spk_flat, spk_dims, 1, NIMCP_GPU_PRECISION_FP32);
+
+                        if (!d_spk_gpu1) {
+                            NIMCP_LOGGING_WARN("[MULTI-GPU] Spike vector upload to GPU 1 FAILED - will use GPU 0 only");
+                        } else {
+                            NIMCP_LOGGING_INFO("[MULTI-GPU] GPU 1 spike vector ready");
+                        }
                     }
 
                     if (d_spk_gpu0) {
@@ -2308,12 +2322,31 @@ int snn_network_step(snn_network_t* network, float dt) {
                             /* CRITICAL: Switch to this population's GPU before accessing its CSR */
                             uint32_t pop_device = pop->device_id < (uint32_t)network->gpu_manager->n_devices
                                 ? pop->device_id : 0;
+
+                            NIMCP_LOGGING_DEBUG("[MULTI-GPU] Pop %u: switching to GPU %u", p, pop_device);
                             snn_gpu_ensure_device(network->gpu_manager, pop_device);
+
+                            /* Verify device switch succeeded */
+                            #ifdef NIMCP_ENABLE_CUDA
+                            int current_dev = -1;
+                            cudaGetDevice(&current_dev);
+                            if (current_dev != (int)pop_device) {
+                                NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: Device switch FAILED! Expected %u, got %d",
+                                    p, pop_device, current_dev);
+                            }
+                            #endif
 
                             /* Get the correct GPU context and spike tensor for this population's device */
                             nimcp_gpu_context_t* pop_gpu = (nimcp_gpu_context_t*)network->gpu_manager->contexts[pop_device];
                             nimcp_gpu_tensor_t* d_spk = (pop_device == 0) ? d_spk_gpu0 : d_spk_gpu1;
-                            if (!d_spk) d_spk = d_spk_gpu0;  /* Fallback to GPU 0 if GPU 1 upload failed */
+                            if (!d_spk) {
+                                NIMCP_LOGGING_WARN("[MULTI-GPU] Pop %u: GPU %u spike tensor NULL, falling back to GPU 0",
+                                    p, pop_device);
+                                d_spk = d_spk_gpu0;
+                            }
+
+                            NIMCP_LOGGING_DEBUG("[MULTI-GPU] Pop %u: Using spike tensor from GPU %u",
+                                p, (pop_device == 0) ? 0 : 1);
 
                             if (pop->lightweight && pop->incoming_csr &&
                                 pop->incoming_csr->gpu_ready &&
@@ -2354,7 +2387,9 @@ int snn_network_step(snn_network_t* network, float dt) {
                                     /* Fast path: use persistent device pointers */
                                     /* Ensure correct device is active before kernel launch */
                                     snn_gpu_ensure_device(network->gpu_manager, pop_device);
-                                    nimcp_gpu_snn_isyn_csr(pop_gpu,
+
+                                    NIMCP_LOGGING_DEBUG("[MULTI-GPU] Pop %u: Launching CSR kernel on GPU %u", p, pop_device);
+                                    bool kernel_ok = nimcp_gpu_snn_isyn_csr(pop_gpu,
                                         (const float*)d_spk->data,
                                         (const float*)csr->d_weights,
                                         (const unsigned int*)csr->d_flat_col_idx,
@@ -2362,10 +2397,17 @@ int snn_network_step(snn_network_t* network, float dt) {
                                         (const float*)d_ext->data,
                                         (float*)d_isyn->data,
                                         pop->n_neurons);
+
+                                    if (!kernel_ok) {
+                                        NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: CSR kernel FAILED on GPU %u", p, pop_device);
+                                    }
+
                                     /* Ensure correct device before copy-back */
                                     snn_gpu_ensure_device(network->gpu_manager, pop_device);
+                                    NIMCP_LOGGING_DEBUG("[MULTI-GPU] Pop %u: Copying result from GPU %u to host", p, pop_device);
                                     nimcp_gpu_tensor_to_host(d_isyn,
                                         h_input + pop_offset);
+                                    NIMCP_LOGGING_DEBUG("[MULTI-GPU] Pop %u: Copy-back complete", p);
                                 } else if (d_ext && d_isyn) {
                                     /* Slow fallback: per-step CSR upload (legacy) */
                                     /* Ensure correct device before uploads */

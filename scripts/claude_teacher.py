@@ -29,19 +29,25 @@ def _get_embed_model():
     import os
     import torch
 
-    # Multi-GPU: Piggyback on NIMCP's existing CUDA context
-    # Don't let PyTorch initialize - use the context NIMCP already created
-    encoder_device = os.environ.get('ENCODER_GPU', 'cuda:1')
+    # Multi-GPU: When NIMCP uses multiple GPUs, keep PyTorch on CPU to avoid conflicts
+    # PyTorch's cudaSetDevice() interferes with NIMCP's multi-GPU management
+    cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+    multi_gpu_active = ',' in cuda_visible  # e.g. "0,1"
 
-    if encoder_device.startswith('cuda'):
-        gpu_id = int(encoder_device.split(':')[1] if ':' in encoder_device else 0)
-        # Set device in existing CUDA context (don't initialize)
-        try:
-            torch.cuda.set_device(gpu_id)
-            logger.info(f"Set PyTorch to use existing CUDA context on GPU {gpu_id}")
-        except Exception as e:
-            logger.warning(f"Could not set GPU {gpu_id}, falling back to CPU: {e}")
-            encoder_device = 'cpu'
+    if multi_gpu_active:
+        encoder_device = 'cpu'
+        logger.info(f"Multi-GPU detected ({cuda_visible}) - using CPU for PyTorch encoder to avoid CUDA context conflicts")
+    else:
+        encoder_device = os.environ.get('ENCODER_GPU', 'cuda:0')
+
+        if encoder_device.startswith('cuda'):
+            gpu_id = int(encoder_device.split(':')[1] if ':' in encoder_device else 0)
+            try:
+                torch.cuda.set_device(gpu_id)
+                logger.info(f"Set PyTorch to use existing CUDA context on GPU {gpu_id}")
+            except Exception as e:
+                logger.warning(f"Could not set GPU {gpu_id}, falling back to CPU: {e}")
+                encoder_device = 'cpu'
 
     # Import and load model
     from sentence_transformers import SentenceTransformer
