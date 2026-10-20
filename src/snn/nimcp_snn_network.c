@@ -600,6 +600,95 @@ static float compute_firing_rate(const snn_spike_train_t* train,
 }
 
 //=============================================================================
+// GPU Manager - Multi-GPU Device Management
+//=============================================================================
+
+/**
+ * @brief Ensure correct CUDA device is active before GPU operations
+ *
+ * WHAT: Set CUDA device if different from active device
+ * WHY:  Multi-GPU operations require explicit device switching
+ * HOW:  Track active device, only call cudaSetDevice when needed
+ *
+ * CRITICAL: Call this before EVERY GPU operation (tensor alloc, kernel launch, etc.)
+ */
+static inline void snn_gpu_ensure_device(snn_gpu_manager_t* mgr, int device_id) {
+    if (!mgr || device_id < 0 || device_id >= mgr->n_devices) {
+        return;  /* Invalid device or CPU-only */
+    }
+
+    if (mgr->active_device != device_id) {
+        nimcp_gpu_context_set_device((nimcp_gpu_context_t*)mgr->contexts[device_id]);
+        mgr->active_device = device_id;
+    }
+}
+
+/**
+ * @brief Create multi-GPU manager
+ *
+ * WHAT: Initialize GPU contexts for 1 or 2 devices
+ * WHY:  Enable device-aware SNN execution
+ * HOW:  Create contexts, track count, set active to -1 (unknown)
+ *
+ * @param enable_dual_gpu If true, create both GPU 0 and GPU 1 contexts
+ * @return GPU manager (caller must free with snn_gpu_manager_destroy), or NULL if no GPU
+ */
+static snn_gpu_manager_t* snn_gpu_manager_create(bool enable_dual_gpu) {
+    /* Try GPU 0 first */
+    nimcp_gpu_context_t* gpu0 = nimcp_gpu_context_create(0);
+    if (!gpu0) {
+        return NULL;  /* No GPU available */
+    }
+
+    snn_gpu_manager_t* mgr = (snn_gpu_manager_t*)nimcp_calloc(1, sizeof(snn_gpu_manager_t));
+    if (!mgr) {
+        nimcp_gpu_context_destroy(gpu0);
+        return NULL;
+    }
+
+    mgr->contexts[0] = gpu0;
+    mgr->n_devices = 1;
+    mgr->active_device = -1;  /* Unknown - must be set before use */
+
+    /* Try GPU 1 if dual-GPU requested */
+    if (enable_dual_gpu) {
+        nimcp_gpu_context_t* gpu1 = nimcp_gpu_context_create(1);
+        if (gpu1) {
+            mgr->contexts[1] = gpu1;
+            mgr->n_devices = 2;
+            NIMCP_LOGGING_INFO("snn_gpu_manager_create: Dual-GPU mode enabled (GPU 0 + GPU 1)");
+        } else {
+            NIMCP_LOGGING_WARN("snn_gpu_manager_create: GPU 1 unavailable, using single-GPU mode");
+        }
+    }
+
+    /* Set device 0 as initial active device */
+    snn_gpu_ensure_device(mgr, 0);
+
+    return mgr;
+}
+
+/**
+ * @brief Destroy GPU manager
+ *
+ * WHAT: Clean up all GPU contexts
+ * WHY:  Release GPU resources
+ * HOW:  Destroy each context, free manager struct
+ */
+static void snn_gpu_manager_destroy(snn_gpu_manager_t* mgr) {
+    if (!mgr) return;
+
+    for (int i = 0; i < mgr->n_devices && i < 2; i++) {
+        if (mgr->contexts[i]) {
+            nimcp_gpu_context_destroy((nimcp_gpu_context_t*)mgr->contexts[i]);
+            mgr->contexts[i] = NULL;
+        }
+    }
+
+    nimcp_free(mgr);
+}
+
+//=============================================================================
 // Network Lifecycle
 //=============================================================================
 
@@ -737,57 +826,40 @@ snn_network_t* snn_network_create(const snn_config_t* config) {
         nimcp_mutex_init((nimcp_mutex_t*)network->mutex, NULL);
     }
 
-    /* Multi-GPU acceleration: try to create LIF state on GPU 0 and GPU 1 */
+    /* Multi-GPU acceleration: create GPU manager for device-aware execution */
     network->gpu_lif_state = NULL;
-    network->gpu_ctx[0] = NULL;
-    network->gpu_ctx[1] = NULL;
-    network->n_gpu_devices = 0;
-    {
-        /* Try to create context on GPU 0 */
-        nimcp_gpu_context_t* gpu0 = nimcp_gpu_context_create(0);
-        if (gpu0) {
-            size_t total_neurons = (size_t)config->n_inputs + config->n_hidden + config->n_outputs;
-            nimcp_lif_params_t lif_params = {
-                .tau_mem   = config->tau_mem,
-                .tau_syn   = config->tau_syn > 0.0f ? config->tau_syn : 5.0f,
-                .v_thresh  = config->v_thresh,
-                .v_reset   = config->v_reset,
-                .v_rest    = config->v_rest,
-                .dt        = config->dt,
-                .hard_reset = true
-            };
-            nimcp_lif_state_t* lif_state = nimcp_lif_state_create(gpu0, total_neurons, &lif_params);
-            if (lif_state) {
-                network->gpu_lif_state = lif_state;
-                network->gpu_ctx[0] = gpu0;
-                network->n_gpu_devices = 1;
-                NIMCP_LOGGING_INFO("snn_network_create: GPU 0 LIF state created for %zu neurons",
-                                   total_neurons);
+    network->gpu_manager = snn_gpu_manager_create(config->enable_dual_gpu);
 
-                /* Only create GPU 1 context if dual-GPU mode is explicitly enabled (for hierarchical SNN) */
-                if (config->enable_dual_gpu) {
-                    nimcp_gpu_context_t* gpu1 = nimcp_gpu_context_create(1);
-                    if (gpu1) {
-                        network->gpu_ctx[1] = gpu1;
-                        network->n_gpu_devices = 2;
-                        NIMCP_LOGGING_INFO("snn_network_create: GPU 1 context created - dual-GPU mode enabled");
+    if (network->gpu_manager) {
+        /* Create LIF state on GPU 0 */
+        size_t total_neurons = (size_t)config->n_inputs + config->n_hidden + config->n_outputs;
+        nimcp_lif_params_t lif_params = {
+            .tau_mem   = config->tau_mem,
+            .tau_syn   = config->tau_syn > 0.0f ? config->tau_syn : 5.0f,
+            .v_thresh  = config->v_thresh,
+            .v_reset   = config->v_reset,
+            .v_rest    = config->v_rest,
+            .dt        = config->dt,
+            .hard_reset = true
+        };
 
-                        /* CRITICAL: Reset CUDA device back to 0 after creating context on device 1.
-                         * cudaSetDevice() is sticky - after creating GPU 1 context, the active
-                         * device is 1. Subsequent code (LNN, other modules) expects device 0,
-                         * causing "illegal memory access" errors. */
-                        nimcp_gpu_context_set_device((nimcp_gpu_context_t*)network->gpu_ctx[0]);
-                    } else {
-                        NIMCP_LOGGING_WARN("snn_network_create: Dual-GPU requested but GPU 1 unavailable, using single-GPU mode");
-                    }
-                }
-            } else {
-                NIMCP_LOGGING_INFO("snn_network_create: GPU LIF state creation failed, using CPU fallback");
-                nimcp_gpu_context_destroy(gpu0);
-            }
+        /* Ensure device 0 before creating LIF state */
+        snn_gpu_ensure_device(network->gpu_manager, 0);
+
+        nimcp_lif_state_t* lif_state = nimcp_lif_state_create(
+            (nimcp_gpu_context_t*)network->gpu_manager->contexts[0], total_neurons, &lif_params);
+
+        if (lif_state) {
+            network->gpu_lif_state = lif_state;
+            NIMCP_LOGGING_INFO("snn_network_create: GPU LIF state created for %zu neurons (%d GPU(s))",
+                               total_neurons, network->gpu_manager->n_devices);
         } else {
-            NIMCP_LOGGING_DEBUG("snn_network_create: no GPU available, using CPU path");
+            NIMCP_LOGGING_WARN("snn_network_create: LIF state creation failed, destroying GPU manager");
+            snn_gpu_manager_destroy(network->gpu_manager);
+            network->gpu_manager = NULL;
         }
+    } else {
+        NIMCP_LOGGING_DEBUG("snn_network_create: No GPU available, using CPU path");
     }
 
     NIMCP_LOGGING_INFO("snn_network_create: created SNN with %u inputs, %u outputs",
@@ -844,10 +916,9 @@ void snn_network_destroy(snn_network_t* network) {
         neural_network_destroy(network->neural_net);
     }
 
-    /* CB-GPU-7: free network-level scratch tensors BEFORE destroying
-     * gpu_ctx — they were allocated against this context. */
-    if (network->gpu_ctx[0]) {
-        nimcp_gpu_context_t* g = (nimcp_gpu_context_t*)network->gpu_ctx[0];
+    /* Free network-level scratch tensors BEFORE destroying GPU manager */
+    if (network->gpu_manager && network->gpu_manager->contexts[0]) {
+        nimcp_gpu_context_t* g = (nimcp_gpu_context_t*)network->gpu_manager->contexts[0];
         if (network->gpu_cb_spike_flat) {
             nimcp_gpu_free(g, network->gpu_cb_spike_flat);
             network->gpu_cb_spike_flat = NULL;
@@ -864,14 +935,11 @@ void snn_network_destroy(snn_network_t* network) {
         network->gpu_lif_state = NULL;
     }
 
-    /* Destroy both GPU contexts */
-    for (int i = 0; i < 2; i++) {
-        if (network->gpu_ctx[i]) {
-            nimcp_gpu_context_destroy((nimcp_gpu_context_t*)network->gpu_ctx[i]);
-            network->gpu_ctx[i] = NULL;
-        }
+    /* Destroy GPU manager (handles both contexts) */
+    if (network->gpu_manager) {
+        snn_gpu_manager_destroy(network->gpu_manager);
+        network->gpu_manager = NULL;
     }
-    network->n_gpu_devices = 0;
 
     /* Destroy mutex */
     if (network->mutex) {
@@ -954,11 +1022,12 @@ int snn_network_reset(snn_network_t* network) {
      * because its neurons stayed charged on-device). Resetting v to v_rest is
      * the dominant carry-over; i_syn/spikes are recomputed/overwritten each
      * step. No-op when running CPU-only (gpu_lif_state NULL). */
-    if (network->gpu_lif_state && network->gpu_ctx[0]) {
+    if (network->gpu_lif_state && network->gpu_manager && network->gpu_manager->contexts[0]) {
         nimcp_lif_state_t* lif = (nimcp_lif_state_t*)network->gpu_lif_state;
         if (lif->v) {
+            snn_gpu_ensure_device(network->gpu_manager, 0);
             (void)nimcp_gpu_snn_reset_state(
-                (nimcp_gpu_context_t*)network->gpu_ctx[0],
+                (nimcp_gpu_context_t*)network->gpu_manager->contexts[0],
                 lif->v, network->config.v_rest);
         }
     }
@@ -2067,7 +2136,7 @@ int snn_network_step(snn_network_t* network, float dt) {
      * count on success, -1 on hard failure (then fall through to either
      * the legacy current-based GPU path or the CPU CB loop below). */
     extern float snn_tune_get_cb_gpu_enabled(void);
-    if (network->gpu_lif_state && network->gpu_ctx
+    if (network->gpu_lif_state && network->gpu_manager && network->gpu_manager->contexts[0]
         && snn_tune_get_conductance_enabled() != 0.0f
         && snn_tune_get_cb_gpu_enabled()      != 0.0f) {
         clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
@@ -2085,9 +2154,11 @@ int snn_network_step(snn_network_t* network, float dt) {
 
     /* ===== GPU FAST PATH (current-based, CB OFF) ===== */
     if (!gpu_executed
-        && network->gpu_lif_state && network->gpu_ctx
+        && network->gpu_lif_state && network->gpu_manager && network->gpu_manager->contexts[0]
         && snn_tune_get_conductance_enabled() == 0.0f) {
-        nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_ctx[0];
+        /* Ensure device 0 before GPU operations */
+        snn_gpu_ensure_device(network->gpu_manager, 0);
+        nimcp_gpu_context_t* gpu = (nimcp_gpu_context_t*)network->gpu_manager->contexts[0];
         nimcp_lif_state_t* lif_state = (nimcp_lif_state_t*)network->gpu_lif_state;
 
         /* Compute total neuron count across all populations */
@@ -2171,6 +2242,9 @@ int snn_network_step(snn_network_t* network, float dt) {
 
             if (has_gpu_csr) {
                 /* === GPU I_SYN PATH === */
+                /* CRITICAL: Ensure device 0 is active before GPU operations */
+                snn_gpu_ensure_device(network->gpu_manager, 0);
+
                 /* 1. Build flat spike vector on host from population tensors */
                 float* h_spk_flat = (float*)nimcp_calloc(total_neurons, sizeof(float));
                 if (h_spk_flat) {
@@ -4720,19 +4794,16 @@ int snn_network_finalize_connections(snn_network_t* network) {
                                                 network->n_populations) == 0) {
                             gpu_prepared++;
 
-                            /* Dual-GPU hybrid: Only upload GPU 0 populations to GPU.
-                             * GPU 1 populations keep CSR on CPU and use CPU deposit path. */
-                            uint32_t device_id = (network->n_gpu_devices == 2 && pop->device_id < 2)
-                                               ? pop->device_id : 0;
-
-                            /* Skip GPU upload for populations on GPU 1 (use CPU path) */
-                            if (network->n_gpu_devices > 1 && device_id == 1) {
-                                LOG_INFO("Population %u (device %u) keeping CSR on CPU for hybrid mode",
-                                         p, device_id);
-                                continue;  /* Keep CSR on CPU, don't upload or free */
+                            /* Multi-GPU device-aware upload: Set device before CSR upload */
+                            uint32_t device_id = pop->device_id;
+                            if (!network->gpu_manager || device_id >= (uint32_t)network->gpu_manager->n_devices) {
+                                device_id = 0;  /* Fallback to GPU 0 */
                             }
 
-                            nimcp_gpu_context_t* gpu_ctx = (nimcp_gpu_context_t*)network->gpu_ctx[device_id];
+                            /* Ensure correct device is active before GPU operations */
+                            snn_gpu_ensure_device(network->gpu_manager, device_id);
+
+                            nimcp_gpu_context_t* gpu_ctx = (nimcp_gpu_context_t*)network->gpu_manager->contexts[device_id];
 
                             /* Upload to GPU immediately to reduce peak host memory.
                              * After upload, free topology arrays (flat_col_idx, src_pop_idx)

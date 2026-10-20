@@ -113,6 +113,7 @@ typedef struct snn_simulation_s snn_simulation_t;
 typedef struct snn_training_ctx_s snn_training_ctx_t;
 typedef struct snn_spike_s snn_spike_t;
 typedef struct snn_spike_train_s snn_spike_train_t;
+typedef struct snn_gpu_manager_s snn_gpu_manager_t;
 
 //=============================================================================
 // Enumerations
@@ -774,6 +775,23 @@ typedef struct snn_stats_s {
 } snn_stats_t;
 
 /**
+ * @brief Multi-GPU manager for SNN execution
+ *
+ * WHAT: Device-aware GPU context management
+ * WHY:  Enable true multi-GPU SNN distribution without CUDA corruption
+ * HOW:  Track per-device contexts and active device, ensuring device is set
+ *       before every GPU operation
+ *
+ * CRITICAL INVARIANT: active_device must match CUDA's current device.
+ * Call snn_gpu_ensure_device() before ANY GPU operation.
+ */
+struct snn_gpu_manager_s {
+    void* contexts[2];      /**< nimcp_gpu_context_t* for GPU 0 and GPU 1 */
+    int n_devices;          /**< Number of GPUs (1 or 2) */
+    int active_device;      /**< Currently active device (-1 = unknown, must set before use) */
+};
+
+/**
  * @brief Complete SNN network
  *
  * WHAT: Top-level SNN orchestration structure
@@ -827,8 +845,7 @@ struct snn_network_s {
 
     /* GPU acceleration - Multi-GPU support */
     void* gpu_lif_state;            /**< nimcp_lif_state_t* for GPU SNN (NULL if CPU-only) */
-    void* gpu_ctx[2];               /**< nimcp_gpu_context_t*[2] for dual-GPU SNN (NULL if CPU-only, [0]=GPU0, [1]=GPU1) */
-    uint32_t n_gpu_devices;         /**< Number of active GPU devices (0=CPU-only, 1=single-GPU, 2=dual-GPU) */
+    snn_gpu_manager_t* gpu_manager; /**< Multi-GPU manager (NULL if CPU-only) */
 
     /* Persistent GPU tensors for I_syn computation (allocated once, reused per step).
      * Eliminates per-step tensor create/upload/download/destroy overhead. */
