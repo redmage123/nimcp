@@ -51,9 +51,24 @@ def _get_embed_model():
 
     # Import and load model
     from sentence_transformers import SentenceTransformer
+    import os
+    from pathlib import Path
+
     logger.info(f"Loading SentenceTransformer on {encoder_device}")
-    _embed_model = SentenceTransformer('BAAI/bge-large-en-v1.5', device=encoder_device,
-                                       model_kwargs={'low_cpu_mem_usage': False})
+
+    # Load from local cache to avoid network dependency
+    # Find the cached model directory
+    cache_dir = Path.home() / ".cache/huggingface/hub"
+    model_cache = list(cache_dir.glob("models--BAAI--bge-large-en-v1.5*/snapshots/*/"))
+
+    if model_cache:
+        model_path = str(model_cache[0])
+        logger.info(f"Loading from local cache: {model_path}")
+        _embed_model = SentenceTransformer(model_path, device=encoder_device)
+    else:
+        logger.warning("No local cache found, downloading model (requires network)")
+        _embed_model = SentenceTransformer('BAAI/bge-large-en-v1.5', device=encoder_device)
+
     logger.info(f"Encoder loaded on device: {_embed_model.device}")
     return _embed_model
 
