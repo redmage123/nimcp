@@ -989,20 +989,11 @@ wire_connections:
         }
     }
 
-    /* EXPERIMENTAL: Destroy GPU 1 context after init to test if its presence
-     * during execution corrupts GPU 0. GPU 1 was used for CSR distribution
-     * during init (reduces memory pressure), but we destroy it before step
-     * execution to isolate corruption. */
-    if (net->gpu_manager && net->gpu_manager->n_devices > 1 && net->gpu_manager->contexts[1]) {
-        LOG_INFO("Destroying GPU 1 context after init (CSR already uploaded)");
-        nimcp_gpu_context_destroy((nimcp_gpu_context_t*)net->gpu_manager->contexts[1]);
-        net->gpu_manager->contexts[1] = NULL;
-        net->gpu_manager->n_devices = 1;
-        /* Reset to device 0 to ensure clean state */
-        if (net->gpu_manager->contexts[0]) {
-            nimcp_gpu_context_set_device((nimcp_gpu_context_t*)net->gpu_manager->contexts[0]);
-            net->gpu_manager->active_device = 0;
-        }
+    /* Dual-GPU mode: KEEP both contexts active with peer access enabled.
+     * GPU 0 and GPU 1 can now access each other's memory directly via P2P. */
+    if (net->gpu_manager && net->gpu_manager->n_devices > 1) {
+        LOG_INFO("Dual-GPU init complete: %d GPUs active with peer access",
+                 net->gpu_manager->n_devices);
     }
 
     return net;

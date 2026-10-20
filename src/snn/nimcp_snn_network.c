@@ -657,6 +657,30 @@ static snn_gpu_manager_t* snn_gpu_manager_create(bool enable_dual_gpu) {
             mgr->contexts[1] = gpu1;
             mgr->n_devices = 2;
             NIMCP_LOGGING_INFO("snn_gpu_manager_create: Dual-GPU mode enabled (GPU 0 + GPU 1)");
+
+            /* Enable peer access: GPU 0 can access GPU 1's memory directly */
+            #ifdef NIMCP_ENABLE_CUDA
+            cudaSetDevice(0);
+            cudaError_t err = cudaDeviceEnablePeerAccess(1, 0);
+            if (err == cudaSuccess) {
+                NIMCP_LOGGING_INFO("Peer access enabled: GPU 0 → GPU 1");
+            } else if (err == cudaErrorPeerAccessAlreadyEnabled) {
+                NIMCP_LOGGING_DEBUG("Peer access already enabled");
+            } else {
+                NIMCP_LOGGING_WARN("Peer access failed: %s (devices may not support P2P)", cudaGetErrorString(err));
+                cudaGetLastError();  /* Clear error */
+            }
+
+            /* Enable reverse: GPU 1 can access GPU 0's memory */
+            cudaSetDevice(1);
+            err = cudaDeviceEnablePeerAccess(0, 0);
+            if (err == cudaSuccess) {
+                NIMCP_LOGGING_INFO("Peer access enabled: GPU 1 → GPU 0");
+            } else if (err != cudaErrorPeerAccessAlreadyEnabled) {
+                NIMCP_LOGGING_WARN("Reverse peer access failed: %s", cudaGetErrorString(err));
+                cudaGetLastError();  /* Clear error */
+            }
+            #endif
         } else {
             NIMCP_LOGGING_WARN("snn_gpu_manager_create: GPU 1 unavailable, using single-GPU mode");
         }
@@ -2244,8 +2268,6 @@ int snn_network_step(snn_network_t* network, float dt) {
 
             if (has_gpu_csr) {
                 /* === GPU I_SYN PATH === */
-                /* CRITICAL: Ensure device 0 is active before GPU operations */
-                snn_gpu_ensure_device(network->gpu_manager, 0);
 
                 /* 1. Build flat spike vector on host from population tensors */
                 float* h_spk_flat = (float*)nimcp_calloc(total_neurons, sizeof(float));
@@ -2259,17 +2281,39 @@ int snn_network_step(snn_network_t* network, float dt) {
                         off += pop->n_neurons;
                     }
 
-                    /* 2. Upload flat spike vector to GPU */
+                    /* 2. Upload flat spike vector to BOTH GPUs (dual-GPU support) */
                     size_t spk_dims[1] = { total_neurons };
-                    nimcp_gpu_tensor_t* d_spk = nimcp_gpu_tensor_from_host(
-                        gpu, h_spk_flat, spk_dims, 1, NIMCP_GPU_PRECISION_FP32);
+                    nimcp_gpu_tensor_t* d_spk_gpu0 = NULL;
+                    nimcp_gpu_tensor_t* d_spk_gpu1 = NULL;
 
-                    if (d_spk) {
+                    snn_gpu_ensure_device(network->gpu_manager, 0);
+                    d_spk_gpu0 = nimcp_gpu_tensor_from_host(
+                        (nimcp_gpu_context_t*)network->gpu_manager->contexts[0],
+                        h_spk_flat, spk_dims, 1, NIMCP_GPU_PRECISION_FP32);
+
+                    if (network->gpu_manager->n_devices > 1) {
+                        snn_gpu_ensure_device(network->gpu_manager, 1);
+                        d_spk_gpu1 = nimcp_gpu_tensor_from_host(
+                            (nimcp_gpu_context_t*)network->gpu_manager->contexts[1],
+                            h_spk_flat, spk_dims, 1, NIMCP_GPU_PRECISION_FP32);
+                    }
+
+                    if (d_spk_gpu0) {
                         /* 3. Per-population: upload CSR + external_current, call kernel */
                         size_t pop_offset = 0;
                         for (uint32_t p = 0; p < network->n_populations; p++) {
                             snn_population_t* pop = network->populations[p];
                             if (!pop) continue;
+
+                            /* CRITICAL: Switch to this population's GPU before accessing its CSR */
+                            uint32_t pop_device = pop->device_id < (uint32_t)network->gpu_manager->n_devices
+                                ? pop->device_id : 0;
+                            snn_gpu_ensure_device(network->gpu_manager, pop_device);
+
+                            /* Get the correct GPU context and spike tensor for this population's device */
+                            nimcp_gpu_context_t* pop_gpu = (nimcp_gpu_context_t*)network->gpu_manager->contexts[pop_device];
+                            nimcp_gpu_tensor_t* d_spk = (pop_device == 0) ? d_spk_gpu0 : d_spk_gpu1;
+                            if (!d_spk) d_spk = d_spk_gpu0;  /* Fallback to GPU 0 if GPU 1 upload failed */
 
                             if (pop->lightweight && pop->incoming_csr &&
                                 pop->incoming_csr->gpu_ready &&
@@ -2284,7 +2328,7 @@ int snn_network_step(snn_network_t* network, float dt) {
                                 bool use_persistent = false;
                                 if (!csr->gpu_resident) {
                                     /* Lazy upload on first use */
-                                    if (snn_csr_upload_to_gpu(csr, gpu) == 0) {
+                                    if (snn_csr_upload_to_gpu(csr, pop_gpu) == 0) {
                                         use_persistent = true;
                                     }
                                 } else {
@@ -2296,9 +2340,9 @@ int snn_network_step(snn_network_t* network, float dt) {
                                 float* h_ext = ext_cur ? ext_cur :
                                     (float*)nimcp_calloc(pop->n_neurons, sizeof(float));
                                 nimcp_gpu_tensor_t* d_ext = nimcp_gpu_tensor_from_host(
-                                    gpu, h_ext, n_dims, 1, NIMCP_GPU_PRECISION_FP32);
+                                    pop_gpu, h_ext, n_dims, 1, NIMCP_GPU_PRECISION_FP32);
                                 nimcp_gpu_tensor_t* d_isyn = nimcp_gpu_tensor_create(
-                                    gpu, n_dims, 1, NIMCP_GPU_PRECISION_FP32);
+                                    pop_gpu, n_dims, 1, NIMCP_GPU_PRECISION_FP32);
 
                                 extern bool nimcp_gpu_snn_isyn_csr(
                                     nimcp_gpu_context_t*, const float*,
@@ -2308,7 +2352,9 @@ int snn_network_step(snn_network_t* network, float dt) {
 
                                 if (use_persistent && d_ext && d_isyn) {
                                     /* Fast path: use persistent device pointers */
-                                    nimcp_gpu_snn_isyn_csr(gpu,
+                                    /* Ensure correct device is active before kernel launch */
+                                    snn_gpu_ensure_device(network->gpu_manager, pop_device);
+                                    nimcp_gpu_snn_isyn_csr(pop_gpu,
                                         (const float*)d_spk->data,
                                         (const float*)csr->d_weights,
                                         (const unsigned int*)csr->d_flat_col_idx,
@@ -2316,20 +2362,26 @@ int snn_network_step(snn_network_t* network, float dt) {
                                         (const float*)d_ext->data,
                                         (float*)d_isyn->data,
                                         pop->n_neurons);
+                                    /* Ensure correct device before copy-back */
+                                    snn_gpu_ensure_device(network->gpu_manager, pop_device);
                                     nimcp_gpu_tensor_to_host(d_isyn,
                                         h_input + pop_offset);
                                 } else if (d_ext && d_isyn) {
                                     /* Slow fallback: per-step CSR upload (legacy) */
+                                    /* Ensure correct device before uploads */
+                                    snn_gpu_ensure_device(network->gpu_manager, pop_device);
                                     size_t w_dims[1] = { csr->n_synapses };
                                     size_t r_dims[1] = { (size_t)csr->n_neurons + 1 };
                                     nimcp_gpu_tensor_t* d_w = nimcp_gpu_tensor_from_host(
-                                        gpu, csr->weights, w_dims, 1, NIMCP_GPU_PRECISION_FP32);
+                                        pop_gpu, csr->weights, w_dims, 1, NIMCP_GPU_PRECISION_FP32);
                                     nimcp_gpu_tensor_t* d_ci = nimcp_gpu_tensor_from_host(
-                                        gpu, csr->flat_col_idx, w_dims, 1, NIMCP_GPU_PRECISION_UINT32);
+                                        pop_gpu, csr->flat_col_idx, w_dims, 1, NIMCP_GPU_PRECISION_UINT32);
                                     nimcp_gpu_tensor_t* d_rp = nimcp_gpu_tensor_from_host(
-                                        gpu, csr->row_ptr, r_dims, 1, NIMCP_GPU_PRECISION_UINT32);
+                                        pop_gpu, csr->row_ptr, r_dims, 1, NIMCP_GPU_PRECISION_UINT32);
                                     if (d_w && d_ci && d_rp) {
-                                        nimcp_gpu_snn_isyn_csr(gpu,
+                                        /* Ensure correct device before kernel */
+                                        snn_gpu_ensure_device(network->gpu_manager, pop_device);
+                                        nimcp_gpu_snn_isyn_csr(pop_gpu,
                                             (const float*)d_spk->data,
                                             (const float*)d_w->data,
                                             (const unsigned int*)d_ci->data,
@@ -2337,6 +2389,8 @@ int snn_network_step(snn_network_t* network, float dt) {
                                             (const float*)d_ext->data,
                                             (float*)d_isyn->data,
                                             pop->n_neurons);
+                                        /* Ensure correct device before copy-back */
+                                        snn_gpu_ensure_device(network->gpu_manager, pop_device);
                                         nimcp_gpu_tensor_to_host(d_isyn,
                                             h_input + pop_offset);
                                     }
@@ -2390,7 +2444,9 @@ int snn_network_step(snn_network_t* network, float dt) {
                             }
                             pop_offset += pop->n_neurons;
                         }
-                        nimcp_gpu_tensor_destroy(d_spk);
+                        /* Cleanup: destroy spike tensors on both GPUs */
+                        if (d_spk_gpu0) nimcp_gpu_tensor_destroy(d_spk_gpu0);
+                        if (d_spk_gpu1) nimcp_gpu_tensor_destroy(d_spk_gpu1);
                     }
                     nimcp_free(h_spk_flat);
                 }
@@ -4799,16 +4855,17 @@ int snn_network_finalize_connections(snn_network_t* network) {
                                                 network->n_populations) == 0) {
                             gpu_prepared++;
 
-                            /* Multi-GPU device-aware upload: Set device before CSR upload */
+                            /* TRUE DUAL-GPU: Upload to correct GPU with peer access enabled.
+                             * GPU 0 ↔ GPU 1 can access each other's memory via cudaDeviceEnablePeerAccess. */
                             uint32_t device_id = pop->device_id;
                             if (!network->gpu_manager || device_id >= (uint32_t)network->gpu_manager->n_devices) {
-                                device_id = 0;  /* Fallback to GPU 0 */
+                                device_id = 0;  /* Fallback to GPU 0 if device unavailable */
                             }
 
-                            /* Ensure correct device is active before GPU operations */
+                            /* Set active device before upload */
                             snn_gpu_ensure_device(network->gpu_manager, device_id);
-
                             nimcp_gpu_context_t* gpu_ctx = (nimcp_gpu_context_t*)network->gpu_manager->contexts[device_id];
+                            LOG_INFO("Uploading population %u CSR to GPU %u (peer access enabled)", p, device_id);
 
                             /* Upload to GPU immediately to reduce peak host memory.
                              * After upload, free topology arrays (flat_col_idx, src_pop_idx)
