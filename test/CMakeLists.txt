@@ -2442,10 +2442,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bindings/cpp/CMakeLists.txt")
     add_subdirectory(bindings/cpp)
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bindings/java/CMakeLists.txt")
-    message(STATUS "Adding Java bindings tests...")
-    add_subdirectory(bindings/java)
-endif()
+# Java bindings disabled - no JNI
+#if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bindings/java/CMakeLists.txt")
+#    message(STATUS "Adding Java bindings tests...")
+#    add_subdirectory(bindings/java)
+#endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bindings/csharp/CMakeLists.txt")
     message(STATUS "Adding C# bindings tests...")

@@ -19,7 +19,7 @@
 
 # Find Check framework
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(CHECK REQUIRED check)
+pkg_check_modules(CHECK check)  # Removed REQUIRED - graceful skip if not found
 
 # Financial Cognitive Integration Regression Tests (C / Check Framework)
 add_executable(regression_financial_cognitive_integration_c

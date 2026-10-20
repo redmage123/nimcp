@@ -771,6 +771,12 @@ snn_network_t* snn_network_create(const snn_config_t* config) {
                         network->gpu_ctx[1] = gpu1;
                         network->n_gpu_devices = 2;
                         NIMCP_LOGGING_INFO("snn_network_create: GPU 1 context created - dual-GPU mode enabled");
+
+                        /* CRITICAL: Reset CUDA device back to 0 after creating context on device 1.
+                         * cudaSetDevice() is sticky - after creating GPU 1 context, the active
+                         * device is 1. Subsequent code (LNN, other modules) expects device 0,
+                         * causing "illegal memory access" errors. */
+                        nimcp_gpu_context_set_device((nimcp_gpu_context_t*)network->gpu_ctx[0]);
                     } else {
                         NIMCP_LOGGING_WARN("snn_network_create: Dual-GPU requested but GPU 1 unavailable, using single-GPU mode");
                     }

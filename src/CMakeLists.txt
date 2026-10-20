@@ -6,7 +6,7 @@ add_subdirectory(middleware)
 add_subdirectory(portia)
 add_subdirectory(python)
 add_subdirectory(bindings/cpp)
-add_subdirectory(bindings/java)
+#add_subdirectory(bindings/java)  # Disabled: JNI not available
 add_subdirectory(bindings/csharp)
 add_subdirectory(bindings/rust)
 add_subdirectory(bindings/go)

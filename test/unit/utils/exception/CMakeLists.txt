@@ -8,7 +8,7 @@
 
 # Find Check library using pkg-config
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(CHECK REQUIRED check)
+pkg_check_modules(CHECK check)  # Removed REQUIRED - graceful skip below
 
 if(NOT CHECK_FOUND)
     message(STATUS "Check library not found - skipping exception tests")
