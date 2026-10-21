@@ -1467,6 +1467,18 @@ static int cascade_stage_content(brain_t brain,
         (void)grounded_language_integrate_episodic_replay(brain, gl, (void*)state);
     }
 
+    /* 5ae. Prime Resonance Memory → language (2026-10-21). Content-addressable
+     * semantic memory via prime factorization signatures. Enables similarity-based
+     * retrieval (Jaccard matching), compositional semantics (signature algebra),
+     * and fast content matching. Maps semantic embeddings to prime signatures,
+     * finds resonant (semantically similar) concepts, composes multi-word meanings.
+     * Weight 0.20, dims 855-870. */
+    {
+        extern int grounded_language_integrate_prime_resonance(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_prime_resonance(brain, gl, (void*)state);
+    }
+
     /* Anchor magnitude = ||content_intent|| after prompt + all cognitive
      * sources but BEFORE any network blend. Each network below is unit-
      * normalized then scaled to a fraction of this anchor, so none can dominate
