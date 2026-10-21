@@ -47,6 +47,9 @@
 #include "core/brain/regions/hippocampus/nimcp_hippocampus_adapter.h"
 #include "cognitive/memory/nimcp_semantic_memory.h"
 #include "plasticity/neuromodulators/nimcp_neuromodulators.h"
+/* Emotional state + attention + motor integration (2026-10-21) */
+#include "cognitive/nimcp_emotion_tensor.h"       /* emotion_tensor_get_valence/arousal */
+#include "core/brain/regions/motor/nimcp_motor_adapter.h"  /* motor_adapter_get_current_output */
 /* Note: cannot include core/brain/regions/broca/nimcp_phonological.h here
  * because Wernicke's perception/nimcp_speech_cortex.h (pulled in
  * transitively via grounded_language + brain_internal headers) also
@@ -1115,6 +1118,126 @@ static int cascade_stage_content(brain_t brain,
             float v = brain->cascade_reasoning_vec[j];
             if (isfinite(v)) {
                 state->content_intent[j] += w_reasoning * rconf * v;
+            }
+        }
+    }
+
+    /* 5f. Emotional state → language (2026-10-21). Blend current emotional
+     * valence/arousal into content_intent so language production reflects
+     * affective state (happy → positive words, distressed → different tone).
+     * Maps valence [-1,+1] to dimensions [0,15] and arousal [0,1] to [16,31],
+     * creating an emotional signature that biases word selection. Weight kept
+     * moderate (0.18) — enough to shift tone without overwhelming content. */
+    const float w_emotion = 0.18f;
+    if (brain->emotional_system && dim >= 32) {
+        float valence = emotion_tensor_get_valence(brain->emotional_system);
+        float arousal = emotion_tensor_get_arousal(brain->emotional_system);
+        if (isfinite(valence) && isfinite(arousal)) {
+            /* Valence band [0-15]: positive/negative emotional tone */
+            for (uint32_t i = 0; i < 16 && i < dim; i++) {
+                state->content_intent[i] += w_emotion * valence * arousal;
+            }
+            /* Arousal band [16-31]: emotional intensity */
+            for (uint32_t i = 16; i < 32 && i < dim; i++) {
+                state->content_intent[i] += w_emotion * arousal;
+            }
+        }
+    }
+
+    /* 5g. Attention/salience → language (2026-10-21). Boost dimensions
+     * corresponding to currently-salient features, making language production
+     * focus on what the brain is actively attending to. Weight 0.22 — attention
+     * should meaningfully guide topic selection without dominating other signals.
+     * Simplified: uses multihead attention entropy as focus indicator. */
+    const float w_attention = 0.22f;
+    if (brain->multihead_attention && dim >= 16) {
+        /* For now, create an attention signature based on attention focus.
+         * Full salience→feature mapping would require salience_evaluator API.
+         * This simple version creates an "attention focused" bias. */
+        extern float multihead_attention_get_entropy(multihead_attention_t attn);
+        float attn_entropy = multihead_attention_get_entropy(brain->multihead_attention);
+        if (isfinite(attn_entropy) && attn_entropy > 0.01f) {
+            /* Low entropy = focused attention, bias toward focus dimensions */
+            float focus = 1.0f - (attn_entropy > 1.0f ? 1.0f : attn_entropy);
+            for (uint32_t i = 0; i < 16 && i < dim; i++) {
+                state->content_intent[i] += w_attention * focus;
+            }
+        }
+    }
+
+    /* 5h. Motor planning → language (2026-10-21). Integrate motor intentions
+     * into language so action-related language reflects planned movements
+     * (improves action verb grounding and embodied language). Maps motor
+     * commands to semantic space, creating action-grounded word biases.
+     * Weight 0.20 — motor intentions are relevant but shouldn't override
+     * conceptual/declarative content. */
+    const float w_motor = 0.20f;
+    if (brain->motor && dim >= 64) {
+        /* Get current motor state/plan from motor adapter */
+        extern int motor_adapter_get_current_output(struct motor_adapter* motor,
+                                                      float* output, uint32_t max_dim);
+        float motor_buf[64];
+        int n_motor = motor_adapter_get_current_output(brain->motor,
+                                                         motor_buf, 64);
+        if (n_motor > 0) {
+            /* Map motor dimensions to semantic space (dimensions 32-95) */
+            uint32_t motor_base = 32;
+            for (uint32_t i = 0; i < (uint32_t)n_motor &&
+                          i < 64 && (motor_base + i) < dim; i++) {
+                float v = motor_buf[i];
+                if (isfinite(v) && fabsf(v) > 0.01f) {
+                    state->content_intent[motor_base + i] += w_motor * v;
+                }
+            }
+        }
+    }
+
+    /* 5i. Audio cortex → language (2026-10-21). Integrate recent auditory
+     * perceptual features into language, grounding speech production in what
+     * the brain is currently hearing. Improves auditory-grounded language
+     * (sound words, acoustic descriptions). Weight 0.16 — audio is perceptual
+     * context, not primary semantic content. */
+    const float w_audio = 0.16f;
+    if (brain->audio_cortex && dim >= 96) {
+        /* Get audio cortex current activation/features */
+        extern int audio_cortex_get_features(void* audio_cortex,
+                                               float* features, uint32_t max_dim);
+        float audio_buf[32];
+        int n_audio = audio_cortex_get_features(brain->audio_cortex,
+                                                  audio_buf, 32);
+        if (n_audio > 0) {
+            /* Map audio dimensions to semantic space (dimensions 64-95) */
+            uint32_t audio_base = 64;
+            for (uint32_t i = 0; i < (uint32_t)n_audio &&
+                          i < 32 && (audio_base + i) < dim; i++) {
+                float v = audio_buf[i];
+                if (isfinite(v)) {
+                    state->content_intent[audio_base + i] += w_audio * v;
+                }
+            }
+        }
+    }
+
+    /* 5j. Sensorimotor → language (2026-10-21). Integrate sensorimotor state
+     * into language for embodied grounding. Links proprioception, touch, and
+     * body state to semantic space, improving grounding of physical/tactile
+     * language. Weight 0.17 — sensorimotor provides embodied context. */
+    const float w_sensorimotor = 0.17f;
+    if (brain->sensorimotor && dim >= 128) {
+        /* Get sensorimotor state vector */
+        extern int sensorimotor_get_state(void* sensorimotor,
+                                            float* state, uint32_t max_dim);
+        float sm_buf[32];
+        int n_sm = sensorimotor_get_state(brain->sensorimotor, sm_buf, 32);
+        if (n_sm > 0) {
+            /* Map sensorimotor dimensions to semantic space (dimensions 96-127) */
+            uint32_t sm_base = 96;
+            for (uint32_t i = 0; i < (uint32_t)n_sm &&
+                          i < 32 && (sm_base + i) < dim; i++) {
+                float v = sm_buf[i];
+                if (isfinite(v)) {
+                    state->content_intent[sm_base + i] += w_sensorimotor * v;
+                }
             }
         }
     }
