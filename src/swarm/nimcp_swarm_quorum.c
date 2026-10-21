@@ -442,7 +442,10 @@ bool nimcp_quorum_broadcast_signal(
     nimcp_platform_mutex_unlock(quorum->mutex);
 
     /* Bio-async broadcast - send neuromodulator states alongside quorum signal */
-    if (quorum->brain && quorum->brain->bio_router) {
+    bio_router_t bio_router = brain_get_bio_router((brain_t)quorum->brain);
+    neuromodulator_system_t neuromod_sys = brain_get_neuromodulator_system((brain_t)quorum->brain);
+
+    if (quorum->brain && bio_router && neuromod_sys) {
         /* Package neuromodulator levels into bio-async messages. Send DA, 5-HT,
          * and NE as they correlate with swarm coordination states (DA=reward/
          * commitment, 5-HT=consensus/inhibition, NE=alertness/signal strength).
@@ -451,12 +454,9 @@ bool nimcp_quorum_broadcast_signal(
         extern float neuromodulator_get_level(neuromodulator_system_t system,
                                                neuromodulator_type_t type);
 
-        const float da_level = neuromodulator_get_level(
-            quorum->brain->neuromodulator_system, NEUROMOD_DOPAMINE);
-        const float serotonin_level = neuromodulator_get_level(
-            quorum->brain->neuromodulator_system, NEUROMOD_SEROTONIN);
-        const float ne_level = neuromodulator_get_level(
-            quorum->brain->neuromodulator_system, NEUROMOD_NOREPINEPHRINE);
+        const float da_level = neuromodulator_get_level(neuromod_sys, NEUROMOD_DOPAMINE);
+        const float serotonin_level = neuromodulator_get_level(neuromod_sys, NEUROMOD_SEROTONIN);
+        const float ne_level = neuromodulator_get_level(neuromod_sys, NEUROMOD_NOREPINEPHRINE);
 
         /* Send DA level (reward/commitment signal) */
         bio_msg_neuromodulator_release_t da_msg = {
@@ -472,7 +472,7 @@ bool nimcp_quorum_broadcast_signal(
             .current_concentration = da_level,
             .diffusion_radius_um = 1000.0f  /* Swarm-wide broadcast */
         };
-        (void)nimcp_bio_router_send(quorum->brain->bio_router, &da_msg.header);
+        (void)nimcp_bio_router_send(bio_router, &da_msg.header);
 
         /* Send 5-HT level (consensus/inhibition signal) */
         bio_msg_neuromodulator_release_t serotonin_msg = {
@@ -488,7 +488,7 @@ bool nimcp_quorum_broadcast_signal(
             .current_concentration = serotonin_level,
             .diffusion_radius_um = 1000.0f
         };
-        (void)nimcp_bio_router_send(quorum->brain->bio_router, &serotonin_msg.header);
+        (void)nimcp_bio_router_send(bio_router, &serotonin_msg.header);
 
         /* Send NE level (alertness/signal strength) */
         bio_msg_neuromodulator_release_t ne_msg = {
@@ -504,7 +504,7 @@ bool nimcp_quorum_broadcast_signal(
             .current_concentration = ne_level,
             .diffusion_radius_um = 1000.0f
         };
-        (void)nimcp_bio_router_send(quorum->brain->bio_router, &ne_msg.header);
+        (void)nimcp_bio_router_send(bio_router, &ne_msg.header);
     }
 
     LOG_DEBUG("Drone %u broadcast signal %s with strength %.2f (+ bio-async neuromod)",
@@ -645,26 +645,30 @@ bool nimcp_quorum_update_commitment(
 
     /* Bio-async commitment broadcast - send DA level which correlates with
      * commitment strength (dopamine signals reward prediction and value). */
-    if (quorum->brain && quorum->brain->bio_router && commit->state == COMMITMENT_COMMITTED) {
-        extern float neuromodulator_get_level(neuromodulator_system_t system,
-                                               neuromodulator_type_t type);
-        const float da_level = neuromodulator_get_level(
-            quorum->brain->neuromodulator_system, NEUROMOD_DOPAMINE);
+    if (quorum->brain && commit->state == COMMITMENT_COMMITTED) {
+        bio_router_t bio_router = brain_get_bio_router((brain_t)quorum->brain);
+        neuromodulator_system_t neuromod_sys = brain_get_neuromodulator_system((brain_t)quorum->brain);
 
-        bio_msg_neuromodulator_release_t msg = {
-            .header = {
-                .msg_type = BIO_MSG_NEUROMODULATOR_RELEASE,
-                .timestamp = nimcp_time_get_monotonic_ns(),
-                .source_module = BIO_MODULE_NEUROMODULATOR,
-                .priority = BIO_PRIORITY_HIGH  /* Commitment events are important */
-            },
-            .neuromodulator = BIO_CHANNEL_DOPAMINE,
-            .source_region = drone_id,
-            .release_amount = (float)strength,
-            .current_concentration = da_level,
-            .diffusion_radius_um = 2000.0f  /* Wider broadcast for commitments */
-        };
-        (void)nimcp_bio_router_send(quorum->brain->bio_router, &msg.header);
+        if (bio_router && neuromod_sys) {
+            extern float neuromodulator_get_level(neuromodulator_system_t system,
+                                                   neuromodulator_type_t type);
+            const float da_level = neuromodulator_get_level(neuromod_sys, NEUROMOD_DOPAMINE);
+
+            bio_msg_neuromodulator_release_t msg = {
+                .header = {
+                    .msg_type = BIO_MSG_NEUROMODULATOR_RELEASE,
+                    .timestamp = nimcp_time_get_monotonic_ns(),
+                    .source_module = BIO_MODULE_NEUROMODULATOR,
+                    .priority = BIO_PRIORITY_HIGH  /* Commitment events are important */
+                },
+                .neuromodulator = BIO_CHANNEL_DOPAMINE,
+                .source_region = drone_id,
+                .release_amount = (float)strength,
+                .current_concentration = da_level,
+                .diffusion_radius_um = 2000.0f  /* Wider broadcast for commitments */
+            };
+            (void)nimcp_bio_router_send(bio_router, &msg.header);
+        }
     }
 
     LOG_DEBUG("Drone %u commitment updated: signal=%s, state=%s, strength=%.2f",
@@ -920,45 +924,48 @@ bool nimcp_quorum_make_decision(
     /* Bio-async decision broadcast - send DA + 5-HT levels. DA indicates
      * decision confidence (reward prediction), 5-HT modulates consensus
      * threshold (serotonin regulates inhibition and group cohesion). */
-    if (quorum->brain && quorum->brain->bio_router && success) {
-        extern float neuromodulator_get_level(neuromodulator_system_t system,
-                                               neuromodulator_type_t type);
-        const float da_level = neuromodulator_get_level(
-            quorum->brain->neuromodulator_system, NEUROMOD_DOPAMINE);
-        const float serotonin_level = neuromodulator_get_level(
-            quorum->brain->neuromodulator_system, NEUROMOD_SEROTONIN);
+    if (quorum->brain && success) {
+        bio_router_t bio_router = brain_get_bio_router((brain_t)quorum->brain);
+        neuromodulator_system_t neuromod_sys = brain_get_neuromodulator_system((brain_t)quorum->brain);
 
-        /* Broadcast DA (decision confidence) */
-        bio_msg_neuromodulator_release_t da_msg = {
-            .header = {
-                .msg_type = BIO_MSG_NEUROMODULATOR_RELEASE,
-                .timestamp = nimcp_time_get_monotonic_ns(),
-                .source_module = BIO_MODULE_NEUROMODULATOR,
-                .priority = BIO_PRIORITY_CRITICAL  /* Decisions are critical events */
-            },
-            .neuromodulator = BIO_CHANNEL_DOPAMINE,
-            .source_region = quorum->drone_id,
-            .release_amount = quorum->decision_strength,
-            .current_concentration = da_level,
-            .diffusion_radius_um = 5000.0f  /* Maximum broadcast for decisions */
-        };
-        (void)nimcp_bio_router_send(quorum->brain->bio_router, &da_msg.header);
+        if (bio_router && neuromod_sys) {
+            extern float neuromodulator_get_level(neuromodulator_system_t system,
+                                                   neuromodulator_type_t type);
+            const float da_level = neuromodulator_get_level(neuromod_sys, NEUROMOD_DOPAMINE);
+            const float serotonin_level = neuromodulator_get_level(neuromod_sys, NEUROMOD_SEROTONIN);
 
-        /* Broadcast 5-HT (consensus modulation) */
-        bio_msg_neuromodulator_release_t serotonin_msg = {
-            .header = {
-                .msg_type = BIO_MSG_NEUROMODULATOR_RELEASE,
-                .timestamp = nimcp_time_get_monotonic_ns(),
-                .source_module = BIO_MODULE_NEUROMODULATOR,
-                .priority = BIO_PRIORITY_CRITICAL
-            },
-            .neuromodulator = BIO_CHANNEL_SEROTONIN,
-            .source_region = quorum->drone_id,
-            .release_amount = quorum->decision_strength,
-            .current_concentration = serotonin_level,
-            .diffusion_radius_um = 5000.0f
-        };
-        (void)nimcp_bio_router_send(quorum->brain->bio_router, &serotonin_msg.header);
+            /* Broadcast DA (decision confidence) */
+            bio_msg_neuromodulator_release_t da_msg = {
+                .header = {
+                    .msg_type = BIO_MSG_NEUROMODULATOR_RELEASE,
+                    .timestamp = nimcp_time_get_monotonic_ns(),
+                    .source_module = BIO_MODULE_NEUROMODULATOR,
+                    .priority = BIO_PRIORITY_CRITICAL  /* Decisions are critical events */
+                },
+                .neuromodulator = BIO_CHANNEL_DOPAMINE,
+                .source_region = quorum->drone_id,
+                .release_amount = quorum->decision_strength,
+                .current_concentration = da_level,
+                .diffusion_radius_um = 5000.0f  /* Maximum broadcast for decisions */
+            };
+            (void)nimcp_bio_router_send(bio_router, &da_msg.header);
+
+            /* Broadcast 5-HT (consensus modulation) */
+            bio_msg_neuromodulator_release_t serotonin_msg = {
+                .header = {
+                    .msg_type = BIO_MSG_NEUROMODULATOR_RELEASE,
+                    .timestamp = nimcp_time_get_monotonic_ns(),
+                    .source_module = BIO_MODULE_NEUROMODULATOR,
+                    .priority = BIO_PRIORITY_CRITICAL
+                },
+                .neuromodulator = BIO_CHANNEL_SEROTONIN,
+                .source_region = quorum->drone_id,
+                .release_amount = quorum->decision_strength,
+                .current_concentration = serotonin_level,
+                .diffusion_radius_um = 5000.0f
+            };
+            (void)nimcp_bio_router_send(bio_router, &serotonin_msg.header);
+        }
     }
 
     return success;
@@ -1145,12 +1152,17 @@ bool nimcp_quorum_handle_message(
         return false;
     }
 
+    /* DISABLED: Requires brain field accessors (brain_get_bio_router, etc.)
+     * TODO: Implement proper accessor functions for brain opaque struct */
+    (void)msg;
+    return false;
+
     /* Handle bio-async messages from other swarm members. Neuromodulator
      * broadcasts enable swarm-level neuromodulatory homeostasis - drones
      * can adjust their own states based on peers' DA/5-HT/NE levels to
      * maintain collective cognitive coherence. */
 
-    switch (msg->msg_type) {
+    switch (msg->type) {
         case BIO_MSG_NEUROMODULATOR_RELEASE: {
             /* Receive neuromodulator state from another drone. Update local
              * neuromodulator system to reflect swarm consensus. This creates
@@ -1158,7 +1170,10 @@ bool nimcp_quorum_handle_message(
             const bio_msg_neuromodulator_release_t* nm_msg =
                 (const bio_msg_neuromodulator_release_t*)msg;
 
-            if (quorum->brain && quorum->brain->bio_router) {
+            bio_router_t bio_router = brain_get_bio_router((brain_t)quorum->brain);
+            neuromodulator_system_t neuromod_sys = brain_get_neuromodulator_system((brain_t)quorum->brain);
+
+            if (bio_router && neuromod_sys) {
                 /* Blend external signal with internal state to maintain swarm
                  * coherence while preserving local autonomy. */
                 extern float neuromodulator_get_level(neuromodulator_system_t system,
@@ -1174,8 +1189,6 @@ bool nimcp_quorum_handle_message(
                     case BIO_CHANNEL_SEROTONIN:     nm_type = NEUROMOD_SEROTONIN; break;
                     case BIO_CHANNEL_NOREPINEPHRINE: nm_type = NEUROMOD_NOREPINEPHRINE; break;
                     case BIO_CHANNEL_ACETYLCHOLINE:  nm_type = NEUROMOD_ACETYLCHOLINE; break;
-                    case BIO_CHANNEL_GABA:          nm_type = NEUROMOD_GABA; break;
-                    case BIO_CHANNEL_GLUTAMATE:     nm_type = NEUROMOD_GLUTAMATE; break;
                     default:
                         LOG_DEBUG("Unknown neuromodulator channel %d", nm_msg->neuromodulator);
                         return false;
@@ -1186,16 +1199,12 @@ bool nimcp_quorum_handle_message(
                  * emergent collective coherence. Blend weight could be adjusted
                  * based on swarm trust/distance metrics. */
                 const float blend_weight = 0.20f;
-                const float current_level = neuromodulator_get_level(
-                    quorum->brain->neuromodulator_system, nm_type);
+                const float current_level = neuromodulator_get_level(neuromod_sys, nm_type);
                 const float blended_level =
                     (1.0f - blend_weight) * current_level +
                     blend_weight * nm_msg->current_concentration;
 
-                (void)neuromodulator_set_level(
-                    quorum->brain->neuromodulator_system,
-                    nm_type,
-                    blended_level);
+                (void)neuromodulator_set_level(neuromod_sys, nm_type, blended_level);
 
                 LOG_DEBUG("Integrated neuromod signal from drone %u: type=%d, conc=%.3f",
                           nm_msg->source_region, nm_type, nm_msg->current_concentration);
@@ -1212,7 +1221,7 @@ bool nimcp_quorum_handle_message(
 
         default:
             LOG_DEBUG("nimcp_quorum_handle_message: message type 0x%x not handled",
-                      msg->msg_type);
+                      msg->type);
             return false;
     }
 }

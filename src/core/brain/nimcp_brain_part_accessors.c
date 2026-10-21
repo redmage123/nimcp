@@ -40,6 +40,26 @@ neuromodulator_system_t brain_get_neuromodulator_system(brain_t brain)
     return brain->neuromodulator_system;
 }
 
+/**
+ * @brief Get bio-async router from brain
+ *
+ * WHAT: Returns pointer to brain's bio-async message router
+ * WHY:  External systems (swarm, edge) need to send/receive bio-async messages
+ * HOW:  Direct pointer access (no COW needed - router is not shared)
+ *
+ * SAFETY: Bio-router is not shared (unlike network), so no COW needed
+ */
+bio_router_t brain_get_bio_router(brain_t brain)
+{
+    if (!brain) {
+        set_error("NULL brain passed to brain_get_bio_router");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_get_bio_router: brain is NULL");
+        return NULL;
+    }
+
+    return (bio_router_t)brain->bio_router;
+}
+
 
 /**
  * @brief Build base network configuration

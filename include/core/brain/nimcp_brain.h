@@ -92,6 +92,9 @@ typedef struct global_workspace_struct* global_workspace_t;  // Opaque pointer
 // Neuromodulator System (for mental health interventions)
 typedef struct neuromodulator_system_struct* neuromodulator_system_t;  // Opaque pointer
 
+// Bio-Async Router (for inter-module bio-async messaging)
+typedef struct bio_router_struct* bio_router_t;  // Opaque pointer
+
 // Brain Regions Module (for brain region hierarchy with cortical layers)
 // Forward-declared as opaque struct pointer for accessor function
 struct brain_module_struct;
@@ -3759,6 +3762,18 @@ adaptive_network_t brain_get_network(brain_t brain);
  * @return Neuromodulator system handle (do not free!), or NULL if not initialized
  */
 neuromodulator_system_t brain_get_neuromodulator_system(brain_t brain);
+
+/**
+ * @brief Get bio-async router from brain
+ *
+ * WHAT: Accessor for brain's bio-async message router
+ * WHY:  External systems (swarm, edge) need to send/receive bio-async messages
+ * HOW:  Returns pointer to bio_router, NULL if not initialized
+ *
+ * @param brain Brain handle
+ * @return Bio-async router handle (do not free!), or NULL if not initialized
+ */
+bio_router_t brain_get_bio_router(brain_t brain);
 
 /**
  * @brief Get brain regions module from brain

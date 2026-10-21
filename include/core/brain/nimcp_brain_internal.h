@@ -1001,6 +1001,9 @@ struct brain_struct {
     struct bio_async_orchestrator* bio_async_orchestrator;  // Bio-async module coordination
     bool bio_async_orchestrator_enabled;                    // Bio-async orchestrator enabled
 
+    struct bio_router_struct* bio_router;                   // Bio-async message router
+    bool bio_router_enabled;                                // Bio-router enabled
+
     struct plasticity_coordinator* plasticity_coordinator;  // Plasticity mechanism coordination
     bool plasticity_coordinator_enabled;                    // Plasticity coordinator enabled
 
