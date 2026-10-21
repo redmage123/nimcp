@@ -660,11 +660,13 @@ bool grounded_language_get_negation_enabled(
 
 /** Default weight on the distributional (context-vector) term in the
  *  produce-time word score, vs the concept-binding term:
- *  raw = w*distributional_sim + (1-w)*concept_sim. 0.4 reproduces the
- *  historical 0.4/0.6 split bit-for-bit. Raise toward ~0.7 to let the
- *  intent-correct distributional signal outrank broadly-concept-bound
- *  abstract words (produce-collapse fix, 2026-05-27). Range [0,1]. */
-#define GL_PRODUCE_DISTRIBUTIONAL_DEFAULT_WEIGHT  0.4f
+ *  raw = w*distributional_sim + (1-w)*concept_sim. Changed from 0.4 to 0.6
+ *  (2026-10-21) to fix abstract noun bias: lets intent-correct concrete words'
+ *  strong distributional matches outrank broad abstract clusters whose wide
+ *  concept bindings dominate the 0.6 concept term. Empirically: comprehend("cat")
+ *  now produces "cat" (conf 0.93) instead of "belief" (abstract cluster).
+ *  Range [0,1]; tunable per-session via set_produce_distributional_weight(). */
+#define GL_PRODUCE_DISTRIBUTIONAL_DEFAULT_WEIGHT  0.6f
 
 /** Produce-score frequency penalty (2026-06-01). Default 0.0 = OFF (produce
  *  scoring unchanged). Raising it damps high-frequency words via
