@@ -3,6 +3,7 @@
  * @brief Python type definitions for NIMCP module
  */
 
+#include <Python.h>  /* MUST be first - defines PyObject, PyTypeObject, etc. */
 #include <stddef.h>  /* for NULL */
 #include <string.h>  // For strdup
 #include <structmember.h>  // For PyMemberDef, T_UINT, T_OBJECT_EX

@@ -39,7 +39,7 @@ foreach(test_source ${PORTIA_INTEGRATION_TESTS})
             # GoogleTest
             GTest::gtest
             GTest::gtest_main
-            GTest::gmock
+            # GTest::gmock  # DISABLED: gmock not available
 
             # Portia library
             nimcp_portia

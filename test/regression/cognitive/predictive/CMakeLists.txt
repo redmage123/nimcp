@@ -33,7 +33,7 @@ foreach(TEST_FILE ${PREDICTIVE_REGRESSION_TEST_SOURCES})
             nimcp
             GTest::gtest
             GTest::gtest_main
-            GTest::gmock
+            # GTest::gmock  # DISABLED: gmock not available
             Threads::Threads
             m
     )

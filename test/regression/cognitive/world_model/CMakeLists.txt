@@ -34,7 +34,7 @@ foreach(TEST_FILE ${WM_REGRESSION_SOURCES})
             nimcp
             GTest::gtest
             GTest::gtest_main
-            GTest::gmock
+            # GTest::gmock  # DISABLED: gmock not available
             Threads::Threads
             m
     )

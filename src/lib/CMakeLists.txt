@@ -2444,7 +2444,8 @@ set(NIMCP_CORE_SOURCES
     # GPU module stubs (wernicke_gpu, tensor_gpu, graph_gpu - only if CUDA NOT available)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs.c>
     # GPU tensor extended stubs (reductions, norms, comparisons, FFT, CPU-GPU interop)
-    $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_tensor_ext.c>
+    # DISABLED: tensor_ext stubs use incompatible tensor_ops API
+    # $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_tensor_ext.c>
     # GPU embedding relevance stubs (CPU fallback for batch dot-product)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_embedding.c>
     # GPU FP16/mixed precision stubs (FP16 ops, loss scaling, AMP context, autocast)

@@ -33,7 +33,7 @@ foreach(TEST_FILE ${OMNI_WM_E2E_SOURCES})
             nimcp
             GTest::gtest
             GTest::gtest_main
-            GTest::gmock
+            # GTest::gmock  # DISABLED: gmock not available
             Threads::Threads
             m
     )

@@ -18,7 +18,7 @@ target_link_libraries(test_bbb_pentest
         nimcp
         GTest::gtest
         GTest::gtest_main
-        GTest::gmock
+        # GTest::gmock  # DISABLED: gmock not available
         Threads::Threads
 )
 

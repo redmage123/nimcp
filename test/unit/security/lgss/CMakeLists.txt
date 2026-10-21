@@ -28,7 +28,7 @@ target_link_libraries(test_lgss_unit
         nimcp
         GTest::gtest
         GTest::gtest_main
-        GTest::gmock
+        # GTest::gmock  # DISABLED: gmock not available
 )
 
 target_include_directories(test_lgss_unit

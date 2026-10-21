@@ -13,7 +13,7 @@ target_link_libraries(test_lgss_e2e
         nimcp
         GTest::gtest
         GTest::gtest_main
-        GTest::gmock
+        # GTest::gmock  # DISABLED: gmock not available
         Threads::Threads
 )
 
