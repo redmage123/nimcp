@@ -5,19 +5,27 @@
 **Path**: `/home/bbrelin/nimcp`
 
 **Recent release highlights** (see `CHANGELOG.md` for the full entry):
-- **SNN language-bridge plasticity wired into training loop
-  (2026-05-14/15, unreleased)** — `brain_learn_vector` now drives
-  bridge STDP (via `apply_stdp` in `brain_tick_lang_bridge_spike_routing`),
-  trigram learning (`grounded_language_learn_text_bigrams` at `lr=0.02`),
-  and comprehend-STDP (default flipped TRUE). The bridge is opted into
-  SNN spike routing inside `attach_lang_adapters_to_substrate`, and
-  `connect_neuromod` is called on the same path so the DA three-factor
-  gate is live on resume — pre-fix the counters sat flat through entire
-  runs. New `lang_status.plasticity.next_token_cold_start_skips`
-  telemetry discriminates cold-start ramp from genuine stall.
-  Greedy `produce` confidence-floor break now honors `min_produce_words`
-  (4-of-4 stop conditions consistent). Commits `0d993d656`, `ac47802b0`,
-  `6364a1468`, `378bc6109`. Detail: `docs/claude/modules/grounded-language.md`.
+- **SNN language projection learning (Phase 3, 2026-06-02+)** —
+  `brain_learn_vector` drives concept→word projection training via
+  `snn_language_bridge_learn_pair` (EMA lr=0.05, throttled every 500 steps).
+  Collects warmstart bindings from lexicon and blends projection weights
+  toward lexicon binding strengths scaled by `SNN_LANG_PROJ_W_MAX` for
+  supra-threshold firing. Trigram learning wired (`grounded_language_
+  learn_text_bigrams` at `lr=0.02`). Projection synapses created via
+  `wire_concept_word` (targeted 8×8 ensemble cross-product, scalable).
+  GPU sync via `snn_csr_sync_weights_to_gpu`. Option-1 rebuild (2026-05-19)
+  moved weights from bridge to SNN projection synapses (Slice B); old
+  bridge STDP removed. Commits `5c2d0b589`, `61cf717a7`, `c522bd7dd`,
+  `738842e5c`, `6d1a58d8e`. Env flag: `NIMCP_TRAIN_SNN_PROJECTION=1`.
+  Detail: `docs/claude/modules/grounded-language.md`.
+- **Bio-async swarm integration (2026-10-21)** — Swarm quorum broadcasts
+  now send neuromodulator states (DA/5-HT/NE) alongside coordination signals.
+  Message handlers blend external signals with local state (80% local +
+  20% swarm) for emergent collective neuromodulatory homeostasis. Enables
+  distributed cognitive coherence across swarm members. Signal broadcasts
+  send 3 neuromodulators, commitments send DA, decisions send DA+5-HT.
+  Handler implements `BIO_MSG_NEUROMODULATOR_RELEASE` integration.
+  Commit `67605b924`. File: `src/swarm/nimcp_swarm_quorum.c`.
 - **Wedge mitigation + watchdog (2026-05-15)** — `_cmd_learn_language` RPC
   defaults to a no-op via `NIMCP_DISABLE_LEARN_LANGUAGE=1` (re-enable
   with `"0"` in supervisord env). Stage-2 wedge root-caused via
