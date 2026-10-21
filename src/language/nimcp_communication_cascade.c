@@ -1302,6 +1302,51 @@ static int cascade_stage_content(brain_t brain,
         }
     }
 
+    /* 5l. LNN Temporal Dynamics → language (2026-10-21). Continuous-time semantics
+     * from liquid neural networks: velocity→aspect, acceleration→causality,
+     * phase portrait→narrative flow. Weight 0.20 — temporal grounding. */
+    {
+        extern int grounded_language_integrate_lnn_temporal(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_lnn_temporal(brain, gl, (void*)state);
+    }
+
+    /* 5m. HNN Energy Coherence → language (2026-10-21). Hamiltonian conservation
+     * constrains semantic drift: H(state) preserved → topic coherence maintained.
+     * Energy-based modulation of content_intent. Weight via coherence_factor. */
+    {
+        extern int grounded_language_integrate_hnn_coherence(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_hnn_coherence(brain, gl, (void*)state);
+    }
+
+    /* 5n. JEPA Predictive Semantics → language (2026-10-21). Anticipatory continuation
+     * from world model: JEPA predicts s_{t+1} → blend for fluent generation.
+     * High confidence = exploitation, low = exploration. Weight 0.25. */
+    {
+        extern int grounded_language_integrate_jepa_predictive(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_jepa_predictive(brain, gl, (void*)state);
+    }
+
+    /* 5o. World Model Counterfactuals → language (2026-10-21). Grounded reasoning
+     * via latent world state: sensory evidence anchors semantic content.
+     * Enables "what-if" scenarios and causal language. Weight 0.18. */
+    {
+        extern int grounded_language_integrate_world_model(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_world_model(brain, gl, (void*)state);
+    }
+
+    /* 5p. Parietal Spatial/Numerical → language (2026-10-21). Embodied grounding
+     * from dorsal stream: spatial prepositions, numerical language, attention maps.
+     * Spatial weight 0.22, numerical 0.15. */
+    {
+        extern int grounded_language_integrate_parietal(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_parietal(brain, gl, (void*)state);
+    }
+
     /* Anchor magnitude = ||content_intent|| after prompt + all cognitive
      * sources but BEFORE any network blend. Each network below is unit-
      * normalized then scaled to a fraction of this anchor, so none can dominate
