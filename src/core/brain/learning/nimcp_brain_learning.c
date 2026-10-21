@@ -1785,6 +1785,31 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
      * subsequent deadlock reveals which stage the worker was last in. */
     static uint64_t _blv_step_tracker = 0;
     _blv_step_tracker++;
+    /* === COMPREHENSIVE PROFILING === */
+    struct timespec _prof_total_start, _prof_phase_start, _prof_phase_end, _prof_last_end;
+    clock_gettime(CLOCK_MONOTONIC, &_prof_total_start);
+    _prof_last_end = _prof_total_start;  /* Track end of last phase for gaps */
+    double _prof_phase_ms = 0.0;
+    double _prof_gap_ms = 0.0;
+    #define PROF_PHASE_START() clock_gettime(CLOCK_MONOTONIC, &_prof_phase_start)
+    #define PROF_PHASE_END(name) do { \
+        if (_blv_step_tracker % 10 == 0) { \
+            clock_gettime(CLOCK_MONOTONIC, &_prof_phase_end); \
+            _prof_gap_ms = (_prof_phase_start.tv_sec - _prof_last_end.tv_sec) * 1000.0 + \
+                          (_prof_phase_start.tv_nsec - _prof_last_end.tv_nsec) / 1000000.0; \
+            _prof_phase_ms = (_prof_phase_end.tv_sec - _prof_phase_start.tv_sec) * 1000.0 + \
+                            (_prof_phase_end.tv_nsec - _prof_phase_start.tv_nsec) / 1000000.0; \
+            if (_prof_gap_ms > 1.0) { \
+                NIMCP_LOGGING_INFO("[PROFILE-GAP] Step %llu gap_before_%s: %.1fms", \
+                                  (unsigned long long)_blv_step_tracker, name, _prof_gap_ms); \
+            } \
+            NIMCP_LOGGING_INFO("[PROFILE-PHASE] Step %llu %s: %.1fms", \
+                              (unsigned long long)_blv_step_tracker, name, _prof_phase_ms); \
+            _prof_last_end = _prof_phase_end; \
+        } \
+    } while(0)
+
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: entering ANN",
                        (unsigned long long)_blv_step_tracker);
 
@@ -2090,6 +2115,8 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
     }
 
     if (blv_debug_timing_enabled()) clock_gettime(CLOCK_MONOTONIC, &_blv_ann);
+    PROF_PHASE_END("ANN_complete");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: entering plasticity",
                        (unsigned long long)_blv_step_tracker);
 
@@ -2340,10 +2367,18 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
     }
 
     if (blv_debug_timing_enabled()) clock_gettime(CLOCK_MONOTONIC, &_blv_plasticity);
+    PROF_PHASE_END("Plasticity_complete");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: entering secondary",
                        (unsigned long long)_blv_step_tracker);
 
     /* Step 2: Secondary networks — unified or legacy path */
+    if (_blv_step_tracker % 10 == 0) {
+        NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: unified=%d use_unified=%d",
+                          (unsigned long long)_blv_step_tracker,
+                          brain->unified_training != NULL,
+                          brain->config.use_unified_training);
+    }
     if (brain->unified_training && brain->config.use_unified_training) {
         /* Unified training path: single composite loss across all networks.
          * Each network receives direct ground truth supervision via MSE gradient,
@@ -2399,12 +2434,48 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         }
 
         struct timespec _blv_utm_t0;
-        if (blv_debug_timing_enabled()) clock_gettime(CLOCK_MONOTONIC, &_blv_utm_t0);
+        clock_gettime(CLOCK_MONOTONIC, &_blv_utm_t0);  /* Always profile */
+        if (_blv_step_tracker % 10 == 0) {
+            NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: About to call nimcp_utm_step",
+                              (unsigned long long)_blv_step_tracker);
+        }
         nimcp_utm_step_result_t utm_result = {0};
         int utm_rc = nimcp_utm_step(brain->unified_training,
                                     features, num_features,
                                     target, target_size,
                                     &utm_result);
+
+        /* Profile: detailed per-network breakdown */
+        struct timespec _blv_utm_t1;
+        clock_gettime(CLOCK_MONOTONIC, &_blv_utm_t1);
+        double utm_ms = (_blv_utm_t1.tv_sec - _blv_utm_t0.tv_sec) * 1000.0 +
+                        (_blv_utm_t1.tv_nsec - _blv_utm_t0.tv_nsec) / 1000000.0;
+
+        if (_blv_step_tracker % 10 == 0) {
+            NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: nimcp_utm_step returned, took %.1fms",
+                              (unsigned long long)_blv_step_tracker, utm_ms);
+        }
+        if (_blv_step_tracker % 10 == 0) {
+            nimcp_unified_training_manager_t* utm = brain->unified_training;
+            NIMCP_LOGGING_INFO("[PROFILE-UTM] Step %llu: %.1fms total, %u networks",
+                              (unsigned long long)_blv_step_tracker, utm_ms, utm->num_networks);
+
+            for (uint32_t n = 0; n < utm->num_networks; n++) {
+                if (!utm->networks[n].ops) continue;
+                const char* type_name = "UNKNOWN";
+                switch (utm->networks[n].ops->type) {
+                    case NIMCP_TRAINABLE_ADAPTIVE: type_name = "ANN"; break;
+                    case NIMCP_TRAINABLE_CNN: type_name = "CNN"; break;
+                    case NIMCP_TRAINABLE_SNN: type_name = "SNN"; break;
+                    case NIMCP_TRAINABLE_LNN: type_name = "LNN"; break;
+                    default: break;
+                }
+                float nloss = utm_result.per_network_loss[n];
+                NIMCP_LOGGING_INFO("[PROFILE-UTM]   Net %u (%s): enabled=%d loss=%.4f",
+                                  n, type_name, utm->networks[n].enabled, nloss);
+            }
+        }
+
         PROBE_STAGE(brain, PROBE_TRAIN_UTM, {
             PROBE_SET_INT(&_ctx, "utm_rc", (int64_t)utm_rc);
             PROBE_SET_FLOAT(&_ctx, "composite_loss", utm_result.composite_loss);
@@ -2682,8 +2753,19 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             }
 
             training_dispatch_result_t snn_res = {0};
+            PROF_PHASE_START();
+            struct timespec _snn_t0, _snn_t1;
+            clock_gettime(CLOCK_MONOTONIC, &_snn_t0);
             training_dispatch_snn_step(brain, features, num_features,
                                        target, target_size, &snn_res);
+            clock_gettime(CLOCK_MONOTONIC, &_snn_t1);
+            double snn_ms = (_snn_t1.tv_sec - _snn_t0.tv_sec) * 1000.0 +
+                           (_snn_t1.tv_nsec - _snn_t0.tv_nsec) / 1000000.0;
+            if (snn_ms > 1000.0) {
+                NIMCP_LOGGING_WARN("[PROFILE-SNN] Step %llu SNN took %.1fms (>1sec!) loss=%.4f",
+                                  (unsigned long long)_blv_step_tracker, snn_ms, snn_res.loss);
+            }
+            PROF_PHASE_END("SNN_step");
             if (snn_res.loss >= 0.0f && isfinite(snn_res.loss)) {
                 const float a = 0.01f;
                 brain->network_metrics.last_snn_loss = snn_res.loss;
@@ -2702,13 +2784,28 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
          * except SNN when set). SNN respects train_snn even in recovery
          * mode — the whole point of recovery mode is SNN-only training,
          * so disabling train_snn while in recovery makes no sense. */
+        if (_blv_step_tracker % 10 == 0) {
+            NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: Taking LEGACY path (not unified)",
+                              (unsigned long long)_blv_step_tracker);
+        }
         bool recovery = brain->config.snn_only_recovery_mode;
         bool has_cnn = (label && label[0]) && brain->config.train_cnn && !recovery;
         bool has_snn = (brain->snn_network && brain->snn_training_ctx && brain->config.train_snn);
         bool has_lnn = (brain->lnn_network && brain->lnn_training_ctx && brain->config.train_lnn && !recovery);
         int secondary_count = (has_cnn ? 1 : 0) + (has_snn ? 1 : 0) + (has_lnn ? 1 : 0);
 
+        if (_blv_step_tracker % 10 == 0) {
+            NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: Legacy path - has_cnn=%d has_snn=%d has_lnn=%d secondary_count=%d pool=%p",
+                              (unsigned long long)_blv_step_tracker,
+                              has_cnn, has_snn, has_lnn, secondary_count, (void*)brain->inference_pool);
+        }
         if (brain->inference_pool && secondary_count >= 2) {
+            if (_blv_step_tracker % 10 == 0) {
+                NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: Taking PARALLEL path",
+                                  (unsigned long long)_blv_step_tracker);
+            }
+            struct timespec _par_t0;
+            clock_gettime(CLOCK_MONOTONIC, &_par_t0);
             /* Parallel path: submit CNN + SNN + LNN tasks to thread pool */
             learn_task_ctx_t* ctx = nimcp_calloc(1, sizeof(learn_task_ctx_t));
             if (ctx) {
@@ -2753,11 +2850,24 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                 #undef SAFE_EMA_UPDATE
 
                 nimcp_free(ctx);
+
+                if (_blv_step_tracker % 10 == 0) {
+                    struct timespec _par_t1;
+                    clock_gettime(CLOCK_MONOTONIC, &_par_t1);
+                    double par_ms = (_par_t1.tv_sec - _par_t0.tv_sec) * 1000.0 +
+                                   (_par_t1.tv_nsec - _par_t0.tv_nsec) / 1000000.0;
+                    NIMCP_LOGGING_INFO("[PROFILE-PARALLEL] Step %llu: Parallel training took %.1fms",
+                                      (unsigned long long)_blv_step_tracker, par_ms);
+                }
             } else {
                 goto sequential_training;
             }
         } else {
 sequential_training:
+            if (_blv_step_tracker % 10 == 0) {
+                NIMCP_LOGGING_INFO("[PROFILE-DEBUG] Step %llu: Taking SEQUENTIAL path",
+                                  (unsigned long long)_blv_step_tracker);
+            }
             /* Sequential fallback (original code path) */
             /* NaN-safe EMA update macro */
             #define SAFE_EMA_UPDATE2(ema, val, alpha) do { \
@@ -3112,7 +3222,7 @@ sequential_training:
     }
 
     struct timespec _blv_cog_t0;
-    if (blv_debug_timing_enabled()) clock_gettime(CLOCK_MONOTONIC, &_blv_cog_t0);
+    clock_gettime(CLOCK_MONOTONIC, &_blv_cog_t0);  /* Always profile */
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: entering cognitive/subsystem_dispatch",
                        (unsigned long long)_blv_step_tracker);
 
@@ -3120,8 +3230,12 @@ sequential_training:
      * Train ALL cognitive modules (grounded language, knowledge, VAE, FEP-parietal,
      * physics NN, predictive hierarchy, JEPA, creative, self-heal, intuition, FEP).
      * Gated to run every N steps (default: 5) to amortize cost. */
+    PROF_PHASE_START();
     brain_train_cognitive_subsystems(brain, features, num_features,
                                       target, target_size, label, loss);
+    PROF_PHASE_END("Cognitive_subsystems");
+
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/engram_encoding",
                        (unsigned long long)_blv_step_tracker);
 
@@ -3448,6 +3562,8 @@ sequential_training:
         }
     }
 
+    PROF_PHASE_END("Engram_encoding");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/theory_of_mind",
                        (unsigned long long)_blv_step_tracker);
     /* === THEORY OF MIND: Update self-model during training ===
@@ -3490,6 +3606,8 @@ sequential_training:
          * A dedicated self-rehearsal API would be needed if this is wanted. */
     }
 
+    PROF_PHASE_END("Theory_of_mind");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/recursive_cog",
                        (unsigned long long)_blv_step_tracker);
     /* === RECURSIVE COGNITION: Exercise decomposition during training ===
@@ -3576,6 +3694,8 @@ sequential_training:
         ethics_engine_evaluate_action(brain->ethics, &action);
     }
 
+    PROF_PHASE_END("Recursive_cognition");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/imagination",
                        (unsigned long long)_blv_step_tracker);
     /* === IMAGINATION: Counterfactual simulation during training ===
@@ -3604,6 +3724,8 @@ sequential_training:
         }
     }
 
+    PROF_PHASE_END("Imagination");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/introspection",
                        (unsigned long long)_blv_step_tracker);
     /* === INTROSPECTION: Self-monitoring during metacognition training ===
@@ -3679,6 +3801,8 @@ sequential_training:
             (void)cochlea_verification_bridge_update(brain->cochlea_verification_bridge, _cb_dt_ms);
     }
 
+    PROF_PHASE_END("Introspection");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/sensor_fusion",
                        (unsigned long long)_blv_step_tracker);
     /* === SENSOR FUSION: Exercise sensor processing during training ===
@@ -3721,6 +3845,8 @@ sequential_training:
         nimcp_watchdog_heartbeat((nimcp_safety_watchdog_t*)brain->safety_watchdog);
     }
 
+    PROF_PHASE_END("Sensor_fusion");
+    PROF_PHASE_START();
     NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/embodiment+native_lang",
                        (unsigned long long)_blv_step_tracker);
     /* === EMBODIMENT: Proprioception training ===
@@ -3954,6 +4080,8 @@ sequential_training:
      * enhancement. The meta_adapt_learning_rate() signature takes (meta,
      * region, loss) — no grad_norm arg in the current public header. */
     if (brain->meta_learner) {
+    PROF_PHASE_END("Embodiment_native_lang");
+    PROF_PHASE_START();
         NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/meta_learning",
                            (unsigned long long)_blv_step_tracker);
         (void)meta_adapt_learning_rate(brain->meta_learner,
@@ -3963,6 +4091,16 @@ sequential_training:
 
     clear_cache(brain);
     if (owns_blended) nimcp_free(blended_features);
+
+    /* === COMPREHENSIVE PROFILING SUMMARY === */
+    if (_blv_step_tracker % 10 == 0) {
+        struct timespec _prof_total_end;
+        clock_gettime(CLOCK_MONOTONIC, &_prof_total_end);
+        double total_ms = (_prof_total_end.tv_sec - _prof_total_start.tv_sec) * 1000.0 +
+                         (_prof_total_end.tv_nsec - _prof_total_start.tv_nsec) / 1000000.0;
+        NIMCP_LOGGING_INFO("[PROFILE-TOTAL] Step %llu: %.1fms TOTAL for brain_learn_vector",
+                          (unsigned long long)_blv_step_tracker, total_ms);
+    }
 
     /* Log per-phase timing breakdown (NIMCP_DEBUG_TIMING=1 to enable) */
     if (blv_debug_timing_enabled()) {

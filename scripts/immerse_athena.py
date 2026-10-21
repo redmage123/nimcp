@@ -2084,7 +2084,8 @@ class ParallelDataLoader:
         import logging
         import traceback
         consecutive_failures = 0
-        max_failures = 10
+        max_failures = 100  # Increased from 10 to prevent worker death
+        total_failures = 0
 
         while not self._stop:
             try:
@@ -2099,15 +2100,25 @@ class ParallelDataLoader:
                 features_list = [self.composer.compose(text=d, modality="text") for d in descs]
                 batch = list(zip(descs, features_list, targets))
 
-                self.queue.put(batch, timeout=10)
+                self.queue.put(batch, timeout=30)  # Increased from 10s
                 consecutive_failures = 0  # Reset on success
 
             except Exception as e:
+                error_msg = str(e)
+
+                # Transient errors (array inconsistency, encoding issues) - retry immediately
+                if "Inconsistent object" in error_msg or "length inconsistent" in error_msg:
+                    logging.warning(f"[ParallelDataLoader] Transient encoding error, retrying immediately: {error_msg}")
+                    import time
+                    time.sleep(0.1)  # Brief pause then retry
+                    continue  # Don't count as failure
+
                 consecutive_failures += 1
+                total_failures += 1
                 if self._stop:
                     break
 
-                logging.error(f"[ParallelDataLoader] Worker failed (attempt {consecutive_failures}/{max_failures}): {e}")
+                logging.error(f"[ParallelDataLoader] Worker failed (attempt {consecutive_failures}/{max_failures}, total {total_failures}): {error_msg}")
                 if consecutive_failures <= 3:  # Only log full traceback for first few failures
                     logging.error(f"[ParallelDataLoader] Traceback:\n{traceback.format_exc()}")
 
@@ -3273,15 +3284,41 @@ def _retroactive_cognitive_seed(brain, composer, completed_steps, learning_rate)
 
 def batch_make_semantic_targets(texts, target_dim=BRAIN_OUTPUT_DIM):
     """Batch-compute diversified semantic targets."""
-    embeddings = batch_encode_texts(texts)
+    try:
+        embeddings = batch_encode_texts(texts)
+    except Exception as e:
+        import logging
+        logging.warning(f"batch_encode_texts failed: {e}, retrying individually")
+        # Fallback: encode one by one
+        embeddings = []
+        for text in texts:
+            try:
+                emb = encode_text(text)
+                embeddings.append(emb)
+            except:
+                # If single encoding fails, use zero vector
+                embeddings.append(np.zeros(1024, dtype=np.float32))
+
     targets = []
     for emb, text in zip(embeddings, texts):
-        emb = _target_diversifier.diversify(emb, text)
-        target = np.zeros(target_dim, dtype=np.float32)
-        for i in range(0, target_dim, len(emb)):
-            n = min(len(emb), target_dim - i)
-            target[i:i + n] = emb[:n]
-        targets.append(target.tolist())
+        try:
+            emb = _target_diversifier.diversify(emb, text)
+            # Ensure emb is a valid array
+            if not isinstance(emb, np.ndarray):
+                emb = np.array(emb, dtype=np.float32)
+            if len(emb) == 0:
+                emb = np.zeros(1024, dtype=np.float32)
+
+            target = np.zeros(target_dim, dtype=np.float32)
+            for i in range(0, target_dim, len(emb)):
+                n = min(len(emb), target_dim - i)
+                target[i:i + n] = emb[:n]
+            targets.append(target.tolist())
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to create target for text, using zeros: {e}")
+            targets.append(np.zeros(target_dim, dtype=np.float32).tolist())
+
     return targets
 
 

@@ -3353,6 +3353,11 @@ int snn_network_step(snn_network_t* network, float dt) {
     network->sim->current_time_us += dt_us;
     network->sim->step_count++;
 
+    /* ==== PROFILING: Track post-step operations ==== */
+    struct timespec _prof_post_start;
+    clock_gettime(CLOCK_MONOTONIC, &_prof_post_start);
+    double _prof_ema_ms = 0, _prof_stats_ms = 0, _prof_kg_ms = 0, _prof_fno_ms = 0, _prof_debug_ms = 0;
+
     /* Per-population firing-rate EMA for homeostatic plasticity.
      * Counts fresh spike_output from this step and folds into an EMA
      * with alpha=0.01 (≈100-step time constant). The EMA is consumed
@@ -3405,8 +3410,10 @@ int snn_network_step(snn_network_t* network, float dt) {
     clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
     _ema_ring_ms = (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
                  + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
+    _prof_ema_ms = _ema_ring_ms;
 
     /* Update statistics */
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
     clock_gettime(CLOCK_MONOTONIC, &_step_t1);
     double step_ms = (_step_t1.tv_sec - _step_t0.tv_sec) * 1000.0
                    + (_step_t1.tv_nsec - _step_t0.tv_nsec) / 1e6;
@@ -3473,11 +3480,15 @@ int snn_network_step(snn_network_t* network, float dt) {
             }
         }
     }
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
+    _prof_stats_ms = (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
+                   + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
 
     /* W5 KG anomaly emit — compute an approximate per-step spike rate and
      * emit only when it crosses the quiescent/hyperactive boundaries.
      * Normal operation never writes to the KG. Rate estimate uses
      * total_spikes over the step interval and a coarse neuron count. */
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
     if (s_net_snn_kg_brain && step_ms > 0.0) {
         uint32_t total_neurons = 0;
         for (uint32_t p = 0; p < network->n_populations; p++) {
@@ -3497,9 +3508,15 @@ int snn_network_step(snn_network_t* network, float dt) {
             }
         }
     }
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
+    _prof_kg_ms = (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
+                + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
 
     /* Log timing breakdown every step for profiling */
     {
+        double post_total_ms = _prof_ema_ms + _prof_stats_ms + _prof_kg_ms + _prof_fno_ms + _prof_debug_ms;
+        double unaccounted_ms = step_ms - _cbgpu_ms - _isyn_ms - _lif_ms - _substrate_debit_ms - post_total_ms;
+
         NIMCP_LOGGING_INFO("SNN step %llu: total=%.1fms (isyn=%.1fms lif+readback=%.1fms "
                            "cbgpu=%.1fms substrate_debit=%.1fms ema_ring=%.1fms) "
                            "spikes=%d gpu=%s avg=%.1fms",
@@ -3508,12 +3525,23 @@ int snn_network_step(snn_network_t* network, float dt) {
                            _cbgpu_ms, _substrate_debit_ms, _ema_ring_ms,
                            total_spikes, gpu_executed ? "yes" : "no",
                            network->stats.avg_step_time_ms);
+
+        /* Detailed post-step profiling every 10 steps */
+        if (network->stats.total_steps % 10 == 0) {
+            NIMCP_LOGGING_INFO("[SNN-PROFILE] Step %llu post-step breakdown: "
+                               "ema=%.1fms stats=%.1fms kg=%.1fms fno=%.1fms debug=%.1fms "
+                               "post_total=%.1fms unaccounted=%.1fms",
+                               (unsigned long long)network->stats.total_steps,
+                               _prof_ema_ms, _prof_stats_ms, _prof_kg_ms, _prof_fno_ms, _prof_debug_ms,
+                               post_total_ms, unaccounted_ms);
+        }
     }
 
     /* === PER-POPULATION DIAGNOSTICS (NIMCP_DEBUG_SNN=1) ===
      * Every 100 steps, dump per-population spike counts, mean V, mean I_syn.
      * Tells us exactly which populations are firing, which are dead, and
      * why (flat V = no input current; threshold V = input adequate). */
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
     {
         static int _snn_dbg_checked = 0, _snn_dbg = 0;
         if (!_snn_dbg_checked) {
@@ -3656,12 +3684,19 @@ int snn_network_step(snn_network_t* network, float dt) {
             NIMCP_LOGGING_INFO("[SNN-TIER] %s", tier_summary);
         }
     }
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
+    _prof_debug_ms = (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
+                   + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
 
     /* FNO recording: pair the V_before snapshot taken at function entry with
      * the now-settled V_after + spike vectors and feed snn_fno_record_pair
      * for each population's FNO. Runs after stats so the observed state is
      * fully consistent. No-op when recording is disabled. */
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
     snn_fno_record_post_step(network);
+    clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
+    _prof_fno_ms = (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
+                 + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
 
     return total_spikes;
 }
