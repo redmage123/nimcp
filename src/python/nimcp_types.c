@@ -69,22 +69,33 @@ static int Brain_init(BrainObject* self, PyObject* args, PyObject* kwds)
     int size = -1, task = NIMCP_TASK_CLASSIFICATION;
     unsigned int num_inputs = 10, num_outputs = 10;
     unsigned int neuron_count = 0;
+    unsigned int snn_neuron_count = 0;  /* Added for training script compatibility */
+    unsigned int lnn_neuron_count = 0;  /* Added for training script compatibility */
     const char* checkpoint = NULL;
     const char* init_mode = NULL;
 
     static char* kwlist[] = {"name", "size", "task", "inputs", "outputs",
                              "num_inputs", "num_outputs", "neuron_count",
-                             "checkpoint", "init_mode", NULL};
+                             "checkpoint", "init_mode",
+                             "snn_neuron_count", "lnn_neuron_count", NULL};
 
     // Parse constructor arguments — all optional except name
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|iiIIIIIzz", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|iiIIIIIzzII", kwlist,
                                      &name, &size, &task,
                                      &num_inputs, &num_outputs,
                                      &num_inputs, &num_outputs,
-                                     &neuron_count, &checkpoint, &init_mode)) {
+                                     &neuron_count, &checkpoint, &init_mode,
+                                     &snn_neuron_count, &lnn_neuron_count)) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "Brain_init: operation failed");
         return -1;
     }
+
+    /* Note: snn_neuron_count and lnn_neuron_count are accepted but currently
+     * not passed to the C API. The brain creation uses default network sizes
+     * based on total neuron_count. Future enhancement: wire these through to
+     * brain_create_custom() with explicit network sizing. */
+    (void)snn_neuron_count;
+    (void)lnn_neuron_count;
 
     // Validate task parameter
     if (task < NIMCP_TASK_CLASSIFICATION || task > NIMCP_TASK_ASSOCIATION) {
