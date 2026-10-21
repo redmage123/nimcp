@@ -1317,7 +1317,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_hnn_coherence(
             brain_t brain, grounded_language_t* gl, void* state);
-        (void)grounded_language_integrate_hnn_coherence(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_hnn_coherence(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5n. JEPA Predictive Semantics → language (2026-10-21). Anticipatory continuation
@@ -1326,7 +1326,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_jepa_predictive(
             brain_t brain, grounded_language_t* gl, void* state);
-        (void)grounded_language_integrate_jepa_predictive(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_jepa_predictive(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5o. World Model Counterfactuals → language (2026-10-21). Grounded reasoning
@@ -1335,7 +1335,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_world_model(
             brain_t brain, grounded_language_t* gl, void* state);
-        (void)grounded_language_integrate_world_model(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_world_model(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5p. Parietal Spatial/Numerical → language (2026-10-21). Embodied grounding
@@ -1344,7 +1344,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_parietal(
             brain_t brain, grounded_language_t* gl, void* state);
-        (void)grounded_language_integrate_parietal(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_parietal(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5q. Hypothalamus Homeostatic Drives → language (2026-10-21). Drive states
@@ -1353,7 +1353,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_hypothalamus(
             brain_t brain, grounded_language_t* gl, void* state);
-        (void)grounded_language_integrate_hypothalamus(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_hypothalamus(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5r. Basal Ganglia Action Selection → language (2026-10-21). Goal-directed
@@ -1362,7 +1362,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_basal_ganglia(
             brain_t brain, grounded_language_t* gl, void* state);
-        (void)grounded_language_integrate_basal_ganglia(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_basal_ganglia(brain, brain->grounded_lang, (void*)state);
     }
 
     /* === GROUP 1: Core Memory & Emotion (dims 450-655) === */
@@ -1372,7 +1372,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_cerebellum(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_cerebellum(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_cerebellum(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5t. Hippocampus Episodic Memory → language. Place cells, time cells,
@@ -1380,7 +1380,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_hippocampus(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_hippocampus(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_hippocampus(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5u. Amygdala Emotion → language. Fear, joy, threat, arousal.
@@ -1388,7 +1388,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_amygdala(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_amygdala(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_amygdala(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5v. Prefrontal Executive → language. Goals, planning, inhibition.
@@ -1396,7 +1396,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_prefrontal(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_prefrontal(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_prefrontal(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5w. Insula Interoception → language. Bodily states, empathy.
@@ -1404,7 +1404,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_insula(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_insula(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_insula(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5x. Anterior Cingulate Error Detection → language. Conflict, uncertainty.
@@ -1412,7 +1412,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_acc(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_acc(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_acc(brain, brain->grounded_lang, (void*)state);
     }
 
     /* === GROUP 2: Social & Self-Awareness (dims 660-785) === */
@@ -1422,7 +1422,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_tom(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_tom(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_tom(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5z. Introspection Metacognition → language. Self-monitoring, confidence.
@@ -1430,7 +1430,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_introspection(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_introspection(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_introspection(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5aa. Imagination → language. Mental imagery, creative metaphors.
@@ -1438,7 +1438,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_imagination(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_imagination(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_imagination(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5ab. Mirror Neurons → language. Action understanding, empathetic simulation.
@@ -1446,7 +1446,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_mirror(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_mirror(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_mirror(brain, brain->grounded_lang, (void*)state);
     }
 
     /* === GROUP 3: Synthesis & Integration (dims 790-850) === */
@@ -1456,7 +1456,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_consciousness(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_consciousness(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_consciousness(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5ad. Episodic Replay → language. Memory consolidation, knowledge extraction.
@@ -1464,7 +1464,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_episodic_replay(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_episodic_replay(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_episodic_replay(brain, brain->grounded_lang, (void*)state);
     }
 
     /* 5ae. Prime Resonance Memory → language (2026-10-21). Content-addressable
@@ -1476,7 +1476,7 @@ static int cascade_stage_content(brain_t brain,
     {
         extern int grounded_language_integrate_prime_resonance(
             brain_t brain, void* gl, void* state);
-        (void)grounded_language_integrate_prime_resonance(brain, brain->grounded_lang, (void*state);
+        (void)grounded_language_integrate_prime_resonance(brain, brain->grounded_lang, (void*)state);
     }
 
     /* Anchor magnitude = ||content_intent|| after prompt + all cognitive
