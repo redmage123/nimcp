@@ -3378,6 +3378,9 @@ endif()
 # Add testing API support
 target_compile_definitions(nimcp PRIVATE NIMCP_TESTING)
 
+# Allow insecure crypto fallback when libsodium is not available (dev/training only)
+target_compile_definitions(nimcp PRIVATE NIMCP_ALLOW_INSECURE_FALLBACK)
+
 # DISABLED: Enable separate learning module - guards duplicate functions in nimcp_neuralnet.c
 # target_compile_definitions(nimcp PRIVATE NEURALNET_LEARNING_SEPARATE)
 
