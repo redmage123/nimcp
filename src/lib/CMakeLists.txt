@@ -3331,7 +3331,7 @@ target_link_libraries(nimcp
         Python3::Python
         lz4
         jansson
-        cjson
+        # cjson  # DISABLED: compiling from bundled source instead
         atomic
         sqlite3
 )
