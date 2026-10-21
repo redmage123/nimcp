@@ -1510,6 +1510,28 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         }
     }
 
+    /* Phase 5pre: extract logical facts for symbolic logic KB (2026-10-21).
+     * When symbolic logic is enabled AND we have a label, attempt to
+     * extract subject-verb-object facts for the knowledge base. Runs AFTER
+     * ethics/LGSS/NaN validation so the KB never ingests adversarial data.
+     * Example: label="cat is animal" → is_a(cat, animal) predicate.
+     * Future: POS tagging + dependency parsing for richer extraction.
+     * Current: simple heuristic extraction from label text. */
+    if (brain->symbolic_logic && brain->grounded_language && label && label[0] != '\0') {
+        extern bool grounded_language_logic_enabled(const void* gl);
+        if (grounded_language_logic_enabled(brain->grounded_language)) {
+            /* Simple fact extraction heuristic:
+             * "X is Y" → is_a(X, Y)
+             * "X has Y" → has_property(X, Y)
+             * More sophisticated extraction will use POS tags + dependency parse
+             * in a future commit. For now, just log that the path is wired. */
+            extern bool symbolic_logic_extract_fact_from_text(
+                void* logic, const char* text, float confidence);
+            (void)symbolic_logic_extract_fact_from_text(
+                brain->symbolic_logic, label, confidence);
+        }
+    }
+
     /* Phase 5A: drive the octopus module with the clean training input.
      * Runs after ethics + LGSS + NaN/Inf validation so arms never see
      * adversarial or corrupted data. Forward-declared to avoid pulling

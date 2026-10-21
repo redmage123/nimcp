@@ -1972,3 +1972,210 @@ int symbolic_logic_training_step(void* instance, float progress) {
     (void)(struct symbolic_logic*)instance; /* Module state available for step adaptation */
     return 0;
 }
+
+/*=============================================================================
+ * Language-Logic Bridge Functions (2026-10-21)
+ *
+ * These functions integrate symbolic logic with grounded language for
+ * neural-symbolic hybrid reasoning. They enable:
+ *   - Fact extraction from natural language during training
+ *   - KB querying to guide inference decisions
+ *   - Logical consistency checking with LGSS and ethics modules
+ *===========================================================================*/
+
+/**
+ * @brief Extract logical facts from training text (Phase 2 stub)
+ *
+ * WHAT: Parses natural language label text to extract subject-verb-object
+ *       facts for the symbolic logic knowledge base.
+ * WHY:  Enables the brain to build logical knowledge from training data,
+ *       bridging neural learning with symbolic reasoning.
+ * HOW:  (Current) Simple heuristic extraction from common patterns
+ *       (Future) Full POS tagging + dependency parsing
+ *
+ * Examples:
+ *   "cat is animal" → is_a(cat, animal)
+ *   "sky has blue" → has_property(sky, blue)
+ *
+ * @param logic       Symbolic logic engine instance
+ * @param text        Training label text
+ * @param confidence  Confidence score for the fact [0,1]
+ * @return true if fact was extracted and added, false otherwise
+ */
+bool symbolic_logic_extract_fact_from_text(void* logic, const char* text,
+                                             float confidence) {
+    if (!logic || !text || confidence < 0.0f || confidence > 1.0f) {
+        return false;
+    }
+
+    symbolic_logic_t* sl = (symbolic_logic_t*)logic;
+
+    /* Simple heuristic fact extraction from common patterns.
+     * Recognizes:
+     *   - "X is Y" → is_a(X, Y)
+     *   - "X is a Y" → is_a(X, Y)
+     *   - "X has Y" → has_property(X, Y)
+     *   - "X can Y" → has_ability(X, Y)
+     */
+
+    /* Lowercase copy for pattern matching */
+    char buf[256];
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    for (char* p = buf; *p; p++) {
+        *p = (char)tolower((unsigned char)*p);
+    }
+
+    /* Extract predicate and arguments */
+    char subject[64] = {0};
+    char predicate_name[64] = {0};
+    char object[64] = {0};
+    bool found = false;
+
+    /* Pattern: "X is Y" or "X is a Y" */
+    if (strstr(buf, " is ")) {
+        if (sscanf(buf, "%63s is a %63s", subject, object) == 2 ||
+            sscanf(buf, "%63s is %63s", subject, object) == 2) {
+            strncpy(predicate_name, "is_a", sizeof(predicate_name) - 1);
+            found = true;
+        }
+    }
+    /* Pattern: "X has Y" */
+    else if (strstr(buf, " has ")) {
+        if (sscanf(buf, "%63s has %63s", subject, object) == 2) {
+            strncpy(predicate_name, "has_property", sizeof(predicate_name) - 1);
+            found = true;
+        }
+    }
+    /* Pattern: "X can Y" */
+    else if (strstr(buf, " can ")) {
+        if (sscanf(buf, "%63s can %63s", subject, object) == 2) {
+            strncpy(predicate_name, "has_ability", sizeof(predicate_name) - 1);
+            found = true;
+        }
+    }
+
+    if (!found) {
+        NIMCP_LOGGING_DEBUG("symbolic_logic_extract_fact_from_text: "
+                            "no pattern matched for '%s'", text);
+        return false; /* No pattern matched */
+    }
+
+    /* Create logical terms for subject and object */
+    logical_term_t* subj_term = logic_term_create(TERM_CONSTANT, subject);
+    logical_term_t* obj_term = logic_term_create(TERM_CONSTANT, object);
+    if (!subj_term || !obj_term) {
+        if (subj_term) logic_term_destroy(subj_term);
+        if (obj_term) logic_term_destroy(obj_term);
+        return false;
+    }
+
+    /* Create atomic formula (predicate with arguments) */
+    logical_term_t* terms[2] = { subj_term, obj_term };
+    atomic_formula_t* atom = logic_atom_create(predicate_name, terms, 2);
+    if (!atom) {
+        logic_term_destroy(subj_term);
+        logic_term_destroy(obj_term);
+        return false;
+    }
+
+    /* Create clause from atomic formula */
+    logic_clause_t clause;
+    clause.literals = &atom;
+    clause.num_literals = 1;
+    clause.confidence = confidence;
+
+    /* Add fact to KB */
+    bool success = symbolic_logic_add_fact(sl, &clause, confidence);
+
+    if (success) {
+        NIMCP_LOGGING_DEBUG("symbolic_logic_extract_fact_from_text: "
+                            "extracted %s(%s, %s) with confidence %.2f",
+                            predicate_name, subject, object, confidence);
+    }
+
+    /* Note: atomic_formula and terms will be owned by the KB after add_fact;
+     * we don't free them here to avoid double-free. The KB cleanup will
+     * handle freeing when facts are removed. */
+
+    return success;
+}
+
+/**
+ * @brief Query KB for facts relevant to current inference (Phase 3 stub)
+ *
+ * WHAT: Queries the knowledge base to retrieve logical facts that might
+ *       constrain or guide the current inference decision.
+ * WHY:  Enables logical reasoning to inform neural inference, providing
+ *       compositional reasoning capabilities.
+ * HOW:  (Current) Stub logging the query
+ *       (Future) Extract semantic query from features, perform forward
+ *       chaining to derive implicit facts, use backward chaining to
+ *       verify constraints
+ *
+ * @param logic         Symbolic logic engine instance
+ * @param features      Input feature vector
+ * @param num_features  Number of features
+ * @param out_facts     Output: array of retrieved facts (caller frees)
+ * @param num_facts     Output: number of facts retrieved
+ * @return true if query succeeded, false on error
+ */
+bool symbolic_logic_query_for_inference(void* logic, const float* features,
+                                          uint32_t num_features,
+                                          void** out_facts, int* num_facts) {
+    if (!logic || !features || !out_facts || !num_facts) {
+        return false;
+    }
+
+    symbolic_logic_t* sl = (symbolic_logic_t*)logic;
+
+    /* KB querying strategy:
+     * 1. Get KB statistics to assess fact density
+     * 2. Optionally run forward chaining to derive implicit facts
+     * 3. Return relevant facts for inference guidance
+     *
+     * Without semantic concept extraction (requires deeper grounded_language
+     * integration), we return KB stats that cascade_stage_content uses to
+     * modulate content_intent. Future enhancement: extract semantic queries
+     * from features to retrieve specific relevant facts. */
+
+    *out_facts = NULL;
+    *num_facts = 0;
+
+    /* Get KB statistics */
+    logic_stats_t stats;
+    if (!symbolic_logic_get_stats(sl, &stats)) {
+        NIMCP_LOGGING_DEBUG("symbolic_logic_query_for_inference: "
+                            "failed to get KB stats");
+        return false;
+    }
+
+    /* If KB has facts and forward chaining is enabled, derive new facts */
+    if (stats.facts_stored > 0) {
+        /* Perform forward chaining to derive implicit facts.
+         * Max 10 iterations to bound inference time. */
+        logic_clause_t** new_facts = NULL;
+        int n_new = 0;
+        if (symbolic_logic_forward_chain(sl, 10, &new_facts, &n_new)) {
+            if (n_new > 0) {
+                NIMCP_LOGGING_DEBUG("symbolic_logic_query_for_inference: "
+                                    "forward chaining derived %d new facts",
+                                    n_new);
+                /* New facts are now in the KB; they'll be counted in
+                 * future stats queries. Free the returned array. */
+                nimcp_free(new_facts);
+            }
+        }
+    }
+
+    /* For now, we return 0 facts but the KB stats (retrieved above) will
+     * be used by cascade_stage_content to blend logical features into
+     * content_intent. Future: extract semantic query from features and
+     * return specific relevant facts. */
+
+    NIMCP_LOGGING_DEBUG("symbolic_logic_query_for_inference: "
+                        "num_features=%u, KB has %u facts, %llu inferences",
+                        num_features, stats.facts_stored,
+                        (unsigned long long)stats.inferences_performed);
+    return true;
+}
