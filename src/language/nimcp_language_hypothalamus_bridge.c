@@ -278,8 +278,7 @@ int grounded_language_integrate_hypothalamus(brain_t brain,
  * @return true if hypothalamus integration is active
  */
 bool grounded_language_hypothalamus_enabled(const grounded_language_t* gl) {
-    if (!gl) return false;
-    /* For now, always enabled when brainstem is present.
-     * Future: add runtime flag to grounded_language struct. */
-    return true;
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 8)); /* GL_BRIDGE_HYPOTHALAMUS */
 }

@@ -79,6 +79,32 @@ typedef struct {
 } gl_discourse_state_t;
 
 /**
+ * D1 FIX: Cognitive bridge enable flag bit positions (2026-10-21).
+ * Used with grounded_language.bridge_enable_flags bitfield.
+ */
+#define GL_BRIDGE_ACC                (1u << 0)
+#define GL_BRIDGE_AMYGDALA           (1u << 1)
+#define GL_BRIDGE_BASAL_GANGLIA      (1u << 2)
+#define GL_BRIDGE_CEREBELLUM         (1u << 3)
+#define GL_BRIDGE_CONSCIOUSNESS      (1u << 4)
+#define GL_BRIDGE_EPISODIC_REPLAY    (1u << 5)
+#define GL_BRIDGE_HAMILTONIAN        (1u << 6)
+#define GL_BRIDGE_HIPPOCAMPUS        (1u << 7)
+#define GL_BRIDGE_HYPOTHALAMUS       (1u << 8)
+#define GL_BRIDGE_IMAGINATION        (1u << 9)
+#define GL_BRIDGE_INSULA             (1u << 10)
+#define GL_BRIDGE_INTROSPECTION      (1u << 11)
+#define GL_BRIDGE_JEPA               (1u << 12)
+#define GL_BRIDGE_MIRROR             (1u << 13)
+#define GL_BRIDGE_PARIETAL           (1u << 14)
+#define GL_BRIDGE_PREFRONTAL         (1u << 15)
+#define GL_BRIDGE_PRIME_RESONANCE    (1u << 16)
+#define GL_BRIDGE_TEMPORAL           (1u << 17)
+#define GL_BRIDGE_TOM                (1u << 18)
+#define GL_BRIDGE_WORLD_MODEL        (1u << 19)
+#define GL_BRIDGE_ALL                0xFFFFFFFFu  /**< All bridges enabled */
+
+/**
  * @brief Internal state of the grounded language system.
  *
  * Layout previously lived in nimcp_grounded_language.c. Moved here so the
@@ -613,6 +639,14 @@ struct grounded_language {
      * brain init / load. Default: pointer NULL, flag false. */
     void*                symbolic_logic;         /* symbolic_logic_t* */
     bool                 logic_enabled;
+
+    /* D1 FIX: Cognitive bridge enable flags (2026-10-21). Bitfield for
+     * runtime enable/disable of individual cognitive→language integration
+     * modules. Replaces the ineffective `return gl != NULL` pattern with
+     * per-module toggles. Default: all enabled (0xFFFFFFFF). Bit positions
+     * defined via GL_BRIDGE_* constants below. Runtime-only (not persisted;
+     * re-apply from config on daemon restart). */
+    uint32_t             bridge_enable_flags;
 };
 
 /**

@@ -317,5 +317,7 @@ int grounded_language_integrate_prime_resonance(brain_t brain,
  * @return true if prime resonance is active
  */
 bool grounded_language_prime_resonance_enabled(const grounded_language_t* gl) {
-    return (gl != NULL);
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 16)); /* GL_BRIDGE_PRIME_RESONANCE */
 }

@@ -173,5 +173,7 @@ int grounded_language_integrate_hippocampus(brain_t brain,
 }
 
 bool grounded_language_hippocampus_enabled(const grounded_language_t* gl) {
-    return (gl != NULL);
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 7)); /* GL_BRIDGE_HIPPOCAMPUS */
 }

@@ -1890,6 +1890,10 @@ grounded_language_t* grounded_language_create(uint32_t semantic_dim, void* seman
      * struct layout. */
     gl->enable_speech_act_classification = false;
 
+    /* D1 FIX (2026-10-21) — all cognitive bridges enabled by default. Runtime
+     * toggle via grounded_language_set_bridge_enable_flags(). */
+    gl->bridge_enable_flags = GL_BRIDGE_ALL;
+
     /* RNG */
     gl->rng_state = (uint64_t)time(NULL) ^ 0xDEADBEEFCAFEULL;
 
@@ -9679,4 +9683,22 @@ uint32_t grounded_language_filter_production_by_mask(
 
     nimcp_free(dup);
     return dropped;
+}
+
+/* D1 FIX (2026-10-21): Bridge enable flag getters/setters */
+
+void grounded_language_set_bridge_enable_flags(grounded_language_t* gl,
+                                                 uint32_t flags) {
+    if (!gl) return;
+    gl->bridge_enable_flags = flags;
+}
+
+uint32_t grounded_language_get_bridge_enable_flags(const grounded_language_t* gl) {
+    return gl ? gl->bridge_enable_flags : 0u;
+}
+
+bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                           uint32_t mask) {
+    if (!gl) return false;
+    return (gl->bridge_enable_flags & mask) != 0;
 }

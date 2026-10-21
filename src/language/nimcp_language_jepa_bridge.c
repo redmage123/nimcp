@@ -248,8 +248,7 @@ int grounded_language_integrate_jepa_predictive(brain_t brain,
  * @return true if JEPA predictive integration is active
  */
 bool grounded_language_jepa_predictive_enabled(const grounded_language_t* gl) {
-    if (!gl) return false;
-    /* For now, always enabled when JEPA bridges are present.
-     * Future: add runtime flag to grounded_language struct. */
-    return true;
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 12)); /* GL_BRIDGE_JEPA */
 }

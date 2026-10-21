@@ -3355,6 +3355,36 @@ uint32_t grounded_language_filter_production_by_mask(
     grounded_language_t* gl,
     gl_production_result_t* result);
 
+/**
+ * @brief Set bridge enable flags (D1 FIX, 2026-10-21)
+ *
+ * Controls which cognitive→language integration modules are active.
+ * Bitfield uses GL_BRIDGE_* constants from internal header.
+ *
+ * @param gl     Grounded language instance
+ * @param flags  Bitfield of enabled bridges (GL_BRIDGE_ALL = all enabled)
+ */
+void grounded_language_set_bridge_enable_flags(grounded_language_t* gl,
+                                                 uint32_t flags);
+
+/**
+ * @brief Get bridge enable flags
+ *
+ * @param gl  Grounded language instance
+ * @return Bitfield of enabled bridges
+ */
+uint32_t grounded_language_get_bridge_enable_flags(const grounded_language_t* gl);
+
+/**
+ * @brief Check if specific bridge is enabled
+ *
+ * @param gl     Grounded language instance
+ * @param mask   Bridge bit mask (e.g., GL_BRIDGE_HIPPOCAMPUS)
+ * @return true if bridge is enabled
+ */
+bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                           uint32_t mask);
+
 #ifdef __cplusplus
 }
 #endif

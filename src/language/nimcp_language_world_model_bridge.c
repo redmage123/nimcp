@@ -369,8 +369,7 @@ int grounded_language_integrate_world_model(brain_t brain,
  * @return true if world model integration is active
  */
 bool grounded_language_world_model_enabled(const grounded_language_t* gl) {
-    if (!gl) return false;
-    /* For now, always enabled when world model data is available.
-     * Future: add runtime flag to grounded_language struct. */
-    return true;
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 19)); /* GL_BRIDGE_WORLD_MODEL */
 }

@@ -228,8 +228,7 @@ int grounded_language_integrate_hnn_coherence(brain_t brain,
  * @return true if HNN energy-based coherence is active
  */
 bool grounded_language_hnn_coherence_enabled(const grounded_language_t* gl) {
-    if (!gl) return false;
-    /* For now, always enabled when HNN is present.
-     * Future: add runtime flag to grounded_language struct. */
-    return true;
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 6)); /* GL_BRIDGE_HAMILTONIAN */
 }

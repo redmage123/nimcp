@@ -287,14 +287,13 @@ int grounded_language_integrate_basal_ganglia(brain_t brain,
 }
 
 /**
- * @brief Query whether basal ganglia coupling is enabled
+ * @brief Query whether basal ganglia coupling is enabled (D1 FIX, 2026-10-21)
  *
  * @param gl  Grounded language instance
  * @return true if basal ganglia integration is active
  */
 bool grounded_language_basal_ganglia_enabled(const grounded_language_t* gl) {
-    if (!gl) return false;
-    /* For now, always enabled when basal ganglia is present.
-     * Future: add runtime flag to grounded_language struct. */
-    return true;
+    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
+                                                      uint32_t mask);
+    return grounded_language_is_bridge_enabled(gl, (1u << 2)); /* GL_BRIDGE_BASAL_GANGLIA */
 }
