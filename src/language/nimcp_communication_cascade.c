@@ -1365,6 +1365,108 @@ static int cascade_stage_content(brain_t brain,
         (void)grounded_language_integrate_basal_ganglia(brain, gl, (void*)state);
     }
 
+    /* === GROUP 1: Core Memory & Emotion (dims 450-655) === */
+
+    /* 5s. Cerebellum Timing → language. Motor prediction, temporal precision,
+     * procedural knowledge. Weight 0.16, dims 450-475. */
+    {
+        extern int grounded_language_integrate_cerebellum(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_cerebellum(brain, gl, (void*)state);
+    }
+
+    /* 5t. Hippocampus Episodic Memory → language. Place cells, time cells,
+     * autobiographical narratives. Weight 0.24, dims 480-580. */
+    {
+        extern int grounded_language_integrate_hippocampus(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_hippocampus(brain, gl, (void*)state);
+    }
+
+    /* 5u. Amygdala Emotion → language. Fear, joy, threat, arousal.
+     * Weight 0.20, dims 525-550. */
+    {
+        extern int grounded_language_integrate_amygdala(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_amygdala(brain, gl, (void*)state);
+    }
+
+    /* 5v. Prefrontal Executive → language. Goals, planning, inhibition.
+     * Weight 0.25, dims 555-600. */
+    {
+        extern int grounded_language_integrate_prefrontal(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_prefrontal(brain, gl, (void*)state);
+    }
+
+    /* 5w. Insula Interoception → language. Bodily states, empathy.
+     * Weight 0.18, dims 605-630. */
+    {
+        extern int grounded_language_integrate_insula(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_insula(brain, gl, (void*)state);
+    }
+
+    /* 5x. Anterior Cingulate Error Detection → language. Conflict, uncertainty.
+     * Weight 0.17, dims 635-655. */
+    {
+        extern int grounded_language_integrate_acc(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_acc(brain, gl, (void*)state);
+    }
+
+    /* === GROUP 2: Social & Self-Awareness (dims 660-785) === */
+
+    /* 5y. Theory of Mind → language. Belief attribution, perspective.
+     * Weight 0.22, dims 660-690. */
+    {
+        extern int grounded_language_integrate_tom(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_tom(brain, gl, (void*)state);
+    }
+
+    /* 5z. Introspection Metacognition → language. Self-monitoring, confidence.
+     * Weight 0.19, dims 695-720. */
+    {
+        extern int grounded_language_integrate_introspection(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_introspection(brain, gl, (void*)state);
+    }
+
+    /* 5aa. Imagination → language. Mental imagery, creative metaphors.
+     * Weight 0.21, dims 725-760. */
+    {
+        extern int grounded_language_integrate_imagination(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_imagination(brain, gl, (void*)state);
+    }
+
+    /* 5ab. Mirror Neurons → language. Action understanding, empathetic simulation.
+     * Weight 0.16, dims 765-785. */
+    {
+        extern int grounded_language_integrate_mirror(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_mirror(brain, gl, (void*)state);
+    }
+
+    /* === GROUP 3: Synthesis & Integration (dims 790-850) === */
+
+    /* 5ac. Consciousness Global Workspace → language. Attentional broadcast,
+     * integration. Weight 0.23, dims 790-820. */
+    {
+        extern int grounded_language_integrate_consciousness(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_consciousness(brain, gl, (void*)state);
+    }
+
+    /* 5ad. Episodic Replay → language. Memory consolidation, knowledge extraction.
+     * Weight 0.18, dims 825-850. */
+    {
+        extern int grounded_language_integrate_episodic_replay(
+            brain_t brain, void* gl, void* state);
+        (void)grounded_language_integrate_episodic_replay(brain, gl, (void*)state);
+    }
+
     /* Anchor magnitude = ||content_intent|| after prompt + all cognitive
      * sources but BEFORE any network blend. Each network below is unit-
      * normalized then scaled to a fraction of this anchor, so none can dominate
