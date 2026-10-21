@@ -1188,9 +1188,9 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
      * Integrates with LGSS (fact-based safety rules) and ethics (logical
      * consistency with moral principles). Runs AFTER input validation so KB
      * queries never process adversarial data. */
-    if (brain->symbolic_logic && brain->grounded_language) {
-        extern bool grounded_language_logic_enabled(const void* gl);
-        if (grounded_language_logic_enabled(brain->grounded_language)) {
+    if (brain->symbolic_logic && brain->grounded_lang) {
+        extern bool grounded_language_logic_enabled(const grounded_language_t* gl);
+        if (grounded_language_logic_enabled(brain->grounded_lang)) {
             /* Query KB for facts relevant to current input.
              * Future enhancement: extract semantic query from features,
              * perform forward chaining to derive implicit facts,
@@ -1214,12 +1214,12 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
                 memset(&logic_ctx, 0, sizeof(logic_ctx));
                 strncpy(logic_ctx.string_fields[0].key, "operation", 63);
                 strncpy(logic_ctx.string_fields[0].value, "logical_inference", SAFETY_MAX_VALUE_LEN - 1);
-                lgss_input_ctx.num_string_fields = 1;
+                logic_ctx.num_string_fields = 1;
 
                 strncpy(logic_ctx.numeric_fields[0].key, "num_facts", 63);
                 logic_ctx.numeric_fields[0].value = (float)n_facts;
                 logic_ctx.num_numeric_fields = 1;
-                logic_ctx.domain_hint = SAFETY_DOMAIN_REASONING;
+                logic_ctx.domain_hint = SAFETY_DOMAIN_GOVERNANCE; /* Logical reasoning safety */
                 logic_ctx.has_domain_hint = true;
                 snprintf(logic_ctx.action_description, sizeof(logic_ctx.action_description),
                     "Logical KB query returned %d facts for inference guidance", n_facts);

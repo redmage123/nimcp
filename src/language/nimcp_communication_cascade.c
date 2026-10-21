@@ -1256,10 +1256,10 @@ static int cascade_stage_content(brain_t brain,
      *   - Enable fact-based consistency and compositional reasoning
      * Weight 0.25 — logic provides structured constraints on language. */
     const float w_logic = 0.25f;
-    if (brain->grounded_language && dim >= 64) {
+    if (brain->grounded_lang && dim >= 64) {
         extern bool grounded_language_logic_enabled(const grounded_language_t* gl);
         struct grounded_language;
-        if (grounded_language_logic_enabled(brain->grounded_language)) {
+        if (grounded_language_logic_enabled(brain->grounded_lang)) {
             /* Get symbolic logic statistics for content modulation */
             extern bool symbolic_logic_get_stats(const void* logic, void* stats);
             typedef struct {
@@ -1275,7 +1275,7 @@ static int cascade_stage_content(brain_t brain,
             extern void* grounded_language_get_symbolic_logic_ptr(
                 const grounded_language_t* gl);
             void* logic_ptr = grounded_language_get_symbolic_logic_ptr(
-                brain->grounded_language);
+                brain->grounded_lang);
 
             if (logic_ptr) {
                 logic_stats_t stats;

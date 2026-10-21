@@ -1517,9 +1517,9 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
      * Example: label="cat is animal" → is_a(cat, animal) predicate.
      * Future: POS tagging + dependency parsing for richer extraction.
      * Current: simple heuristic extraction from label text. */
-    if (brain->symbolic_logic && brain->grounded_language && label && label[0] != '\0') {
-        extern bool grounded_language_logic_enabled(const void* gl);
-        if (grounded_language_logic_enabled(brain->grounded_language)) {
+    if (brain->symbolic_logic && brain->grounded_lang && label && label[0] != '\0') {
+        extern bool grounded_language_logic_enabled(const grounded_language_t* gl);
+        if (grounded_language_logic_enabled(brain->grounded_lang)) {
             /* Simple fact extraction heuristic:
              * "X is Y" → is_a(X, Y)
              * "X has Y" → has_property(X, Y)

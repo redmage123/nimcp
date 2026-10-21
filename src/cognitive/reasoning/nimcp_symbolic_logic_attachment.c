@@ -166,9 +166,9 @@ bool brain_attach_symbolic_logic(
      *   - logical features blend into content_intent for reasoning-aware generation
      * Enabled by default — the grounded_language_set_symbolic_logic setter takes
      * an explicit enable flag for runtime control. */
-    if (brain->grounded_language) {
+    if (brain->grounded_lang) {
         extern int grounded_language_set_symbolic_logic(void* gl, void* logic, bool enabled);
-        int rc = grounded_language_set_symbolic_logic(brain->grounded_language,
+        int rc = grounded_language_set_symbolic_logic(brain->grounded_lang,
                                                         logic_engine,
                                                         true /* enabled by default */);
         if (rc == 0) {

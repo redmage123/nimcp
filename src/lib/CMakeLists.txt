@@ -24,6 +24,9 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../api/nimcp.c                    # Core API (full implementation)
     # Note: API functions are in nimcp.c via #include'd nimcp_part_*.c files
 
+    # Bundled dependencies
+    ${CMAKE_SOURCE_DIR}/external/cJSON.c                          # JSON parser (bundled)
+
     # Core brain components
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_resize.c  # Phase 2.8: Dynamic Brain Resizing
@@ -3274,6 +3277,7 @@ target_include_directories(nimcp
         ${NIMCP_LIB_DIR}
         ${Python3_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/src/gpu
+        ${CMAKE_SOURCE_DIR}/external  # For bundled cJSON
 )
 
 # Add CUDA include directories if available
