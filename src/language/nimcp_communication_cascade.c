@@ -1347,6 +1347,24 @@ static int cascade_stage_content(brain_t brain,
         (void)grounded_language_integrate_parietal(brain, gl, (void*)state);
     }
 
+    /* 5q. Hypothalamus Homeostatic Drives → language (2026-10-21). Drive states
+     * and motivational language: hunger, thirst, fatigue, stress, arousal.
+     * Circadian modulation + urgency-based amplification. Weight 0.19. */
+    {
+        extern int grounded_language_integrate_hypothalamus(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_hypothalamus(brain, gl, (void*)state);
+    }
+
+    /* 5r. Basal Ganglia Action Selection → language (2026-10-21). Goal-directed
+     * and habitual language from action values, reward prediction errors, and
+     * dopamine modulation. Direct/indirect pathway balance. Weight 0.21. */
+    {
+        extern int grounded_language_integrate_basal_ganglia(
+            brain_t brain, grounded_language_t* gl, void* state);
+        (void)grounded_language_integrate_basal_ganglia(brain, gl, (void*)state);
+    }
+
     /* Anchor magnitude = ||content_intent|| after prompt + all cognitive
      * sources but BEFORE any network blend. Each network below is unit-
      * normalized then scaled to a fraction of this anchor, so none can dominate
