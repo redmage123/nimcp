@@ -144,6 +144,25 @@ void grounded_language_connect_wernicke(grounded_language_t* gl, void* wernicke)
     gl->wernicke_adapter = wernicke;
 }
 
+int grounded_language_set_symbolic_logic(grounded_language_t* gl,
+                                          void* symbolic_logic,
+                                          bool enabled) {
+    if (!gl) return -1;
+    gl->symbolic_logic  = symbolic_logic;
+    gl->logic_enabled = enabled;
+    return 0;
+}
+
+bool grounded_language_logic_enabled(const grounded_language_t* gl) {
+    if (!gl) return false;
+    return gl->logic_enabled && gl->symbolic_logic != NULL;
+}
+
+void* grounded_language_get_symbolic_logic_ptr(const grounded_language_t* gl) {
+    if (!gl) return NULL;
+    return gl->symbolic_logic;
+}
+
 /*----------------------------------------------------------------------
  * Lexicon mirror — push grounded_language entries into broca/wernicke.
  *

@@ -598,6 +598,21 @@ struct grounded_language {
      * Set externally via grounded_language_set_current_stage(); falls
      * back to gl_internal_get_current_stage() when zero. */
     int                  current_stage;
+
+    /* Symbolic logic engine (Phase 1, 2026-10-21). Borrowed pointer to
+     * brain->symbolic_logic, attached via
+     * grounded_language_set_symbolic_logic(). When `logic_enabled` is
+     * true and the pointer is non-NULL:
+     *   - comprehend extracts logical facts (subject-verb-object triples)
+     *     and adds them to the KB via symbolic_logic_add_fact()
+     *   - produce queries the KB to constrain word selection and
+     *     derives new facts via forward chaining
+     *   - logical features (confidence, num_facts, inference_depth)
+     *     blend into content_intent alongside other cognitive modules
+     * The pointer is NOT owned, NOT serialized — re-attach after every
+     * brain init / load. Default: pointer NULL, flag false. */
+    void*                symbolic_logic;         /* symbolic_logic_t* */
+    bool                 logic_enabled;
 };
 
 /**

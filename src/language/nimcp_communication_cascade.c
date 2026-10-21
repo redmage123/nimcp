@@ -1242,6 +1242,66 @@ static int cascade_stage_content(brain_t brain,
         }
     }
 
+    /* 5k. Symbolic Logic → language (2026-10-21). Integrate logical reasoning
+     * with grounded semantics. When symbolic logic is attached and enabled:
+     *   - Extract logical features (fact count, inference depth, KB confidence)
+     *   - Blend into content_intent to guide production with logical constraints
+     *   - Enable fact-based consistency and compositional reasoning
+     * Weight 0.25 — logic provides structured constraints on language. */
+    const float w_logic = 0.25f;
+    if (brain->grounded_language && dim >= 64) {
+        extern bool grounded_language_logic_enabled(const grounded_language_t* gl);
+        struct grounded_language;
+        if (grounded_language_logic_enabled(brain->grounded_language)) {
+            /* Get symbolic logic statistics for content modulation */
+            extern bool symbolic_logic_get_stats(const void* logic, void* stats);
+            typedef struct {
+                uint64_t inferences_performed;
+                uint32_t facts_stored;
+                uint32_t rules_applied;
+                float avg_inference_time;
+                uint32_t unification_attempts;
+                uint32_t unification_successes;
+            } logic_stats_t;
+
+            /* Access symbolic logic pointer from grounded_language */
+            extern void* grounded_language_get_symbolic_logic_ptr(
+                const grounded_language_t* gl);
+            void* logic_ptr = grounded_language_get_symbolic_logic_ptr(
+                brain->grounded_language);
+
+            if (logic_ptr) {
+                logic_stats_t stats;
+                if (symbolic_logic_get_stats(logic_ptr, &stats)) {
+                    /* Normalize features to [0,1] and blend into content_intent */
+                    float fact_density = (stats.facts_stored > 0) ?
+                        fminf(stats.facts_stored / 100.0f, 1.0f) : 0.0f;
+                    float inference_activity = (stats.inferences_performed > 0) ?
+                        fminf(stats.inferences_performed / 1000.0f, 1.0f) : 0.0f;
+                    float unification_success = (stats.unification_attempts > 0) ?
+                        ((float)stats.unification_successes / stats.unification_attempts) : 0.0f;
+
+                    /* Map logic features to semantic dimensions 0-63 */
+                    if (isfinite(fact_density)) {
+                        for (uint32_t i = 0; i < 16 && i < dim; i++) {
+                            state->content_intent[i] += w_logic * fact_density;
+                        }
+                    }
+                    if (isfinite(inference_activity)) {
+                        for (uint32_t i = 16; i < 32 && i < dim; i++) {
+                            state->content_intent[i] += w_logic * inference_activity;
+                        }
+                    }
+                    if (isfinite(unification_success)) {
+                        for (uint32_t i = 32; i < 48 && i < dim; i++) {
+                            state->content_intent[i] += w_logic * unification_success;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /* Anchor magnitude = ||content_intent|| after prompt + all cognitive
      * sources but BEFORE any network blend. Each network below is unit-
      * normalized then scaled to a fraction of this anchor, so none can dominate

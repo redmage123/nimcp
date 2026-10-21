@@ -1861,6 +1861,43 @@ int grounded_language_set_immune_system(grounded_language_t* gl,
 bool grounded_language_immune_enabled(const grounded_language_t* gl);
 
 /**
+ * @brief Attach the brain-level symbolic logic engine for logical
+ *        reasoning integration with language comprehension and production.
+ *
+ * WHAT: When enabled, language processing integrates with first-order
+ *       logic inference:
+ *         (a) comprehend() extracts logical facts from text (subject-
+ *             verb-object triples) and adds them to the KB
+ *         (b) produce() queries the KB to constrain word selection and
+ *             enrich content_intent with logical features
+ *         (c) forward/backward chaining derives new facts before production
+ *
+ * WHY:  Bridges neural grounded semantics with symbolic logic for
+ *       compositional reasoning, fact checking, and structured inference.
+ *
+ * HOW:  - comprehend extracts predicates via POS tag analysis
+ *       - produce blends logic KB features (confidence, num_facts,
+ *         inference_depth) into content_intent vector alongside other
+ *         cognitive modules
+ *       - forward chaining derives implicit facts before generating text
+ *
+ * @param gl            System handle.
+ * @param symbolic_logic  symbolic_logic_t* (opaque here).
+ * @param enabled         true = active, false = pointer stored but no-op.
+ * @return 0 on success, -1 on NULL gl.
+ */
+int grounded_language_set_symbolic_logic(grounded_language_t* gl,
+                                          void* symbolic_logic,
+                                          bool enabled);
+
+/**
+ * @brief Query whether symbolic logic integration is currently active.
+ *
+ * @return true if pointer is non-NULL AND enabled flag is true.
+ */
+bool grounded_language_logic_enabled(const grounded_language_t* gl);
+
+/**
  * @brief Connect Broca's area adapter — every new lexicon entry is
  *        mirrored into the production lexicon so broca can articulate
  *        words that grounded_language has learned. SOLID single-source-

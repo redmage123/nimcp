@@ -159,6 +159,27 @@ bool brain_attach_symbolic_logic(
      * add_rule writes mirror into brain->internal_kg. */
     symbolic_logic_kg_register(logic_engine, brain);
 
+    /* Connect symbolic logic to grounded language for language↔logic integration
+     * (2026-10-21). When grounded_language is present:
+     *   - comprehend extracts logical facts from natural language
+     *   - produce queries KB to constrain word selection
+     *   - logical features blend into content_intent for reasoning-aware generation
+     * Enabled by default — the grounded_language_set_symbolic_logic setter takes
+     * an explicit enable flag for runtime control. */
+    if (brain->grounded_language) {
+        extern int grounded_language_set_symbolic_logic(void* gl, void* logic, bool enabled);
+        int rc = grounded_language_set_symbolic_logic(brain->grounded_language,
+                                                        logic_engine,
+                                                        true /* enabled by default */);
+        if (rc == 0) {
+            NIMCP_LOGGING_INFO("Symbolic logic connected to grounded language for brain %p",
+                              (void*)brain);
+        } else {
+            NIMCP_LOGGING_WARN("Failed to connect symbolic logic to grounded language for brain %p",
+                              (void*)brain);
+        }
+    }
+
     // Publish attachment event
     // event_data_t event = {
     //     .event_type = EVENT_LOGIC_ENGINE_ATTACHED,
