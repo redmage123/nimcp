@@ -50,6 +50,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "utils/tensor/nimcp_tensor.h"  /* For nimcp_dtype_t and nimcp_tensor_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,25 +104,7 @@ extern "C" {
 // Data Types
 //=============================================================================
 
-/**
- * @brief Tensor data types
- *
- * WHAT: Supported numeric types for tensor storage
- * WHY:  Trade-off between precision and memory/speed
- * HOW:  Tagged union approach for type safety
- */
-typedef enum {
-    NIMCP_DTYPE_FLOAT32 = 0,   /**< 32-bit float (default) */
-    NIMCP_DTYPE_FLOAT64 = 1,   /**< 64-bit double */
-    NIMCP_DTYPE_FLOAT16 = 2,   /**< 16-bit half precision */
-    NIMCP_DTYPE_BFLOAT16 = 3,  /**< Brain floating point */
-    NIMCP_DTYPE_INT32 = 4,     /**< 32-bit integer */
-    NIMCP_DTYPE_INT64 = 5,     /**< 64-bit integer */
-    NIMCP_DTYPE_INT8 = 6,      /**< 8-bit integer (quantized) */
-    NIMCP_DTYPE_UINT8 = 7,     /**< 8-bit unsigned */
-    NIMCP_DTYPE_BOOL = 8,      /**< Boolean (stored as uint8) */
-    NIMCP_DTYPE_COUNT = 9
-} nimcp_dtype_t;
+/* nimcp_dtype_t is defined in nimcp_tensor.h (included above) */
 
 /**
  * @brief Tensor device location
