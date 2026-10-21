@@ -243,6 +243,9 @@ int grounded_language_integrate_basal_ganglia(brain_t brain,
 
     /* Blend action values into content_intent (dims 420-440) */
     const float w_action = 0.21f;
+    /* C7 FIX: Move selected declaration outside conditional so it's in scope
+     * for NIMCP_LOGGING_DEBUG below. */
+    bg_action_t* selected = &bg_state.candidate_actions[bg_state.selected_action_idx];
 
     if (cs->dim > 430) {
         /* Selected action value */
@@ -259,7 +262,6 @@ int grounded_language_integrate_basal_ganglia(brain_t brain,
         cs->content_intent[424] += w_action * reward.reward_prediction_error;
 
         /* Habit vs goal-directed */
-        bg_action_t* selected = &bg_state.candidate_actions[bg_state.selected_action_idx];
         cs->content_intent[425] += w_action * selected->habit_strength;
         cs->content_intent[426] += w_action * selected->goal_directed;
     }
