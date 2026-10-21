@@ -995,23 +995,23 @@ bool nimcp_gpu_irfft(
 
 nimcp_gpu_precision_t nimcp_dtype_to_gpu_precision(nimcp_dtype_t dtype) {
     switch (dtype) {
-        case NIMCP_DTYPE_FLOAT32: return NIMCP_GPU_PRECISION_FP32;
-        case NIMCP_DTYPE_FLOAT16: return NIMCP_GPU_PRECISION_FP16;
-        case NIMCP_DTYPE_BFLOAT16: return NIMCP_GPU_PRECISION_BF16;
-        case NIMCP_DTYPE_INT8:    return NIMCP_GPU_PRECISION_INT8;
-        case NIMCP_DTYPE_INT32:   return NIMCP_GPU_PRECISION_INT32;
+        case NIMCP_DTYPE_F32: return NIMCP_GPU_PRECISION_FP32;
+        case NIMCP_DTYPE_F16: return NIMCP_GPU_PRECISION_FP16;
+        case NIMCP_DTYPE_BF16: return NIMCP_GPU_PRECISION_BF16;
+        case NIMCP_DTYPE_I8:    return NIMCP_GPU_PRECISION_INT8;
+        case NIMCP_DTYPE_I32:   return NIMCP_GPU_PRECISION_INT32;
         default:                  return NIMCP_GPU_PRECISION_FP32;
     }
 }
 
 nimcp_dtype_t nimcp_gpu_precision_to_dtype(nimcp_gpu_precision_t precision) {
     switch (precision) {
-        case NIMCP_GPU_PRECISION_FP32:  return NIMCP_DTYPE_FLOAT32;
-        case NIMCP_GPU_PRECISION_FP16:  return NIMCP_DTYPE_FLOAT16;
-        case NIMCP_GPU_PRECISION_BF16:  return NIMCP_DTYPE_BFLOAT16;
-        case NIMCP_GPU_PRECISION_INT8:  return NIMCP_DTYPE_INT8;
-        case NIMCP_GPU_PRECISION_INT32: return NIMCP_DTYPE_INT32;
-        default:                        return NIMCP_DTYPE_FLOAT32;
+        case NIMCP_GPU_PRECISION_FP32:  return NIMCP_DTYPE_F32;
+        case NIMCP_GPU_PRECISION_FP16:  return NIMCP_DTYPE_F16;
+        case NIMCP_GPU_PRECISION_BF16:  return NIMCP_DTYPE_BF16;
+        case NIMCP_GPU_PRECISION_INT8:  return NIMCP_DTYPE_I8;
+        case NIMCP_GPU_PRECISION_INT32: return NIMCP_DTYPE_I32;
+        default:                        return NIMCP_DTYPE_F32;
     }
 }
 

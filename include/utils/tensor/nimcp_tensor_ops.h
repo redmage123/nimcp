@@ -50,7 +50,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "utils/tensor/nimcp_tensor.h"  /* For nimcp_dtype_t and nimcp_tensor_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -104,7 +103,9 @@ extern "C" {
 // Data Types
 //=============================================================================
 
-/* nimcp_dtype_t is defined in nimcp_tensor.h (included above) */
+/* Forward declarations - actual definitions in nimcp_tensor.h */
+typedef struct nimcp_tensor_s nimcp_tensor_t;
+/* nimcp_dtype_t is defined in nimcp_tensor.h (included via nimcp_tensor_gpu.h) */
 
 /**
  * @brief Tensor device location
