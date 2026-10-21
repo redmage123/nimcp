@@ -935,6 +935,11 @@ static int cascade_stage_content(brain_t brain,
     /* 1. Seed from prompt comprehend (if provided). */
     if (prompt_intent && prompt_dim > 0) {
         uint32_t copy = (prompt_dim < dim) ? prompt_dim : dim;
+        /* C3 FIX: Defensive bounds check against state corruption */
+        if (copy > state->content_dim) {
+            cascade_record_fail(state, "stage_content: prompt blend overflow");
+            return -1;
+        }
         for (uint32_t i = 0; i < copy; i++) {
             float v = prompt_intent[i];
             if (isfinite(v)) state->content_intent[i] += w_prompt * v;
@@ -1006,7 +1011,9 @@ static int cascade_stage_content(brain_t brain,
      * activation. This is the "I really need to say this" effect. */
     if (state->goal_priority > 0.0f && dim >= 8) {
         for (uint32_t i = 0; i < state->topic_count && i < 8 && i < dim; i++) {
-            uint32_t slot = (uint32_t)(state->topic_concept_ids[i] % dim);
+            /* C4 FIX: Modulo BEFORE cast to prevent uint64_t overflow */
+            uint64_t concept_id = state->topic_concept_ids[i];
+            uint32_t slot = (uint32_t)((concept_id % (uint64_t)dim));
             state->content_intent[slot] += w_goal * state->goal_priority;
         }
     }

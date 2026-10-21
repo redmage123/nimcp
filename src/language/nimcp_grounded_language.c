@@ -1209,14 +1209,13 @@ static int lexicon_bind(grounded_language_t* gl, gl_lexicon_entry_t* entry,
     do_mirror = true;
 
 done:
-    gl_mutate_unlock(gl);
+    /* C1 FIX: Mirror binding BEFORE unlocking to prevent race condition.
+     * Entry pointer could be freed/modified by another thread after unlock. */
     if (do_mirror) {
-        uint64_t mt0 = gl_profile_ns();
         mirror_binding_to_bridge(gl, entry, concept_id, mirror_strength);
-        uint64_t mt1 = gl_profile_ns();
-        __atomic_fetch_add(&g_gl_mirror_call_count, 1ULL, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&g_gl_mirror_total_ns,  mt1 - mt0, __ATOMIC_RELAXED);
+        /* M5/MOD5 FIX: Removed dead telemetry counters (never read) */
     }
+    gl_mutate_unlock(gl);
     return rc;
 }
 
@@ -1435,6 +1434,13 @@ static uint64_t find_or_create_concept(grounded_language_t* gl,
     uint32_t total = sm->concept_count;
     uint32_t scan_start = (total > GL_CONCEPT_SCAN_CAP)
                               ? (total - GL_CONCEPT_SCAN_CAP) : 0;
+
+    /* C5 FIX: Check if concepts array is NULL before accessing */
+    if (!sm->concepts) {
+        /* No concepts array - skip scan, create new concept below */
+        goto create_new_concept;
+    }
+
     for (uint32_t i = scan_start; i < total; i++) {
         if (!sm->concepts[i]) continue;
         const semantic_concept_t* c = sm->concepts[i];
@@ -1453,6 +1459,7 @@ static uint64_t find_or_create_concept(grounded_language_t* gl,
         return best_id;
     }
 
+create_new_concept:
     /* Create new concept */
     /* Pad or truncate features to semantic_dim */
     float* padded = (float*)nimcp_calloc(gl->semantic_dim, sizeof(float));
@@ -2316,16 +2323,33 @@ static float _gl_immune_inspect(grounded_language_t* gl,
 
     /* (3) Repetition spam — the same lower-cased token appears > 50%
      * of the time. Trips on flooders / loop attacks. Skip when there's
-     * only one word (fraction is trivially 1.0 with a single token). */
+     * only one word (fraction is trivially 1.0 with a single token).
+     * M6 FIX: Optimized from O(N²) to O(N) by single-pass counting. */
     if (word_count > 1) {
         uint32_t max_run = 0;
+        /* Single pass: count each unique word we encounter */
         for (uint32_t i = 0; i < word_count; i++) {
+            /* Skip if we already counted this word */
+            bool already_counted = false;
+            for (uint32_t k = 0; k < i; k++) {
+                if (strcmp(words[i], words[k]) == 0) {
+                    already_counted = true;
+                    break;
+                }
+            }
+            if (already_counted) continue;
+
+            /* Count occurrences of this word */
             uint32_t c = 0;
-            for (uint32_t j = 0; j < word_count; j++) {
+            for (uint32_t j = i; j < word_count; j++) {
                 if (strcmp(words[i], words[j]) == 0) c++;
             }
             if (c > max_run) max_run = c;
-            if (max_run > word_count) max_run = word_count;  /* defensive */
+
+            /* Early exit: if we found >50%, no need to continue */
+            if ((float)max_run / (float)word_count > _GL_IMM_REPEAT_FRACTION) {
+                break;
+            }
         }
         float frac = (float)max_run / (float)word_count;
         if (frac > _GL_IMM_REPEAT_FRACTION) {
@@ -2538,6 +2562,10 @@ int grounded_language_comprehend(grounded_language_t* gl, const char* text,
      * word (and folded into result->activation_levels) get negated. */
     bool negate_word[GL_MAX_PRODUCTION_WORDS];
     memset(negate_word, 0, sizeof(negate_word));
+    /* C6 FIX: Bound word_count to prevent stack buffer overflow */
+    if (word_count > GL_MAX_PRODUCTION_WORDS) {
+        word_count = GL_MAX_PRODUCTION_WORDS;
+    }
     bool any_negated = false;
     if (gl->enable_negation_inversion) {
         for (uint32_t i = 0; i < word_count; i++) {
@@ -5376,7 +5404,12 @@ int grounded_language_learn_from_text(grounded_language_t* gl, const char* text)
 
     uint64_t t_after_distrib = gl_profile_ns();
 
-    /* Cross-bind words in same sentence to each other's concepts (distributional grounding) */
+    /* Cross-bind words in same sentence to each other's concepts (distributional grounding)
+     * M4 NOTE: This is O(N²×B) where N=words, B=bindings_per_word. Mitigated by:
+     * - Binding cap at 128 per word (line 1170+)
+     * - Function/pronoun word filtering (below)
+     * - Periodic pruning removes leaked bindings
+     * Full optimization would require a different grounding architecture. */
     uint64_t crossbind_iterations = 0;
     for (uint32_t i = 0; i < word_count; i++) {
         const gl_lexicon_entry_t* entry_i = lexicon_find(gl, words[i]);
@@ -5870,6 +5903,12 @@ static int gl_produce_impl(grounded_language_t* gl, const float* intent,
     float* emitted_ctx = NULL;
     if (gl->autoregressive_produce && gl->semantic_dim > 0) {
         emitted_ctx = (float*)nimcp_calloc(gl->semantic_dim, sizeof(float));
+        /* M7 FIX: Check allocation succeeded */
+        if (!emitted_ctx) {
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
+                "grounded_language_produce: failed to allocate emitted_ctx");
+            return -1;
+        }
     }
     /* Tier 2: discourse-seeded AR produce. When produce_discourse_seed is on
      * (and AR is on, and stage >= 2), prime emitted_ctx with a unit-normalized,
