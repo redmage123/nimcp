@@ -979,6 +979,14 @@ void brain_destroy(brain_t brain)
         brain->bio_async_orchestrator_enabled = false;
     }
 
+    // Cleanup bio-async router
+    if (brain->bio_router) {
+        extern void bio_router_shutdown(void);
+        bio_router_shutdown();
+        brain->bio_router = NULL;
+        brain->bio_router_enabled = false;
+    }
+
     // Phase 8: Signal FEP/cognitive cleanup phase
     brain_heartbeat(brain, "brain_destroy:fep_cognitive", 0.6f);
 

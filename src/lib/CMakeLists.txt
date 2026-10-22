@@ -2729,7 +2729,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../swarm/nimcp_swarm_morphogenesis.c  # Role specialization system
     ${CMAKE_CURRENT_SOURCE_DIR}/../swarm/nimcp_swarm_flocking.c       # Flocking dynamics (Reynolds boids)
     # DISABLED: Build errors, needs accessor functions
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../swarm/nimcp_swarm_quorum.c         # Quorum sensing system - DISABLED: needs bio_router init + API fixes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../swarm/nimcp_swarm_quorum.c         # Quorum sensing system
     ${CMAKE_CURRENT_SOURCE_DIR}/../swarm/nimcp_swarm_immune.c         # Adaptive immune system
     ${CMAKE_CURRENT_SOURCE_DIR}/../swarm/nimcp_swarm_cascade.c        # Cascade failure prevention
 

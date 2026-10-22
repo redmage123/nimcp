@@ -108,6 +108,26 @@ bool nimcp_brain_factory_init_bio_async_orchestrator_subsystem(brain_t brain) {
     extern nimcp_error_t bio_router_set_orchestrator(struct bio_async_orchestrator*);
     bio_router_set_orchestrator(orch);
 
+    /* Initialize bio-async router */
+    extern nimcp_error_t bio_router_init(const bio_router_config_t* config);
+    extern struct bio_router_struct* bio_router_get_global(void);
+
+    if (bio_router_init(NULL) == NIMCP_SUCCESS) {
+        brain->bio_router = bio_router_get_global();
+        if (brain->bio_router) {
+            brain->bio_router_enabled = true;
+            NIMCP_LOGGING_INFO("Bio-async router initialized");
+        } else {
+            brain->bio_router_enabled = false;
+            NIMCP_LOGGING_WARN("Bio-router init succeeded but get_global returned NULL");
+        }
+    } else {
+        brain->bio_router = NULL;
+        brain->bio_router_enabled = false;
+        NIMCP_LOGGING_WARN("Failed to initialize bio-async router - "
+                          "continuing without router (modules can still use direct calls)");
+    }
+
     /* Log success */
     bio_orchestrator_stats_t stats;
     if (bio_orchestrator_get_stats(orch, &stats) == 0) {
