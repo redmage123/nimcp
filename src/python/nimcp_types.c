@@ -74,15 +74,14 @@ static int Brain_init(BrainObject* self, PyObject* args, PyObject* kwds)
     const char* checkpoint = NULL;
     const char* init_mode = NULL;
 
-    static char* kwlist[] = {"name", "size", "task", "inputs", "outputs",
+    static char* kwlist[] = {"name", "size", "task",
                              "num_inputs", "num_outputs", "neuron_count",
                              "checkpoint", "init_mode",
                              "snn_neuron_count", "lnn_neuron_count", NULL};
 
     // Parse constructor arguments — all optional except name
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|iiIIIIIzzII", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|iiIIIzzII", kwlist,
                                      &name, &size, &task,
-                                     &num_inputs, &num_outputs,
                                      &num_inputs, &num_outputs,
                                      &neuron_count, &checkpoint, &init_mode,
                                      &snn_neuron_count, &lnn_neuron_count)) {
