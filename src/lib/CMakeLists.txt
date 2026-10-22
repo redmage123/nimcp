@@ -2338,6 +2338,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_grounded_language_network_bridge.c # Per-network bridges (LNN/CNN/FNO/ANN)
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_grounded_language_cognitive_bridge.c # Cognitive subscriber bus + per-module attaches
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_creative_language_bridge.c # Creative cognition → language bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_language_integration_stubs.c # Stubs for optional language-cognitive integration bridges
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_communication_cascade.c    # Multi-region production cascade (Phase 2A)
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_communication_cascade_wernicke.c  # Cascade Stage 0 (Wernicke comprehension, separate TU due to phrase_type_t conflict with Broca)
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_phonological_loop.c         # Slice 5 — phonological-loop working memory buffer
@@ -2457,6 +2458,8 @@ set(NIMCP_CORE_SOURCES
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_cnn.c>
     # GPU SNN stubs (spiking neural network - LIF, Izhikevich, STDP, surrogate gradients)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_snn.c>
+    # GPU LNN stubs (liquid neural networks - ODE integration, adjoint method, temporal dynamics)
+    $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_lnn.c>
     # GPU INT8 stubs (quantization, calibration, INT8 GEMM, requantization)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_int8.c>
     # GPU TensorRT stubs (network definition, engine build/serialize, calibration)
