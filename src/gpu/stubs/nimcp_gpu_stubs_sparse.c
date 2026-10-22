@@ -145,8 +145,3 @@ bool nimcp_gpu_sparse_backward_accumulate(
 //=============================================================================
 // GPU Gradient Operations
 //=============================================================================
-
-bool nimcp_gpu_gradient_flush(void* gpu_ctx) {
-    (void)gpu_ctx;
-    return true;  /* No-op for CPU fallback */
-}

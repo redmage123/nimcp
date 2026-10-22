@@ -101,54 +101,6 @@ static void fill_tensor_float(nimcp_gpu_tensor_t* tensor, float value) {
  * LIF Neuron Model (Functions 1-4)
  *=============================================================================*/
 
-nimcp_lif_state_t* nimcp_lif_state_create(
-    nimcp_gpu_context_t* ctx,
-    size_t n_neurons,
-    const nimcp_lif_params_t* params)
-{
-    (void)ctx;
-
-    if (!params || n_neurons == 0) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
-            "nimcp_lif_state_create: invalid params or zero neurons");
-        return NULL;
-    }
-
-    nimcp_lif_state_t* state = nimcp_calloc(1, sizeof(nimcp_lif_state_t));
-    if (!state) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
-            "nimcp_lif_state_create: allocation failed");
-        return NULL;
-    }
-
-    state->params = *params;
-
-    /* Allocate neuron state tensors */
-    state->v = create_neuron_tensor(n_neurons);
-    state->i_syn = create_neuron_tensor(n_neurons);
-    state->spikes = create_neuron_tensor(n_neurons);
-
-    if (!state->v || !state->i_syn || !state->spikes) {
-        nimcp_lif_state_destroy(state);
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY,
-            "nimcp_lif_state_create: tensor allocation failed");
-        return NULL;
-    }
-
-    /* Initialize membrane potential to resting */
-    fill_tensor_float(state->v, params->v_rest);
-    /* Synaptic current and spikes start at zero (already calloc'd) */
-
-    return state;
-}
-
-void nimcp_lif_state_destroy(nimcp_lif_state_t* state) {
-    if (!state) return;
-    if (state->v) nimcp_gpu_tensor_destroy(state->v);
-    if (state->i_syn) nimcp_gpu_tensor_destroy(state->i_syn);
-    if (state->spikes) nimcp_gpu_tensor_destroy(state->spikes);
-    nimcp_free(state);
-}
 
 bool nimcp_gpu_lif_forward(
     nimcp_gpu_context_t* ctx,

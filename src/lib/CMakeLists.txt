@@ -2465,8 +2465,8 @@ set(NIMCP_CORE_SOURCES
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_lnn.c>
     # GPU Sparse stubs (sparse tensor operations, sparse context, sparse linear algebra)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_sparse.c>
-    # GPU SNN plasticity minimal stubs (BCM, homeostatic, STDP, LIF-CB, deposit)
-    $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_snn_minimal.c>
+    # GPU SNN CPU implementations (LIF state, conductance-based, CSR operations)
+    $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_snn_cpu.c>
     # GPU INT8 stubs (quantization, calibration, INT8 GEMM, requantization)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_int8.c>
     # GPU TensorRT stubs (network definition, engine build/serialize, calibration)
