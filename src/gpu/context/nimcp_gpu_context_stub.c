@@ -41,7 +41,10 @@ void nimcp_gpu_context_destroy(nimcp_gpu_context_t* ctx) {
 }
 
 bool nimcp_gpu_context_is_valid(const nimcp_gpu_context_t* ctx) {
-    return ctx != NULL && ctx->initialized;
+    /* On CPU-only systems, any non-NULL context is invalid (dangling).
+     * Always return false to prevent crashes when trying to use GPU operations. */
+    (void)ctx;
+    return false;
 }
 
 //=============================================================================

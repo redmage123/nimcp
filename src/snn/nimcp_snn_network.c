@@ -4883,25 +4883,31 @@ int snn_network_finalize_connections(snn_network_t* network) {
 
         /* Create new state for full neuron count */
         if (network->gpu_manager && network->gpu_manager->contexts[0]) {
-            snn_gpu_ensure_device(network->gpu_manager, 0);
-            nimcp_lif_params_t lif_params = {
-                .tau_mem   = network->config.tau_mem,
-                .tau_syn   = network->config.tau_syn > 0.0f ? network->config.tau_syn : 5.0f,
-                .v_thresh  = network->config.v_thresh,
-                .v_reset   = network->config.v_reset,
-                .v_rest    = network->config.v_rest,
-                .dt        = network->config.dt,
-                .hard_reset = true
-            };
-            nimcp_lif_state_t* lif_state = nimcp_lif_state_create(
-                (nimcp_gpu_context_t*)network->gpu_manager->contexts[0], total_neurons, &lif_params);
-            if (lif_state) {
-                network->gpu_lif_state = lif_state;
-                NIMCP_LOGGING_INFO("GPU LIF state re-created for %zu total neurons "
-                                   "(including lightweight)", total_neurons);
+            /* CB-GPU-7 fix: Validate context before attempting GPU state creation */
+            extern bool nimcp_gpu_context_is_valid(const nimcp_gpu_context_t* ctx);
+            if (!nimcp_gpu_context_is_valid((nimcp_gpu_context_t*)network->gpu_manager->contexts[0])) {
+                NIMCP_LOGGING_WARN("GPU context invalid, skipping GPU LIF state creation");
             } else {
-                NIMCP_LOGGING_WARN("GPU LIF state creation failed for %zu neurons — "
-                                   "falling back to CPU", total_neurons);
+                snn_gpu_ensure_device(network->gpu_manager, 0);
+                nimcp_lif_params_t lif_params = {
+                    .tau_mem   = network->config.tau_mem,
+                    .tau_syn   = network->config.tau_syn > 0.0f ? network->config.tau_syn : 5.0f,
+                    .v_thresh  = network->config.v_thresh,
+                    .v_reset   = network->config.v_reset,
+                    .v_rest    = network->config.v_rest,
+                    .dt        = network->config.dt,
+                    .hard_reset = true
+                };
+                nimcp_lif_state_t* lif_state = nimcp_lif_state_create(
+                    (nimcp_gpu_context_t*)network->gpu_manager->contexts[0], total_neurons, &lif_params);
+                if (lif_state) {
+                    network->gpu_lif_state = lif_state;
+                    NIMCP_LOGGING_INFO("GPU LIF state re-created for %zu total neurons "
+                                       "(including lightweight)", total_neurons);
+                } else {
+                    NIMCP_LOGGING_WARN("GPU LIF state creation failed for %zu neurons — "
+                                       "falling back to CPU", total_neurons);
+                }
             }
         }
 
@@ -4934,8 +4940,13 @@ int snn_network_finalize_connections(snn_network_t* network) {
 
                             /* TRUE DUAL-GPU: Upload to correct GPU with peer access enabled.
                              * GPU 0 ↔ GPU 1 can access each other's memory via cudaDeviceEnablePeerAccess. */
+                            /* CB-GPU-7 fix: Skip GPU upload entirely if no GPU manager */
+                            if (!network->gpu_manager) {
+                                continue;  /* No GPU available, skip upload */
+                            }
+
                             uint32_t device_id = pop->device_id;
-                            if (!network->gpu_manager || device_id >= (uint32_t)network->gpu_manager->n_devices) {
+                            if (device_id >= (uint32_t)network->gpu_manager->n_devices) {
                                 device_id = 0;  /* Fallback to GPU 0 if device unavailable */
                             }
 
