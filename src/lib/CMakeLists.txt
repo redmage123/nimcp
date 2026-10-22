@@ -424,6 +424,7 @@ set(NIMCP_CORE_SOURCES
 
     # Motor Cortex - Motor control, movement planning (Phase M1)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/regions/motor/nimcp_motor_adapter.c                       # Motor cortex core adapter
+    ${CMAKE_CURRENT_SOURCE_DIR}/../edge/motor_adapter_stub.c  # Stub for missing output function
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/regions/motor/nimcp_motor_quantum_bridge.c                # Motor quantum bridge
 
     # Occipital Cortex - Visual processing (Phase O1)
@@ -661,6 +662,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_ethics_asimov.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_ethics_policies.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_ethics_incidents.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/cognitive/multihead_attention_stub.c  # Stub for missing entropy function
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_ethics_learning.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_ethics_hyperbolic.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_combinatorial_harm.c
@@ -2262,6 +2264,7 @@ set(NIMCP_CORE_SOURCES
     # Perception
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_visual_cortex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_audio_cortex.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../perception/audio_cortex_stub.c  # Stub for missing audio cortex functions
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_audio_jepa_bridge.c  # Phase 4q: audio cortex ↔ JEPA
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_speech_cortex.c
 
@@ -2460,6 +2463,10 @@ set(NIMCP_CORE_SOURCES
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_snn.c>
     # GPU LNN stubs (liquid neural networks - ODE integration, adjoint method, temporal dynamics)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_lnn.c>
+    # GPU Sparse stubs (sparse tensor operations, sparse context, sparse linear algebra)
+    $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_sparse.c>
+    # GPU SNN plasticity minimal stubs (BCM, homeostatic, STDP, LIF-CB, deposit)
+    $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_snn_minimal.c>
     # GPU INT8 stubs (quantization, calibration, INT8 GEMM, requantization)
     $<$<NOT:$<BOOL:${CUDAToolkit_FOUND}>>:${CMAKE_CURRENT_SOURCE_DIR}/../gpu/stubs/nimcp_gpu_stubs_int8.c>
     # GPU TensorRT stubs (network definition, engine build/serialize, calibration)
@@ -3234,6 +3241,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../edge/nimcp_motor_output.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../edge/nimcp_embodiment.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../edge/nimcp_sensorimotor.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/sensorimotor_stub.c  # Stub for missing state function
 
     # Brain-Native Language (replaces Phi-3 dependency)
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_native_language.c

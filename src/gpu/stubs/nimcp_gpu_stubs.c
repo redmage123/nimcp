@@ -2966,3 +2966,33 @@ bool broca_cpu_generate_motor_commands(
     *command_count = cmd_idx;
     return true;
 }
+
+//=============================================================================
+// Additional GPU Tensor Operations Stubs
+//=============================================================================
+// Additional GPU Tensor Operations Stubs
+//=============================================================================
+
+nimcp_gpu_tensor_t* nimcp_gpu_tensor_from_cpu(
+    nimcp_gpu_context_t* ctx,
+    const nimcp_tensor_t* cpu_tensor)
+{
+    (void)ctx; (void)cpu_tensor;
+    return NULL;
+}
+
+bool nimcp_gpu_tensor_copy_to_cpu(
+    const nimcp_gpu_tensor_t* gpu_tensor,
+    nimcp_tensor_t* cpu_tensor)
+{
+    (void)gpu_tensor; (void)cpu_tensor;
+    return false;
+}
+
+bool nimcp_gpu_tensor_upload(
+    nimcp_gpu_tensor_t* tensor,
+    const void* host_data)
+{
+    (void)tensor; (void)host_data;
+    return false;
+}
