@@ -26,22 +26,35 @@ log_wd() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$WATCHDOG_LOG"
 }
 
-cleanup_gpu() {
-    log_wd "Attempting GPU cleanup..."
-    # Kill any lingering python processes
-    pkill -9 -f immerse_athena 2>/dev/null
-    sleep 2
-    # Reset GPU (if possible without root restriction)
-    nvidia-smi --gpu-reset 2>/dev/null || log_wd "Note: nvidia-smi --gpu-reset not available"
-    sleep 2
-    # Check GPU accessibility
-    if nvidia-smi > /dev/null 2>&1; then
-        log_wd "GPUs accessible after cleanup"
-        return 0
-    else
-        log_wd "WARNING: GPUs not accessible"
+diagnose_and_fix() {
+    log_wd "Running GPU diagnostic and fix script..."
+    local diag_script="$(dirname $0)/gpu_diagnose_fix.sh"
+    if [ ! -x "$diag_script" ]; then
+        log_wd "ERROR: diagnostic script not found at $diag_script"
         return 1
     fi
+
+    bash "$diag_script" "$TRAINING_LOG"
+    local diag_result=$?
+
+    case "$diag_result" in
+        0)
+            log_wd "DIAGNOSIS: Fixed, safe to restart"
+            return 0
+            ;;
+        1)
+            log_wd "DIAGNOSIS: Fix attempted, may fail again"
+            return 0  # Still try to restart
+            ;;
+        2)
+            log_wd "DIAGNOSIS: Unfixable - manual intervention needed"
+            return 1
+            ;;
+        *)
+            log_wd "DIAGNOSIS: Unknown result $diag_result"
+            return 1
+            ;;
+    esac
 }
 
 monitor_training() {
@@ -112,16 +125,25 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
             exit 0
             ;;
         42)
-            log_wd "GPU error detected (code 42) - will restart from checkpoint"
-            cleanup_gpu
+            log_wd "GPU error detected (code 42) - diagnosing and fixing"
+            if ! diagnose_and_fix; then
+                log_wd "FATAL: Diagnosis says unfixable - exiting"
+                exit 2
+            fi
             ;;
         99)
-            log_wd "Hang detected - will restart from checkpoint"
-            cleanup_gpu
+            log_wd "Hang detected - diagnosing and fixing"
+            if ! diagnose_and_fix; then
+                log_wd "FATAL: Diagnosis says unfixable - exiting"
+                exit 2
+            fi
             ;;
         *)
-            log_wd "Unexpected exit code $exit_code - will restart from checkpoint"
-            cleanup_gpu
+            log_wd "Unexpected exit code $exit_code - diagnosing and fixing"
+            if ! diagnose_and_fix; then
+                log_wd "FATAL: Diagnosis says unfixable - exiting"
+                exit 2
+            fi
             ;;
     esac
 
