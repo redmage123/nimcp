@@ -2144,9 +2144,11 @@ class ParallelDataLoader:
     def _worker(self):
         import logging
         import traceback
+        import queue as queue_module
         consecutive_failures = 0
         max_failures = 100  # Increased from 10 to prevent worker death
         total_failures = 0
+        backpressure_count = 0
 
         while not self._stop:
             try:
@@ -2161,8 +2163,18 @@ class ParallelDataLoader:
                 features_list = [self.composer.compose(text=d, modality="text") for d in descs]
                 batch = list(zip(descs, features_list, targets))
 
-                self.queue.put(batch, timeout=30)  # Increased from 10s
-                consecutive_failures = 0  # Reset on success
+                # Handle queue.Full as backpressure (not an error).
+                # Training is slower than data production - wait and retry.
+                while not self._stop:
+                    try:
+                        self.queue.put(batch, timeout=10)
+                        consecutive_failures = 0  # Reset on success
+                        break
+                    except queue_module.Full:
+                        backpressure_count += 1
+                        if backpressure_count % 50 == 0:
+                            logging.info(f"[ParallelDataLoader] Backpressure: queue full {backpressure_count} times (training slower than data gen) - this is normal")
+                        # Continue trying - training will eventually consume
 
             except Exception as e:
                 error_msg = str(e)
