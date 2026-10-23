@@ -647,16 +647,36 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_dense(
     sparse->owns_data = true;
 
     // Allocate COO arrays
-    float* d_values;
-    int* d_row_indices;
-    int* d_col_indices;
-    int* d_nnz_counter;
+    float* d_values = NULL;
+    int* d_row_indices = NULL;
+    int* d_col_indices = NULL;
+    int* d_nnz_counter = NULL;
 
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_values, nnz * sizeof(float)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_row_indices, nnz * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_col_indices, nnz * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_nnz_counter, sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMemset(d_nnz_counter, 0, sizeof(int)), GPU_ERROR_CUDA_RUNTIME);
+    cudaError_t err1 = cudaMalloc(&d_values, nnz * sizeof(float));
+    cudaError_t err2 = cudaSuccess, err3 = cudaSuccess, err4 = cudaSuccess, err5 = cudaSuccess;
+
+    if (err1 == cudaSuccess) {
+        err2 = cudaMalloc(&d_row_indices, nnz * sizeof(int));
+        if (err2 == cudaSuccess) {
+            err3 = cudaMalloc(&d_col_indices, nnz * sizeof(int));
+            if (err3 == cudaSuccess) {
+                err4 = cudaMalloc(&d_nnz_counter, sizeof(int));
+                if (err4 == cudaSuccess) {
+                    err5 = cudaMemset(d_nnz_counter, 0, sizeof(int));
+                }
+            }
+        }
+    }
+
+    if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess ||
+        err4 != cudaSuccess || err5 != cudaSuccess) {
+        if (d_values) cudaFree(d_values);
+        if (d_row_indices) cudaFree(d_row_indices);
+        if (d_col_indices) cudaFree(d_col_indices);
+        if (d_nnz_counter) cudaFree(d_nnz_counter);
+        LOG_ERROR("sparse_from_dense: GPU memory allocation failed (nnz=%d)", nnz);
+        return NULL;
+    }
 
     // Extract COO data
     kernel_dense_to_coo<<<GRID_SIZE(total), BLOCK_SIZE>>>(
@@ -672,8 +692,15 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_dense(
     thrust::device_ptr<float> val_ptr(d_values);
 
     // Create index array for sorting
-    int* d_indices;
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_indices, nnz * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
+    int* d_indices = NULL;
+    cudaError_t err_idx = cudaMalloc(&d_indices, nnz * sizeof(int));
+    if (err_idx != cudaSuccess) {
+        cudaFree(d_values);
+        cudaFree(d_row_indices);
+        cudaFree(d_col_indices);
+        LOG_ERROR("sparse_from_dense: Failed to allocate index array");
+        return NULL;
+    }
     thrust::device_ptr<int> idx_ptr(d_indices);
     thrust::sequence(thrust::device, idx_ptr, idx_ptr + nnz);
 
@@ -823,13 +850,31 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_coo(
     sparse->owns_data = true;
 
     // Allocate and copy COO data to device
-    float* d_values;
-    int* d_row_indices;
-    int* d_col_indices;
+    float* d_values = NULL;
+    int* d_row_indices = NULL;
+    int* d_col_indices = NULL;
 
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_values, nnz * sizeof(float)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_row_indices, nnz * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_col_indices, nnz * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
+    cudaError_t err1 = cudaMalloc(&d_values, nnz * sizeof(float));
+    cudaError_t err2 = cudaSuccess;
+    cudaError_t err3 = cudaSuccess;
+
+    if (err1 == cudaSuccess) {
+        err2 = cudaMalloc(&d_row_indices, nnz * sizeof(int));
+        if (err2 == cudaSuccess) {
+            err3 = cudaMalloc(&d_col_indices, nnz * sizeof(int));
+        }
+    }
+
+    // If any allocation failed, clean up and return NULL
+    if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess) {
+        if (d_values) cudaFree(d_values);
+        if (d_row_indices) cudaFree(d_row_indices);
+        if (d_col_indices) cudaFree(d_col_indices);
+        nimcp_free(sparse);
+        LOG_ERROR("sparse_from_coo: GPU memory allocation failed (nnz=%d, need ~%.1f MB)",
+                  nnz, (nnz * (sizeof(float) + 2*sizeof(int))) / (1024.0*1024.0));
+        return NULL;
+    }
 
     cudaMemcpy(d_values, values, nnz * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_row_indices, row_idx, nnz * sizeof(int), cudaMemcpyHostToDevice);
@@ -856,8 +901,16 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_coo(
     }
     else if (target_format == SPARSE_FORMAT_CSR) {
         // Convert to CSR
-        int* d_row_ptrs;
-        NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&d_row_ptrs, (rows + 1) * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
+        int* d_row_ptrs = NULL;
+        cudaError_t err_rp = cudaMalloc(&d_row_ptrs, (rows + 1) * sizeof(int));
+        if (err_rp != cudaSuccess) {
+            cudaFree(d_values);
+            cudaFree(d_row_indices);
+            cudaFree(d_col_indices);
+            nimcp_free(sparse);
+            LOG_ERROR("sparse_from_coo: Failed to allocate CSR row pointers");
+            return NULL;
+        }
 
         // Sort COO by row first
         thrust::device_ptr<int> row_ptr(d_row_indices);
@@ -1097,9 +1150,29 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_csr(
     sparse->owns_data = true;
 
     // Allocate and copy CSR data to device
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&sparse->data.csr.values, nnz * sizeof(float)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&sparse->data.csr.col_indices, nnz * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
-    NIMCP_CUDA_RECOVER_NULL(cudaMalloc(&sparse->data.csr.row_ptrs, (rows + 1) * sizeof(int)), GPU_ERROR_OUT_OF_MEMORY);
+    sparse->data.csr.values = NULL;
+    sparse->data.csr.col_indices = NULL;
+    sparse->data.csr.row_ptrs = NULL;
+
+    cudaError_t err_v = cudaMalloc(&sparse->data.csr.values, nnz * sizeof(float));
+    cudaError_t err_c = cudaSuccess;
+    cudaError_t err_r = cudaSuccess;
+
+    if (err_v == cudaSuccess) {
+        err_c = cudaMalloc(&sparse->data.csr.col_indices, nnz * sizeof(int));
+        if (err_c == cudaSuccess) {
+            err_r = cudaMalloc(&sparse->data.csr.row_ptrs, (rows + 1) * sizeof(int));
+        }
+    }
+
+    if (err_v != cudaSuccess || err_c != cudaSuccess || err_r != cudaSuccess) {
+        if (sparse->data.csr.values) cudaFree(sparse->data.csr.values);
+        if (sparse->data.csr.col_indices) cudaFree(sparse->data.csr.col_indices);
+        if (sparse->data.csr.row_ptrs) cudaFree(sparse->data.csr.row_ptrs);
+        nimcp_free(sparse);
+        LOG_ERROR("sparse_from_csr: GPU memory allocation failed (nnz=%d)", nnz);
+        return NULL;
+    }
 
     cudaMemcpy(sparse->data.csr.values, values, nnz * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(sparse->data.csr.col_indices, col_indices, nnz * sizeof(int), cudaMemcpyHostToDevice);
