@@ -2405,21 +2405,17 @@ int snn_network_step(snn_network_t* network, float dt) {
                                     /* CRITICAL: Synchronize device to ensure kernel completes
                                      * before GPU-to-host copy. Missing sync can cause context
                                      * corruption and "device busy/unavailable" errors.
-                                     * CHECK ERROR to avoid infinite recovery loop. */
+                                     * On error: FATAL EXIT so watchdog can restart from checkpoint
+                                     * (don't degrade to CPU - training requires GPU). */
                                     snn_gpu_ensure_device(network->gpu_manager, pop_device);
                                     #ifdef NIMCP_ENABLE_CUDA
                                     cudaError_t sync_err = cudaDeviceSynchronize();
                                     if (sync_err != cudaSuccess) {
-                                        NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: cudaDeviceSynchronize FAILED on GPU %u: %s - skipping GPU path",
+                                        NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: cudaDeviceSynchronize FAILED on GPU %u: %s - FATAL EXIT for watchdog restart",
                                             p, pop_device, cudaGetErrorString(sync_err));
-                                        /* Zero out the output buffer and continue - skip this population */
-                                        memset(h_input + pop_offset, 0, pop->n_neurons * sizeof(float));
-                                        /* Clean up and break out of GPU path for this iteration */
-                                        if (d_ext) nimcp_gpu_tensor_destroy(d_ext);
-                                        if (d_isyn) nimcp_gpu_tensor_destroy(d_isyn);
-                                        if (!ext_cur && h_ext) nimcp_free(h_ext);
-                                        pop_offset += pop->n_neurons;
-                                        continue;
+                                        fprintf(stderr, "\n[FATAL] GPU sync failed - exiting for watchdog restart from checkpoint\n");
+                                        fflush(stderr);
+                                        exit(42);  /* Watchdog exit code - triggers restart from checkpoint */
                                     }
                                     #endif
 
@@ -2451,21 +2447,20 @@ int snn_network_step(snn_network_t* network, float dt) {
                                             (float*)d_isyn->data,
                                             pop->n_neurons);
 
-                                        /* CRITICAL: Synchronize before copy-back - CHECK ERROR */
+                                        /* CRITICAL: Synchronize before copy-back - FATAL EXIT on error */
                                         snn_gpu_ensure_device(network->gpu_manager, pop_device);
                                         #ifdef NIMCP_ENABLE_CUDA
                                         cudaError_t sync_err2 = cudaDeviceSynchronize();
                                         if (sync_err2 != cudaSuccess) {
-                                            NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: sync FAILED (slow path): %s",
+                                            NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: sync FAILED (slow path): %s - FATAL EXIT",
                                                 p, cudaGetErrorString(sync_err2));
-                                            memset(h_input + pop_offset, 0, pop->n_neurons * sizeof(float));
-                                        } else {
-                                        #endif
-                                            nimcp_gpu_tensor_to_host(d_isyn,
-                                                h_input + pop_offset);
-                                        #ifdef NIMCP_ENABLE_CUDA
+                                            fprintf(stderr, "\n[FATAL] GPU sync failed (slow path) - exiting for watchdog restart\n");
+                                            fflush(stderr);
+                                            exit(42);
                                         }
                                         #endif
+                                        nimcp_gpu_tensor_to_host(d_isyn,
+                                            h_input + pop_offset);
                                     }
                                     if (d_w) nimcp_gpu_tensor_destroy(d_w);
                                     if (d_ci) nimcp_gpu_tensor_destroy(d_ci);
@@ -2645,14 +2640,16 @@ int snn_network_step(snn_network_t* network, float dt) {
                 bool gpu_ok = nimcp_gpu_lif_forward(gpu, lif_state, input_tensor);
 
                 /* CRITICAL: Synchronize after LIF kernel before reading results.
-                 * Check error to avoid infinite recovery loop on silent kernel failure. */
+                 * FATAL EXIT on sync failure - watchdog will restart from checkpoint. */
                 #ifdef NIMCP_ENABLE_CUDA
                 if (gpu_ok) {
                     cudaError_t lif_sync_err = cudaDeviceSynchronize();
                     if (lif_sync_err != cudaSuccess) {
-                        NIMCP_LOGGING_ERROR("snn_network_step: LIF cudaDeviceSynchronize FAILED: %s - disabling GPU for this step",
+                        NIMCP_LOGGING_ERROR("snn_network_step: LIF cudaDeviceSynchronize FAILED: %s - FATAL EXIT",
                             cudaGetErrorString(lif_sync_err));
-                        gpu_ok = false;  /* Fall through to CPU path */
+                        fprintf(stderr, "\n[FATAL] LIF GPU sync failed - exiting for watchdog restart\n");
+                        fflush(stderr);
+                        exit(42);
                     }
                 }
                 #endif
