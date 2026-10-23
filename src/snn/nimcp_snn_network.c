@@ -2619,6 +2619,18 @@ int snn_network_step(snn_network_t* network, float dt) {
                     if (h_spikes) {
                         nimcp_gpu_tensor_to_host(lif_state->spikes, h_spikes);
 
+                        /* PERFORMANCE FIX: Read membrane potential from GPU ONCE, outside the loop
+                         * Previously: 64 populations × 7.2MB = ~460MB transferred per step
+                         * Now: Single 7.2MB transfer, then distribute to populations
+                         */
+                        float* h_v = NULL;
+                        if (lif_state->v) {
+                            h_v = (float*)nimcp_malloc(total_neurons * sizeof(float));
+                            if (h_v) {
+                                nimcp_gpu_tensor_to_host(lif_state->v, h_v);
+                            }
+                        }
+
                         /* Distribute GPU results back to population tensors and neural_net */
                         size_t neuron_offset = 0;
                         for (uint32_t p = 0; p < network->n_populations; p++) {
@@ -2650,19 +2662,19 @@ int snn_network_step(snn_network_t* network, float dt) {
                                  */
                             }
 
-                            /* Sync membrane potential back from GPU */
-                            if (lif_state->v) {
-                                float* h_v = (float*)nimcp_malloc(total_neurons * sizeof(float));
-                                if (h_v) {
-                                    nimcp_gpu_tensor_to_host(lif_state->v, h_v);
-                                    for (uint32_t n = 0; n < pop->n_neurons; n++) {
-                                        v_data[n] = h_v[neuron_offset + n];
-                                    }
-                                    nimcp_free(h_v);
+                            /* Sync membrane potential from the pre-read host buffer */
+                            if (h_v) {
+                                for (uint32_t n = 0; n < pop->n_neurons; n++) {
+                                    v_data[n] = h_v[neuron_offset + n];
                                 }
                             }
 
                             neuron_offset += pop->n_neurons;
+                        }
+
+                        /* Free the shared membrane potential buffer */
+                        if (h_v) {
+                            nimcp_free(h_v);
                         }
                         nimcp_free(h_spikes);
                         gpu_executed = true;
