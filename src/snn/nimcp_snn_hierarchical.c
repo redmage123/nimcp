@@ -325,11 +325,24 @@ snn_network_t* snn_create_hierarchical_network(
             }
             pop_map[flat_idx] = (uint32_t)rc;  /* rc is the population index */
 
-            /* Multi-GPU: Assign device_id in round-robin fashion (even=GPU0, odd=GPU1) */
+            /* Multi-GPU: Memory-aware load balancing */
             if (net->gpu_manager && net->gpu_manager->n_devices == 2 && (uint32_t)rc < net->n_populations) {
-                net->populations[rc]->device_id = flat_idx % 2;
-                LOG_INFO("Assigned population %s (idx %u) to GPU %u",
-                         pop_name, flat_idx, flat_idx % 2);
+                /* Assign based on neuron count to balance memory load
+                 * Large populations (>50K neurons) alternate starting with GPU 1
+                 * Small populations (<50K neurons) alternate starting with GPU 0
+                 * This spreads large memory allocations more evenly */
+                uint32_t pop_neurons = TIER_DEFS[t].neurons_per_pop;
+                uint32_t assigned_gpu;
+                if (pop_neurons > 50000) {
+                    /* Large populations: GPU 1, 0, 1, 0... */
+                    assigned_gpu = 1 - (flat_idx % 2);
+                } else {
+                    /* Small populations: GPU 0, 1, 0, 1... */
+                    assigned_gpu = flat_idx % 2;
+                }
+                net->populations[rc]->device_id = assigned_gpu;
+                LOG_INFO("Assigned population %s (idx %u, %u neurons) to GPU %u",
+                         pop_name, flat_idx, pop_neurons, assigned_gpu);
             } else if (net->gpu_manager && net->gpu_manager->n_devices >= 1 && (uint32_t)rc < net->n_populations) {
                 net->populations[rc]->device_id = 0;  /* Single GPU mode */
             }

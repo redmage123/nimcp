@@ -211,3 +211,10 @@ int nimcp_gpu_context_get_info_string(const nimcp_gpu_context_t* ctx,
                     ctx->device_id,
                     ctx->device_info.name[0] ? ctx->device_info.name : "Unknown");
 }
+
+int nimcp_gpu_select_best_device(size_t min_required_bytes,
+                                  size_t* free_memory_out) {
+    (void)min_required_bytes;
+    if (free_memory_out) *free_memory_out = 0;
+    return -1;  // No GPU available in stub build
+}

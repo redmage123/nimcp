@@ -416,6 +416,20 @@ NIMCP_EXPORT void nimcp_gpu_context_print_info(const nimcp_gpu_context_t* ctx);
 NIMCP_EXPORT int nimcp_gpu_context_get_info_string(const nimcp_gpu_context_t* ctx,
                                                     char* buffer, size_t size);
 
+/**
+ * @brief Select best GPU device based on available memory
+ *
+ * WHAT: Queries all available GPUs and returns the one with most free memory
+ * WHY:  Prevents OOM by routing operations to GPU with most available space
+ * HOW:  Calls cudaMemGetInfo on each device, returns device ID with max free
+ *
+ * @param min_required_bytes Minimum free memory required (0 = any available)
+ * @param free_memory_out Output: free memory on selected device (can be NULL)
+ * @return Device ID with most free memory, or -1 if no suitable device found
+ */
+NIMCP_EXPORT int nimcp_gpu_select_best_device(size_t min_required_bytes,
+                                               size_t* free_memory_out);
+
 #ifdef __cplusplus
 }
 #endif

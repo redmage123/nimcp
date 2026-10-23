@@ -2402,8 +2402,14 @@ int snn_network_step(snn_network_t* network, float dt) {
                                         NIMCP_LOGGING_ERROR("[MULTI-GPU] Pop %u: CSR kernel FAILED on GPU %u", p, pop_device);
                                     }
 
-                                    /* Ensure correct device before copy-back */
+                                    /* CRITICAL: Synchronize device to ensure kernel completes
+                                     * before GPU-to-host copy. Missing sync can cause context
+                                     * corruption and "device busy/unavailable" errors. */
                                     snn_gpu_ensure_device(network->gpu_manager, pop_device);
+                                    #ifdef NIMCP_ENABLE_CUDA
+                                    cudaDeviceSynchronize();
+                                    #endif
+
                                     NIMCP_LOGGING_DEBUG("[MULTI-GPU] Pop %u: Copying result from GPU %u to host", p, pop_device);
                                     nimcp_gpu_tensor_to_host(d_isyn,
                                         h_input + pop_offset);
@@ -2431,8 +2437,13 @@ int snn_network_step(snn_network_t* network, float dt) {
                                             (const float*)d_ext->data,
                                             (float*)d_isyn->data,
                                             pop->n_neurons);
-                                        /* Ensure correct device before copy-back */
+
+                                        /* CRITICAL: Synchronize before copy-back */
                                         snn_gpu_ensure_device(network->gpu_manager, pop_device);
+                                        #ifdef NIMCP_ENABLE_CUDA
+                                        cudaDeviceSynchronize();
+                                        #endif
+
                                         nimcp_gpu_tensor_to_host(d_isyn,
                                             h_input + pop_offset);
                                     }
@@ -2612,6 +2623,14 @@ int snn_network_step(snn_network_t* network, float dt) {
             if (input_tensor) {
                 /* Run GPU LIF forward pass */
                 bool gpu_ok = nimcp_gpu_lif_forward(gpu, lif_state, input_tensor);
+
+                /* CRITICAL: Synchronize after LIF kernel before reading results
+                 * Ensures GPU operations complete before host access */
+                #ifdef NIMCP_ENABLE_CUDA
+                if (gpu_ok) {
+                    cudaDeviceSynchronize();
+                }
+                #endif
 
                 if (gpu_ok && lif_state->spikes) {
                     /* Read back spikes from GPU */

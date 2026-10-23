@@ -166,6 +166,67 @@ _training_integration = None
 # (~line 6600) which _run_probe_drips iterates — do NOT reuse that name.
 _PROBE_DRIPS_ENABLED = True
 
+# Batch learning control flag — set to False to disable GPU batch operations
+# that can cause OOM on systems with limited VRAM. When False, uses per-sample
+# learn_vector() instead of learn_vector_batch().
+ENABLE_BATCH_LEARNING = False
+
+# GPU memory-aware batch routing — automatically selects GPU with most free memory
+# before each batch operation to prevent OOM crashes
+ENABLE_SMART_GPU_ROUTING = True
+
+
+def get_best_gpu_for_batch(min_required_mb=0):
+    """
+    Select the GPU with the most free memory for batch operations.
+
+    Args:
+        min_required_mb: Minimum free memory required in MB (0 = any available)
+
+    Returns:
+        tuple: (best_gpu_id, free_memory_mb) or (-1, 0) if no suitable GPU found
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=index,memory.free', '--format=csv,noheader,nounits'],
+            capture_output=True, text=True, timeout=2
+        )
+        if result.returncode != 0:
+            return (-1, 0)
+
+        best_gpu = -1
+        max_free = 0
+
+        for line in result.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.split(',')
+            if len(parts) != 2:
+                continue
+            gpu_id = int(parts[0].strip())
+            free_mb = int(parts[1].strip())
+
+            if free_mb >= min_required_mb and free_mb > max_free:
+                max_free = free_mb
+                best_gpu = gpu_id
+
+        return (best_gpu, max_free)
+    except Exception:
+        return (-1, 0)
+
+
+def set_gpu_device(gpu_id):
+    """Set the active CUDA device for upcoming operations."""
+    if gpu_id < 0:
+        return False
+    try:
+        import os
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+        return True
+    except Exception:
+        return False
+
 
 @lru_cache(maxsize=4096)
 def generate_visual_frame(description, width=32, height=32, channels=3):
@@ -3251,13 +3312,25 @@ def _retroactive_cognitive_seed(brain, composer, completed_steps, learning_rate)
             # Flush batch when full or at end
             if len(batch_pairs) >= BATCH_SIZE or j == len(order) - 1:
                 if batch_pairs:
-                    try:
-                        avg_loss = brain.learn_vector_batch(
-                            batch_pairs, learning_rate=pass_lr)
-                        if avg_loss is not None:
-                            losses.append(avg_loss)
-                    except Exception:
-                        # Fallback: individual calls
+                    if ENABLE_BATCH_LEARNING:
+                        # GPU batch mode
+                        try:
+                            avg_loss = brain.learn_vector_batch(
+                                batch_pairs, learning_rate=pass_lr)
+                            if avg_loss is not None:
+                                losses.append(avg_loss)
+                        except Exception:
+                            # Fallback: individual calls
+                            for f, t in batch_pairs:
+                                try:
+                                    loss = brain.learn_vector(f, t, confidence=0.8,
+                                                             learning_rate=pass_lr)
+                                    if loss is not None:
+                                        losses.append(loss)
+                                except Exception:
+                                    pass
+                    else:
+                        # Per-sample mode (avoids GPU OOM)
                         for f, t in batch_pairs:
                             try:
                                 loss = brain.learn_vector(f, t, confidence=0.8,
@@ -7010,20 +7083,70 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             last_desc = mini_batch_buf[-1][2] if mini_batch_buf else ""
             if last_desc:
                 submit_multimodal(brain, last_desc)
-            try:
-                batch_pairs = [(f, t) for f, t, _, _ in mini_batch_buf]
-                avg_loss = brain.learn_vector_batch(batch_pairs,
-                                                     learning_rate=current_lr)
-                if avg_loss is not None and avg_loss >= 0:
+
+            if ENABLE_BATCH_LEARNING:
+                # GPU batch mode (requires sufficient VRAM)
+                # Smart GPU check: verify sufficient memory before attempting batch
+                skip_batch_due_to_memory = False
+                if ENABLE_SMART_GPU_ROUTING and len(mini_batch_buf) > 4:
+                    best_gpu, free_mb = get_best_gpu_for_batch(min_required_mb=1000)
+                    if best_gpu < 0:
+                        # No GPU has enough free memory - fall back to per-sample
+                        skip_batch_due_to_memory = True
+                        if (i + 1) % 100 == 0:
+                            print(f"  [GPU-Route] Insufficient memory on all GPUs - using per-sample", flush=True)
+                    elif (i + 1) % 100 == 0:
+                        print(f"  [GPU-Route] GPU {best_gpu} has {free_mb}MB free", flush=True)
+
+                if not skip_batch_due_to_memory:
+                    try:
+                        batch_pairs = [(f, t) for f, t, _, _ in mini_batch_buf]
+                        avg_loss = brain.learn_vector_batch(batch_pairs,
+                                                             learning_rate=current_lr)
+                        if avg_loss is not None and avg_loss >= 0:
+                            for f, t, desc, _ in mini_batch_buf:
+                                losses.append(avg_loss)
+                                hard_miner.record(avg_loss, desc, f, t)
+                            adaptive_batch.record_loss(avg_loss)
+                    except Exception as _be:
+                        # Fallback: per-sample. Audit fix #12 — log batch failure
+                        # instead of swallowing it silently.
+                        logger.warning("learn_vector_batch failed (%s) — falling back to "
+                                       "per-sample for %d items", _be, len(mini_batch_buf))
+                        _per_sample_failures = 0
+                        for f, t, desc, _ in mini_batch_buf:
+                            try:
+                                loss = brain.learn_vector(f, t, label=desc[:50],
+                                                           confidence=0.5,
+                                                           learning_rate=current_lr)
+                                losses.append(loss)
+                                hard_miner.record(loss, desc, f, t)
+                                adaptive_batch.record_loss(loss)
+                            except Exception as _se:
+                                _per_sample_failures += 1
+                                losses.append(0.0)
+                        if _per_sample_failures > 0:
+                            logger.warning("Per-sample fallback also failed for %d/%d items",
+                                           _per_sample_failures, len(mini_batch_buf))
+                else:
+                    # GPU memory insufficient - use per-sample learning
+                    _per_sample_failures = 0
                     for f, t, desc, _ in mini_batch_buf:
-                        losses.append(avg_loss)
-                        hard_miner.record(avg_loss, desc, f, t)
-                    adaptive_batch.record_loss(avg_loss)
-            except Exception as _be:
-                # Fallback: per-sample. Audit fix #12 — log batch failure
-                # instead of swallowing it silently.
-                logger.warning("learn_vector_batch failed (%s) — falling back to "
-                               "per-sample for %d items", _be, len(mini_batch_buf))
+                        try:
+                            loss = brain.learn_vector(f, t, label=desc[:50],
+                                                       confidence=0.5,
+                                                       learning_rate=current_lr)
+                            losses.append(loss)
+                            hard_miner.record(loss, desc, f, t)
+                            adaptive_batch.record_loss(loss)
+                        except Exception as _se:
+                            _per_sample_failures += 1
+                            losses.append(0.0)
+                    if _per_sample_failures > 0:
+                        logger.warning("Per-sample (low memory) failed for %d/%d items",
+                                       _per_sample_failures, len(mini_batch_buf))
+            else:
+                # Per-sample mode (avoids GPU OOM on limited VRAM systems)
                 _per_sample_failures = 0
                 for f, t, desc, _ in mini_batch_buf:
                     try:

@@ -607,6 +607,67 @@ int nimcp_gpu_context_get_info_string(const nimcp_gpu_context_t* ctx,
                     ctx->cublas_initialized ? "yes" : "no");
 }
 
+int nimcp_gpu_select_best_device(size_t min_required_bytes,
+                                  size_t* free_memory_out) {
+    // Get number of available devices
+    int device_count = 0;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    if (err != cudaSuccess || device_count == 0) {
+        LOG_DEBUG("No CUDA devices available for selection");
+        return -1;
+    }
+
+    int best_device = -1;
+    size_t max_free = 0;
+    int current_device = -1;
+    cudaGetDevice(&current_device);  // Save current device
+
+    // Query each device for available memory
+    for (int i = 0; i < device_count; i++) {
+        err = cudaSetDevice(i);
+        if (err != cudaSuccess) {
+            LOG_WARN("Failed to set device %d: %s", i, cudaGetErrorString(err));
+            continue;
+        }
+
+        size_t free = 0, total = 0;
+        err = cudaMemGetInfo(&free, &total);
+        if (err != cudaSuccess) {
+            LOG_WARN("Failed to query memory on device %d: %s", i, cudaGetErrorString(err));
+            continue;
+        }
+
+        LOG_DEBUG("GPU %d: %lu MB free of %lu MB total",
+                  i, (unsigned long)(free / (1024 * 1024)),
+                  (unsigned long)(total / (1024 * 1024)));
+
+        // Update best device if this has more free memory and meets minimum requirement
+        if (free >= min_required_bytes && free > max_free) {
+            max_free = free;
+            best_device = i;
+        }
+    }
+
+    // Restore original device
+    if (current_device >= 0) {
+        cudaSetDevice(current_device);
+    }
+
+    if (free_memory_out) {
+        *free_memory_out = max_free;
+    }
+
+    if (best_device >= 0) {
+        LOG_INFO("Selected GPU %d with %lu MB free memory",
+                 best_device, (unsigned long)(max_free / (1024 * 1024)));
+    } else {
+        LOG_WARN("No suitable GPU found (required %lu MB)",
+                 (unsigned long)(min_required_bytes / (1024 * 1024)));
+    }
+
+    return best_device;
+}
+
 #else /* !NIMCP_ENABLE_CUDA */
 
 //=============================================================================
@@ -765,6 +826,13 @@ int nimcp_gpu_context_get_info_string(const nimcp_gpu_context_t* ctx,
     (void)ctx;
     if (!buffer || size == 0) return 0;
     return snprintf(buffer, size, "GPU Context: CUDA not available");
+}
+
+int nimcp_gpu_select_best_device(size_t min_required_bytes,
+                                  size_t* free_memory_out) {
+    (void)min_required_bytes;
+    if (free_memory_out) *free_memory_out = 0;
+    return -1;  // No GPU available in stub build
 }
 
 #endif /* NIMCP_ENABLE_CUDA */

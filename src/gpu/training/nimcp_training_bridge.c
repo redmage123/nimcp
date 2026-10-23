@@ -36,6 +36,10 @@
 #include <math.h>
 #include <string.h>
 
+#ifdef NIMCP_ENABLE_CUDA
+#include <cuda_runtime.h>
+#endif
+
 #define LOG_MODULE "gpu_training_bridge"
 
 //=============================================================================
@@ -586,6 +590,32 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
         }
 
         if (nnz > 0) {
+            /* Pre-allocation memory check to prevent OOM crashes
+             * Estimate memory needed for sparse CSR tensor:
+             * - values: nnz * 4 bytes (float32)
+             * - col_idx: nnz * 4 bytes (int32)
+             * - row_ptr: (rows+1) * 4 bytes (int32)
+             * - Plus overhead for CUDA allocator (~10%) */
+            size_t estimated_bytes = (size_t)nnz * 8 + (size_t)dst_layer_size * 4;
+            estimated_bytes = (estimated_bytes * 11) / 10;  /* 10% overhead */
+
+#ifdef NIMCP_ENABLE_CUDA
+            size_t free_mem = 0, total_mem = 0;
+            cudaError_t mem_err = cudaMemGetInfo(&free_mem, &total_mem);
+            if (mem_err == cudaSuccess) {
+                /* Require 500MB safety margin beyond estimated allocation */
+                size_t required_bytes = estimated_bytes + (500 * 1024 * 1024);
+                if (free_mem < required_bytes) {
+                    NIMCP_LOG_WARN("Insufficient GPU memory for sparse tensor upload: "
+                                   "need %zu MB, only %zu MB free (layer %u, nnz=%d)",
+                                   required_bytes / (1024*1024),
+                                   free_mem / (1024*1024),
+                                   l, nnz);
+                    return false;  /* Graceful failure - caller can retry or fall back */
+                }
+            }
+#endif
+
             /* CSR for backward pass + plasticity, BSR for forward pass (tensor cores) */
             cache->sparse_weights[l] = nimcp_sparse_from_coo(
                 cache->sparse_ctx,
