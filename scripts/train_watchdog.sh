@@ -99,14 +99,36 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
 
     # Check checkpoint exists
     if [ -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin" ]; then
-        local ckpt=$(readlink -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin")
+        ckpt=$(readlink -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin")
         log_wd "Resuming from checkpoint: $(basename $ckpt)"
     else
         log_wd "No checkpoint found, starting fresh"
     fi
 
+    # Preserve previous training log before overwriting
+    if [ -f "$TRAINING_LOG" ] && [ "$restart_count" -gt 1 ]; then
+        prev_num=$((restart_count - 1))
+        archive_log="${LOG_DIR}/training_attempt_${prev_num}.log"
+        # Only keep last 10 attempts worth of logs (preserve disk space)
+        cp "$TRAINING_LOG" "$archive_log" 2>/dev/null
+        log_wd "Archived previous log to $(basename $archive_log)"
+        # Clean up old archives (keep last 10)
+        ls -t ${LOG_DIR}/training_attempt_*.log 2>/dev/null | tail -n +11 | xargs -r rm -f
+    fi
+
     # Start training in background
     cd "$NIMCP_DIR" || { log_wd "FATAL: Cannot cd to $NIMCP_DIR"; exit 1; }
+
+    # Prevent huggingface/network hangs - we don't need external data
+    export HF_HUB_OFFLINE=1
+    export TRANSFORMERS_OFFLINE=1
+    export HF_DATASETS_OFFLINE=1
+    export NIMCP_SKIP_AUDIO_DOWNLOAD=1
+
+    # Prefer PyTorch's bundled CUDA 12.8 libs over system CUDA 12.0 libs
+    # (system libcudart.so.12 is 12.0.146 - missing cudaGetDriverEntryPointByVersion)
+    PYTORCH_CUDA_LIBS="/usr/local/lib/python3.12/dist-packages/nvidia/cuda_runtime/lib"
+    export LD_LIBRARY_PATH="${PYTORCH_CUDA_LIBS}:${LD_LIBRARY_PATH}"
 
     python3 scripts/immerse_athena.py --stage "$STAGE" --resume > "$TRAINING_LOG" 2>&1 &
     train_pid=$!
