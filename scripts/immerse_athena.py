@@ -9669,10 +9669,12 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
     """
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
-    # Need ~20 GB free for new checkpoint write (.snn alone is ~10-12 GB
-    # gzipped, plus other sidecars). If low, ship-and-delete the previous
-    # snapshot to Hetzner BEFORE writing the new one — never hold 2x locally.
-    DISK_HEADROOM_GB = 20.0
+    # Need ~5 GB free for new checkpoint write (brain state ~2-3 GB total).
+    # LOWERED from 20 GB — new direct-ship-after-save mode below rsyncs
+    # to Hetzner immediately and deletes local, so no need to reserve 2x.
+    # If low, ship-and-delete the previous snapshot to Hetzner BEFORE
+    # writing the new one — never hold 2x locally.
+    DISK_HEADROOM_GB = 5.0
     if not _check_disk_space(min_gb=DISK_HEADROOM_GB):
         logger.warning("Low disk space (<%g GB free) — shipping previous snapshot first",
                        DISK_HEADROOM_GB)
