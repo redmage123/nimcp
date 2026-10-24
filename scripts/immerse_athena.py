@@ -672,8 +672,16 @@ DEFAULT_LNN_NEURONS = 512
 CHECKPOINT_MIN_BYTES_PER_NEURON = 50
 CHECKPOINT_MIN_SIZE = 5_000_000
 
-CHECKPOINT_DIR = "checkpoints/athena"
-DECODER_DIR = "checkpoints/athena/decoder"
+# Checkpoints go to RAM (/dev/shm) on disk-constrained hosts (vast.ai 32GB).
+# Overridable via NIMCP_CHECKPOINT_DIR env var.
+# After save, _ship_to_hetzner rsyncs to durable storage and deletes local.
+# Keep state/mastery/cache on real disk since they're tiny and need persistence.
+import os as _os_init
+_default_ckpt = "checkpoints/athena"
+if _os_init.environ.get("NIMCP_USE_SHM_CHECKPOINT", "0") == "1":
+    _default_ckpt = "/dev/shm/athena_ckpt"
+CHECKPOINT_DIR = _os_init.environ.get("NIMCP_CHECKPOINT_DIR", _default_ckpt)
+DECODER_DIR = _os_init.path.join(CHECKPOINT_DIR, "decoder")
 STATE_FILE = "checkpoints/athena/immersive_state.json"
 MASTERY_FILE = "checkpoints/athena/mastery_state.json"
 CONTENT_CACHE = "checkpoints/athena/claude_content_cache.json"

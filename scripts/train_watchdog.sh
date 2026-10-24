@@ -124,6 +124,11 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     export TRANSFORMERS_OFFLINE=1
     export HF_DATASETS_OFFLINE=1
     export NIMCP_SKIP_AUDIO_DOWNLOAD=1
+    # Save checkpoints to /dev/shm (RAM-backed tmpfs, 31GB avail)
+    # instead of disk (32GB vast.ai overlay FS is too tight for 6+GB saves).
+    # _ship_to_hetzner rsyncs to durable storage after each save.
+    export NIMCP_USE_SHM_CHECKPOINT=1
+    mkdir -p /dev/shm/athena_ckpt
 
     # Prefer PyTorch's bundled CUDA 12.8 libs over system CUDA 12.0 libs
     # (system libcudart.so.12 is 12.0.146 - missing cudaGetDriverEntryPointByVersion)
