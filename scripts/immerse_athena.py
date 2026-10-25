@@ -9709,7 +9709,7 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                         if files:
                             _sp.run(["rsync", "-az", "--partial", "--timeout=1800",
                                      "--remove-source-files",
-                                     "-e", "ssh -o StrictHostKeyChecking=no",
+                                     "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no",
                                      ] + files + [
                                      "bbrelin@176.9.99.103:/home/bbrelin/nimcp/checkpoints/athena/"],
                                     timeout=2400, check=False, capture_output=True)
@@ -10025,7 +10025,7 @@ def _ship_and_remove_previous_snapshot():
     try:
         cmd = ["rsync", "-az", "--partial", "--timeout=1200",
                "--remove-source-files",
-               "-e", "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+               "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no -o ConnectTimeout=10"
                ] + files + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
         r = subprocess.run(cmd, timeout=1800, capture_output=True)
         if r.returncode != 0:
@@ -10092,7 +10092,7 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
     # 2. ENSURE REMOTE DIR EXISTS
     try:
         subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+            ["ssh", "-i", "/root/.ssh/id_ed25519_hetzner", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
              HETZNER_HOST, f"mkdir -p {HETZNER_DIR}"],
             timeout=30, check=False, capture_output=True)
     except Exception as e:
@@ -10128,7 +10128,7 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
         # COPY current symlinked snapshot (no --remove-source-files)
         if copyable:
             cmd = ["rsync", "-az", "--partial", "--timeout=1200",
-                   "-e", "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+                   "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no -o ConnectTimeout=10"
                    ] + copyable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
             r = subprocess.run(cmd, timeout=1800, capture_output=True)
             if r.returncode != 0:
@@ -10142,7 +10142,7 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
         if movable:
             cmd = ["rsync", "-az", "--partial", "--timeout=1200",
                    "--remove-source-files",
-                   "-e", "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+                   "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no -o ConnectTimeout=10"
                    ] + movable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
             r = subprocess.run(cmd, timeout=1800, capture_output=True)
             if r.returncode != 0:
