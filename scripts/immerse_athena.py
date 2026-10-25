@@ -10829,6 +10829,20 @@ def main():
         # Resume: load full brain state from checkpoint (avoids 52GB+ fresh init)
         print(f"  Loading brain from checkpoint: {checkpoint_path}")
         brain = nimcp.Brain.load(checkpoint_path)
+        # CRITICAL: brain_load() allocates the brain shell + populates the ANN
+        # from the checkpoint, but DOES NOT run the subsystem init that creates
+        # brain->grounded_lang / internal_kg / immune_system. Without this,
+        # (a) .gl_lang / .immune / .kg sidecars never load (lexicon wipes on
+        # every restart), and (b) brain_save silently skips those sidecars on
+        # subsequent saves (if-check is false). The fix lives in
+        # nimcp_brain_eager_init_cognitive — it idempotently inits missing
+        # subsystems via INIT_IF_NULL, then calls brain_load_post_init_sidecars
+        # which pulls the saved state in from disk.
+        try:
+            init_count = brain.eager_init_cognitive()
+            print(f"  Eagerly initialized {init_count} cognitive subsystems (loads gl_lang/kg/immune)")
+        except Exception as _ic_e:
+            print(f"  WARNING: eager_init_cognitive failed: {_ic_e} — gl_lang/kg will stay cold")
     else:
         # Fresh start: create brain from scratch (requires ~52GB+ RAM)
         brain = nimcp.Brain("athena",
