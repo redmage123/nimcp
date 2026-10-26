@@ -9731,12 +9731,19 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                         if files:
                             # No -z: the 21 GB .snn is raw float32 and does not
                             # compress; -z just pins a core for ~10 min.
-                            _sp.run(["rsync", "-a", "--partial", "--timeout=1800",
-                                     "--remove-source-files",
-                                     "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no",
-                                     ] + files + [
-                                     "bbrelin@176.9.99.103:/home/bbrelin/nimcp/checkpoints/athena/"],
-                                    timeout=2400, check=False, capture_output=True)
+                            # --partial-dir, never bare --partial: an interrupted
+                            # transfer must not rename a fragment over a complete
+                            # file on Hetzner (see _ship_to_hetzner).
+                            _r = _sp.run(["rsync", "-a", "--partial-dir=.rsync-partial",
+                                          "--timeout=1800", "--remove-source-files",
+                                          "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no",
+                                          ] + files + [
+                                          "bbrelin@176.9.99.103:/home/bbrelin/nimcp/checkpoints/athena/"],
+                                         timeout=3600, check=False, capture_output=True)
+                            if _r.returncode != 0:
+                                raise RuntimeError(
+                                    "rsync rc=%d: %s" % (_r.returncode,
+                                                         _r.stderr.decode()[:300]))
                             # Remove now-dangling symlinks
                             for ext in sidecars:
                                 lnk = canonical_p + ext
@@ -10115,7 +10122,9 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
                 return
             continue  # sidecars are best-effort
         size = os.path.getsize(f)
-        min_sz = min_sizes.get(ext, 50)
+        # Unknown/small sidecars: only an EMPTY file signals truncation
+        # (.temperature is legitimately 24 bytes and was being skipped at 50).
+        min_sz = min_sizes.get(ext, 1)
         if size < min_sz:
             logger.warning("Hetzner ship: %s only %d bytes (min %d) — skipping",
                            f, size, min_sz)
@@ -10161,27 +10170,31 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
     # Files to COPY (current symlink target — keep local for restart)
     copyable = [f for f in files_to_ship if f not in movable]
 
+    # No -z: the .snn is raw float32 and does not compress — -z just pins a
+    # core for the whole transfer. --partial-dir instead of --partial: a bare
+    # --partial RENAMES an interrupted temp file over the destination, which
+    # replaced a complete 21 GB .snn on Hetzner with a 1.8 GB stub when a
+    # concurrent transfer was killed (2026-10-26). With --partial-dir the
+    # fragment is parked in a subdirectory and the destination is only ever
+    # replaced by a complete file.
+    RSYNC_BASE = ["rsync", "-a", "--partial-dir=.rsync-partial", "--timeout=1800",
+                  "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no -o ConnectTimeout=10"]
     try:
         # COPY current symlinked snapshot (no --remove-source-files)
         if copyable:
-            cmd = ["rsync", "-az", "--partial", "--timeout=1200",
-                   "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no -o ConnectTimeout=10"
-                   ] + copyable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
-            r = subprocess.run(cmd, timeout=1800, capture_output=True)
+            copy_bytes = sum(os.path.getsize(f) for f in copyable)
+            cmd = RSYNC_BASE + copyable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
+            r = subprocess.run(cmd, timeout=3600, capture_output=True)
             if r.returncode != 0:
                 logger.warning("Hetzner copy failed: %s", r.stderr.decode()[:500])
                 return
             logger.info("Hetzner: copied %d current files (%.1f MB)",
-                        len(copyable),
-                        sum(os.path.getsize(f) for f in copyable) / 1e6)
+                        len(copyable), copy_bytes / 1e6)
 
         # MOVE older snapshot files (--remove-source-files deletes after success)
         if movable:
-            cmd = ["rsync", "-az", "--partial", "--timeout=1200",
-                   "--remove-source-files",
-                   "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no -o ConnectTimeout=10"
-                   ] + movable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
-            r = subprocess.run(cmd, timeout=1800, capture_output=True)
+            cmd = RSYNC_BASE + ["--remove-source-files"] + movable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
+            r = subprocess.run(cmd, timeout=3600, capture_output=True)
             if r.returncode != 0:
                 logger.warning("Hetzner move failed: %s", r.stderr.decode()[:500])
                 return
@@ -10195,8 +10208,22 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
         logger.warning("Hetzner ship error: %s", e)
 
 
-def _save_checkpoint(brain, decoder, stage, step):
-    """Non-blocking checkpoint save — runs in background thread."""
+def _save_checkpoint(brain, decoder, stage, step, wait=False):
+    """Non-blocking checkpoint save — runs in background thread.
+
+    Returns True if a save thread was started, False if this save was
+    skipped because the previous one is still running.
+
+    Two checkpoint threads must NEVER overlap. The save thread also ships
+    the ~21 GB .snn to Hetzner, which can take longer than the 50-step
+    cadence. Observed 2026-10-26: the old 30 s join timeout let a second
+    thread start mid-ship; it saw "disk low", emergency-shipped the SAME
+    canonical with --remove-source-files, deleted the local .bin while the
+    first rsync was still copying it, and its interrupted --partial .snn was
+    renamed over the complete copy on Hetzner (1.8 GB truncated sidecar).
+    Cadence saves therefore skip when a save is in flight (the next cadence
+    point retries); stage transitions and shutdown pass wait=True and block.
+    """
     global _checkpoint_thread
     from threading import Thread
 
@@ -10204,13 +10231,22 @@ def _save_checkpoint(brain, decoder, stage, step):
     # is written and verified. This prevents the state file from pointing to
     # a snapshot that doesn't exist yet (or was never written due to crash).
 
-    # Wait for previous checkpoint to finish (if still running)
     if _checkpoint_thread is not None and _checkpoint_thread.is_alive():
-        _checkpoint_thread.join(timeout=30)
+        if not wait:
+            logger.warning("Checkpoint stage=%d step=%d skipped — previous "
+                           "checkpoint still saving/shipping (overlapping "
+                           "saves double-ship the .snn and evict the "
+                           "canonical mid-transfer); next cadence retries",
+                           stage, step)
+            return False
+        logger.info("Waiting for the previous checkpoint to finish before "
+                    "saving stage=%d step=%d", stage, step)
+        _checkpoint_thread.join()
     _checkpoint_thread = Thread(target=_save_checkpoint_sync,
                                 args=(brain, decoder, stage, step),
                                 daemon=False)
     _checkpoint_thread.start()
+    return True
 
 
 def _load_state():
@@ -11166,7 +11202,8 @@ def main():
         print("\n  Graceful shutdown... saving checkpoint...")
         if ipc_server[0]:
             ipc_server[0].stop()
-        _save_checkpoint(brain, decoder, training_progress[0], training_progress[1])
+        _save_checkpoint(brain, decoder, training_progress[0], training_progress[1],
+                         wait=True)
         # Wait for checkpoint save to complete before exiting
         if _checkpoint_thread is not None and _checkpoint_thread.is_alive():
             print("  Waiting for checkpoint save to complete...")
@@ -11180,8 +11217,10 @@ def main():
     def sigusr1_handler(sig, frame):
         stage, step = training_progress
         print(f"\n  [SIGUSR1] On-demand checkpoint requested (stage={stage}, step={step})...")
-        _save_checkpoint(brain, decoder, stage, step)
-        print("  [SIGUSR1] Checkpoint save initiated — training continues.")
+        if _save_checkpoint(brain, decoder, stage, step):
+            print("  [SIGUSR1] Checkpoint save initiated — training continues.")
+        else:
+            print("  [SIGUSR1] Previous checkpoint still in flight — request ignored.")
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGUSR1, sigusr1_handler)
@@ -11254,7 +11293,7 @@ def main():
                     start_from=start_step if start_stage == 0 else 0)
         start_step = 0
         # Save checkpoint at stage transition so --resume skips completed stages
-        _save_checkpoint(brain, decoder, stage=1, step=0)
+        _save_checkpoint(brain, decoder, stage=1, step=0, wait=True)
         # Wait for the save to complete before declaring it — the prior
         # implementation said "saved" while the background thread was still
         # writing, so a crash in that window left state pointing nowhere.
@@ -11287,7 +11326,7 @@ def main():
                     num_stimuli=args.stage1_stimuli,
                     start_from=start_step if start_stage == 1 else 0)
         start_step = 0
-        _save_checkpoint(brain, decoder, stage=2, step=0)
+        _save_checkpoint(brain, decoder, stage=2, step=0, wait=True)
         if _checkpoint_thread is not None and _checkpoint_thread.is_alive():
             _checkpoint_thread.join(timeout=300)
         print("  [Checkpoint] Stage 1 complete → saved as stage 2, step 0")
@@ -11326,7 +11365,7 @@ def main():
             print(f"\n  Stage 2 complete — final mean loss: "
                   f"{np.mean(stage2_losses[-500:]):.4f}")
         start_step = 0
-        _save_checkpoint(brain, decoder, stage=3, step=0)
+        _save_checkpoint(brain, decoder, stage=3, step=0, wait=True)
         if _checkpoint_thread is not None and _checkpoint_thread.is_alive():
             _checkpoint_thread.join(timeout=300)
         print("  [Checkpoint] Stage 2 complete → saved as stage 3, step 0")
@@ -11365,7 +11404,7 @@ def main():
     print("\n" + "=" * 60)
     print("  DEVELOPMENTAL TRAINING COMPLETE")
     print("=" * 60)
-    _save_checkpoint(brain, decoder, stage=3, step=-1)
+    _save_checkpoint(brain, decoder, stage=3, step=-1, wait=True)
 
     # Final stats
     print("\n  Final biological state:")
