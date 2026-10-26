@@ -11114,6 +11114,16 @@ def main():
                 else:
                     print(f"  Resume: no checkpoint files found, starting fresh")
 
+            # Never resume below the step in the snapshot's own name. A stale
+            # state file restarted the counter at 0 on 2026-10-26 and the run
+            # then overwrote the very checkpoint it had resumed from.
+            import re as _re
+            _m = _re.match(r'athena_s(\d+)_step(\d+)\.bin', state.get("snapshot", "") or "")
+            if _m and int(_m.group(1)) == start_stage and int(_m.group(2)) > start_step:
+                print(f"  Resume: state file step {start_step} below snapshot step "
+                      f"{_m.group(2)} — using snapshot step")
+                start_step = int(_m.group(2))
+
     # --- Handle graceful shutdown ---
     shutdown_requested = [False]
     # Mutable training progress for signal handlers [stage, step]

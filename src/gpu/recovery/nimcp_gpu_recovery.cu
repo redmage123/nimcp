@@ -378,21 +378,14 @@ bool nimcp_gpu_execute_recovery_action(
             }
 
         case GPU_RECOVERY_RESET_DEVICE:
-#ifdef NIMCP_ENABLE_CUDA
-            {
-                cudaError_t err = cudaDeviceReset();
-                if (err == cudaSuccess) {
-                    log_recovery_action("DEVICE", "GPU device reset successful");
-                    return true;
-                }
-                snprintf(details, sizeof(details), "Device reset failed: %s",
-                         cudaGetErrorString(err));
-                log_recovery_action("DEVICE", details);
-                return false;
-            }
-#else
-            return false;
-#endif
+            /* cudaDeviceReset() destroys every context in the process; every
+             * later CUDA call fails "busy or unavailable" while training keeps
+             * running and saving dead checkpoints. Exit 42 → watchdog restart. */
+            log_recovery_action("DEVICE",
+                "device reset requested - unrecoverable in-process, exiting 42 for watchdog restart");
+            fflush(stdout);
+            fflush(stderr);
+            exit(42);
 
         case GPU_RECOVERY_CPU_FALLBACK:
             if (ctx->config.enable_cpu_fallback && ctx->cpu_fallback_fn) {

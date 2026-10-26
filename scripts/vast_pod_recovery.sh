@@ -30,8 +30,15 @@ NIMCP_DIR=/root/nimcp
 LOG_FILE=/tmp/pod_recovery.log
 HETZNER_HOST=bbrelin@176.9.99.103
 HETZNER_SSH_KEY=/root/.ssh/id_ed25519_hetzner
-HETZNER_CKPT_DIR=/home/bbrelin/nimcp_checkpoints/athena
+# The trainer's _ship_to_hetzner target. NOT ~/nimcp_checkpoints/athena — that
+# is the old backup_to_hetzner.sh mirror whose athena_immersive.bin symlink is
+# never advanced (resumed from step2950 instead of step6250 on 2026-10-26).
+HETZNER_CKPT_DIR=/home/bbrelin/nimcp/checkpoints/athena
 LOCAL_CKPT_DIR=/dev/shm/athena_ckpt
+# Sidecars that must all be present (non-empty) for a checkpoint to count as
+# complete. A ship cut off mid-transfer leaves a truncated .snn behind.
+# Comma-separated: ssh flattens quoted argument lists into separate words.
+REQUIRED_SIDECARS=".snn,.cnn,.lnn,.meta,.tokenizer"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
@@ -145,13 +152,37 @@ python3 -c "from sentence_transformers import SentenceTransformer; print('senten
 # ============================================================
 # STEP 4: Rebuild nimcp.so for Python 3.12 if needed
 # ============================================================
-step "4. Verify nimcp.so can import (Python 3.12 ABI)"
+step "4. Source freshness + nimcp.so rebuild if stale"
+
+# /root/nimcp lost its .git to disk pressure on 2026-10-26 and was rebuilt
+# from Oct-16/21 sources — without this session's leak + sync fixes. Keep the
+# tree current from Hetzner's master checkout (GitHub TLS is flaky from vast).
+# Checksum compare, no mtime copy: changed files land with a fresh mtime so
+# the stale-source check below (and make) see them.
+if [ -d "$NIMCP_DIR/.git" ]; then
+    log "git checkout present — pulling master"
+    git -C "$NIMCP_DIR" pull --ff-only 2>&1 | tail -2 | tee -a "$LOG_FILE"
+else
+    log "No .git — syncing tracked source from Hetzner ~/nimcp (master)"
+    ssh -i "$HETZNER_SSH_KEY" -o StrictHostKeyChecking=no "$HETZNER_HOST" \
+        'git -C ~/nimcp pull --ff-only >/dev/null 2>&1; git -C ~/nimcp ls-files' \
+        | grep -vE '^(test|tests|docs|examples|data|frontend|\.claude|\.github)/' \
+        | rsync -rlpgoDzc --files-from=- \
+            -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
+            "$HETZNER_HOST:nimcp/" "$NIMCP_DIR/" 2>&1 | tail -2 | tee -a "$LOG_FILE"
+fi
 
 NIMCP_WORKS=$(python3 -c "import nimcp; print('OK')" 2>&1 | tail -1)
-if [ "$NIMCP_WORKS" = "OK" ]; then
-    log "nimcp imports successfully, skipping rebuild"
+NIMCP_LIB="$NIMCP_DIR/build/lib/libnimcp.so.2"
+STALE_SRC=""
+if [ -f "$NIMCP_LIB" ]; then
+    STALE_SRC=$(find "$NIMCP_DIR/src" "$NIMCP_DIR/include" -type f -newer "$NIMCP_LIB" 2>/dev/null | head -1)
+fi
+if [ "$NIMCP_WORKS" = "OK" ] && [ -z "$STALE_SRC" ]; then
+    log "nimcp imports and no source newer than $NIMCP_LIB, skipping rebuild"
 else
-    log "nimcp import FAILED: $NIMCP_WORKS"
+    [ "$NIMCP_WORKS" != "OK" ] && log "nimcp import FAILED: $NIMCP_WORKS"
+    [ -n "$STALE_SRC" ] && log "Source newer than built library (e.g. $STALE_SRC)"
     log "Rebuilding nimcp from source..."
 
     # Need test/ examples/ dir stubs if deleted
@@ -167,24 +198,26 @@ else
 
     mkdir -p "$NIMCP_DIR/build"
     cd "$NIMCP_DIR/build" || exit 1
-    rm -rf ./*
 
-    log "  Running cmake..."
-    cmake .. -DCMAKE_BUILD_TYPE=Release > /tmp/build_cmake.log 2>&1
-    if [ $? -ne 0 ]; then
-        log "FATAL: cmake failed, see /tmp/build_cmake.log"
-        exit 1
+    # Incremental when a configured tree exists; full configure otherwise.
+    if [ ! -f CMakeCache.txt ]; then
+        log "  Running cmake..."
+        cmake .. -DCMAKE_BUILD_TYPE=Release > /tmp/build_cmake.log 2>&1
+        if [ $? -ne 0 ]; then
+            log "FATAL: cmake failed, see /tmp/build_cmake.log"
+            exit 1
+        fi
     fi
 
-    log "  Running make nimcp (10-15 min)..."
-    make nimcp -j4 > /tmp/build_make.log 2>&1
+    log "  Running make nimcp (10-15 min full, less incremental)..."
+    make nimcp -j"$(nproc)" > /tmp/build_make.log 2>&1
     if [ $? -ne 0 ]; then
         log "FATAL: make nimcp failed, see /tmp/build_make.log"
         exit 1
     fi
 
     log "  Running make nimcp_python..."
-    make nimcp_python -j4 >> /tmp/build_make.log 2>&1
+    make nimcp_python -j"$(nproc)" >> /tmp/build_make.log 2>&1
     if [ $? -ne 0 ]; then
         log "FATAL: make nimcp_python failed"
         exit 1
@@ -203,25 +236,64 @@ fi
 # ============================================================
 # STEP 5: Restore checkpoint from Hetzner to /dev/shm
 # ============================================================
-step "5. Restore checkpoint from Hetzner to /dev/shm"
+step "5. Restore newest complete checkpoint from Hetzner to /dev/shm"
 
 mkdir -p "$LOCAL_CKPT_DIR"
 
-# Check if we already have a complete-looking checkpoint
-LOCAL_CKPT_SIZE=$(du -s "$LOCAL_CKPT_DIR" 2>/dev/null | awk '{print $1}')
-log "Current /dev/shm/athena_ckpt size: ${LOCAL_CKPT_SIZE:-0} KB"
-
-if [ "${LOCAL_CKPT_SIZE:-0}" -gt 1500000 ]; then
-    log "Local checkpoint looks complete (>1.5 GB), skipping restore"
+# A local canonical checkpoint with its SNN sidecar means the pod was not
+# wiped — keep it (it is newer than anything on Hetzner).
+if [ -s "$LOCAL_CKPT_DIR/athena_immersive.bin" ] && [ -s "$LOCAL_CKPT_DIR/athena_immersive.bin.snn" ]; then
+    log "Local canonical checkpoint present ($(readlink "$LOCAL_CKPT_DIR/athena_immersive.bin")), skipping restore"
 else
-    log "Local checkpoint missing or incomplete, restoring from Hetzner..."
-    rsync -av \
-        -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
-        "$HETZNER_HOST:$HETZNER_CKPT_DIR/" \
-        "$LOCAL_CKPT_DIR/" 2>&1 | tail -5 | tee -a "$LOG_FILE"
+    # Highest step number on Hetzner whose required sidecars are all non-empty.
+    PICK=$(ssh -i "$HETZNER_SSH_KEY" -o StrictHostKeyChecking=no "$HETZNER_HOST" \
+           bash -s "$HETZNER_CKPT_DIR" "$REQUIRED_SIDECARS" <<'EOF'
+cd "$1" 2>/dev/null || exit 0
+for b in $(ls athena_s*_step*.bin 2>/dev/null | sed -E 's/^(.*_step([0-9]+)\.bin)$/\2 \1/' | sort -rn | cut -d' ' -f2); do
+    ok=1
+    for e in ${2//,/ }; do [ -s "$b$e" ] || ok=0; done
+    [ "$ok" = 1 ] && { echo "$b"; break; }
+done
+EOF
+)
+    if [ -z "$PICK" ]; then
+        log "WARNING: no complete checkpoint in $HETZNER_HOST:$HETZNER_CKPT_DIR — training will start fresh"
+    else
+        log "Newest complete checkpoint on Hetzner: $PICK — restoring"
+        rsync -a --partial \
+            -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
+            "$HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK*" \
+            "$LOCAL_CKPT_DIR/" 2>&1 | tail -3 | tee -a "$LOG_FILE"
 
-    POST_SIZE=$(du -sh "$LOCAL_CKPT_DIR" 2>/dev/null | awk '{print $1}')
-    log "Restored checkpoint size: ${POST_SIZE:-unknown}"
+        # Canonical symlinks for the main file and every sidecar it shipped with.
+        (
+            cd "$LOCAL_CKPT_DIR" || exit 1
+            ln -sfn "$PICK" athena_immersive.bin
+            for f in "$PICK".*; do
+                [ -e "$f" ] && ln -sfn "$f" "athena_immersive.bin${f#"$PICK"}"
+            done
+        )
+
+        PICK_STAGE=$(echo "$PICK" | sed -E 's/athena_s([0-9]+)_step([0-9]+)\.bin/\1/')
+        PICK_STEP=$(echo "$PICK" | sed -E 's/athena_s([0-9]+)_step([0-9]+)\.bin/\2/')
+        # Merge into any existing state file so curriculum flags survive; the
+        # bookmark must match the restored snapshot or the trainer resumes at
+        # the wrong step.
+        python3 - "$LOCAL_CKPT_DIR/immersive_state.json" "$PICK_STAGE" "$PICK_STEP" "$PICK" <<'EOF'
+import json, os, sys
+path, stage, step, snap = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+state = {}
+if os.path.exists(path):
+    try:
+        state = json.load(open(path))
+    except Exception:
+        state = {}
+state.update({"stage": stage, "step": step, "snapshot": snap})
+json.dump(state, open(path, "w"))
+print(f"state: stage={stage} step={step} snapshot={snap}")
+EOF
+        log "Restored $(du -sh "$LOCAL_CKPT_DIR" 2>/dev/null | awk '{print $1}') to $LOCAL_CKPT_DIR"
+    fi
 fi
 
 # ============================================================

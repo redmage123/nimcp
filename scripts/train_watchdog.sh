@@ -21,6 +21,14 @@ TRAINING_LOG="${LOG_DIR}/training_watchdog.log"
 HANG_TIMEOUT_SEC=300   # 5 minutes without log activity = hang
 MAX_RESTARTS=100       # Safety limit
 RESTART_DELAY_SEC=10   # Wait between restarts
+CKPT_DIR=/dev/shm/athena_ckpt
+# A dead CUDA context (after cudaDeviceReset / OOM cascade) keeps the trainer
+# alive and logging while every GPU call fails. Observed 2026-10-26: 2.3M such
+# lines over 5h, trainer still saving checkpoints. Count them in the log tail.
+GPU_DEAD_PATTERN='busy or unavailable|recovery action: RESET_DEVICE|CUDA UNRECOVERABLE'
+GPU_DEAD_THRESHOLD=20
+GPU_DEAD_TAIL_BYTES=2000000
+GPU_MEM_SAMPLES=/tmp/gpu_mem_samples.csv
 
 log_wd() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$WATCHDOG_LOG"
@@ -79,12 +87,31 @@ monitor_training() {
                 stale_count=0
                 last_size=$current_size
             fi
+
+            local dead_count
+            dead_count=$(tail -c "$GPU_DEAD_TAIL_BYTES" "$TRAINING_LOG" 2>/dev/null \
+                         | grep -cE "$GPU_DEAD_PATTERN")
+            if [ "${dead_count:-0}" -ge "$GPU_DEAD_THRESHOLD" ]; then
+                log_wd "GPU CONTEXT DEAD: $dead_count CUDA failures in log tail - killing PID $pid"
+                kill -9 "$pid" 2>/dev/null
+                return 42
+            fi
         fi
     done
 
     # Process exited naturally, get its exit code
     wait "$pid" 2>/dev/null
     return $?
+}
+
+start_gpu_sampler() {
+    # 60s VRAM/utilization samples — the only way to see a slow leak coming.
+    if [ -f "$GPU_MEM_SAMPLES" ] && [ "$(stat -c%s "$GPU_MEM_SAMPLES")" -gt 5000000 ]; then
+        tail -c 1000000 "$GPU_MEM_SAMPLES" > "$GPU_MEM_SAMPLES.tmp" && mv "$GPU_MEM_SAMPLES.tmp" "$GPU_MEM_SAMPLES"
+    fi
+    nvidia-smi --query-gpu=timestamp,index,memory.used,utilization.gpu \
+        --format=csv,noheader -l 60 >> "$GPU_MEM_SAMPLES" 2>/dev/null &
+    echo $!
 }
 
 # Main watchdog loop
@@ -98,7 +125,10 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     log_wd "Starting training attempt #$restart_count"
 
     # Check checkpoint exists
-    if [ -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin" ]; then
+    if [ -f "$CKPT_DIR/athena_immersive.bin" ]; then
+        ckpt=$(readlink -f "$CKPT_DIR/athena_immersive.bin")
+        log_wd "Resuming from checkpoint: $(basename $ckpt)"
+    elif [ -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin" ]; then
         ckpt=$(readlink -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin")
         log_wd "Resuming from checkpoint: $(basename $ckpt)"
     else
@@ -138,10 +168,12 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     python3 scripts/immerse_athena.py --stage "$STAGE" --resume > "$TRAINING_LOG" 2>&1 &
     train_pid=$!
     log_wd "Training started with PID $train_pid"
+    sampler_pid=$(start_gpu_sampler)
 
     # Monitor training
     monitor_training "$train_pid"
     exit_code=$?
+    kill "$sampler_pid" 2>/dev/null
 
     log_wd "Training exited with code: $exit_code"
 
