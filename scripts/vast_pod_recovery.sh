@@ -165,9 +165,9 @@ if [ -d "$NIMCP_DIR/.git" ]; then
 else
     log "No .git — syncing tracked source from Hetzner ~/nimcp (master)"
     ssh -i "$HETZNER_SSH_KEY" -o StrictHostKeyChecking=no "$HETZNER_HOST" \
-        'git -C ~/nimcp pull --ff-only >/dev/null 2>&1; git -C ~/nimcp ls-files' \
-        | grep -vE '^(test|tests|docs|examples|data|frontend|\.claude|\.github)/' \
-        | rsync -rlpgoDzc --files-from=- \
+        'git -C ~/nimcp pull --ff-only >/dev/null 2>&1; git -C ~/nimcp ls-files -z' \
+        | grep -zvE '^(test|tests|docs|examples|data|frontend|\.claude|\.github)/' \
+        | rsync -rlpgoDzc --from0 --files-from=- \
             -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
             "$HETZNER_HOST:nimcp/" "$NIMCP_DIR/" 2>&1 | tail -2 | tee -a "$LOG_FILE"
 fi
@@ -252,14 +252,24 @@ cd "$1" 2>/dev/null || exit 0
 # Every checkpoint of one brain has the same .snn size. A ship interrupted
 # mid-transfer (bare rsync --partial renamed a 1.8 GB fragment over a 21 GB
 # sidecar on 2026-10-26) leaves a NON-EMPTY but truncated .snn, so "exists
-# and non-empty" is not enough: require >= 90% of the largest .snn present.
-maxsnn=$(stat -c%s athena_s*_step*.bin.snn 2>/dev/null | sort -n | tail -1)
-minsnn=$(( ${maxsnn:-0} / 10 * 9 ))
+# and non-empty" is not enough. The reference size is the largest .snn among
+# checkpoints of the SAME brain — identified by an identical .bin size — not
+# the directory-wide maximum: orphan sidecars from older, larger brains
+# (24.4 GB athena_s0_step{50,300,2800}.bin.snn with no .bin) made the global
+# rule reject every valid 21.3 GB checkpoint on 2026-10-26.
 for b in $(ls athena_s*_step*.bin 2>/dev/null | sed -E 's/^(.*_step([0-9]+)\.bin)$/\2 \1/' | sort -rn | cut -d' ' -f2); do
     ok=1
     for e in ${2//,/ }; do [ -s "$b$e" ] || ok=0; done
+    binsz=$(stat -c%s "$b" 2>/dev/null || echo 0)
+    ref=0
+    for x in athena_s*_step*.bin; do
+        [ "$(stat -c%s "$x" 2>/dev/null || echo -1)" = "$binsz" ] || continue
+        s=$(stat -c%s "$x.snn" 2>/dev/null || echo 0)
+        [ "$s" -gt "$ref" ] && ref=$s
+    done
+    minsnn=$(( ref / 10 * 9 ))
     snnsz=$(stat -c%s "$b.snn" 2>/dev/null || echo 0)
-    [ "$snnsz" -ge "$minsnn" ] || { echo "skip $b: .snn $snnsz < $minsnn (truncated)" >&2; ok=0; }
+    [ "$snnsz" -ge "$minsnn" ] || { echo "skip $b: .snn $snnsz < $minsnn (truncated; same-brain reference $ref)" >&2; ok=0; }
     [ "$ok" = 1 ] && { echo "$b"; break; }
 done
 EOF
