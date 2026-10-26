@@ -510,9 +510,23 @@ blended into the conclusion vector (≤ 0.3 × mean similarity) and lift
 confidence by ≤ 0.25 × best similarity of the remaining headroom; each
 hit is `access`ed so recall reinforces consolidation. `language_respond`
 now supplies that conclusion to the cascade when `reason_in_content` is
-on — the flag is no longer dormant. Still unwired into the brain:
-working memory and imagination as cascade sources; pybind has no
-language surface yet (separate item).
+on — the flag is no longer dormant. **C5 (2026-10-26)**: working memory
+and imagination are wired as cascade sources. `BrainConfig.cognition`
+(`CognitionConfig`, serde-default, both ON when `language` is present)
+builds a `WorkingMemory` (V1 defaults: 7 slots, τ = 1000 ms, floor 0.01)
+and an `ImaginationEngine` in the language's semantic space. Each
+`language_respond` advances a virtual clock by `turn_ms` (1000), decays
+WM, hands every WM item `(vector, salience)` and the active imagined
+scene `(vector, vividness)` to the cascade (5b at 0.25 × salience above
+the 0.2 floor, 5d at 0.2 × vividness), then feeds them: the comprehended
+prompt enters WM at its comprehension confidence and the re-comprehended
+response (`Response::self_vector`, new) is staged as the active scene at
+the response confidence (`imagination_drift` adds one Passive step,
+default OFF). Empty sources are exact no-ops, so a fresh brain's first
+turn is unchanged. Explicit API: `working_memory[_mut|_add]`,
+`imagination[_mut|_stage|_begin]`, `cognition_now_ms`. Both stores are
+runtime state, not checkpointed (V1 parity). Still open: pybind has no
+language or cognition surface (separate item).
 
 ---
 

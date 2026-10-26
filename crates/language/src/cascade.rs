@@ -108,6 +108,11 @@ pub struct Response {
     pub comprehension_confidence: f32,
     /// Recurrent iterations actually run.
     pub iterations: usize,
+    /// Semantic vector of the re-comprehended own output — what the brain
+    /// understood itself to have said (the vector `self_match` was taken
+    /// against). Empty when nothing was produced. Callers that hold an
+    /// imagined-scene workspace can stage this as the active scenario.
+    pub self_vector: Vec<f32>,
 }
 
 impl GroundedLanguage {
@@ -186,7 +191,7 @@ impl GroundedLanguage {
             }
         }
 
-        let (prod, self_match) = best;
+        let (prod, self_match, self_vector) = best;
         let confidence = if self_match > 0.0 { self_match } else { prod.fluency };
         Response {
             text: prod.text,
@@ -197,19 +202,26 @@ impl GroundedLanguage {
             pe_total: 1.0 - self_match,
             comprehension_confidence: comp.comprehension_confidence,
             iterations,
+            self_vector,
         }
     }
 
-    /// One produce + self-comprehend pass. Returns the production and the
-    /// `self_match` (cosine of the intent vs the re-comprehended output).
-    fn run_once(&mut self, intent: &[f32], cfg: &CascadeConfig) -> (crate::produce::ProductionResult, f32) {
+    /// One produce + self-comprehend pass. Returns the production, the
+    /// `self_match` (cosine of the intent vs the re-comprehended output)
+    /// and the re-comprehended output vector itself (empty when nothing
+    /// was produced).
+    fn run_once(
+        &mut self,
+        intent: &[f32],
+        cfg: &CascadeConfig,
+    ) -> (crate::produce::ProductionResult, f32, Vec<f32>) {
         let prod = self.produce(intent, cfg.stage, cfg.min_produce_words);
         if prod.text.is_empty() {
-            return (prod, 0.0);
+            return (prod, 0.0, Vec::new());
         }
         let sc = self.comprehend_no_discourse(&prod.text);
         let self_match = cosine_similarity(intent, &sc.semantic_vector);
-        (prod, self_match)
+        (prod, self_match, sc.semantic_vector)
     }
 }
 

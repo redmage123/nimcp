@@ -33,6 +33,7 @@ use std::path::Path;
 use ndarray::{Array1, Array3, Array4};
 use nimcp_adaptive::{AdaptiveConfig, AdaptiveError, AdaptiveNet};
 use nimcp_cnn::{CnnConfig, CnnNetwork};
+use nimcp_cognition::{ImaginationEngine, ScenarioMode, WorkingMemory};
 use nimcp_core::{Error, Result};
 use nimcp_fno::{FnoConfig, FnoNetwork};
 use nimcp_hnn::{HnnConfig, HnnNetwork};
@@ -171,6 +172,12 @@ pub struct BrainConfig {
     /// `language_*` methods return `Error::Config`.
     #[serde(default)]
     pub language: Option<LanguageConfig>,
+    /// Cognition track (C5) — working memory + imagination workspace that
+    /// feed the language cascade's content intent. Both live in the
+    /// language's semantic space, so they are built only when `language`
+    /// is `Some`; absent from old configs → defaults.
+    #[serde(default)]
+    pub cognition: CognitionConfig,
     /// Phase 9h — brain-wide execution backend. When `Gpu`, SNN's
     /// `use_gpu_forward` flag is forced on at construction and LNN's
     /// `enable_gpu` is called automatically. When `Cpu` the per-
@@ -193,7 +200,76 @@ impl Default for BrainConfig {
             hnn: None,
             memory: None,
             language: None,
+            cognition: CognitionConfig::default(),
             backend: Backend::Cpu,
+        }
+    }
+}
+
+/// Cognition-track config (C5): the two cascade content sources V1 Steps
+/// D/E read — working memory (5b) and imagination (5d). Each language turn
+/// advances a virtual clock by `turn_ms`, decays working memory, reads
+/// both sources into the cascade, then feeds them: the comprehended prompt
+/// enters working memory at its comprehension confidence, and the
+/// re-comprehended response is staged as the active imagined scene at the
+/// response confidence. Empty sources are exact no-ops in the cascade, so
+/// a fresh brain's first turn is unchanged by this config.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CognitionConfig {
+    /// Build the working-memory store (requires `language`).
+    #[serde(default = "default_true")]
+    pub working_memory: bool,
+    /// Working-memory slots (V1 default 7).
+    #[serde(default = "default_wm_capacity")]
+    pub wm_capacity: usize,
+    /// Working-memory salience decay time constant, virtual ms. With the
+    /// default `turn_ms` (one τ per turn) an item loses `1/e` per turn and
+    /// drops under the cascade's 0.2 salience floor after ~2 turns.
+    #[serde(default = "default_wm_decay_tau_ms")]
+    pub wm_decay_tau_ms: f32,
+    /// Working-memory eviction floor.
+    #[serde(default = "default_wm_min_salience")]
+    pub wm_min_salience: f32,
+    /// Virtual milliseconds one `language_respond` turn advances the
+    /// cognition clock by. Injected time keeps the store deterministic.
+    #[serde(default = "default_turn_ms")]
+    pub turn_ms: u64,
+    /// Build the imagination workspace (requires `language`).
+    #[serde(default = "default_true")]
+    pub imagination: bool,
+    /// After staging the response as the active scene, evolve it one
+    /// `Passive` step so the scene drifts between turns (free association).
+    /// Default OFF — the staged scene is then exactly the response echo.
+    #[serde(default)]
+    pub imagination_drift: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_wm_capacity() -> usize {
+    nimcp_cognition::working_memory::DEFAULT_CAPACITY
+}
+fn default_wm_decay_tau_ms() -> f32 {
+    nimcp_cognition::working_memory::DEFAULT_DECAY_TAU_MS
+}
+fn default_wm_min_salience() -> f32 {
+    nimcp_cognition::working_memory::DEFAULT_MIN_SALIENCE
+}
+fn default_turn_ms() -> u64 {
+    1000
+}
+
+impl Default for CognitionConfig {
+    fn default() -> Self {
+        Self {
+            working_memory: true,
+            wm_capacity: default_wm_capacity(),
+            wm_decay_tau_ms: default_wm_decay_tau_ms(),
+            wm_min_salience: default_wm_min_salience(),
+            turn_ms: default_turn_ms(),
+            imagination: true,
+            imagination_drift: false,
         }
     }
 }
@@ -288,6 +364,17 @@ pub struct Brain {
     /// Runtime `reason_in_content` toggle (V1 RPC parity). Initialized
     /// from `LanguageConfig`; gates the cascade reasoning-blend source.
     lang_reason_in_content: bool,
+    /// C5 — working memory feeding the cascade (5b). `Some` iff
+    /// `language` is present and `cognition.working_memory`. Runtime
+    /// state, not checkpointed (V1 treats it as transient).
+    working_memory: Option<WorkingMemory>,
+    /// C5 — imagination workspace feeding the cascade (5d). `Some` iff
+    /// `language` is present and `cognition.imagination`. Runtime state,
+    /// not checkpointed.
+    imagination: Option<ImaginationEngine>,
+    /// C5 — virtual cognition clock (ms); advanced by
+    /// `cognition.turn_ms` per language turn. Drives WM decay.
+    cog_now_ms: u64,
     /// Phase 6c — training-loss tracker for the adaptive network. Always
     /// present; `count == 0` before the first `learn()`.
     adaptive_loss: stats::LossTracker,
@@ -425,6 +512,25 @@ impl Brain {
             .as_ref()
             .is_some_and(|c| c.reason_in_content);
 
+        // C5 — cognition sources live in the language's semantic space.
+        let (working_memory, imagination) = match (&config.language, &config.cognition) {
+            (Some(lc), cc) => {
+                let wm = cc.working_memory.then(|| {
+                    WorkingMemory::with_config(cc.wm_capacity, cc.wm_decay_tau_ms, cc.wm_min_salience)
+                });
+                let im = cc
+                    .imagination
+                    .then(|| ImaginationEngine::new(lc.semantic_dim, config.rng_seed ^ 0x1A61));
+                (wm, im)
+            }
+            (None, cc) => {
+                if cc.working_memory || cc.imagination {
+                    tracing::debug!("cognition sources configured but no language subsystem; skipping");
+                }
+                (None, None)
+            }
+        };
+
         tracing::info!(
             layers = ?config.adaptive.layers,
             seed = config.rng_seed,
@@ -515,6 +621,9 @@ impl Brain {
             language,
             toxicity,
             lang_reason_in_content,
+            working_memory,
+            imagination,
+            cog_now_ms: 0,
             adaptive_loss: stats::LossTracker::default(),
             lnn_loss,
             thalamic_router,
@@ -896,9 +1005,12 @@ impl Brain {
     ///
     /// 1. If the toxicity stack flags the *input*, return a stage-graded
     ///    counterclaim (no production).
-    /// 2. Otherwise run the cascade.
+    /// 2. Otherwise run the cascade, with working memory, imagination
+    ///    and (opt-in) reasoning as content sources (C4/C5).
     /// 3. Defense-in-depth: if the *output* flags, scale confidence by
     ///    `(1 − harm)` but never modify the text (mark-not-filter).
+    /// 4. Feed cognition: the comprehended prompt enters working memory,
+    ///    the re-comprehended response becomes the active imagined scene.
     pub fn language_respond(&mut self, input: &str) -> Result<LanguageResponse> {
         let cfg = self
             .config
@@ -921,11 +1033,12 @@ impl Brain {
             }
         }
 
-        // (2) Cascade production. Reasoning (C4) is the only cognitive
-        // source V2 supplies so far — working memory / imagination live in
-        // nimcp-cognition but are not yet wired into the brain. The
-        // conclusion is computed before the cascade borrow so the
-        // memory-enriched vector can be handed in by reference.
+        // (2) Cascade production with the cognitive content sources
+        // (V1 Steps D/E 5b/5d/5e). Reasoning (C4) is computed first — it
+        // borrows the whole brain — then the turn clock advances and
+        // working memory decays, so the cascade reads the sources as they
+        // stand *before* this turn is fed into them (adding the prompt
+        // first would double-count it against the 1.0 prompt weight).
         let reasoning = if self.lang_reason_in_content {
             Some(self.reason(input)?)
         } else {
@@ -937,17 +1050,46 @@ impl Brain {
             recurrent_max_iters: cfg.recurrent_max_iters,
             reason_in_content: self.lang_reason_in_content,
         };
+        let cog = self.config.cognition.clone();
+        self.cog_now_ms = self.cog_now_ms.saturating_add(cog.turn_ms);
+        let now = self.cog_now_ms;
+        if let Some(wm) = self.working_memory.as_mut() {
+            wm.decay(now);
+        }
+        let wm_items: Vec<(&[f32], f32)> = self
+            .working_memory
+            .as_ref()
+            .map(|wm| wm.items().iter().map(|i| (i.data.as_slice(), i.salience)).collect())
+            .unwrap_or_default();
         let sources = nimcp_language::ContentSources {
+            working_memory: &wm_items,
+            imagination: self.imagination.as_ref().and_then(ImaginationEngine::active_vector),
             reasoning: reasoning
                 .as_ref()
                 .map(|r| (r.conclusion.vector.as_slice(), r.conclusion.confidence)),
-            ..Default::default()
         };
         let gl = self
             .language
             .as_mut()
             .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
         let resp = gl.respond_with_sources(input, &cascade_cfg, &sources);
+
+        // (4) Feed cognition for the next turn. The cascade's comprehend
+        // pushed this prompt as the newest discourse turn (back = 1); the
+        // response echo comes back on the Response itself.
+        let prompt_vec = gl.discourse.recent_turn_vector(1).map(<[f32]>::to_vec);
+        drop(wm_items);
+        if let (Some(wm), Some(pv)) = (self.working_memory.as_mut(), prompt_vec) {
+            wm.add(&pv, resp.comprehension_confidence, now);
+        }
+        if let Some(im) = self.imagination.as_mut()
+            && resp.self_vector.iter().any(|v| *v != 0.0)
+        {
+            im.stage_active_vector(&resp.self_vector, resp.confidence);
+            if cog.imagination_drift {
+                let _ = im.step_scenario(0);
+            }
+        }
 
         // (3) Defense-in-depth output gate — mark, don't filter.
         let mut confidence = resp.confidence;
@@ -1069,6 +1211,89 @@ impl Brain {
             lexicon_confidence,
             memory_hits,
         })
+    }
+
+    // -------------------------------------------------------------------------
+    // Cognition (C5): working memory + imagination workspace.
+    // -------------------------------------------------------------------------
+
+    /// Working-memory store, if built (`language` + `cognition.working_memory`).
+    #[must_use]
+    pub fn working_memory(&self) -> Option<&WorkingMemory> {
+        self.working_memory.as_ref()
+    }
+
+    /// Mutable working-memory store.
+    pub fn working_memory_mut(&mut self) -> Option<&mut WorkingMemory> {
+        self.working_memory.as_mut()
+    }
+
+    /// Add a feature vector to working memory at `salience`, stamped with
+    /// the current cognition clock (V1 `nimcp_brain_working_memory_add`).
+    /// Vectors should be `semantic_dim` wide — the cascade blends
+    /// element-wise over the shorter length.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` if working memory is not built on this brain.
+    pub fn working_memory_add(&mut self, data: &[f32], salience: f32) -> Result<()> {
+        let now = self.cog_now_ms;
+        let wm = self
+            .working_memory
+            .as_mut()
+            .ok_or_else(|| Error::Config("working memory not configured on this brain".into()))?;
+        wm.add(data, salience, now);
+        Ok(())
+    }
+
+    /// Imagination workspace, if built (`language` + `cognition.imagination`).
+    #[must_use]
+    pub fn imagination(&self) -> Option<&ImaginationEngine> {
+        self.imagination.as_ref()
+    }
+
+    /// Mutable imagination workspace — begin / step / end scenarios.
+    pub fn imagination_mut(&mut self) -> Option<&mut ImaginationEngine> {
+        self.imagination.as_mut()
+    }
+
+    /// Stage `content` as the active imagined scene at `vividness`; the
+    /// next `language_respond` blends it into the content intent at
+    /// `0.2 × vividness`.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` if imagination is not built on this brain.
+    pub fn imagination_stage(&mut self, content: &[f32], vividness: f32) -> Result<()> {
+        let im = self
+            .imagination
+            .as_mut()
+            .ok_or_else(|| Error::Config("imagination not configured on this brain".into()))?;
+        im.stage_active_vector(content, vividness);
+        Ok(())
+    }
+
+    /// Begin a fresh imagined scenario in `mode` (optionally goal-directed)
+    /// and return its index. Scenario `[0]` is the one the cascade reads.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` if imagination is not built, or the scenario pool
+    /// is full.
+    pub fn imagination_begin(&mut self, mode: ScenarioMode, goal: Option<&[f32]>) -> Result<usize> {
+        let im = self
+            .imagination
+            .as_mut()
+            .ok_or_else(|| Error::Config("imagination not configured on this brain".into()))?;
+        im.begin_scenario(mode, goal)
+            .ok_or_else(|| Error::Config("imagination scenario pool is full".into()))
+    }
+
+    /// Current virtual cognition clock (ms) — advances by
+    /// `cognition.turn_ms` on every `language_respond`.
+    #[must_use]
+    pub fn cognition_now_ms(&self) -> u64 {
+        self.cog_now_ms
     }
 
     // -------------------------------------------------------------------------
@@ -2280,5 +2505,158 @@ mod tests {
         }
         // The blend path ran: the memory node was recalled by the respond call.
         assert!(brain.memory().unwrap().find(1).unwrap().access_count >= 1);
+    }
+
+    // --- C5: working memory + imagination as cascade sources ---
+
+    fn cognition_off(mut cfg: BrainConfig) -> BrainConfig {
+        cfg.cognition.working_memory = false;
+        cfg.cognition.imagination = false;
+        cfg
+    }
+
+    #[tokio::test]
+    async fn cognition_sources_built_only_with_language() {
+        let plain = Brain::new(BrainConfig::default()).unwrap();
+        assert!(plain.working_memory().is_none());
+        assert!(plain.imagination().is_none());
+        assert!(matches!(
+            Brain::new(BrainConfig::default()).unwrap().working_memory_add(&[1.0], 1.0),
+            Err(Error::Config(_))
+        ));
+
+        let lang = Brain::new(language_config(51)).unwrap();
+        let wm = lang.working_memory().expect("WM built with language by default");
+        assert_eq!(wm.capacity(), nimcp_cognition::working_memory::DEFAULT_CAPACITY);
+        assert!(wm.is_empty());
+        let im = lang.imagination().expect("imagination built with language by default");
+        assert_eq!(im.latent_dim(), 8);
+        assert!(im.active_vector().is_none());
+
+        let off = Brain::new(cognition_off(language_config(51))).unwrap();
+        assert!(off.working_memory().is_none());
+        assert!(off.imagination().is_none());
+    }
+
+    #[tokio::test]
+    async fn respond_feeds_working_memory_and_imagination() {
+        let mut brain = Brain::new(language_config(52)).unwrap();
+        teach(&mut brain);
+        assert_eq!(brain.cognition_now_ms(), 0);
+
+        let r = brain.language_respond("the dog").unwrap();
+        assert!(!r.blocked_for_toxicity);
+        assert_eq!(brain.cognition_now_ms(), 1000);
+
+        // The comprehended prompt (newest discourse turn) is in WM at the
+        // comprehension confidence.
+        let wm = brain.working_memory().unwrap();
+        assert_eq!(wm.size(), 1);
+        let prompt = brain.language().unwrap().discourse.recent_turn_vector(1).unwrap();
+        assert_eq!(wm.get(0).unwrap(), prompt);
+        let (_, comp_conf) = {
+            // Re-derive the comprehension confidence without touching discourse.
+            let gl = brain.language().unwrap();
+            let c = gl.clone().comprehend_no_discourse("the dog");
+            (c.semantic_vector, c.comprehension_confidence)
+        };
+        assert!((wm.get_salience(0).unwrap() - comp_conf.clamp(0.0, 1.0)).abs() < 1e-6);
+
+        // The response echo is the active imagined scene at the response
+        // confidence (clamped).
+        let (scene, viv) = brain.imagination().unwrap().active_vector().expect("scene staged");
+        assert_eq!(scene.len(), 8);
+        assert!(scene.iter().any(|v| *v != 0.0));
+        assert!((viv - r.confidence.clamp(0.0, 1.0)).abs() < 1e-6);
+        assert_eq!(brain.imagination().unwrap().scenario_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn working_memory_decays_one_tau_per_turn() {
+        let mut brain = Brain::new(language_config(53)).unwrap();
+        teach(&mut brain);
+        brain.language_respond("the dog").unwrap();
+        let s0 = brain.working_memory().unwrap().get_salience(0).unwrap();
+        brain.language_respond("the cat").unwrap();
+        let wm = brain.working_memory().unwrap();
+        assert_eq!(wm.size(), 2);
+        // turn_ms == decay_tau_ms by default → exactly one e-fold.
+        let s1 = wm.get_salience(0).unwrap();
+        assert!((s1 - s0 * (-1.0_f32).exp()).abs() < 1e-5, "{s0} → {s1}");
+        assert_eq!(brain.cognition_now_ms(), 2000);
+    }
+
+    #[tokio::test]
+    async fn empty_sources_leave_first_turn_identical_to_cognition_off() {
+        let mut on = Brain::new(language_config(54)).unwrap();
+        let mut off = Brain::new(cognition_off(language_config(54))).unwrap();
+        teach(&mut on);
+        teach(&mut off);
+        let a = on.language_respond("the dog").unwrap();
+        let b = off.language_respond("the dog").unwrap();
+        assert_eq!(a.text, b.text);
+        assert_eq!(a.confidence, b.confidence);
+        // From the second turn on, `on` carries WM + scene; both stay sane.
+        let a2 = on.language_respond("the dog").unwrap();
+        let b2 = off.language_respond("the dog").unwrap();
+        for r in [&a2, &b2] {
+            assert!(!r.blocked_for_toxicity);
+            assert!(r.confidence.is_finite());
+            assert!(!r.text.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_cognition_api_is_read_by_the_cascade() {
+        let mut brain = Brain::new(language_config(55)).unwrap();
+        teach(&mut brain);
+        brain.working_memory_add(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.9).unwrap();
+        brain.imagination_stage(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.8).unwrap();
+        assert_eq!(brain.working_memory().unwrap().size(), 1);
+        let r = brain.language_respond("the dog").unwrap();
+        assert!(!r.text.is_empty());
+        // The explicit WM item was decayed once (turn), then the prompt was added.
+        let wm = brain.working_memory().unwrap();
+        assert_eq!(wm.size(), 2);
+        assert!((wm.get_salience(0).unwrap() - 0.9 * (-1.0_f32).exp()).abs() < 1e-5);
+        // The staged scene was replaced by the response echo.
+        let (scene, _) = brain.imagination().unwrap().active_vector().unwrap();
+        assert_ne!(scene, &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        // Scenario pool API.
+        let idx = brain.imagination_begin(ScenarioMode::Creative, None).unwrap();
+        assert_eq!(idx, 1);
+    }
+
+    #[tokio::test]
+    async fn imagination_drift_keeps_scene_finite() {
+        let mut cfg = language_config(56);
+        cfg.cognition.imagination_drift = true;
+        let mut brain = Brain::new(cfg).unwrap();
+        teach(&mut brain);
+        for _ in 0..3 {
+            brain.language_respond("the dog").unwrap();
+            let (scene, viv) = brain.imagination().unwrap().active_vector().unwrap();
+            assert!(scene.iter().all(|v| v.is_finite()));
+            assert!((0.0..=1.0).contains(&viv));
+        }
+        assert_eq!(brain.imagination().unwrap().scenario_count(), 1);
+    }
+
+    /// Old configs (pre-C5, no `cognition` field) deserialize with the
+    /// default sources enabled.
+    #[test]
+    fn cognition_config_default_via_serde_when_field_absent() {
+        let raw = r#"{
+            "rng_seed": 42,
+            "deterministic": true,
+            "state_dir": "./state",
+            "adaptive": { "layers": [4, 8, 1], "rng_seed": 42, "activation": "Tanh" }
+        }"#;
+        let cfg: BrainConfig = serde_json::from_str(raw).unwrap();
+        assert_eq!(cfg.cognition, CognitionConfig::default());
+        let partial: CognitionConfig = serde_json::from_str(r#"{"imagination": false}"#).unwrap();
+        assert!(partial.working_memory);
+        assert!(!partial.imagination);
+        assert_eq!(partial.turn_ms, 1000);
     }
 }

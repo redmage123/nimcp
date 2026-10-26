@@ -102,6 +102,22 @@ Not synced: the V1 RPC/daemon/client wiring (`b5cd45463`'s pybind +
 surface is itself a later deliverable; the brain-level setter/getter is
 the V2 equivalent for now.
 
+### 2026-10-26 — C4 + C5: the dormant sources go live
+
+- **Reasoning (5e)** — `Brain::reason` (C4) supplies the Z-Ladder-enriched
+  lexicon conclusion when `reason_in_content` is on.
+- **Working memory (5b)** and **imagination (5d)** — C5. `nimcp-cognition`'s
+  `WorkingMemory` / `ImaginationEngine` are owned by the brain
+  (`BrainConfig.cognition`, default ON with language) and read by every
+  `language_respond`; the turn then feeds the comprehended prompt into WM
+  and stages the response echo (`Response::self_vector`) as the active
+  scene. Unlike V1 — whose imagination blended a noise latent because
+  `semantic_buffer` was never written — V2's scene is real semantic
+  content. See `V2_PLAN.md` "Cognition track" for the exact schedule.
+
+The remaining V1-only sources (drive / goal / listener / episodic) map to
+subsystems V2 does not have and stay omitted.
+
 ## Acceptance per phase
 
 Each phase ships with crate tests green, no new clippy denials, and a
