@@ -249,9 +249,17 @@ else
     PICK=$(ssh -i "$HETZNER_SSH_KEY" -o StrictHostKeyChecking=no "$HETZNER_HOST" \
            bash -s "$HETZNER_CKPT_DIR" "$REQUIRED_SIDECARS" <<'EOF'
 cd "$1" 2>/dev/null || exit 0
+# Every checkpoint of one brain has the same .snn size. A ship interrupted
+# mid-transfer (bare rsync --partial renamed a 1.8 GB fragment over a 21 GB
+# sidecar on 2026-10-26) leaves a NON-EMPTY but truncated .snn, so "exists
+# and non-empty" is not enough: require >= 90% of the largest .snn present.
+maxsnn=$(stat -c%s athena_s*_step*.bin.snn 2>/dev/null | sort -n | tail -1)
+minsnn=$(( ${maxsnn:-0} / 10 * 9 ))
 for b in $(ls athena_s*_step*.bin 2>/dev/null | sed -E 's/^(.*_step([0-9]+)\.bin)$/\2 \1/' | sort -rn | cut -d' ' -f2); do
     ok=1
     for e in ${2//,/ }; do [ -s "$b$e" ] || ok=0; done
+    snnsz=$(stat -c%s "$b.snn" 2>/dev/null || echo 0)
+    [ "$snnsz" -ge "$minsnn" ] || { echo "skip $b: .snn $snnsz < $minsnn (truncated)" >&2; ok=0; }
     [ "$ok" = 1 ] && { echo "$b"; break; }
 done
 EOF
@@ -260,7 +268,10 @@ EOF
         log "WARNING: no complete checkpoint in $HETZNER_HOST:$HETZNER_CKPT_DIR — training will start fresh"
     else
         log "Newest complete checkpoint on Hetzner: $PICK — restoring"
-        rsync -a --partial \
+        # --partial-dir, not --partial: an interrupted pull must not leave a
+        # fragment under the final name (the local-canonical check above
+        # would then skip the restore on the next run).
+        rsync -a --partial-dir=.rsync-partial \
             -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
             "$HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK*" \
             "$LOCAL_CKPT_DIR/" 2>&1 | tail -3 | tee -a "$LOG_FILE"
