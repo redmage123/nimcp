@@ -19,6 +19,8 @@
 #include "snn/nimcp_snn_network.h"
 #include "snn/nimcp_snn_types.h"
 #include "snn/nimcp_snn_synapse.h"  /* for snn_csr_storage_t, snn_csr_synapse_t */
+#include <pthread.h>
+#include <time.h>
 #include "constants/nimcp_constants.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/logging/nimcp_logging.h"
@@ -805,6 +807,107 @@ void snn_rstdp_set_reward(snn_training_ctx_t* ctx, float reward) {
     ctx->reward = reward;
 }
 
+/* R-STDP over one population per worker. Each population writes only its
+ * own incoming CSR and reads spike outputs, so populations are independent.
+ * Touched CSRs are flagged weights_dirty so the next homeostatic pass
+ * mirrors entries[] to the GPU — before this the host deltas were never
+ * uploaded and were overwritten by the flat-array homeostatic path. */
+#define RSTDP_MAX_THREADS 32
+
+typedef struct {
+    snn_network_t* network;
+    float scale;
+    uint32_t next;      /* atomic population index */
+    uint32_t updates;   /* atomic total */
+} rstdp_pool_t;
+
+static void* rstdp_worker(void* arg) {
+    rstdp_pool_t* pool = (rstdp_pool_t*)arg;
+    snn_network_t* network = pool->network;
+    const float scale = pool->scale;
+    uint32_t updates = 0;
+    for (;;) {
+        uint32_t p = __atomic_fetch_add(&pool->next, 1, __ATOMIC_RELAXED);
+        if (p >= network->n_populations) break;
+        snn_population_t* dst_pop = network->populations[p];
+        if (!dst_pop || !dst_pop->lightweight || !dst_pop->incoming_csr) continue;
+        if (dst_pop->exclude_from_plasticity) continue;  /* language projection stays out */
+        if (!dst_pop->spike_output) continue;
+        if (dst_pop->rate_samples < 100) continue;  /* warm-up gate, as in snn_homeostatic_apply */
+        snn_csr_storage_t* csr = dst_pop->incoming_csr;
+        if (!csr->entries || csr->n_synapses == 0) continue;
+        const float* post_spikes = (const float*)nimcp_tensor_data_const(dst_pop->spike_output);
+        if (!post_spikes) continue;
+        uint32_t pop_updates = 0;
+
+        for (uint32_t j = 0; j < csr->n_neurons; j++) {
+            float post = post_spikes[j];
+            if (post < 0.5f) continue;  /* Post didn't spike — no Hebbian update */
+
+            uint32_t row_start = csr->row_ptr[j];
+            uint32_t row_end = csr->row_ptr[j + 1];
+            for (uint32_t e = row_start; e < row_end; e++) {
+                snn_csr_synapse_t* entry = &csr->entries[e];
+                /* Look up pre-synaptic spike from source population */
+                if (entry->src_pop >= network->n_populations) continue;
+                snn_population_t* src_pop = network->populations[entry->src_pop];
+                if (!src_pop || !src_pop->spike_output) continue;
+                if (entry->src_neuron >= src_pop->n_neurons) continue;
+
+                const float* src_spikes = (const float*)nimcp_tensor_data_const(src_pop->spike_output);
+                if (!src_spikes) continue;
+                float pre = src_spikes[entry->src_neuron];
+                if (pre < 0.5f) continue;  /* Pre didn't spike */
+
+                /* Reward-modulated Hebbian + standard L2 weight decay.
+                 *
+                 * EXCITATORY (weight > 0): standard rule
+                 *   Δw = scale - decay × w
+                 *   + reward → weight grows, strengthening excitation
+                 *
+                 * INHIBITORY (weight < 0): SIGN-FLIPPED rule (inhibitory plasticity)
+                 *   Δw = -scale - decay × w
+                 *   + reward → weight becomes more negative, strengthening inhibition
+                 *   This implements separate E/I plasticity: inhibitory synapses
+                 *   that "helped" (by suppressing wrong output when reward came)
+                 *   also strengthen, maintaining E/I balance.
+                 *
+                 * RATE-DEPENDENT INHIBITORY STRENGTHENING:
+                 * If postsynaptic neuron is over-firing (rate_ema > 0.10),
+                 * inhibitory synapses onto it strengthen proportionally —
+                 * exactly what's needed to clamp runaway excitation at the
+                 * local circuit level, not just via slow synaptic scaling. */
+                float decay_rate = 1e-5f;
+                float delta;
+                if (entry->weight >= 0.0f) {
+                    delta = scale - decay_rate * entry->weight;
+                } else {
+                    delta = -scale - decay_rate * entry->weight;
+                    /* Extra inhibitory strengthening proportional to post rate */
+                    if (dst_pop->neuron_rate_ema) {
+                        float rate = dst_pop->neuron_rate_ema[j];
+                        if (rate > 0.10f) {
+                            /* Push weight more negative: additional 0.1 × (rate - 0.10)
+                             * per apply. At rate=0.5, adds -0.04 per call. */
+                            delta -= 0.1f * (rate - 0.10f);
+                        }
+                    }
+                }
+                entry->weight += delta;
+                if (entry->weight > 2.0f) entry->weight = 2.0f;
+                if (entry->weight < -4.0f) entry->weight = -4.0f;  /* inhib cap −4 */
+                pop_updates++;
+            }
+        }
+        if (pop_updates > 0) {
+            csr->weights_dirty = true;
+            updates += pop_updates;
+        }
+    }
+    __atomic_fetch_add(&pool->updates, updates, __ATOMIC_RELAXED);
+    return NULL;
+}
+
 uint32_t snn_rstdp_apply(snn_training_ctx_t* ctx, snn_network_t* network) {
     if (!ctx || !network || !ctx->eligibility) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_rstdp_apply: null context, network, or eligibility pointer");
@@ -888,85 +991,23 @@ uint32_t snn_rstdp_apply(snn_training_ctx_t* ctx, snn_network_t* network) {
      *   Δw = scale × (pre × post - decay × weight)
      * Only updates synapses where both pre and post fired recently —
      * effectively Hebbian + reward + light weight decay. */
-    for (uint32_t p = 0; p < network->n_populations; p++) {
-        snn_population_t* dst_pop = network->populations[p];
-        if (!dst_pop || !dst_pop->lightweight || !dst_pop->incoming_csr) continue;
-        if (dst_pop->exclude_from_plasticity) continue;  /* Phase-2: keep the
-                                          * language projection out of global R-STDP */
-        if (!dst_pop->spike_output) continue;
-        /* Warm-up gate: skip R-STDP on populations that haven't collected
-         * enough firing-rate samples for homeostasis to engage. During the
-         * first 100 SNN steps, R-STDP with no homeostatic brake can amplify
-         * transient hyperactivity into runaway — classic Hebbian compounding.
-         * Matches the same rate_samples < 100 gate in snn_homeostatic_apply. */
-        if (dst_pop->rate_samples < 100) continue;
-        snn_csr_storage_t* csr = dst_pop->incoming_csr;
-        if (!csr->entries || csr->n_synapses == 0) continue;
-
-        const float* post_spikes = (const float*)nimcp_tensor_data_const(dst_pop->spike_output);
-        if (!post_spikes) continue;
-
-        /* For each neuron j in this population, iterate its incoming synapses */
-        for (uint32_t j = 0; j < csr->n_neurons; j++) {
-            float post = post_spikes[j];
-            if (post < 0.5f) continue;  /* Post didn't spike — no Hebbian update */
-
-            uint32_t row_start = csr->row_ptr[j];
-            uint32_t row_end = csr->row_ptr[j + 1];
-            for (uint32_t e = row_start; e < row_end; e++) {
-                snn_csr_synapse_t* entry = &csr->entries[e];
-                /* Look up pre-synaptic spike from source population */
-                if (entry->src_pop >= network->n_populations) continue;
-                snn_population_t* src_pop = network->populations[entry->src_pop];
-                if (!src_pop || !src_pop->spike_output) continue;
-                if (entry->src_neuron >= src_pop->n_neurons) continue;
-
-                const float* src_spikes = (const float*)nimcp_tensor_data_const(src_pop->spike_output);
-                if (!src_spikes) continue;
-                float pre = src_spikes[entry->src_neuron];
-                if (pre < 0.5f) continue;  /* Pre didn't spike */
-
-                /* Reward-modulated Hebbian + standard L2 weight decay.
-                 *
-                 * EXCITATORY (weight > 0): standard rule
-                 *   Δw = scale - decay × w
-                 *   + reward → weight grows, strengthening excitation
-                 *
-                 * INHIBITORY (weight < 0): SIGN-FLIPPED rule (inhibitory plasticity)
-                 *   Δw = -scale - decay × w
-                 *   + reward → weight becomes more negative, strengthening inhibition
-                 *   This implements separate E/I plasticity: inhibitory synapses
-                 *   that "helped" (by suppressing wrong output when reward came)
-                 *   also strengthen, maintaining E/I balance.
-                 *
-                 * RATE-DEPENDENT INHIBITORY STRENGTHENING:
-                 * If postsynaptic neuron is over-firing (rate_ema > 0.10),
-                 * inhibitory synapses onto it strengthen proportionally —
-                 * exactly what's needed to clamp runaway excitation at the
-                 * local circuit level, not just via slow synaptic scaling. */
-                float decay_rate = 1e-5f;
-                float delta;
-                if (entry->weight >= 0.0f) {
-                    delta = scale - decay_rate * entry->weight;
-                } else {
-                    delta = -scale - decay_rate * entry->weight;
-                    /* Extra inhibitory strengthening proportional to post rate */
-                    if (dst_pop->neuron_rate_ema) {
-                        float rate = dst_pop->neuron_rate_ema[j];
-                        if (rate > 0.10f) {
-                            /* Push weight more negative: additional 0.1 × (rate - 0.10)
-                             * per apply. At rate=0.5, adds -0.04 per call. */
-                            delta -= 0.1f * (rate - 0.10f);
-                        }
-                    }
-                }
-                entry->weight += delta;
-                if (entry->weight > 2.0f) entry->weight = 2.0f;
-                if (entry->weight < -4.0f) entry->weight = -4.0f;  /* inhib cap −4 */
-                updates++;
-            }
+    /* Populations are independent (each writes only its own incoming CSR
+     * and reads spike outputs), so they run on worker threads: at 1.6M
+     * post-spikes × ~1000 fan-in per step the serial loop was ~15 s. */
+    rstdp_pool_t rpool = { .network = network, .scale = scale, .next = 0, .updates = 0 };
+    {
+        uint32_t n_threads = (network->n_populations < RSTDP_MAX_THREADS)
+                             ? network->n_populations : RSTDP_MAX_THREADS;
+        pthread_t tids[RSTDP_MAX_THREADS];
+        uint32_t spawned = 0;
+        for (uint32_t t = 1; t < n_threads; t++) {
+            if (pthread_create(&tids[t], NULL, rstdp_worker, &rpool) == 0) spawned++;
+            else break;
         }
+        rstdp_worker(&rpool);
+        for (uint32_t t = 1; t <= spawned; t++) pthread_join(tids[t], NULL);
     }
+    updates += __atomic_load_n(&rpool.updates, __ATOMIC_RELAXED);
 
     /* Decay reward baseline toward recent rewards (EMA) — tunable. */
     float a = g_rstdp_baseline_alpha;
@@ -1202,11 +1243,88 @@ void snn_homeostatic_update_rates(snn_training_ctx_t* ctx,
  *
  * Called from the training loop every N learn_vector calls (not every
  * SNN step — too expensive to iterate 1.45B synapses that often). */
+/* One population's host-side synaptic scaling: scale, clamp, metabolic
+ * cap, mirror flat weights[] → entries[]. No GPU traffic and no shared
+ * state, so populations run concurrently (see snn_homeostatic_apply). */
+typedef struct {
+    snn_population_t* pop;
+    float scale;
+    float target_rate;
+} homeo_job_t;
+
+typedef struct {
+    homeo_job_t* jobs;
+    uint32_t n_jobs;
+    uint32_t next;      /* atomic work index */
+    float w_cap;
+} homeo_pool_t;
+
+#define HOMEO_MAX_THREADS 32
+
+/* entries[] is the single source of truth (R-STDP, Louvain, introspection
+ * and the checkpoint all use it). Scale it, apply the metabolic cap, then
+ * mirror into the flat weights[] the GPU is fed from. `scale == 1.0`
+ * means mirror-only: the pop was touched by R-STDP since the last upload
+ * but needs no homeostatic correction. */
+static void homeo_scale_pop_host(snn_population_t* pop, float scale, float w_cap) {
+    snn_csr_storage_t* csr = pop->incoming_csr;
+    const uint32_t n = csr->n_synapses;
+
+    if (scale != 1.0f) {
+        for (uint32_t e = 0; e < n; e++) {
+            float v = csr->entries[e].weight * scale;
+            if (v >  w_cap) v =  w_cap;
+            if (v < -w_cap) v = -w_cap;
+            csr->entries[e].weight = v;
+        }
+        /* Metabolic cap only when scaling up — shrinking can't newly exceed it. */
+        if (scale > 1.0f) {
+            for (uint32_t j = 0; j < csr->n_neurons; j++) {
+                uint32_t rs = csr->row_ptr[j];
+                uint32_t re = csr->row_ptr[j + 1];
+                uint32_t fan_in = re - rs;
+                if (fan_in == 0) continue;
+                float cap = g_metabolic_cap_factor * (float)fan_in;
+                float sum_abs = 0.0f;
+                for (uint32_t e = rs; e < re; e++) sum_abs += fabsf(csr->entries[e].weight);
+                if (sum_abs > cap) {
+                    float rescale = cap / sum_abs;
+                    for (uint32_t e = rs; e < re; e++) csr->entries[e].weight *= rescale;
+                }
+            }
+        }
+    }
+    if (csr->weights) {
+        float* __restrict__ w = csr->weights;
+        for (uint32_t e = 0; e < n; e++) {
+            w[e] = csr->entries[e].weight;
+        }
+    }
+    csr->weights_dirty = false;
+}
+
+static void* homeo_worker(void* arg) {
+    homeo_pool_t* pool = (homeo_pool_t*)arg;
+    for (;;) {
+        uint32_t i = __atomic_fetch_add(&pool->next, 1, __ATOMIC_RELAXED);
+        if (i >= pool->n_jobs) break;
+        homeo_scale_pop_host(pool->jobs[i].pop, pool->jobs[i].scale, pool->w_cap);
+    }
+    return NULL;
+}
+
+static double homeo_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
+
 uint32_t snn_homeostatic_apply(snn_training_ctx_t* ctx, snn_network_t* network) {
     if (!ctx || !network) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_homeostatic_apply: null context or network pointer");
         return 0;
     }
+    const double t_start_ms = homeo_now_ms();
 
     /* Target rate is now per-pop (see _target_rate_for_pop). Declared
      * inside the per-pop loop below. */
@@ -1223,6 +1341,14 @@ uint32_t snn_homeostatic_apply(snn_training_ctx_t* ctx, snn_network_t* network) 
     uint32_t n_skipped_warmup = 0;
     uint32_t n_skipped_stable = 0;  /* Pops within normal operating band */
     uint32_t n_total_eligible = 0;   /* Total pops checked (excludes warmup) */
+
+    /* Pass 1 (serial): decide which pops need scaling. Pass 2 (parallel):
+     * host weight walks, one pop per worker — at 1.6B synapses across 46
+     * tiers the serial walk was 7-11 s every apply. Pass 3 (serial): GPU
+     * sync + logging. */
+    homeo_job_t* jobs = (homeo_job_t*)nimcp_calloc(network->n_populations, sizeof(homeo_job_t));
+    uint32_t n_jobs = 0;
+    if (!jobs) return 0;
 
     for (uint32_t p = 0; p < network->n_populations; p++) {
         snn_population_t* pop = network->populations[p];
@@ -1307,107 +1433,70 @@ uint32_t snn_homeostatic_apply(snn_training_ctx_t* ctx, snn_network_t* network) 
         const bool is_hot  = (cur_rate > 2.00f * target_rate);
         const bool needs_correction = (drift_pct > 0.30f) || is_dead || is_hot;
 
-        if (!needs_correction && drift_pct < 0.15f) {
-            /* Within normal operating band, no correction needed */
+        const bool stable = (!needs_correction && drift_pct < 0.15f)
+                            /* Legacy near-unity skip (just outside the 15% band
+                             * but scale ≈ 1.0 due to clamping). */
+                            || (scale > 0.995f && scale < 1.005f);
+        if (stable) {
             n_skipped_stable++;
+            /* No correction, but R-STDP may have changed entries[] since the
+             * last upload — mirror-only job so the GPU sees the learning. */
+            if (pop->incoming_csr->weights_dirty) {
+                jobs[n_jobs++] = (homeo_job_t){ .pop = pop, .scale = 1.0f, .target_rate = target_rate };
+            }
             continue;
         }
 
-        /* Legacy near-unity skip (kept for populations just outside the
-         * 15% band but with scale ≈1.0 due to clamping). */
-        if (scale > 0.995f && scale < 1.005f) {
-            n_skipped_stable++;
-            continue;
-        }
+        jobs[n_jobs++] = (homeo_job_t){ .pop = pop, .scale = scale, .target_rate = target_rate };
+    }
+    /* Pops skipped by the warm-up / plasticity-exclusion gates above never
+     * get R-STDP either, so nothing dirty is left behind there. */
 
+    /* Pass 2: parallel host walks. */
+    const double t_walk0_ms = homeo_now_ms();
+    if (n_jobs > 0) {
+        homeo_pool_t pool = { .jobs = jobs, .n_jobs = n_jobs, .next = 0, .w_cap = w_cap };
+        uint32_t n_threads = (n_jobs < HOMEO_MAX_THREADS) ? n_jobs : HOMEO_MAX_THREADS;
+        pthread_t tids[HOMEO_MAX_THREADS];
+        uint32_t spawned = 0;
+        if (n_threads > 1) {
+            for (uint32_t t = 0; t < n_threads; t++) {
+                if (pthread_create(&tids[t], NULL, homeo_worker, &pool) == 0) spawned++;
+                else break;
+            }
+        }
+        homeo_worker(&pool);  /* calling thread works too; also the serial fallback */
+        for (uint32_t t = 0; t < spawned; t++) pthread_join(tids[t], NULL);
+    }
+    const double t_walk1_ms = homeo_now_ms();
+
+    /* Pass 3: GPU sync + per-pop log, serial (device switching is not
+     * thread-safe in the GPU manager). */
+    uint32_t n_mirrored = 0;
+    for (uint32_t i = 0; i < n_jobs; i++) {
+        snn_population_t* pop = jobs[i].pop;
         snn_csr_storage_t* csr = pop->incoming_csr;
-
-        /* Phase: saturation-recovery perf fix. Operate on the flat
-         * weights[] array when it exists (GPU path). The flat array is
-         * contiguous float32 — SIMD-vectorizable by the compiler at -O3
-         * vs. the strided entries[] struct (12-byte stride, 4-byte
-         * field). On saturated checkpoints where every pop needs a full
-         * weight walk, this drops per-pop cost ~3-4× by eliminating
-         * redundant passes. Metabolic cap skip when scale <= 1.0
-         * (scaling down can't newly violate cap) cuts another ~50%. */
-        const bool use_flat = (csr->weights != NULL);
-
-        if (use_flat) {
-            /* 1. Scale in place on flat weights[] — vectorizable. */
-            float* __restrict__ w = csr->weights;
-            const uint32_t n = csr->n_synapses;
-            for (uint32_t e = 0; e < n; e++) {
-                float v = w[e] * scale;
-                if (v >  w_cap) v =  w_cap;
-                if (v < -w_cap) v = -w_cap;
-                w[e] = v;
-            }
-
-            /* 2. Metabolic cap — skip when scale<=1.0 since shrinking
-             *    can't newly exceed cap. (Pre-existing violations from
-             *    R-STDP LTP since last apply are still handled on the
-             *    scale>1.0 path, and also by the next apply when the
-             *    pop's rate triggers scaling in the other direction.) */
-            if (scale > 1.0f) {
-                for (uint32_t j = 0; j < csr->n_neurons; j++) {
-                    uint32_t rs = csr->row_ptr[j];
-                    uint32_t re = csr->row_ptr[j + 1];
-                    uint32_t fan_in = re - rs;
-                    if (fan_in == 0) continue;
-                    float cap = g_metabolic_cap_factor * (float)fan_in;
-                    float sum_abs = 0.0f;
-                    for (uint32_t e = rs; e < re; e++) sum_abs += fabsf(w[e]);
-                    if (sum_abs > cap) {
-                        float rescale = cap / sum_abs;
-                        for (uint32_t e = rs; e < re; e++) w[e] *= rescale;
-                    }
-                }
-            }
-
-            /* 3. Sync flat weights[] -> entries[] in a single strided
-             *    pass. CPU-path code (R-STDP, Louvain, introspection)
-             *    reads .weight from entries[], so we must keep both in
-             *    sync — but only one pass, not three. */
-            for (uint32_t e = 0; e < n; e++) {
-                csr->entries[e].weight = w[e];
-            }
-
-            /* 4. Push to GPU if resident. */
-            if (csr->gpu_resident) {
-                snn_csr_sync_weights_to_gpu(csr);
-            }
-        } else {
-            /* CPU-only fallback: original strided path on entries[]. */
-            for (uint32_t e = 0; e < csr->n_synapses; e++) {
-                float v = csr->entries[e].weight * scale;
-                if (v >  w_cap) v =  w_cap;
-                if (v < -w_cap) v = -w_cap;
-                csr->entries[e].weight = v;
-            }
-
-            if (scale > 1.0f) {
-                for (uint32_t j = 0; j < csr->n_neurons; j++) {
-                    uint32_t rs = csr->row_ptr[j];
-                    uint32_t re = csr->row_ptr[j + 1];
-                    uint32_t fan_in = re - rs;
-                    if (fan_in == 0) continue;
-                    float cap = g_metabolic_cap_factor * (float)fan_in;
-                    float sum_abs = 0.0f;
-                    for (uint32_t e = rs; e < re; e++) sum_abs += fabsf(csr->entries[e].weight);
-                    if (sum_abs > cap) {
-                        float rescale = cap / sum_abs;
-                        for (uint32_t e = rs; e < re; e++) csr->entries[e].weight *= rescale;
-                    }
-                }
-            }
+        if (csr->gpu_resident) {
+            snn_csr_sync_weights_to_gpu(csr);
         }
-
+        if (jobs[i].scale == 1.0f) {
+            n_mirrored++;
+            continue;
+        }
         NIMCP_LOGGING_INFO("homeostatic: pop %u '%s' rate=%.4f target=%.4f "
                            "scale=%.4f syns=%u",
                            pop->id, pop->name, pop->firing_rate_ema,
-                           target_rate, scale, csr->n_synapses);
+                           jobs[i].target_rate, jobs[i].scale, csr->n_synapses);
         n_scaled++;
     }
+    const double t_end_ms = homeo_now_ms();
+    if (n_jobs > 0) {
+        NIMCP_LOGGING_INFO("[HOMEO-PROFILE] %u pops (%u scaled, %u R-STDP mirror-only): "
+                           "walk=%.0fms (parallel) sync+log=%.0fms total=%.0fms",
+                           n_jobs, n_scaled, n_mirrored, t_walk1_ms - t_walk0_ms,
+                           t_end_ms - t_walk1_ms, t_end_ms - t_start_ms);
+    }
+    nimcp_free(jobs);
 
     if (n_skipped_warmup > 0) {
         NIMCP_LOGGING_DEBUG("homeostatic: %u pops still in warm-up",

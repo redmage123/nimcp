@@ -9683,11 +9683,30 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
     # If low, ship-and-delete the previous snapshot to Hetzner BEFORE
     # writing the new one — never hold 2x locally.
     DISK_HEADROOM_GB = 5.0
+    # The new snapshot is about as large as the current canonical set — with
+    # the full 1.6B-synapse SNN that is ~22 GB on a 31 GB /dev/shm, so a
+    # fixed 5 GB headroom would start a write that cannot finish. Require
+    # room for a copy of the canonical set; the emergency path below ships
+    # and evicts the canonical when that is the only way to make room.
+    try:
+        _canon = os.path.join(CHECKPOINT_DIR, "athena_immersive.bin")
+        _needed = 0
+        if os.path.islink(_canon):
+            _tgt = os.path.join(CHECKPOINT_DIR, os.readlink(_canon))
+            _needed = sum(os.path.getsize(_tgt + _e) for _e in [''] + [
+                '.snn', '.cnn', '.lnn', '.cortex_visual', '.cortex_audio',
+                '.cortex_speech', '.cortex_somato', '.meta', '.tokenizer',
+                '.mirror_neurons', '.executive', '.gl_lang', '.gl_multiturn',
+                '.kg', '.immune', '.concept_registry', '.knowledge',
+                '.pink_noise', '.temperature'] if os.path.exists(_tgt + _e))
+        DISK_HEADROOM_GB = max(DISK_HEADROOM_GB, _needed / (1024 ** 3) + 1.0)
+    except OSError:
+        pass
     if not _check_disk_space(min_gb=DISK_HEADROOM_GB):
-        logger.warning("Low disk space (<%g GB free) — shipping previous snapshot first",
-                       DISK_HEADROOM_GB)
+        logger.warning("Low disk space (<%.1f GB free needed for the next snapshot) — "
+                       "shipping previous snapshot first", DISK_HEADROOM_GB)
         _ship_and_remove_previous_snapshot()
-        if not _check_disk_space(min_gb=DISK_HEADROOM_GB / 2):
+        if not _check_disk_space(min_gb=DISK_HEADROOM_GB):
             # EMERGENCY: ship the canonical itself (last resort).
             # Better to lose a few minutes of training (re-do recent steps
             # on resume) than skip saves indefinitely while disk fills.
@@ -9703,11 +9722,16 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                         sidecars = ['', '.snn', '.cnn', '.lnn',
                                     '.cortex_visual', '.cortex_audio',
                                     '.cortex_speech', '.cortex_somato',
-                                    '.meta', '.tokenizer', '.mirror_neurons', '.executive']
+                                    '.meta', '.tokenizer', '.mirror_neurons', '.executive',
+                                    '.gl_lang', '.gl_multiturn', '.kg', '.immune',
+                                    '.concept_registry', '.knowledge', '.pink_noise',
+                                    '.temperature']
                         files = [target_path + ext for ext in sidecars
                                  if os.path.exists(target_path + ext)]
                         if files:
-                            _sp.run(["rsync", "-az", "--partial", "--timeout=1800",
+                            # No -z: the 21 GB .snn is raw float32 and does not
+                            # compress; -z just pins a core for ~10 min.
+                            _sp.run(["rsync", "-a", "--partial", "--timeout=1800",
                                      "--remove-source-files",
                                      "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no",
                                      ] + files + [
@@ -11126,8 +11150,11 @@ def main():
 
     # --- Handle graceful shutdown ---
     shutdown_requested = [False]
-    # Mutable training progress for signal handlers [stage, step]
-    training_progress = [start_stage, 0]
+    # Mutable training progress for signal handlers [stage, step]. Seeded
+    # with the resume bookmark so a shutdown save before the first
+    # curriculum step is named by the real step, not step 0 (which also
+    # rewound the state file to 0 on 2026-10-26).
+    training_progress = [start_stage, start_step]
 
     ipc_server = [None]  # mutable container for signal handler access
 

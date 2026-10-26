@@ -2241,9 +2241,18 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                  * CPU plasticity coordinator still runs below. */
             }
             /* CPU coordinator still runs for registered mechanism callbacks */
+            struct timespec _pc0, _pc1, _pc2;
+            clock_gettime(CLOCK_MONOTONIC, &_pc0);
             plasticity_coordinator_update(brain->plasticity_coordinator, now_ms, 1.0f);
+            clock_gettime(CLOCK_MONOTONIC, &_pc1);
             /* Dale's principle enforcement (post-plasticity weight sign clip). */
             brain_enforce_dales_law(brain);
+            clock_gettime(CLOCK_MONOTONIC, &_pc2);
+            if (brain->plasticity_step_counter % 10 == 0) {
+                NIMCP_LOGGING_INFO("[PLAST-PROFILE] coordinator=%.1fms dales=%.1fms",
+                    (_pc1.tv_sec - _pc0.tv_sec) * 1e3 + (_pc1.tv_nsec - _pc0.tv_nsec) / 1e6,
+                    (_pc2.tv_sec - _pc1.tv_sec) * 1e3 + (_pc2.tv_nsec - _pc1.tv_nsec) / 1e6);
+            }
         }
         /* Structural plasticity: form new synapses for high-activity pairs */
         if (brain->structural_plasticity && brain->structural_plasticity_enabled) {
@@ -2268,8 +2277,29 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                     neural_network_set_neuromodulator_system(base_net, brain->neuromodulator_system);
                 }
                 float reward = 1.0f - fminf(loss, 1.0f);
-                uint32_t modified = neural_network_apply_reward_learning_active(
-                    base_net, reward, REWARD_LEARNING_RATE, nimcp_time_get_us(), REWARD_ACTIVITY_THRESHOLD);
+                /* The walk visits every outgoing synapse of every active
+                 * neuron (~48M at 150K neurons, ~270 ms on 16 threads). On
+                 * this brain it has never modified a weight (eligibility is
+                 * off above 100K neurons; the STDP/Oja rules find no spike
+                 * pairs), so after a run of zero-modification calls it is
+                 * sampled every 10th step instead. A single modification
+                 * restores per-step execution. */
+                static uint32_t _rl_zero_streak = 0;
+                const bool rl_sample_only = (_rl_zero_streak >= 20);
+                uint32_t modified = 0;
+                if (!rl_sample_only || brain->plasticity_step_counter % 10 == 0) {
+                    struct timespec _rl0, _rl1;
+                    clock_gettime(CLOCK_MONOTONIC, &_rl0);
+                    modified = neural_network_apply_reward_learning_active(
+                        base_net, reward, REWARD_LEARNING_RATE, nimcp_time_get_us(), REWARD_ACTIVITY_THRESHOLD);
+                    clock_gettime(CLOCK_MONOTONIC, &_rl1);
+                    _rl_zero_streak = (modified == 0) ? _rl_zero_streak + 1 : 0;
+                    if (brain->plasticity_step_counter % 10 == 0) {
+                        NIMCP_LOGGING_INFO("[PLAST-PROFILE] reward_learning=%.1fms modified=%u zero_streak=%u%s",
+                            (_rl1.tv_sec - _rl0.tv_sec) * 1e3 + (_rl1.tv_nsec - _rl0.tv_nsec) / 1e6,
+                            modified, _rl_zero_streak, rl_sample_only ? " (sampled: every 10th step)" : "");
+                    }
+                }
                 if (modified > 0) {
                     adaptive_network_invalidate_gpu_structure(brain->network);
                 }

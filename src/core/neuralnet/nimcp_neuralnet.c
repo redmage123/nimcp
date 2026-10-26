@@ -2554,7 +2554,7 @@ uint32_t neural_network_apply_reward_learning(neural_network_t network, float re
     // WHY: The forward pass sets neuron->state but never updates outgoing synapse traces.
     //      Eligibility learning needs syn->trace > 0.1 to trigger weight updates.
     {
-        const uint32_t NUM_BIO_THREADS = 4;
+        const uint32_t NUM_BIO_THREADS = 16;  /* was 4; the training pod has 128 cores */
         uint32_t total_n = network->num_neurons;
         if (total_n > 50000) {
             pthread_t threads[NUM_BIO_THREADS];
@@ -2584,7 +2584,7 @@ uint32_t neural_network_apply_reward_learning(neural_network_t network, float re
 
     // Main learning loop: STDP/Oja/eligibility/BCM per neuron (parallel for large networks)
     {
-        const uint32_t NUM_BIO_THREADS = 4;
+        const uint32_t NUM_BIO_THREADS = 16;  /* was 4; the training pod has 128 cores */
         uint32_t total_n = network->num_neurons;
         if (total_n > 50000) {
             pthread_t threads[NUM_BIO_THREADS];
@@ -2753,7 +2753,7 @@ uint32_t neural_network_apply_reward_learning_active(neural_network_t network, f
 
     /* Phase 2: Set outgoing synapse traces for active neurons only (parallel) */
     {
-        const uint32_t NUM_BIO_THREADS = 4;
+        const uint32_t NUM_BIO_THREADS = 16;  /* was 4; the training pod has 128 cores */
         if (num_active > 10000) {
             pthread_t threads[NUM_BIO_THREADS];
             bio_learn_active_trace_worker_t workers[NUM_BIO_THREADS];
@@ -2784,7 +2784,7 @@ uint32_t neural_network_apply_reward_learning_active(neural_network_t network, f
 
     /* Phase 3: Apply STDP/Oja/eligibility/BCM to active neurons (parallel) */
     {
-        const uint32_t NUM_BIO_THREADS = 4;
+        const uint32_t NUM_BIO_THREADS = 16;  /* was 4; the training pod has 128 cores */
         if (num_active > 10000) {
             pthread_t threads[NUM_BIO_THREADS];
             bio_learn_worker_t workers[NUM_BIO_THREADS];

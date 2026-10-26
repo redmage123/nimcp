@@ -410,9 +410,135 @@ void nimcp_gpu_weight_cache_destroy(nimcp_gpu_weight_cache_t* cache)
 // Weight Synchronization
 //=============================================================================
 
+#include <time.h>
+#include <pthread.h>
+static double upload_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
+
+/* Parallel COO build for one layer transition. Each worker owns a
+ * contiguous slice of the destination iteration range: pass 1 counts its
+ * nnz (and writes its biases), a prefix sum gives each slice a write base,
+ * pass 2 fills. Slices are visited in order, so the COO ordering is the
+ * same as the serial loop produced. Writes are capped at the slice's pass-1
+ * count: a synapse added concurrently by structural plasticity is dropped
+ * until the next rebuild instead of overrunning the buffer. */
+#define COO_BUILD_THREADS 16
+#define COO_BUILD_MIN_PER_THREAD 2048
+
+typedef struct {
+    nimcp_gpu_weight_cache_t* cache;
+    neural_network_t net;
+    uint32_t l;
+    uint32_t ii_start, ii_end;
+    bool use_sparse_list;
+    uint32_t dst_offset, src_offset, src_layer_size;
+    size_t nnz;          /* pass 1 result */
+    size_t write_base;   /* pass 2 input */
+    size_t written;      /* pass 2 result */
+} coo_slice_t;
+
+static void* coo_count_worker(void* arg) {
+    coo_slice_t* s = (coo_slice_t*)arg;
+    nimcp_gpu_weight_cache_t* cache = s->cache;
+    size_t nnz = 0;
+    for (uint32_t ii = s->ii_start; ii < s->ii_end; ii++) {
+        uint32_t i = s->use_sparse_list ? cache->connected_dst[s->l][ii] : ii;
+        neuron_t* neuron = neural_network_get_neuron(s->net, s->dst_offset + i);
+        if (!neuron) continue;
+        cache->host_bias_buf[i] = neuron->bias;
+        for (uint32_t j = 0; j < NEURON_IN_COUNT(neuron); j++) {
+            synapse_handle_t* in_h = NEURON_IN_HANDLE(neuron, j);
+            if (!in_h) continue;
+            uint32_t source_id = in_h->target_neuron_id;
+            if (source_id >= s->src_offset && source_id < s->src_offset + s->src_layer_size) nnz++;
+        }
+    }
+    s->nnz = nnz;
+    return NULL;
+}
+
+static void* coo_fill_worker(void* arg) {
+    coo_slice_t* s = (coo_slice_t*)arg;
+    nimcp_gpu_weight_cache_t* cache = s->cache;
+    size_t k = s->write_base;
+    const size_t k_end = s->write_base + s->nnz;
+    for (uint32_t ii = s->ii_start; ii < s->ii_end && k < k_end; ii++) {
+        uint32_t i = s->use_sparse_list ? cache->connected_dst[s->l][ii] : ii;
+        neuron_t* neuron = neural_network_get_neuron(s->net, s->dst_offset + i);
+        if (!neuron) continue;
+        for (uint32_t j = 0; j < NEURON_IN_COUNT(neuron) && k < k_end; j++) {
+            synapse_handle_t* in_h = NEURON_IN_HANDLE(neuron, j);
+            if (!in_h) continue;
+            uint32_t source_id = in_h->target_neuron_id;
+            if (source_id >= s->src_offset && source_id < s->src_offset + s->src_layer_size) {
+                cache->host_coo_values[k]  = in_h->weight * in_h->strength;
+                cache->host_coo_row_idx[k] = (int)i;
+                cache->host_coo_col_idx[k] = (int)(source_id - s->src_offset);
+                k++;
+            }
+        }
+    }
+    s->written = k - s->write_base;
+    return NULL;
+}
+
+/* Parallel write-back of a downloaded CSR transition into the synapse
+ * handles. Each worker owns a contiguous range of destination neurons;
+ * a neuron's incoming handles are written by exactly one worker. */
+typedef struct {
+    nimcp_gpu_weight_cache_t* cache;
+    neural_network_t net;
+    uint32_t i_start, i_end;
+    uint32_t dst_offset, src_offset, src_layer_size;
+} dl_slice_t;
+
+static void* dl_writeback_worker(void* arg) {
+    dl_slice_t* s = (dl_slice_t*)arg;
+    nimcp_gpu_weight_cache_t* cache = s->cache;
+    for (uint32_t i = s->i_start; i < s->i_end; i++) {
+        neuron_t* neuron = neural_network_get_neuron(s->net, s->dst_offset + i);
+        if (!neuron) continue;
+        int row_start = cache->host_csr_row_ptrs[i];
+        int row_end   = cache->host_csr_row_ptrs[i + 1];
+        for (uint32_t j = 0; j < NEURON_IN_COUNT(neuron); j++) {
+            synapse_handle_t* in_h = NEURON_IN_HANDLE(neuron, j);
+            if (!in_h) continue;
+            uint32_t source_id = in_h->target_neuron_id;
+            if (source_id < s->src_offset || source_id >= s->src_offset + s->src_layer_size) continue;
+            int src_local = (int)(source_id - s->src_offset);
+            float eff_weight = 0.0f;
+            int lo = row_start, hi = row_end - 1;
+            while (lo <= hi) {  /* columns are sorted by cuSPARSE */
+                int mid = lo + (hi - lo) / 2;
+                int col = cache->host_coo_col_idx[mid];
+                if (col == src_local) { eff_weight = cache->host_coo_values[mid]; break; }
+                if (col < src_local) lo = mid + 1; else hi = mid - 1;
+            }
+            in_h->weight = (fabsf(in_h->strength) > 1e-8f) ? eff_weight / in_h->strength : eff_weight;
+        }
+    }
+    return NULL;
+}
+
+/* Run `fn` over the slices in parallel (calling thread takes slice 0). */
+static void coo_run_slices(coo_slice_t* slices, uint32_t n, void* (*fn)(void*)) {
+    pthread_t tids[COO_BUILD_THREADS];
+    uint32_t spawned = 0;
+    for (uint32_t t = 1; t < n; t++) {
+        if (pthread_create(&tids[t], NULL, fn, &slices[t]) == 0) spawned++;
+        else fn(&slices[t]);  /* thread creation failed: do it inline */
+    }
+    fn(&slices[0]);
+    for (uint32_t t = 1; t <= spawned; t++) pthread_join(tids[t], NULL);
+}
+
 bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_network_t net)
 {
     if (!cache || !net) return false;
+    const double upload_t0_ms = upload_now_ms();
 
     // Validate layer sizes against actual network on first upload
     uint32_t total_neurons = neural_network_get_num_neurons(net);
@@ -529,26 +655,27 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
                                cache->connected_dst[l] != NULL;
         uint32_t iter_count = use_sparse_list ? cache->num_connected_dst[l] : dst_layer_size;
 
-        // --- Pass 1: Count nnz and extract biases ---
+        // --- Pass 1 (parallel): count nnz per slice and extract biases ---
+        uint32_t n_slices = iter_count / COO_BUILD_MIN_PER_THREAD;
+        if (n_slices > COO_BUILD_THREADS) n_slices = COO_BUILD_THREADS;
+        if (n_slices < 1) n_slices = 1;
+        coo_slice_t slices[COO_BUILD_THREADS];
+        for (uint32_t t = 0; t < n_slices; t++) {
+            slices[t] = (coo_slice_t){
+                .cache = cache, .net = net, .l = l,
+                .ii_start = (uint32_t)((uint64_t)iter_count * t / n_slices),
+                .ii_end   = (uint32_t)((uint64_t)iter_count * (t + 1) / n_slices),
+                .use_sparse_list = use_sparse_list,
+                .dst_offset = dst_offset, .src_offset = src_offset,
+                .src_layer_size = src_layer_size,
+            };
+        }
+        coo_run_slices(slices, n_slices, coo_count_worker);
+
         size_t nnz = 0;
-        for (uint32_t ii = 0; ii < iter_count; ii++) {
-            uint32_t i = use_sparse_list ? cache->connected_dst[l][ii] : ii;
-            uint32_t neuron_id = dst_offset + i;
-            neuron_t* neuron = neural_network_get_neuron(net, neuron_id);
-            if (!neuron) continue;
-
-            cache->host_bias_buf[i] = neuron->bias;
-
-            for (uint32_t j = 0; j < NEURON_IN_COUNT(neuron); j++) {
-                synapse_handle_t* in_h = NEURON_IN_HANDLE(neuron, j);
-                if (!in_h) continue;
-
-                uint32_t source_id = in_h->target_neuron_id;
-                if (source_id >= src_offset &&
-                    source_id < src_offset + src_layer_size) {
-                    nnz++;
-                }
-            }
+        for (uint32_t t = 0; t < n_slices; t++) {
+            slices[t].write_base = nnz;
+            nnz += slices[t].nnz;
         }
 
         // Ensure COO/CSR scratch buffers are large enough
@@ -556,30 +683,21 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
             return false;
         }
 
-        // --- Pass 2: Fill COO arrays ---
-        size_t k = 0;
-        for (uint32_t ii = 0; ii < iter_count; ii++) {
-            uint32_t i = use_sparse_list ? cache->connected_dst[l][ii] : ii;
-            uint32_t neuron_id = dst_offset + i;
-            neuron_t* neuron = neural_network_get_neuron(net, neuron_id);
-            if (!neuron) continue;
-
-            for (uint32_t j = 0; j < NEURON_IN_COUNT(neuron); j++) {
-                synapse_handle_t* in_h = NEURON_IN_HANDLE(neuron, j);
-                if (!in_h) continue;
-
-                uint32_t source_id = in_h->target_neuron_id;
-                if (source_id >= src_offset &&
-                    source_id < src_offset + src_layer_size) {
-                    uint32_t src_local = source_id - src_offset;
-                    float eff_weight = in_h->weight * in_h->strength;
-
-                    cache->host_coo_values[k]  = eff_weight;
-                    cache->host_coo_row_idx[k] = (int)i;
-                    cache->host_coo_col_idx[k] = (int)src_local;
-                    k++;
+        // --- Pass 2 (parallel): fill COO arrays, each slice at its base ---
+        if (nnz > 0) {
+            coo_run_slices(slices, n_slices, coo_fill_worker);
+            /* A slice can come up short if a synapse vanished between the
+             * passes; compact so the upload sees contiguous entries. */
+            size_t k = 0;
+            for (uint32_t t = 0; t < n_slices; t++) {
+                if (slices[t].write_base != k && slices[t].written > 0) {
+                    memmove(&cache->host_coo_values[k],  &cache->host_coo_values[slices[t].write_base],  slices[t].written * sizeof(float));
+                    memmove(&cache->host_coo_row_idx[k], &cache->host_coo_row_idx[slices[t].write_base], slices[t].written * sizeof(int));
+                    memmove(&cache->host_coo_col_idx[k], &cache->host_coo_col_idx[slices[t].write_base], slices[t].written * sizeof(int));
                 }
+                k += slices[t].written;
             }
+            nnz = k;
         }
 
         // --- Upload sparse weights via COO -> CSR ---
@@ -646,6 +764,14 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
 
     cache->weights_dirty_on_cpu = false;
     cache->last_sync_step++;
+    {
+        const double ms = upload_now_ms() - upload_t0_ms;
+        if (ms > 20.0 || (cache->last_sync_step % 50) == 1) {
+            NIMCP_LOG_INFO("[GPU-BRIDGE] weight cache upload #%u: %.1f ms (%u transitions, "
+                           "host COO rebuild + sparse upload)",
+                           cache->last_sync_step, ms, cache->num_layers - 1);
+        }
+    }
     return true;
 }
 
@@ -680,50 +806,30 @@ bool nimcp_gpu_weight_cache_download(nimcp_gpu_weight_cache_t* cache, neural_net
             return false;
         }
 
-        // Write back to synapse structs using CSR structure
-        for (uint32_t i = 0; i < dst_layer_size; i++) {
-            uint32_t neuron_id = dst_offset + i;
-            neuron_t* neuron = neural_network_get_neuron(net, neuron_id);
-            if (!neuron) continue;
-
-            int row_start = cache->host_csr_row_ptrs[i];
-            int row_end   = cache->host_csr_row_ptrs[i + 1];
-
-            for (uint32_t j = 0; j < NEURON_IN_COUNT(neuron); j++) {
-                synapse_handle_t* in_h = NEURON_IN_HANDLE(neuron, j);
-                if (!in_h) continue;
-
-                uint32_t source_id = in_h->target_neuron_id;
-                if (source_id >= src_offset &&
-                    source_id < src_offset + src_layer_size) {
-                    int src_local = (int)(source_id - src_offset);
-
-                    // Binary search CSR row for matching column (columns sorted by cuSPARSE)
-                    float eff_weight = 0.0f;
-                    {
-                        int lo = row_start, hi = row_end - 1;
-                        while (lo <= hi) {
-                            int mid = lo + (hi - lo) / 2;
-                            int col = cache->host_coo_col_idx[mid];
-                            if (col == src_local) {
-                                eff_weight = cache->host_coo_values[mid];
-                                break;
-                            } else if (col < src_local) {
-                                lo = mid + 1;
-                            } else {
-                                hi = mid - 1;
-                            }
-                        }
-                    }
-
-                    // Divide by strength to preserve strength separately
-                    if (fabsf(in_h->strength) > 1e-8f) {
-                        in_h->weight = eff_weight / in_h->strength;
-                    } else {
-                        in_h->weight = eff_weight;
-                    }
-                }
+        // Write back to synapse structs using CSR structure (parallel over
+        // destination neurons; see dl_writeback_worker).
+        {
+            uint32_t n_slices = dst_layer_size / COO_BUILD_MIN_PER_THREAD;
+            if (n_slices > COO_BUILD_THREADS) n_slices = COO_BUILD_THREADS;
+            if (n_slices < 1) n_slices = 1;
+            dl_slice_t slices[COO_BUILD_THREADS];
+            pthread_t tids[COO_BUILD_THREADS];
+            uint32_t spawned = 0;
+            for (uint32_t t = 0; t < n_slices; t++) {
+                slices[t] = (dl_slice_t){
+                    .cache = cache, .net = net,
+                    .i_start = (uint32_t)((uint64_t)dst_layer_size * t / n_slices),
+                    .i_end   = (uint32_t)((uint64_t)dst_layer_size * (t + 1) / n_slices),
+                    .dst_offset = dst_offset, .src_offset = src_offset,
+                    .src_layer_size = src_layer_size,
+                };
             }
+            for (uint32_t t = 1; t < n_slices; t++) {
+                if (pthread_create(&tids[t], NULL, dl_writeback_worker, &slices[t]) == 0) spawned++;
+                else dl_writeback_worker(&slices[t]);
+            }
+            dl_writeback_worker(&slices[0]);
+            for (uint32_t t = 1; t <= spawned; t++) pthread_join(tids[t], NULL);
         }
     }
 

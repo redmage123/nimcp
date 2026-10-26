@@ -76,6 +76,8 @@ typedef struct snn_csr_storage_s {
     void*              d_src_pop_idx;   /**< Device pointer for src_pop_idx[] (uint32_t*); CB-GPU-7 deposit kernel routing */
     void*              d_gpu_ctx;       /**< nimcp_gpu_context_t* used for upload */
     bool               gpu_resident;    /**< true after snn_csr_upload_to_gpu() */
+    bool               weights_dirty;   /**< entries[].weight changed on the host (R-STDP)
+                                             since the last mirror to weights[] + GPU */
 } snn_csr_storage_t;
 
 /* ========================================================================= */
