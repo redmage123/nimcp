@@ -28,6 +28,7 @@ ndarray = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+nimcp-plasticity = { workspace = true }
 
 [[bin]]
 name = "nimcp-v2-daemon"

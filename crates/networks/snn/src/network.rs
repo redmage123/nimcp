@@ -33,6 +33,7 @@ use crate::csr::{CsrError, CsrSynapses, PopulationId};
 use crate::homeostatic::{DEFAULT_RATE_EMA_ALPHA, PopulationRateEma, step_homeostatic};
 use crate::lif::{LifParams, LifState, lif_step_cpu};
 use crate::rstdp::{RstdpParams, RstdpState, step_rstdp};
+use crate::tuning::TunableState;
 
 // -------------------------------------------------------------------------
 // Config
@@ -372,6 +373,19 @@ pub enum SnnError {
     /// `device_assignment` could not be resolved against the population list.
     #[error("device assignment: {0}")]
     DeviceAssignment(#[from] crate::device::DeviceAssignError),
+    /// [`SnnNetwork::tune`] was given a name outside [`TUNABLE_NAMES`].
+    #[error("unknown tunable `{name}` (known: {known})", name = .0, known = TUNABLE_NAMES.join(", "))]
+    UnknownTunable(String),
+    /// [`SnnNetwork::tune`] was given a value outside the knob's range.
+    #[error("tunable `{name}` = {value}: {reason}")]
+    InvalidTunable {
+        /// Knob name.
+        name: String,
+        /// Rejected value.
+        value: f32,
+        /// Why it was rejected.
+        reason: &'static str,
+    },
 }
 
 /// Per-population runtime state.
@@ -482,6 +496,62 @@ pub struct SnnNetwork {
     /// `Some` iff `use_gpu_forward`.
     #[cfg(feature = "cuda")]
     gpu: Option<nimcp_gpu::MultiGpuContext>,
+    /// Live-tuning: the virtual `rstdp_lr` knob (V1 watchdog name). V2's
+    /// R-STDP has no single learning rate — `tune("rstdp_lr", v)` scales
+    /// every edge's STDP amplitudes `A±` by `v / baseline`, where
+    /// `baseline` is [`RSTDP_LR_BASELINE`] and the reference amplitudes
+    /// are the construction-time `A±` kept in `rstdp_ref`.
+    rstdp_lr: TunableState,
+    /// Construction-time `(a_plus, a_minus)` per edge — the reference the
+    /// `rstdp_lr` scale is applied to (avoids drift from repeated ratios).
+    rstdp_ref: Vec<(f32, f32)>,
+    /// Watchdog knobs V2 accepts for wire parity but has no mechanism
+    /// for (see [`TUNABLE_NAMES`] docs). Stored so `tunables()` reflects
+    /// what the operator set; never read by `step()`.
+    unapplied_tunables: std::collections::BTreeMap<String, f32>,
+}
+
+/// Live-tunable knob names accepted by [`SnnNetwork::tune`] — the V1
+/// `snn_watchdog.py` vocabulary plus V2's `noise_pulse_mv`.
+///
+/// | name | applies to | V2 effect |
+/// |---|---|---|
+/// | `rstdp_lr` | every edge | scales STDP `A±` by `value / RSTDP_LR_BASELINE` |
+/// | `homeo_min_scale` / `homeo_max_scale` | every population | homeostatic scale clamp |
+/// | `target_rate` | every population | homeostatic target (fraction spiking / step) |
+/// | `noise_rate_hz` / `noise_pulse_mv` | every population | background noise |
+/// | `max_scale_dead` / `dead_threshold` / `rstdp_baseline_alpha` | — | **recorded only**: V2 has no dead-population scale override and no reward-baseline EMA; `TuneOutcome::applied == false` |
+pub const TUNABLE_NAMES: &[&str] = &[
+    "rstdp_lr",
+    "homeo_min_scale",
+    "homeo_max_scale",
+    "target_rate",
+    "noise_rate_hz",
+    "noise_pulse_mv",
+    "max_scale_dead",
+    "dead_threshold",
+    "rstdp_baseline_alpha",
+];
+
+/// Value of the virtual `rstdp_lr` knob that leaves the construction-time
+/// STDP amplitudes untouched (V1's default `rstdp_lr`).
+pub const RSTDP_LR_BASELINE: f32 = 1e-4;
+
+/// Result of one [`SnnNetwork::tune`] call.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TuneOutcome {
+    /// Knob name as given.
+    pub name: String,
+    /// Value now in force (after any clamping — none today).
+    pub value: f32,
+    /// `false` for the recorded-only knobs.
+    pub applied: bool,
+    /// Populations touched.
+    pub populations: usize,
+    /// Edges touched.
+    pub edges: usize,
+    /// Operator-readable note for recorded-only knobs.
+    pub note: Option<String>,
 }
 
 impl SnnNetwork {
@@ -755,6 +825,10 @@ impl SnnNetwork {
             None => (None, 0.0),
         };
 
+        let rstdp_ref = edges
+            .iter()
+            .map(|e| (e.spec.rstdp.stdp.a_plus, e.spec.rstdp.stdp.a_minus))
+            .collect();
         Ok(Self {
             populations,
             edges,
@@ -766,7 +840,184 @@ impl SnnNetwork {
             pop_device,
             #[cfg(feature = "cuda")]
             gpu,
+            rstdp_lr: TunableState::snapshot(RSTDP_LR_BASELINE),
+            rstdp_ref,
+            unapplied_tunables: std::collections::BTreeMap::new(),
         })
+    }
+
+    // -------------------------------------------------------------------------
+    // Live tuning + quench (V1 watchdog RPC parity: snn_tune / snn_tune_get /
+    // snn_force_quench).
+    // -------------------------------------------------------------------------
+
+    /// Current value of every knob in [`TUNABLE_NAMES`]. Population-level
+    /// knobs report population 0 (V1 tunes them network-wide, and `tune`
+    /// writes all populations). Recorded-only knobs report the last value
+    /// set, or V1's default before any `tune`.
+    #[must_use]
+    pub fn tunables(&self) -> std::collections::BTreeMap<String, f32> {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("rstdp_lr".into(), self.rstdp_lr.current);
+        if let Some(p0) = self.populations.first() {
+            m.insert("homeo_min_scale".into(), p0.spec.homeostatic.min_scale);
+            m.insert("homeo_max_scale".into(), p0.spec.homeostatic.max_scale);
+            m.insert("target_rate".into(), p0.spec.target_rate);
+            m.insert("noise_rate_hz".into(), p0.spec.noise.rate_hz);
+            m.insert("noise_pulse_mv".into(), p0.spec.noise.pulse_mv);
+        }
+        for (name, default) in [
+            ("max_scale_dead", 1.05_f32),
+            ("dead_threshold", 0.1),
+            ("rstdp_baseline_alpha", 0.001),
+        ] {
+            let v = self
+                .unapplied_tunables
+                .get(name)
+                .copied()
+                .unwrap_or(default);
+            m.insert(name.into(), v);
+        }
+        m
+    }
+
+    /// Set a live-tunable knob network-wide. See [`TUNABLE_NAMES`] for the
+    /// vocabulary and what each knob does on V2. Takes effect on the next
+    /// `step()`; GPU paths read these params per launch, so no re-upload
+    /// is needed.
+    ///
+    /// # Errors
+    ///
+    /// [`SnnError::UnknownTunable`] for a name outside the vocabulary;
+    /// [`SnnError::InvalidTunable`] for a non-finite or out-of-range value.
+    pub fn tune(&mut self, name: &str, value: f32) -> Result<TuneOutcome, SnnError> {
+        if !TUNABLE_NAMES.contains(&name) {
+            return Err(SnnError::UnknownTunable(name.to_string()));
+        }
+        let invalid = |reason: &'static str| SnnError::InvalidTunable {
+            name: name.to_string(),
+            value,
+            reason,
+        };
+        if !value.is_finite() {
+            return Err(invalid("must be finite"));
+        }
+        let n_pops = self.populations.len();
+        let n_edges = self.edges.len();
+        let ok = |applied: bool, pops: usize, edges: usize, note: Option<String>| {
+            Ok(TuneOutcome {
+                name: name.to_string(),
+                value,
+                applied,
+                populations: pops,
+                edges,
+                note,
+            })
+        };
+        match name {
+            "rstdp_lr" => {
+                if value < 0.0 {
+                    return Err(invalid("must be >= 0"));
+                }
+                let scale = value / RSTDP_LR_BASELINE;
+                for (edge, &(a_plus, a_minus)) in self.edges.iter_mut().zip(&self.rstdp_ref) {
+                    edge.spec.rstdp.stdp.a_plus = a_plus * scale;
+                    edge.spec.rstdp.stdp.a_minus = a_minus * scale;
+                }
+                self.rstdp_lr.set_current(value);
+                ok(true, 0, n_edges, None)
+            }
+            "homeo_min_scale" => {
+                if !(0.0 < value && value <= 1.0) {
+                    return Err(invalid("must be in (0, 1]"));
+                }
+                for p in &mut self.populations {
+                    p.spec.homeostatic.min_scale = value;
+                }
+                ok(true, n_pops, 0, None)
+            }
+            "homeo_max_scale" => {
+                if value < 1.0 {
+                    return Err(invalid("must be >= 1"));
+                }
+                for p in &mut self.populations {
+                    p.spec.homeostatic.max_scale = value;
+                }
+                ok(true, n_pops, 0, None)
+            }
+            "target_rate" => {
+                if !(0.0 < value && value <= 1.0) {
+                    return Err(invalid("must be in (0, 1] (fraction spiking per step)"));
+                }
+                for p in &mut self.populations {
+                    p.spec.target_rate = value;
+                    p.rate.target_rate = value;
+                }
+                ok(true, n_pops, 0, None)
+            }
+            "noise_rate_hz" => {
+                if !(0.0..=crate::noise::NOISE_RATE_HZ_MAX).contains(&value) {
+                    return Err(invalid("must be in [0, NOISE_RATE_HZ_MAX]"));
+                }
+                for p in &mut self.populations {
+                    p.spec.noise.rate_hz = value;
+                }
+                ok(true, n_pops, 0, None)
+            }
+            "noise_pulse_mv" => {
+                if !(0.0..=crate::noise::NOISE_PULSE_MV_MAX).contains(&value) {
+                    return Err(invalid("must be in [0, NOISE_PULSE_MV_MAX]"));
+                }
+                for p in &mut self.populations {
+                    p.spec.noise.pulse_mv = value;
+                }
+                ok(true, n_pops, 0, None)
+            }
+            _ => {
+                // max_scale_dead / dead_threshold / rstdp_baseline_alpha
+                self.unapplied_tunables.insert(name.to_string(), value);
+                ok(
+                    false,
+                    0,
+                    0,
+                    Some(format!(
+                        "`{name}` recorded but not applied: V2's homeostatic step has no \
+                         dead-population scale override and its R-STDP uses a constant \
+                         baseline_reward, not an EMA"
+                    )),
+                )
+            }
+        }
+    }
+
+    /// Emergency quench (V1 `snn_force_quench`): in every population, pull
+    /// the first `n` neurons' membrane voltage back to `v_reset`
+    /// (biophysically a forced reset; V1 zeroed in its normalised units).
+    /// Returns the number of neurons quenched across all populations.
+    /// On the GPU LIF path the device-resident `v_mem` is rewritten too
+    /// (CPU `state.v_mem` is not the source of truth there).
+    ///
+    /// # Errors
+    ///
+    /// [`SnnError::GpuUnavailable`] if a device write fails.
+    pub fn force_quench(&mut self, n: u32) -> Result<usize, SnnError> {
+        let mut total = 0usize;
+        for pop in &mut self.populations {
+            let k = (n as usize).min(pop.state.v_mem.len());
+            if k == 0 {
+                continue;
+            }
+            let v_reset = pop.spec.lif.v_reset;
+            pop.state.v_mem[..k].fill(v_reset);
+            pop.state.spike[..k].fill(0);
+            #[cfg(feature = "cuda")]
+            if let Some(gpu) = pop.lif_gpu.as_mut() {
+                gpu.quench_prefix(k, v_reset)
+                    .map_err(|e| SnnError::GpuUnavailable(format!("quench: {e:?}")))?;
+            }
+            total += k;
+        }
+        Ok(total)
     }
 
     /// Device ordinal each population (and the edges into it) was
@@ -2565,5 +2816,136 @@ mod tests {
         };
         let net = SnnNetwork::new(cfg).unwrap();
         assert_eq!(net.population_devices(), &[1, 0]);
+    }
+
+    // --- live tuning + quench ---
+
+    #[test]
+    fn tunables_report_construction_values() {
+        let net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
+        let t = net.tunables();
+        for name in TUNABLE_NAMES {
+            assert!(t.contains_key(*name), "missing {name}");
+        }
+        assert_eq!(t["rstdp_lr"], RSTDP_LR_BASELINE);
+        assert_eq!(t["target_rate"], 0.1);
+        assert_eq!(t["homeo_min_scale"], HomeostaticParams::default().min_scale);
+        assert_eq!(t["max_scale_dead"], 1.05);
+    }
+
+    #[test]
+    fn tune_rstdp_lr_scales_amplitudes_from_reference() {
+        let mut net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
+        let (a_plus, a_minus) = (
+            net.edges[0].spec.rstdp.stdp.a_plus,
+            net.edges[0].spec.rstdp.stdp.a_minus,
+        );
+        let out = net.tune("rstdp_lr", RSTDP_LR_BASELINE * 0.5).unwrap();
+        assert!(out.applied);
+        assert_eq!(out.edges, net.n_edges());
+        assert!((net.edges[0].spec.rstdp.stdp.a_plus - a_plus * 0.5).abs() < 1e-9);
+        assert!((net.edges[0].spec.rstdp.stdp.a_minus - a_minus * 0.5).abs() < 1e-9);
+        // Scale is relative to the construction reference, not the last value.
+        net.tune("rstdp_lr", RSTDP_LR_BASELINE * 2.0).unwrap();
+        assert!((net.edges[0].spec.rstdp.stdp.a_plus - a_plus * 2.0).abs() < 1e-9);
+        assert_eq!(net.tunables()["rstdp_lr"], RSTDP_LR_BASELINE * 2.0);
+        // Back to baseline restores the originals exactly.
+        net.tune("rstdp_lr", RSTDP_LR_BASELINE).unwrap();
+        assert_eq!(net.edges[0].spec.rstdp.stdp.a_plus, a_plus);
+    }
+
+    #[test]
+    fn tune_population_knobs_write_every_population() {
+        let mut net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
+        let out = net.tune("target_rate", 0.05).unwrap();
+        assert_eq!(out.populations, 2);
+        for p in &net.populations {
+            assert_eq!(p.spec.target_rate, 0.05);
+            assert_eq!(p.rate.target_rate, 0.05);
+        }
+        net.tune("homeo_max_scale", 1.1).unwrap();
+        net.tune("homeo_min_scale", 0.9).unwrap();
+        net.tune("noise_rate_hz", 0.0).unwrap();
+        net.tune("noise_pulse_mv", 10.0).unwrap();
+        let t = net.tunables();
+        assert_eq!(t["homeo_max_scale"], 1.1);
+        assert_eq!(t["homeo_min_scale"], 0.9);
+        assert_eq!(t["noise_rate_hz"], 0.0);
+        assert_eq!(t["noise_pulse_mv"], 10.0);
+        // Still steps.
+        let ext = vec![0.0_f32; 128];
+        let empty: &[f32] = &[];
+        let _ = net.step(&[&ext, empty], 0.0, 1.0);
+    }
+
+    #[test]
+    fn tune_recorded_only_knobs_report_unapplied() {
+        let mut net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
+        for name in ["max_scale_dead", "dead_threshold", "rstdp_baseline_alpha"] {
+            let out = net.tune(name, 0.42).unwrap();
+            assert!(!out.applied, "{name}");
+            assert!(out.note.as_deref().unwrap().contains("not applied"));
+            assert_eq!(net.tunables()[name], 0.42);
+        }
+    }
+
+    #[test]
+    fn tune_rejects_unknown_and_invalid() {
+        let mut net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
+        assert!(matches!(
+            net.tune("nonsense", 1.0),
+            Err(SnnError::UnknownTunable(_))
+        ));
+        assert!(matches!(
+            net.tune("target_rate", 0.0),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("target_rate", f32::NAN),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("homeo_max_scale", 0.5),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("noise_rate_hz", -1.0),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("rstdp_lr", -1e-4),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        // Nothing changed.
+        assert_eq!(net.tunables()["target_rate"], 0.1);
+    }
+
+    #[test]
+    fn force_quench_resets_prefix_and_counts() {
+        let mut net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
+        // Drive pop A hard so v_mem moves off rest.
+        let ext = vec![30.0_f32; 128];
+        let empty: &[f32] = &[];
+        for _ in 0..3 {
+            net.step(&[&ext, empty], 0.0, 1.0);
+        }
+        let v_reset = LifParams::default().v_reset;
+        let before: Vec<f32> = net.v_mem(0).to_vec();
+        assert!(
+            before[..15].iter().any(|v| (*v - v_reset).abs() > 1e-6),
+            "drive should move v_mem"
+        );
+        let quenched = net.force_quench(15).unwrap();
+        assert_eq!(quenched, 30, "15 per population × 2 populations");
+        assert!(net.v_mem(0)[..15].iter().all(|v| *v == v_reset));
+        assert_eq!(
+            net.v_mem(0)[15..],
+            before[15..],
+            "untouched beyond the prefix"
+        );
+        assert!(net.v_mem(1)[..15].iter().all(|v| *v == v_reset));
+        // n larger than a population clamps.
+        assert_eq!(net.force_quench(1_000).unwrap(), 256);
+        assert_eq!(net.force_quench(0).unwrap(), 0);
     }
 }

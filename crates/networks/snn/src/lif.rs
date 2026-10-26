@@ -767,6 +767,24 @@ impl LifGpu {
         self.last_spikes
     }
 
+    /// Force the first `k` neurons' device-resident membrane voltage to
+    /// `v` (the quench primitive behind `SnnNetwork::force_quench`).
+    /// Round-trips the full `v_mem` through the host: one `dtov`, a
+    /// prefix fill, one `htod`. Cold path — never per step.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any [`GpuError::Cuda`] from the device copies.
+    pub fn quench_prefix(&mut self, k: usize, v: f32) -> Result<(), GpuError> {
+        let mut host = self.stream.memcpy_dtov(&self.v_mem).map_err(cuda_err)?;
+        let k = k.min(host.len());
+        host[..k].fill(v);
+        self.stream
+            .memcpy_htod(&host, &mut self.v_mem)
+            .map_err(cuda_err)?;
+        Ok(())
+    }
+
     /// Download device state into a fresh CPU [`LifState`]. Test / debug
     /// helper — not on the hot path.
     ///

@@ -243,6 +243,18 @@ The harness calls 77 distinct `brain.*` methods:
       quench primitive; reuse.
   Exit: `python3 scripts/snn_watchdog.py --socket /var/run/hera/
   brain.sock` monitors a running V2 daemon without modification.
+  **Status (2026-10-26):** the three RPCs now reach the network.
+  `SnnNetwork::tune` / `tunables` / `force_quench` (nimcp-snn) replace
+  the daemon-side mirror that accepted tunes without applying them and
+  the no-op quench. `rstdp_lr` is a *scale* knob on V2 (STDP `A±` ×
+  `value / 1e-4` relative to construction values); `max_scale_dead`,
+  `dead_threshold`, `rstdp_baseline_alpha` are recorded but not applied
+  (`TuneOutcome::applied == false`) because V2's homeostatic step has no
+  dead-population override and R-STDP uses a constant baseline. Quench
+  resets the first `n` neurons per population to `v_reset`, on the
+  device too when the GPU LIF is active (`LifGpu::quench_prefix`, compiled
+  under `cuda`, not yet run on a device). Exposed via pybind
+  (`snn_tune`, `snn_tune_get`, `snn_force_quench`).
   V2 keeps its own autonomous in-process watchdog from phase 3f as
   a second line of defense (belt + suspenders).
 - **7h — end-to-end validation:** run `immerse_athena.py --backend=v2`

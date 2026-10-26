@@ -96,47 +96,17 @@ mod eyre_like {
     pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-/// Well-known tunable names accepted by [`Request::SnnTune`]. The daemon
-/// stores them in a simple in-memory map so [`Request::SnnTuneGet`]
-/// returns a coherent view even if the underlying SNN has no hook for
-/// the knob yet. Unknown names are rejected.
-const TUNABLE_NAMES: &[&str] = &[
-    "rstdp_lr",
-    "homeo_min_scale",
-    "homeo_max_scale",
-    "max_scale_dead",
-    "dead_threshold",
-    "target_rate",
-    "noise_rate_hz",
-    "rstdp_baseline_alpha",
-];
-
-/// Default values returned by `snn_tune_get` on a fresh daemon.
-fn default_tunables() -> serde_json::Map<String, serde_json::Value> {
-    let mut m = serde_json::Map::new();
-    m.insert("rstdp_lr".into(), json!(0.0001_f32));
-    m.insert("homeo_min_scale".into(), json!(0.98_f32));
-    m.insert("homeo_max_scale".into(), json!(1.02_f32));
-    m.insert("max_scale_dead".into(), json!(1.05_f32));
-    m.insert("dead_threshold".into(), json!(0.1_f32));
-    m.insert("target_rate".into(), json!(0.03_f32));
-    m.insert("noise_rate_hz".into(), json!(20.0_f32));
-    m.insert("rstdp_baseline_alpha".into(), json!(0.001_f32));
-    m
-}
-
-/// Shared daemon state — just the tunable-parameter mirror for now.
-/// Brain + metrics live in their own Arc<Mutex<_>>.
+/// Shared daemon state — the shutdown signal. Brain + metrics live in
+/// their own `Arc<Mutex<_>>`; SNN tunables live on the SNN itself
+/// (`SnnNetwork::tune` / `tunables`), not in a daemon-side mirror.
 #[derive(Debug, Clone)]
 struct SharedState {
-    tunables: Arc<Mutex<serde_json::Map<String, serde_json::Value>>>,
     shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl SharedState {
     fn new() -> Self {
         Self {
-            tunables: Arc::new(Mutex::new(default_tunables())),
             shutdown: Arc::new(tokio::sync::Notify::new()),
         }
     }
@@ -294,34 +264,33 @@ async fn handle_request(
         }
 
         Request::SnnTuneGet => {
-            let t = shared.tunables.lock().await.clone();
-            Response::ok(json!({"params": t}))
+            let g = brain.lock().await;
+            match g.snn_tunables() {
+                Ok(params) => Response::ok(json!({"params": params})),
+                Err(e) => Response::err(format!("snn_tune_get: {e}")),
+            }
         }
 
         Request::SnnTune { name, value } => {
-            if !TUNABLE_NAMES.contains(&name.as_str()) {
-                return Response::err(format!("unknown tunable: {name}"));
+            let mut g = brain.lock().await;
+            match g.snn_tune(&name, value) {
+                Ok(out) => {
+                    tracing::info!(name = %name, value, applied = out.applied, "snn_tune");
+                    Response::ok(out)
+                }
+                Err(e) => Response::err(format!("snn_tune: {e}")),
             }
-            let mut t = shared.tunables.lock().await;
-            t.insert(name.clone(), json!(value));
-            drop(t);
-            tracing::info!(name = %name, value, "snn_tune");
-            Response::ok(json!({"name": name, "value": value}))
         }
 
         Request::SnnForceQuench { n } => {
-            let g = brain.lock().await;
-            if g.snn().is_none() {
-                return Response::err("snn: brain has no SNN configured");
+            let mut g = brain.lock().await;
+            match g.snn_force_quench(n) {
+                Ok(zeroed) => {
+                    tracing::warn!(n, zeroed, "snn_force_quench");
+                    Response::ok(json!({"requested": n, "zeroed": zeroed}))
+                }
+                Err(e) => Response::err(format!("snn_force_quench: {e}")),
             }
-            // V2 SNN does not expose `v_mem_mut` publicly — acknowledge
-            // the RPC so the watchdog's action loop stays intact.
-            tracing::info!(n, "snn_force_quench (no-op: v_mem_mut not exposed)");
-            Response::ok(json!({
-                "requested": n,
-                "zeroed": 0_u32,
-                "note": "v2 snn exposes v_mem read-only; force_quench is a no-op",
-            }))
         }
 
         // ---- Language (L8) + cognition (C4/C5) ----

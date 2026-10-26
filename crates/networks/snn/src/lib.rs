@@ -68,7 +68,7 @@ pub use lif::{ConductanceParams, ConductanceState, LifParams, LifState, lif_step
 pub use membrane::{
     SNN_CB_WEIGHT_SCALE, SNN_E_EXC_MV, SNN_E_INH_MV, SNN_TAU_EXC_MS, SNN_TAU_INH_MS,
 };
-pub use network::{SnnConfig, SnnNetwork};
+pub use network::{RSTDP_LR_BASELINE, SnnConfig, SnnNetwork, TUNABLE_NAMES, TuneOutcome};
 pub use noise::{
     NoiseConfig, NoiseKind, PinkNoiseState, inject_pink_noise, inject_poisson_noise,
     noise_factor_for_pop,

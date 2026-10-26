@@ -24,6 +24,9 @@
 //! - `brain.snn_step(drive, reward, dt_ms) -> int` — one SNN integration
 //!   step. `drive` is `list[list[float]]` — one current vector per
 //!   population. Returns total spikes this step.
+//! - `brain.snn_tune(name, value) -> dict` / `brain.snn_tune_get() -> dict`
+//!   / `brain.snn_force_quench(n) -> int` — the V1 watchdog's live-tuning
+//!   surface, applied to the real network (see `nimcp_snn::TUNABLE_NAMES`).
 //! - `brain.lnn_reset()` — clear LNN transient state.
 //! - `brain.lnn_forward_step(input) -> list[float]` — one sample.
 //! - `brain.lnn_forward_sequence(inputs) -> list[list[float]]` — multi-sample.
@@ -362,6 +365,41 @@ impl PyBrain {
     fn snn_step(&mut self, drive: Vec<Vec<f32>>, reward: f32, dt_ms: f32) -> PyResult<u32> {
         let slices: Vec<&[f32]> = drive.iter().map(Vec::as_slice).collect();
         self.inner.snn_step(&slices, reward, dt_ms).map_err(rt_err)
+    }
+
+    /// Live-tune an SNN knob network-wide (V1 `brain.snn_tune` parity).
+    ///
+    /// Args:
+    ///     name (str): one of `rstdp_lr`, `homeo_min_scale`,
+    ///         `homeo_max_scale`, `target_rate`, `noise_rate_hz`,
+    ///         `noise_pulse_mv`, `max_scale_dead`, `dead_threshold`,
+    ///         `rstdp_baseline_alpha`.
+    ///     value (float): new value.
+    /// Returns:
+    ///     dict: `name`, `value`, `applied` (False for the knobs V2 only
+    ///     records), `populations`, `edges`, `note`.
+    /// Raises:
+    ///     RuntimeError: no SNN, unknown name, or out-of-range value.
+    fn snn_tune<'py>(
+        &mut self,
+        py: Python<'py>,
+        name: &str,
+        value: f32,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let out = self.inner.snn_tune(name, value).map_err(rt_err)?;
+        to_py_json(py, &out)
+    }
+
+    /// Current value of every live-tunable SNN knob (V1 `snn_tune_get`).
+    fn snn_tune_get<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let t = self.inner.snn_tunables().map_err(rt_err)?;
+        to_py_json(py, &t)
+    }
+
+    /// Emergency quench: reset the first `n` neurons of every population
+    /// to `v_reset`. Returns the number of neurons quenched.
+    fn snn_force_quench(&mut self, n: u32) -> PyResult<usize> {
+        self.inner.snn_force_quench(n).map_err(rt_err)
     }
 
     /// Reset the LNN's transient state to zeros. No-op on brains without LNN.

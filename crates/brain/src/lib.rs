@@ -768,6 +768,51 @@ impl Brain {
         Ok(snn.step(external_i_syn, reward, dt_ms))
     }
 
+    /// Live-tune an SNN knob network-wide (V1 `snn_tune` RPC parity). See
+    /// [`nimcp_snn::TUNABLE_NAMES`] for the vocabulary; the outcome says
+    /// whether V2 actually applied it.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` without an SNN, or for an unknown name / invalid
+    /// value (the SNN's own error text is carried through).
+    pub fn snn_tune(&mut self, name: &str, value: f32) -> Result<nimcp_snn::TuneOutcome> {
+        let snn = self
+            .snn
+            .as_mut()
+            .ok_or_else(|| Error::Config("snn not configured on this brain".into()))?;
+        snn.tune(name, value)
+            .map_err(|e| Error::Config(e.to_string()))
+    }
+
+    /// Current value of every live-tunable SNN knob (V1 `snn_tune_get`).
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` without an SNN.
+    pub fn snn_tunables(&self) -> Result<std::collections::BTreeMap<String, f32>> {
+        let snn = self
+            .snn
+            .as_ref()
+            .ok_or_else(|| Error::Config("snn not configured on this brain".into()))?;
+        Ok(snn.tunables())
+    }
+
+    /// Emergency quench: reset the first `n` neurons of every population
+    /// to `v_reset` (V1 `snn_force_quench`). Returns neurons quenched.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` without an SNN; device errors on the GPU path.
+    pub fn snn_force_quench(&mut self, n: u32) -> Result<usize> {
+        let snn = self
+            .snn
+            .as_mut()
+            .ok_or_else(|| Error::Config("snn not configured on this brain".into()))?;
+        snn.force_quench(n)
+            .map_err(|e| Error::Config(e.to_string()))
+    }
+
     // -------------------------------------------------------------------------
     // LNN access — same pattern as SNN.
     // -------------------------------------------------------------------------

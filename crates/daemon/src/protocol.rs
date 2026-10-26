@@ -68,13 +68,15 @@ pub enum Request {
     /// SNN watchdog expects.
     SnnPopStats,
 
-    /// Return a snapshot of the live-tunable parameters. V2 has no
-    /// canonical live-tuning surface yet — the daemon returns the
-    /// config-time values of well-known knobs so the existing watchdog
-    /// can reason about them.
+    /// Return the live value of every SNN tunable
+    /// (`nimcp_snn::SnnNetwork::tunables`) as `{ "params": {name: value} }`.
+    /// Structured `err` on a brain without an SNN.
     SnnTuneGet,
 
-    /// Best-effort set of a named tunable. Unknown names are rejected.
+    /// Set a named SNN tunable network-wide (`SnnNetwork::tune`). Responds
+    /// with the `TuneOutcome` (`applied` is `false` for the knobs V2 only
+    /// records — see `nimcp_snn::TUNABLE_NAMES`). Unknown names and
+    /// out-of-range values are structured errors.
     SnnTune {
         /// Parameter name (e.g. `"rstdp_lr"`, `"target_rate"`).
         name: String,
@@ -82,10 +84,9 @@ pub enum Request {
         value: f32,
     },
 
-    /// Best-effort quench: zero the first `n` neurons' membrane voltages
-    /// across every population. V2's SNN does not yet expose a public
-    /// `v_mem_mut` so this returns a `note` and a zero `zeroed` count
-    /// rather than erroring — keeps the watchdog RPC stable.
+    /// Emergency quench: reset the first `n` neurons of every population
+    /// to `v_reset` (`SnnNetwork::force_quench`). Responds with
+    /// `{ "requested": n, "zeroed": <neurons quenched> }`.
     SnnForceQuench {
         /// Number of neurons to quench per population.
         n: u32,

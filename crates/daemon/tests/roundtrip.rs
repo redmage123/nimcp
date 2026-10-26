@@ -198,21 +198,27 @@ fn run_scenario() {
         "expected loss count >= 1, got {loss_count}"
     );
 
-    // 6. SNN requests should return structured errors (no SNN on default brain).
-    let snn_pop = client.call(&json!({"cmd": "snn_pop_stats"}));
-    assert_eq!(snn_pop["status"], "err");
-
-    let snn_tune_get = client.call(&json!({"cmd": "snn_tune_get"}));
-    assert_eq!(snn_tune_get["status"], "ok", "tune_get: {snn_tune_get}");
-    assert!(snn_tune_get["data"]["params"]["rstdp_lr"].is_number());
-
-    // 7. Unknown tunable rejected.
-    let bad = client.call(&json!({"cmd": "snn_tune", "name": "nonsense", "value": 1.0}));
-    assert_eq!(bad["status"], "err", "unknown tune resp: {bad}");
-
-    // 8. Known tunable accepted.
-    let ok = client.call(&json!({"cmd": "snn_tune", "name": "rstdp_lr", "value": 0.002}));
-    assert_eq!(ok["status"], "ok", "tune ok: {ok}");
+    // 6-8. Every SNN request is a structured error on a brain without an
+    //      SNN — including tune_get / tune / force_quench, which used to
+    //      answer from a daemon-side mirror that never reached a network.
+    for req in [
+        json!({"cmd": "snn_pop_stats"}),
+        json!({"cmd": "snn_tune_get"}),
+        json!({"cmd": "snn_tune", "name": "rstdp_lr", "value": 0.002}),
+        json!({"cmd": "snn_tune", "name": "nonsense", "value": 1.0}),
+        json!({"cmd": "snn_force_quench", "n": 5}),
+    ] {
+        let r = client.call(&req);
+        assert_eq!(r["status"], "err", "{req} → {r}");
+        assert!(
+            r["message"]
+                .as_str()
+                .unwrap()
+                .to_lowercase()
+                .contains("snn"),
+            "{r}"
+        );
+    }
 
     // 8b. Language RPCs on a language-less brain are structured errors,
     //     not transport failures.
@@ -399,6 +405,98 @@ fn run_language_scenario() {
     assert_eq!(bye["status"], "ok", "{bye}");
 }
 
+/// SNN watchdog RPCs against a brain with a tiny SNN: tune_get reflects
+/// construction values, tune is applied and read back, recorded-only knobs
+/// say so, unknown / invalid are structured errors, force_quench reports
+/// the neurons it reset, pop stats still work afterwards.
+fn run_snn_watchdog_scenario() {
+    let pop = |name: &str| {
+        json!({
+            "name": name, "n_neurons": 16, "lif": nimcp_snn::LifParams::default(),
+            "target_rate": 0.1, "homeostatic": nimcp_plasticity::HomeostaticParams::default(),
+        })
+    };
+    let cfg = json!({
+        "rng_seed": 3,
+        "deterministic": true,
+        "state_dir": "./ignored",
+        "adaptive": {"layers": [2, 4, 1], "rng_seed": 3, "activation": "Tanh"},
+        "snn": {
+            "populations": [pop("in"), pop("out")],
+            "edges": [{"src": 0, "dst": 1, "fan_in": 8, "weight_init": 0.4, "weight_jitter": 0.0,
+                       "rstdp": nimcp_snn::RstdpParams::default()}],
+            "rng_seed": 3,
+            "rate_ema_alpha": 0.05,
+        }
+    });
+    let proc = DaemonProc::spawn_with_config(Some(&cfg));
+    let mut client = DaemonClient::connect(&proc.socket);
+
+    let get0 = client.call(&json!({"cmd": "snn_tune_get"}));
+    assert_eq!(get0["status"], "ok", "{get0}");
+    let p0 = &get0["data"]["params"];
+    assert!(
+        (p0["target_rate"].as_f64().unwrap() - 0.1).abs() < 1e-6,
+        "{p0}"
+    );
+    assert!(
+        (p0["rstdp_lr"].as_f64().unwrap() - 1e-4).abs() < 1e-9,
+        "{p0}"
+    );
+    for k in [
+        "homeo_min_scale",
+        "homeo_max_scale",
+        "noise_rate_hz",
+        "max_scale_dead",
+        "dead_threshold",
+    ] {
+        assert!(p0[k].is_number(), "{k} missing: {p0}");
+    }
+
+    let t = client.call(&json!({"cmd": "snn_tune", "name": "target_rate", "value": 0.05}));
+    assert_eq!(t["status"], "ok", "{t}");
+    assert_eq!(t["data"]["applied"], true);
+    assert_eq!(t["data"]["populations"], 2);
+    let get1 = client.call(&json!({"cmd": "snn_tune_get"}));
+    assert!(
+        (get1["data"]["params"]["target_rate"].as_f64().unwrap() - 0.05).abs() < 1e-6,
+        "{get1}"
+    );
+
+    let lr = client.call(&json!({"cmd": "snn_tune", "name": "rstdp_lr", "value": 0.00005}));
+    assert_eq!(lr["data"]["applied"], true, "{lr}");
+    assert_eq!(lr["data"]["edges"], 1);
+
+    let rec = client.call(&json!({"cmd": "snn_tune", "name": "max_scale_dead", "value": 1.07}));
+    assert_eq!(rec["status"], "ok", "{rec}");
+    assert_eq!(rec["data"]["applied"], false);
+    assert!(
+        rec["data"]["note"]
+            .as_str()
+            .unwrap()
+            .contains("not applied")
+    );
+
+    let bad = client.call(&json!({"cmd": "snn_tune", "name": "nonsense", "value": 1.0}));
+    assert_eq!(bad["status"], "err", "{bad}");
+    let inv = client.call(&json!({"cmd": "snn_tune", "name": "target_rate", "value": 7.0}));
+    assert_eq!(inv["status"], "err", "{inv}");
+
+    let q = client.call(&json!({"cmd": "snn_force_quench", "n": 5}));
+    assert_eq!(q["status"], "ok", "{q}");
+    assert_eq!(q["data"]["zeroed"], 10, "5 per population × 2");
+
+    let step =
+        client.call(&json!({"cmd": "snn_step", "drive": [[], []], "reward": 0.0, "dt_ms": 1.0}));
+    assert_eq!(step["status"], "ok", "{step}");
+    let pops = client.call(&json!({"cmd": "snn_pop_stats"}));
+    assert_eq!(pops["status"], "ok", "{pops}");
+    assert_eq!(pops["data"]["pops"].as_array().unwrap().len(), 2);
+
+    let bye = client.call(&json!({"cmd": "shutdown"}));
+    assert_eq!(bye["status"], "ok", "{bye}");
+}
+
 fn run_under_timeout(scenario: fn()) {
     // Run the scenario on a dedicated thread so we can hard-fail on
     // the global TIMEOUT. The scenario spawns + reaps the daemon itself.
@@ -427,4 +525,9 @@ fn daemon_roundtrip_all_commands_under_timeout() {
 #[test]
 fn daemon_language_rpcs_under_timeout() {
     run_under_timeout(run_language_scenario);
+}
+
+#[test]
+fn daemon_snn_watchdog_rpcs_under_timeout() {
+    run_under_timeout(run_snn_watchdog_scenario);
 }
