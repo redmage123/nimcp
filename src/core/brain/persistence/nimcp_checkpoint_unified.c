@@ -535,6 +535,16 @@ brain_t brain_load_unified(const char* filepath)
             brain->owns_specialized_network = true;
             snn->config.input_current_scale = 70.0f;
             LOG_INFO("Loaded SNN from unified checkpoint");
+            if (brain->config.snn_target_neurons > 0) {
+                extern bool snn_hierarchical_has_tiers(const struct snn_network_s* net);
+                extern struct snn_network_s* snn_hierarchical_graft_tiers(struct snn_network_s* net);
+                if (!snn_hierarchical_has_tiers(snn)) {
+                    LOG_WARN("SNN section has no cortical tier populations (%u pops) — "
+                             "rebuilding the hierarchy onto the loaded network",
+                             snn->n_populations);
+                    snn_hierarchical_graft_tiers(snn);
+                }
+            }
         }
         unlink(tmp_path);
     }

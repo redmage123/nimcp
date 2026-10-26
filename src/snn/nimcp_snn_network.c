@@ -5873,12 +5873,22 @@ int snn_network_save(snn_network_t* network, const char* path) {
         }
     }
 
-    /* === V3: Save lightweight CSR population data === */
+    /* === V3: Save lightweight CSR population data ===
+     * The count and the write loop MUST use the same predicate: the count
+     * is the loader's record of how many pops follow. A CSR left
+     * non-finalized by runtime rewiring is finalized here so it is saved
+     * rather than silently dropped; anything still unsaveable is logged. */
     uint32_t n_lightweight = 0;
     for (uint32_t p = 0; p < network->n_populations; p++) {
         snn_population_t* pop = network->populations[p];
-        if (pop && pop->lightweight && pop->incoming_csr && pop->incoming_csr->finalized)
-            n_lightweight++;
+        if (!pop || !pop->lightweight || !pop->incoming_csr) continue;
+        if (!pop->incoming_csr->finalized && snn_csr_finalize(pop->incoming_csr) != 0) {
+            NIMCP_LOGGING_WARN("SNN save: pop %u '%s' (%u neurons, %u synapses) has a "
+                               "non-finalizable CSR — NOT saved, will be missing on resume",
+                               p, pop->name, pop->n_neurons, pop->incoming_csr->n_synapses);
+            continue;
+        }
+        n_lightweight++;
     }
     SNN_FWRITE(&n_lightweight, sizeof(uint32_t), 1, f);
     SNN_FWRITE(&network->n_populations, sizeof(uint32_t), 1, f);
@@ -5888,6 +5898,7 @@ int snn_network_save(snn_network_t* network, const char* path) {
         for (uint32_t p = 0; p < network->n_populations; p++) {
             snn_population_t* pop = network->populations[p];
             if (!pop || !pop->lightweight || !pop->incoming_csr) continue;
+            if (!pop->incoming_csr->finalized) continue;  /* counted out above */
 
             SNN_FWRITE(&pop->id, sizeof(uint32_t), 1, f);
             SNN_FWRITE(&pop->n_neurons, sizeof(uint32_t), 1, f);

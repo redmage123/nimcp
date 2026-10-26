@@ -2095,6 +2095,21 @@ brain_t brain_load(const char* filepath)
             snn->config.input_current_scale = 70.0f;
             fprintf(stderr, "[INFO] Restored SNN network from %s (input_scale=70)\n", snn_path);
 
+            /* A sidecar can carry only the language-cortex pops (observed
+             * 2026-10-26: 5 pops / 62M synapses instead of 46 tiers / 1.5B).
+             * Accepting it means a brain with no cortical SNN. Rebuild the
+             * tiers onto it; the loaded pops and their weights are kept. */
+            if (brain->config.snn_target_neurons > 0) {
+                extern bool snn_hierarchical_has_tiers(const struct snn_network_s* net);
+                extern struct snn_network_s* snn_hierarchical_graft_tiers(struct snn_network_s* net);
+                if (!snn_hierarchical_has_tiers(snn)) {
+                    fprintf(stderr, "[WARN] SNN checkpoint has no cortical tier populations "
+                            "(%u pops) — rebuilding the hierarchy onto the loaded network\n",
+                            snn->n_populations);
+                    snn_hierarchical_graft_tiers(snn);
+                }
+            }
+
             /* Detect existing connections. Pre-G8 populations store synapses
              * via neural_net->neuron[*]->outgoing. G8 lightweight populations
              * store them in pop->incoming_csr with n_synapses > 0. We must

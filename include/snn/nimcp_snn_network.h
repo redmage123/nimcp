@@ -1007,6 +1007,21 @@ snn_network_t* snn_create_hierarchical_network(
     uint32_t n_outputs,
     uint32_t target_total_neurons);
 
+/**
+ * @brief Whether `net` carries the cortical tier populations
+ *        (`L1_feature_0` present). A loaded sidecar without them is a
+ *        language-cortex-only network, not a brain.
+ */
+bool snn_hierarchical_has_tiers(const snn_network_t* net);
+
+/**
+ * @brief Append the 46-population cortical hierarchy to an existing
+ *        network that lacks it (existing populations are kept). No-op
+ *        when the tiers are already present. Returns `net`, or NULL on
+ *        failure.
+ */
+snn_network_t* snn_hierarchical_graft_tiers(snn_network_t* net);
+
 #ifdef __cplusplus
 }
 #endif

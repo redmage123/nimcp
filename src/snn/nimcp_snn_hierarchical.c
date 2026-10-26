@@ -186,33 +186,16 @@ static inline float snn_fluct_weight(float budget_share,
 #define SNN_SIDECAR_PATH "checkpoints/athena/athena_immersive.bin.snn"
 #define SNN_LEGACY_CACHE_PATH "checkpoints/athena/snn_hierarchical.bin"
 
-snn_network_t* snn_create_hierarchical_network(
+/* Build the 46-population cortical hierarchy. With `existing` NULL a base
+ * network is created first; otherwise the tiers are appended to `existing`
+ * (its populations — e.g. loaded language pops — are kept and untouched). */
+static snn_network_t* hierarchical_build(
+    snn_network_t* existing,
     uint32_t n_inputs,
     uint32_t n_outputs,
     uint32_t target_total_neurons)
 {
-    /* Try to load cached SNN from the checkpoint sidecar (saves ~8 min of wiring).
-     * The sidecar is updated every checkpoint cycle with trained weights. */
-    {
-        extern snn_network_t* snn_network_load(const char* path);
-        const char* cache_paths[] = { SNN_SIDECAR_PATH, SNN_LEGACY_CACHE_PATH };
-        for (int ci = 0; ci < 2; ci++) {
-            snn_network_t* cached = snn_network_load(cache_paths[ci]);
-            if (!cached) continue;
-            if (cached->config.n_inputs == n_inputs &&
-                cached->config.n_outputs == n_outputs) {
-                LOG_INFO("Loaded cached hierarchical SNN from %s "
-                         "(%u populations, skipped wiring)",
-                         cache_paths[ci], cached->n_populations);
-                return cached;
-            }
-            LOG_WARN("Cached SNN at %s mismatch (inputs=%u/%u outputs=%u/%u)",
-                     cache_paths[ci], cached->config.n_inputs, n_inputs,
-                     cached->config.n_outputs, n_outputs);
-            extern void snn_network_destroy(snn_network_t*);
-            snn_network_destroy(cached);
-        }
-    }
+    snn_network_t* net = existing;
 
     /* Compute actual total from tier definitions */
     uint32_t actual_total = 0;
@@ -254,7 +237,7 @@ snn_network_t* snn_create_hierarchical_network(
     cfg.encoder.time_window = 100.0f;  /* 100ms encoding window */
     cfg.decoder.time_window = 100.0f;  /* 100ms decoding window (rate-based) */
 
-    snn_network_t* net = snn_network_create(&cfg);
+    if (!net) net = snn_network_create(&cfg);
     if (!net) {
         LOG_ERROR("Failed to create base SNN network");
         return NULL;
@@ -1010,4 +993,62 @@ wire_connections:
     }
 
     return net;
+}
+
+bool snn_hierarchical_has_tiers(const snn_network_t* net)
+{
+    if (!net) return false;
+    char probe[64];
+    snprintf(probe, sizeof(probe), "%s_0", TIER_DEFS[1].name);
+    for (uint32_t p = 0; p < net->n_populations; p++) {
+        const snn_population_t* pop = net->populations[p];
+        if (pop && strncmp(pop->name, probe, sizeof(pop->name)) == 0) return true;
+    }
+    return false;
+}
+
+snn_network_t* snn_hierarchical_graft_tiers(snn_network_t* net)
+{
+    if (!net) return NULL;
+    if (snn_hierarchical_has_tiers(net)) return net;
+    LOG_WARN("SNN has %u populations but no cortical tier pops — building the "
+             "hierarchy onto the loaded network (existing pops kept)",
+             net->n_populations);
+    return hierarchical_build(net, net->config.n_inputs, net->config.n_outputs, 0);
+}
+
+snn_network_t* snn_create_hierarchical_network(
+    uint32_t n_inputs,
+    uint32_t n_outputs,
+    uint32_t target_total_neurons)
+{
+    /* Try to load cached SNN from the checkpoint sidecar (saves ~8 min of
+     * wiring). A sidecar that matches the brain dims but carries no tier
+     * pops (observed 2026-10-26: language pops only) is grafted, not
+     * accepted as-is — otherwise the brain runs without a cortex. */
+    extern snn_network_t* snn_network_load(const char* path);
+    const char* cache_paths[] = { SNN_SIDECAR_PATH, SNN_LEGACY_CACHE_PATH };
+    for (int ci = 0; ci < 2; ci++) {
+        snn_network_t* cached = snn_network_load(cache_paths[ci]);
+        if (!cached) continue;
+        if (cached->config.n_inputs == n_inputs &&
+            cached->config.n_outputs == n_outputs) {
+            if (snn_hierarchical_has_tiers(cached)) {
+                LOG_INFO("Loaded cached hierarchical SNN from %s "
+                         "(%u populations, skipped wiring)",
+                         cache_paths[ci], cached->n_populations);
+                return cached;
+            }
+            LOG_WARN("Cached SNN at %s has no cortical tier pops (%u populations) "
+                     "— grafting the hierarchy onto it",
+                     cache_paths[ci], cached->n_populations);
+            return hierarchical_build(cached, n_inputs, n_outputs, target_total_neurons);
+        }
+        LOG_WARN("Cached SNN at %s mismatch (inputs=%u/%u outputs=%u/%u)",
+                 cache_paths[ci], cached->config.n_inputs, n_inputs,
+                 cached->config.n_outputs, n_outputs);
+        extern void snn_network_destroy(snn_network_t*);
+        snn_network_destroy(cached);
+    }
+    return hierarchical_build(NULL, n_inputs, n_outputs, target_total_neurons);
 }
