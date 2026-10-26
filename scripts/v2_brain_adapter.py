@@ -17,11 +17,14 @@ classifying every call into one of three buckets:
    so surprises in the harness surface once without spamming logs.
 
 3. **Semantic-gap adapters (~7 methods)** — behavior V2 has no equivalent
-   for (train_cognitive, train_language, speak, generate_text, ...).
-   These either reduce to the closest V2 primitive (`train_cognitive`
-   calls `learn` and packages the loss into the dict the harness
-   expects) or return empty/zero placeholders for language output that
-   V2 cannot produce.
+   for (train_cognitive, speak, ...). These either reduce to the closest
+   V2 primitive (`train_cognitive` calls `learn` and packages the loss
+   into the dict the harness expects) or return empty/zero placeholders.
+   Since V2 L8/C4/C5, the language methods (`train_language`,
+   `learn_language`, `generate_text`, `grounded_respond`, `comprehend`,
+   `reason`, `working_memory_add`) are REAL when the brain was built with
+   `language` in its `config_json`; on a language-less brain they fall
+   back to the stubs.
 
 Construction mirrors `nimcp_v2.Brain.__init__` with one extra knob:
 passing `config_json=...` routes through `Brain.from_json` instead.
@@ -279,16 +282,34 @@ class V2BrainAdapter:
             "cognitive_loss": loss,
         }
 
+    # Language (V2 L8 + C4/C5). Real when the brain was built with
+    # `language` in its config JSON; otherwise the pre-L8 no-op stubs so a
+    # language-less brain keeps the harness alive.
+    def _has_language(self) -> bool:
+        return bool(getattr(self._brain, "has_language", False))
+
     def train_language(self, text: str, target_text: str | None = None) -> dict[str, float]:
-        _warn_once("train_language")
-        return {"loss": 0.0}
+        if not self._has_language():
+            _warn_once("train_language")
+            return {"loss": 0.0}
+        self._brain.language_learn(str(text))
+        if target_text:
+            self._brain.language_learn(str(target_text))
+        # V2 has no supervised language loss; report comprehension
+        # uncertainty (1 - confidence) of the text just learned as the
+        # closest monotone proxy so harness EMAs still move.
+        _, conf = self._brain.language_comprehend(str(text))
+        return {"loss": float(max(0.0, 1.0 - conf))}
 
     def train_batch_text(self, *args: Any, **kwargs: Any) -> dict[str, float]:
         _warn_once("train_batch_text")
         return {"loss": 0.0}
 
     def learn_language(self, text: str) -> None:
-        _warn_once("learn_language")
+        if not self._has_language():
+            _warn_once("learn_language")
+            return None
+        self._brain.language_learn(str(text))
         return None
 
     def speak(self, text: str = "") -> str:
@@ -296,12 +317,52 @@ class V2BrainAdapter:
         return ""
 
     def generate_text(self, prompt: str = "", max_tokens: int = 0) -> str:
-        _warn_once("generate_text")
-        return ""
+        if not self._has_language():
+            _warn_once("generate_text")
+            return ""
+        text = self._brain.language_respond(str(prompt))["text"]
+        if max_tokens and max_tokens > 0:
+            text = " ".join(text.split()[:max_tokens])
+        return text
 
     def grounded_respond(self, query: str) -> dict[str, Any]:
-        _warn_once("grounded_respond")
-        return {"response": "", "confidence": 0.0}
+        if not self._has_language():
+            _warn_once("grounded_respond")
+            return {"response": "", "confidence": 0.0}
+        r = self._brain.language_respond(str(query))
+        return {
+            "response": r["text"],
+            "confidence": float(r["confidence"]),
+            "blocked_for_toxicity": bool(r["blocked_for_toxicity"]),
+            "toxicity_category": r["toxicity_category"],
+        }
+
+    def comprehend(self, text: str) -> dict[str, Any]:
+        if not self._has_language():
+            _warn_once("comprehend")
+            return {"vector": [], "confidence": 0.0}
+        vec, conf = self._brain.language_comprehend(str(text))
+        return {"vector": list(vec), "confidence": float(conf)}
+
+    def reason(self, query: str) -> dict[str, Any]:
+        if not self._has_language():
+            _warn_once("reason")
+            return {}
+        return self._brain.reason(str(query))
+
+    def set_reason_in_content(self, on: bool) -> None:
+        if not self._has_language():
+            _warn_once("set_reason_in_content")
+            return None
+        self._brain.set_reason_in_content(bool(on))
+        return None
+
+    def working_memory_add(self, data: list[float], salience: float = 0.5) -> None:
+        if not self._has_language():
+            _warn_once("working_memory_add")
+            return None
+        self._brain.working_memory_add([float(x) for x in data], float(salience))
+        return None
 
     # -----------------------------------------------------------------
     # Forgiving fallback — unknown methods should not crash the harness.

@@ -15,6 +15,7 @@ import tempfile
 
 import pytest
 
+import nimcp_v2
 import v2_brain_adapter as va
 
 
@@ -204,3 +205,66 @@ def test_backend_unknown_string_raises() -> None:
     import pytest
     with pytest.raises(ValueError, match="unknown backend"):
         nimcp_v2.Brain(rng_seed=SEED, layers=LAYERS, backend="cuda")
+
+
+# -----------------------------------------------------------------------------
+# (7) Language surface (V2 L8 + C4/C5) — real when `language` is configured.
+# -----------------------------------------------------------------------------
+def _language_adapter() -> va.V2BrainAdapter:
+    import json
+
+    va._WARNED.clear()
+    cfg = {
+        "rng_seed": SEED,
+        "deterministic": True,
+        "state_dir": "./nimcp-state",
+        "adaptive": {"layers": LAYERS, "rng_seed": SEED, "activation": "Relu"},
+        "language": {
+            "semantic_dim": 8,
+            "rng_seed": SEED,
+            "enable_toxicity": True,
+            "toxicity_ml_seed": 7,
+            "spectrum_vocab_cap": None,
+            "default_stage": 4,
+            "min_produce_words": 1,
+            "recurrent_max_iters": 1,
+            "reason_in_content": False,
+        },
+    }
+    return va.V2BrainAdapter(config_json=json.dumps(cfg))
+
+
+def test_language_methods_stub_without_language(caplog) -> None:
+    a = _fresh_adapter()
+    with caplog.at_level(logging.WARNING, logger="v2_brain_adapter"):
+        assert a.train_language("the dog runs") == {"loss": 0.0}
+        assert a.generate_text("dog") == ""
+        assert a.grounded_respond("dog")["confidence"] == 0.0
+    assert any("train_language" in r.message for r in caplog.records)
+
+
+def test_language_methods_real_with_language(caplog) -> None:
+    a = _language_adapter()
+    assert a._brain.has_language
+    for _ in range(5):
+        a.learn_language("the dog likes to run")
+    out = a.train_language("the dog likes to run")
+    assert 0.0 <= out["loss"] <= 1.0
+    comp = a.comprehend("the dog")
+    assert len(comp["vector"]) == 8
+    assert comp["confidence"] > 0.0
+    text = a.generate_text("the dog")
+    assert isinstance(text, str) and text
+    assert a.generate_text("the dog", max_tokens=1).count(" ") == 0
+    r = a.grounded_respond("the dog")
+    assert r["response"] and not r["blocked_for_toxicity"]
+    conclusion = a.reason("what does the dog do")
+    assert "conclusion" in conclusion and "lexicon_confidence" in conclusion
+    a.set_reason_in_content(True)
+    a.working_memory_add([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.9)
+    assert a.grounded_respond("the dog")["response"]
+    # None of the language methods should have hit the no-op warning path.
+    assert not any(
+        n in va._WARNED
+        for n in ("train_language", "learn_language", "generate_text", "grounded_respond", "comprehend", "reason")
+    )

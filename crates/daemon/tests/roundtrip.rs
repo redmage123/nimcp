@@ -53,22 +53,36 @@ struct DaemonProc {
 
 impl DaemonProc {
     fn spawn() -> Self {
+        Self::spawn_with_config(None)
+    }
+
+    /// Spawn with an optional `BrainConfig` JSON written to the temp dir
+    /// and passed via `--config-json`.
+    fn spawn_with_config(config_json: Option<&Value>) -> Self {
         let tmp = tempfile::tempdir().expect("tempdir");
         let socket = tmp.path().join("daemon.sock");
         let metrics_path = tmp.path().join("metrics.json");
         let state_dir = tmp.path().join("state");
         let training_log = tmp.path().join("training.log");
+        let config_path = tmp.path().join("config.json");
+        if let Some(cfg) = config_json {
+            std::fs::write(&config_path, serde_json::to_vec(cfg).unwrap()).expect("write config");
+        }
 
         let bin = daemon_binary();
-        let child = Command::new(&bin)
-            .arg("--socket")
+        let mut cmd = Command::new(&bin);
+        cmd.arg("--socket")
             .arg(&socket)
             .arg("--state-dir")
             .arg(&state_dir)
             .arg("--metrics-path")
             .arg(&metrics_path)
             .arg("--training-log")
-            .arg(&training_log)
+            .arg(&training_log);
+        if config_json.is_some() {
+            cmd.arg("--config-json").arg(&config_path);
+        }
+        let child = cmd
             .env("NIMCP_METRICS_INTERVAL_SEC", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -197,6 +211,21 @@ fn run_scenario() {
     let ok = client.call(&json!({"cmd": "snn_tune", "name": "rstdp_lr", "value": 0.002}));
     assert_eq!(ok["status"], "ok", "tune ok: {ok}");
 
+    // 8b. Language RPCs on a language-less brain are structured errors,
+    //     not transport failures.
+    for req in [
+        json!({"cmd": "language_learn", "text": "the dog runs"}),
+        json!({"cmd": "language_respond", "text": "dog"}),
+        json!({"cmd": "reason", "query": "why"}),
+        json!({"cmd": "set_reason_in_content", "on": true}),
+        json!({"cmd": "working_memory_add", "data": [1.0], "salience": 0.5}),
+        json!({"cmd": "cognition_state"}),
+    ] {
+        let r = client.call(&req);
+        assert_eq!(r["status"], "err", "{req} → {r}");
+        assert!(r["message"].as_str().unwrap().contains("not configured"), "{r}");
+    }
+
     // 9. Wait for the metrics writer to produce at least one file.
     //    The writer skips the first tick — wait up to 5s.
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -260,13 +289,107 @@ fn run_scenario() {
     }
 }
 
-#[test]
-fn daemon_roundtrip_all_commands_under_timeout() {
+/// Language + cognition RPCs against a brain built with `language`
+/// (L8 + C4/C5): learn → comprehend → respond → reason → toggle →
+/// explicit WM / imagination feeds → cognition_state reflects it all.
+fn run_language_scenario() {
+    let cfg = json!({
+        "rng_seed": 7,
+        "deterministic": true,
+        "state_dir": "./ignored",
+        "adaptive": {"layers": [2, 4, 1], "rng_seed": 7, "activation": "Tanh"},
+        "language": {
+            "semantic_dim": 8,
+            "rng_seed": 7,
+            "enable_toxicity": true,
+            "toxicity_ml_seed": 9,
+            "spectrum_vocab_cap": null,
+            "default_stage": 4,
+            "min_produce_words": 1,
+            "recurrent_max_iters": 1,
+            "reason_in_content": false
+        }
+    });
+    let proc = DaemonProc::spawn_with_config(Some(&cfg));
+    let mut client = DaemonClient::connect(&proc.socket);
+
+    for _ in 0..5 {
+        let r = client.call(&json!({"cmd": "language_learn", "text": "the dog likes to run"}));
+        assert_eq!(r["status"], "ok", "{r}");
+        assert_eq!(r["data"]["learned"], true);
+    }
+    let r = client.call(&json!({"cmd": "language_learn", "text": "the cat likes to sleep"}));
+    assert!(r["data"]["stats"]["learn_calls"].as_u64().unwrap() >= 6, "{r}");
+
+    let c = client.call(&json!({"cmd": "language_comprehend", "text": "the dog"}));
+    assert_eq!(c["status"], "ok", "{c}");
+    assert_eq!(c["data"]["vector"].as_array().unwrap().len(), 8);
+    assert!(c["data"]["confidence"].as_f64().unwrap() > 0.0);
+
+    let state0 = client.call(&json!({"cmd": "cognition_state"}));
+    assert_eq!(state0["status"], "ok", "{state0}");
+    assert_eq!(state0["data"]["now_ms"], 0);
+    assert_eq!(state0["data"]["working_memory"].as_array().unwrap().len(), 0);
+    assert!(state0["data"]["imagination"].is_null());
+
+    let resp = client.call(&json!({"cmd": "language_respond", "text": "the dog"}));
+    assert_eq!(resp["status"], "ok", "{resp}");
+    assert!(!resp["data"]["text"].as_str().unwrap().is_empty());
+    assert_eq!(resp["data"]["blocked_for_toxicity"], false);
+    assert!(resp["data"]["confidence"].as_f64().unwrap().is_finite());
+
+    // One turn fed WM (the prompt) and staged the imagined scene.
+    let state1 = client.call(&json!({"cmd": "cognition_state"}));
+    assert_eq!(state1["data"]["now_ms"], 1000, "{state1}");
+    assert_eq!(state1["data"]["working_memory"].as_array().unwrap().len(), 1);
+    assert_eq!(state1["data"]["imagination"]["dim"], 8);
+
+    let reason = client.call(&json!({"cmd": "reason", "query": "what does the dog do"}));
+    assert_eq!(reason["status"], "ok", "{reason}");
+    assert!(reason["data"]["conclusion"]["confidence"].is_number());
+    assert!(reason["data"]["lexicon_confidence"].is_number());
+    assert!(reason["data"]["memory_hits"].is_array());
+
+    let t = client.call(&json!({"cmd": "set_reason_in_content", "on": true}));
+    assert_eq!(t["data"]["reason_in_content"], true, "{t}");
+
+    let w = client.call(&json!({
+        "cmd": "working_memory_add",
+        "data": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "salience": 0.9
+    }));
+    assert_eq!(w["status"], "ok", "{w}");
+    assert_eq!(w["data"]["size"], 2);
+    let i = client.call(&json!({
+        "cmd": "imagination_stage",
+        "content": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "vividness": 0.8
+    }));
+    assert_eq!(i["status"], "ok", "{i}");
+    assert!((i["data"]["vividness"].as_f64().unwrap() - 0.8).abs() < 1e-6);
+
+    let tox = client.call(&json!({"cmd": "classify_toxicity", "text": "the dog likes to run"}));
+    assert_eq!(tox["status"], "ok", "{tox}");
+    assert_eq!(tox["data"]["would_block"], false);
+
+    // With reasoning on + seeded sources the respond path still works.
+    let resp2 = client.call(&json!({"cmd": "language_respond", "text": "the dog"}));
+    assert_eq!(resp2["status"], "ok", "{resp2}");
+    assert!(!resp2["data"]["text"].as_str().unwrap().is_empty());
+    let state2 = client.call(&json!({"cmd": "cognition_state"}));
+    assert_eq!(state2["data"]["reason_in_content"], true);
+    assert_eq!(state2["data"]["now_ms"], 2000);
+
+    let bye = client.call(&json!({"cmd": "shutdown"}));
+    assert_eq!(bye["status"], "ok", "{bye}");
+}
+
+fn run_under_timeout(scenario: fn()) {
     // Run the scenario on a dedicated thread so we can hard-fail on
     // the global TIMEOUT. The scenario spawns + reaps the daemon itself.
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let h = thread::spawn(move || {
-        run_scenario();
+        scenario();
         tx.send(()).ok();
     });
 
@@ -279,4 +402,14 @@ fn daemon_roundtrip_all_commands_under_timeout() {
             TIMEOUT.as_secs()
         ),
     }
+}
+
+#[test]
+fn daemon_roundtrip_all_commands_under_timeout() {
+    run_under_timeout(run_scenario);
+}
+
+#[test]
+fn daemon_language_rpcs_under_timeout() {
+    run_under_timeout(run_language_scenario);
 }

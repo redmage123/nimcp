@@ -320,6 +320,129 @@ async fn handle_request(
             }))
         }
 
+        // ---- Language (L8) + cognition (C4/C5) ----
+        Request::LanguageLearn { text } => {
+            let mut g = brain.lock().await;
+            match g.language_learn(&text) {
+                Ok(()) => {
+                    tracing::debug!(chars = text.len(), "language_learn");
+                    let stats = g.language().map(|gl| gl.stats);
+                    Response::ok(json!({"learned": true, "stats": stats}))
+                }
+                Err(e) => Response::err(format!("language_learn: {e}")),
+            }
+        }
+
+        Request::LanguageComprehend { text } => {
+            let mut g = brain.lock().await;
+            match g.language_comprehend(&text) {
+                Ok((vec, confidence)) => {
+                    Response::ok(json!({"vector": vec.to_vec(), "confidence": confidence}))
+                }
+                Err(e) => Response::err(format!("language_comprehend: {e}")),
+            }
+        }
+
+        Request::LanguageRespond { text } => {
+            let mut g = brain.lock().await;
+            match g.language_respond(&text) {
+                Ok(r) => {
+                    tracing::info!(blocked = r.blocked_for_toxicity, "language_respond");
+                    Response::ok(json!({
+                        "text": r.text,
+                        "confidence": r.confidence,
+                        "blocked_for_toxicity": r.blocked_for_toxicity,
+                        "toxicity_category": r.toxicity_category,
+                    }))
+                }
+                Err(e) => Response::err(format!("language_respond: {e}")),
+            }
+        }
+
+        Request::Reason { query } => {
+            let mut g = brain.lock().await;
+            match g.reason(&query) {
+                Ok(r) => Response::ok(r),
+                Err(e) => Response::err(format!("reason: {e}")),
+            }
+        }
+
+        Request::SetReasonInContent { on } => {
+            let mut g = brain.lock().await;
+            if g.language().is_none() {
+                return Response::err("set_reason_in_content: language not configured on this brain");
+            }
+            g.set_reason_in_content(on);
+            tracing::info!(on, "set_reason_in_content");
+            Response::ok(json!({"reason_in_content": g.reason_in_content()}))
+        }
+
+        Request::ClassifyToxicity { text } => {
+            let g = brain.lock().await;
+            match g.classify_toxicity(&text) {
+                Ok((harm, fairness, block)) => Response::ok(json!({
+                    "predicted_harm": harm,
+                    "fairness_violation": fairness,
+                    "would_block": block,
+                })),
+                Err(e) => Response::err(format!("classify_toxicity: {e}")),
+            }
+        }
+
+        Request::WorkingMemoryAdd { data, salience } => {
+            let mut g = brain.lock().await;
+            match g.working_memory_add(&data, salience) {
+                Ok(()) => {
+                    let size = g.working_memory().map_or(0, nimcp_cognition::WorkingMemory::size);
+                    Response::ok(json!({"size": size, "now_ms": g.cognition_now_ms()}))
+                }
+                Err(e) => Response::err(format!("working_memory_add: {e}")),
+            }
+        }
+
+        Request::ImaginationStage { content, vividness } => {
+            let mut g = brain.lock().await;
+            match g.imagination_stage(&content, vividness) {
+                Ok(()) => {
+                    let viv = g.imagination().and_then(|im| im.active_vector()).map(|(_, v)| v);
+                    Response::ok(json!({"staged": true, "vividness": viv}))
+                }
+                Err(e) => Response::err(format!("imagination_stage: {e}")),
+            }
+        }
+
+        Request::CognitionState => {
+            let g = brain.lock().await;
+            if g.language().is_none() {
+                return Response::err("cognition_state: language not configured on this brain");
+            }
+            let wm: Vec<serde_json::Value> = g
+                .working_memory()
+                .map(|wm| {
+                    wm.items()
+                        .iter()
+                        .map(|i| {
+                            json!({
+                                "salience": i.salience,
+                                "timestamp_ms": i.timestamp_ms,
+                                "dim": i.data.len(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let imag = g
+                .imagination()
+                .and_then(|im| im.active_vector())
+                .map(|(v, viv)| json!({"vividness": viv, "dim": v.len()}));
+            Response::ok(json!({
+                "now_ms": g.cognition_now_ms(),
+                "working_memory": wm,
+                "imagination": imag,
+                "reason_in_content": g.reason_in_content(),
+            }))
+        }
+
         Request::Shutdown => {
             tracing::info!("shutdown requested");
             shared.shutdown.notify_waiters();

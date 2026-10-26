@@ -91,6 +91,75 @@ pub enum Request {
         n: u32,
     },
 
+    // ---------------------------------------------------------------
+    // Language (L8) + cognition (C4/C5). Every variant returns a
+    // structured `err` on a brain built without `language`.
+    // ---------------------------------------------------------------
+
+    /// Learn from a text span (distributional + n-gram; mark-not-filter
+    /// for toxic text). Responds with the engine's `LanguageStats`.
+    LanguageLearn {
+        /// Training text.
+        text: String,
+    },
+
+    /// Comprehend text → `{ "vector": [...], "confidence": f }`. Advances
+    /// the discourse ring like a heard utterance.
+    LanguageComprehend {
+        /// Text to comprehend.
+        text: String,
+    },
+
+    /// Full respond pipeline (toxicity gate → cascade with WM /
+    /// imagination / reasoning sources → output gate). Responds with
+    /// `{ "text", "confidence", "blocked_for_toxicity", "toxicity_category" }`.
+    LanguageRespond {
+        /// Prompt text.
+        text: String,
+    },
+
+    /// Reason about a query (lexicon conclusion + Z-Ladder enrichment).
+    /// Responds with the serialized `BrainReasoning`.
+    Reason {
+        /// Query text.
+        query: String,
+    },
+
+    /// Runtime toggle for the cascade reasoning blend (V1 RPC parity).
+    /// Responds with `{ "reason_in_content": bool }`.
+    SetReasonInContent {
+        /// New value.
+        on: bool,
+    },
+
+    /// Classify text for toxicity → `{ "predicted_harm", "fairness_violation",
+    /// "would_block" }`. Structured `err` when the toxicity stack is off.
+    ClassifyToxicity {
+        /// Text to classify.
+        text: String,
+    },
+
+    /// Add a semantic vector to working memory at `salience` (C5).
+    WorkingMemoryAdd {
+        /// Feature vector (semantic_dim wide).
+        data: Vec<f32>,
+        /// Salience in `[0, 1]`.
+        salience: f32,
+    },
+
+    /// Stage a vector as the active imagined scene at `vividness` (C5).
+    ImaginationStage {
+        /// Content vector (fit to semantic_dim).
+        content: Vec<f32>,
+        /// Vividness in `[0, 1]`.
+        vividness: f32,
+    },
+
+    /// Snapshot of the cognition sources: `{ "now_ms", "working_memory":
+    /// [{salience, timestamp_ms, dim}], "imagination": {vividness, dim} |
+    /// null, "reason_in_content" }`.
+    CognitionState,
+
     /// Shut the daemon down cleanly.
     Shutdown,
 }
@@ -224,6 +293,29 @@ mod tests {
             Request::SaveEnsemble { dir } => assert_eq!(dir, "/tmp/nimcp-test"),
             _ => panic!("expected SaveEnsemble"),
         }
+    }
+
+    #[test]
+    fn language_round_trips() {
+        for (req, cmd) in [
+            (Request::LanguageLearn { text: "the dog runs".into() }, "language_learn"),
+            (Request::LanguageComprehend { text: "dog".into() }, "language_comprehend"),
+            (Request::LanguageRespond { text: "dog".into() }, "language_respond"),
+            (Request::Reason { query: "why".into() }, "reason"),
+            (Request::SetReasonInContent { on: true }, "set_reason_in_content"),
+            (Request::ClassifyToxicity { text: "hi".into() }, "classify_toxicity"),
+            (Request::WorkingMemoryAdd { data: vec![1.0, 0.0], salience: 0.9 }, "working_memory_add"),
+            (Request::ImaginationStage { content: vec![0.0, 1.0], vividness: 0.5 }, "imagination_stage"),
+            (Request::CognitionState, "cognition_state"),
+        ] {
+            let s = serde_json::to_string(&req).unwrap();
+            assert!(s.contains(&format!("\"cmd\":\"{cmd}\"")), "{s}");
+            let back: Request = serde_json::from_str(&s).unwrap();
+            assert_eq!(serde_json::to_string(&back).unwrap(), s);
+        }
+        let hand: Request =
+            serde_json::from_str(r#"{"cmd":"working_memory_add","data":[0.5],"salience":1.0}"#).unwrap();
+        assert!(matches!(hand, Request::WorkingMemoryAdd { salience, .. } if (salience - 1.0).abs() < f32::EPSILON));
     }
 
     #[test]

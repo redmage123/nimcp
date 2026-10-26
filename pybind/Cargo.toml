@@ -22,6 +22,8 @@ nimcp-adaptive = { workspace = true }
 nimcp-snn = { workspace = true }
 nimcp-lnn = { workspace = true }
 nimcp-memory = { workspace = true }
+nimcp-language = { workspace = true }
+serde = { workspace = true }
 pyo3 = { workspace = true }
 numpy = { workspace = true }
 ndarray = { workspace = true }

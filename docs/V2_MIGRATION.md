@@ -48,8 +48,14 @@ surface over `nimcp_v2.Brain`:
   a single WARNING per method on first call — cognitive instrumentation
   V2 doesn't have (`bg_*`, `medulla_*`, `sleep_*`, `octopus_*`, …).
 - **~7 methods** have semantic-gap adapters (e.g., `train_cognitive`
-  reduces to `brain.learn()`; `speak`/`generate_text` are stubs because
-  V2 has no tokenizer/TTS).
+  reduces to `brain.learn()`; `speak` is a stub because V2 has no TTS).
+  The language methods — `train_language`, `learn_language`,
+  `generate_text`, `grounded_respond`, plus `comprehend`, `reason`,
+  `set_reason_in_content`, `working_memory_add` — drive V2's grounded-
+  language engine (L8) and cognition sources (C4/C5) when the brain's
+  `config_json` has a `language` section; without one they stay stubs.
+  `train_language` reports `1 − comprehension_confidence` as its loss
+  proxy (V2 has no supervised language loss).
 
 Expect WARNINGs to be loud on the first run — they tell you which
 cognitive features your workload actually relies on and aren't in V2

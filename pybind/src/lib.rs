@@ -36,6 +36,32 @@
 //! - `brain.save_ensemble(dir)` / `brain.load_ensemble(dir)` — atomic
 //!   directory checkpoint covering every configured subsystem.
 //!
+//! Language (L8) + cognition (C4/C5) surface — every method raises
+//! `RuntimeError` on a brain built without `language` in its config:
+//!
+//! - `brain.has_language` / `brain.has_toxicity` — getters.
+//! - `brain.language_ground(word, features, modality) -> int` — bind a word to
+//!   a grounded feature vector; `modality` ∈ visual/auditory/motor/emotional/
+//!   spatial/linguistic. Returns the concept id.
+//! - `brain.language_learn(text)` — distributional + n-gram learning
+//!   (mark-not-filter for toxic text).
+//! - `brain.language_comprehend(text) -> (list[float], float)` — semantic
+//!   vector + confidence; advances the discourse ring.
+//! - `brain.language_respond(text) -> dict` — toxicity gate → cascade (with
+//!   working memory / imagination / reasoning sources) → output gate.
+//!   Keys: `text`, `confidence`, `blocked_for_toxicity`, `toxicity_category`.
+//! - `brain.reason(query) -> dict` — lexicon conclusion enriched by Z-Ladder
+//!   recall (`conclusion`, `lexicon_confidence`, `memory_hits`).
+//! - `brain.reason_in_content` getter / `brain.set_reason_in_content(on)`.
+//! - `brain.classify_toxicity(text) -> (harm, fairness, would_block)`.
+//! - `brain.language_stats() -> dict` — learn/comprehend counters, vocab size,
+//!   discourse depth.
+//! - `brain.working_memory_add(data, salience)` / `brain.working_memory_items()
+//!   -> list[dict]` — C5 working memory (semantic-dim vectors).
+//! - `brain.imagination_stage(content, vividness)` /
+//!   `brain.imagination_active() -> (list[float], float) | None`.
+//! - `brain.cognition_now_ms` getter — virtual cognition clock.
+//!
 //! Built with `maturin develop` for editable installs.
 
 #![allow(unsafe_code)] // pyo3 macros expand to unsafe
@@ -48,6 +74,7 @@
 use ndarray::Array1;
 use nimcp_adaptive::{Activation, AdaptiveConfig};
 use nimcp_brain::{Backend, Brain, BrainConfig};
+use nimcp_language::Modality;
 use nimcp_lnn::TrainParams;
 use nimcp_memory::MemoryNode;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -108,6 +135,28 @@ fn backend_to_string(b: &Backend) -> String {
             devices.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
         ),
     }
+}
+
+fn parse_modality(s: &str) -> PyResult<Modality> {
+    match s.to_ascii_lowercase().as_str() {
+        "visual" => Ok(Modality::Visual),
+        "auditory" => Ok(Modality::Auditory),
+        "motor" => Ok(Modality::Motor),
+        "emotional" => Ok(Modality::Emotional),
+        "spatial" => Ok(Modality::Spatial),
+        "linguistic" => Ok(Modality::Linguistic),
+        other => Err(PyValueError::new_err(format!(
+            "unknown modality '{other}', expected visual/auditory/motor/emotional/spatial/linguistic"
+        ))),
+    }
+}
+
+/// Serialize any `Serialize` value and hand it to Python as a native
+/// object via `json.loads` — keeps the Rust→Python schema identical to
+/// the daemon's JSON wire form.
+fn to_py_json<'py, T: serde::Serialize>(py: Python<'py>, v: &T) -> PyResult<Bound<'py, PyAny>> {
+    let json = serde_json::to_string(v).map_err(|e| PyRuntimeError::new_err(format!("encode: {e}")))?;
+    py.import("json")?.call_method1("loads", (json,))
 }
 
 fn shape_err<E: std::fmt::Display>(e: E) -> PyErr {
@@ -711,6 +760,169 @@ impl PyBrain {
     /// memory capacities) surface as `RuntimeError`.
     fn load_ensemble(&mut self, dir: PathBuf) -> PyResult<()> {
         self.inner.load_ensemble(&dir).map_err(rt_err)
+    }
+
+    // -------------------------------------------------------------------------
+    // Language (L8) + cognition (C4/C5).
+    // -------------------------------------------------------------------------
+
+    /// Grounded-language subsystem configured?
+    #[getter]
+    fn has_language(&self) -> bool {
+        self.inner.language().is_some()
+    }
+
+    /// Content-safety (toxicity) stack configured?
+    #[getter]
+    fn has_toxicity(&self) -> bool {
+        self.inner.has_toxicity()
+    }
+
+    /// Ground `word` to a sensory feature vector through `modality`.
+    ///
+    /// Args:
+    ///     word (str): the word form.
+    ///     features (list[float]): grounded features, `semantic_dim` wide.
+    ///     modality (str): visual / auditory / motor / emotional / spatial /
+    ///         linguistic. Default: 'visual'.
+    /// Returns:
+    ///     int: the concept id the word was bound to.
+    #[pyo3(signature = (word, features, modality = "visual".to_string()))]
+    fn language_ground(&mut self, word: &str, features: Vec<f32>, modality: String) -> PyResult<u32> {
+        let m = parse_modality(&modality)?;
+        let gl = self
+            .inner
+            .language_mut()
+            .ok_or_else(|| rt_err("language not configured on this brain"))?;
+        Ok(gl.ground(word, &features, m).0)
+    }
+
+    /// Learn from a text span (distributional embeddings + phrase table).
+    /// Toxic text is marked and logged, never dropped (mark-not-filter).
+    fn language_learn(&mut self, text: &str) -> PyResult<()> {
+        self.inner.language_learn(text).map_err(rt_err)
+    }
+
+    /// Comprehend text → `(semantic_vector, confidence)`. Advances the
+    /// discourse ring like a heard utterance.
+    fn language_comprehend(&mut self, text: &str) -> PyResult<(Vec<f32>, f32)> {
+        self.inner
+            .language_comprehend(text)
+            .map(|(v, c)| (v.to_vec(), c))
+            .map_err(rt_err)
+    }
+
+    /// Respond to a prompt through the full pipeline: must-run toxicity
+    /// gate → cascade with working-memory / imagination / reasoning
+    /// sources → defense-in-depth output gate; then feed working memory
+    /// and the imagined scene for the next turn.
+    ///
+    /// Returns:
+    ///     dict: `text`, `confidence`, `blocked_for_toxicity`,
+    ///     `toxicity_category` (empty unless blocked).
+    fn language_respond<'py>(&mut self, py: Python<'py>, text: &str) -> PyResult<Bound<'py, PyAny>> {
+        let r = self.inner.language_respond(text).map_err(rt_err)?;
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("text", r.text)?;
+        d.set_item("confidence", r.confidence)?;
+        d.set_item("blocked_for_toxicity", r.blocked_for_toxicity)?;
+        d.set_item("toxicity_category", r.toxicity_category)?;
+        Ok(d.into_any())
+    }
+
+    /// Reason about `query`: the lexicon-grounded conclusion enriched by
+    /// Z-Ladder recall (C4).
+    ///
+    /// Returns:
+    ///     dict: `conclusion` (`text`, `confidence`, `vector`, `query_type`,
+    ///     `evidence_count`), `lexicon_confidence`, `memory_hits`.
+    fn reason<'py>(&mut self, py: Python<'py>, query: &str) -> PyResult<Bound<'py, PyAny>> {
+        let r = self.inner.reason(query).map_err(rt_err)?;
+        to_py_json(py, &r)
+    }
+
+    /// Whether the cascade blends the reasoning conclusion into its
+    /// content intent (V1 `reason_in_content`).
+    #[getter]
+    fn reason_in_content(&self) -> bool {
+        self.inner.reason_in_content()
+    }
+
+    /// Runtime toggle for the cascade reasoning blend.
+    fn set_reason_in_content(&mut self, on: bool) -> PyResult<()> {
+        if self.inner.language().is_none() {
+            return Err(rt_err("language not configured on this brain"));
+        }
+        self.inner.set_reason_in_content(on);
+        Ok(())
+    }
+
+    /// Classify text for toxicity → `(predicted_harm, fairness_violation,
+    /// would_block)`. Raises if the toxicity stack is off.
+    fn classify_toxicity(&self, text: &str) -> PyResult<(f32, f32, bool)> {
+        self.inner.classify_toxicity(text).map_err(rt_err)
+    }
+
+    /// Language learning telemetry.
+    ///
+    /// Returns:
+    ///     dict: `learn_calls`, `tokens_seen`, `context_updates`,
+    ///     `total_comprehensions`, `groundings`, `vocab_count`,
+    ///     `discourse_depth`.
+    fn language_stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let gl = self
+            .inner
+            .language()
+            .ok_or_else(|| rt_err("language not configured on this brain"))?;
+        let d = to_py_json(py, &gl.stats)?;
+        d.set_item("vocab_count", gl.lexicon.vocab_count())?;
+        d.set_item("discourse_depth", gl.discourse.depth())?;
+        Ok(d)
+    }
+
+    /// Add a semantic vector to working memory at `salience` (C5). It is
+    /// blended into the next response's content intent at
+    /// `0.25 × salience` while salience stays above 0.2, decaying one
+    /// e-fold per turn by default.
+    #[pyo3(signature = (data, salience = 0.5))]
+    fn working_memory_add(&mut self, data: Vec<f32>, salience: f32) -> PyResult<()> {
+        self.inner.working_memory_add(&data, salience).map_err(rt_err)
+    }
+
+    /// Current working-memory items, oldest first.
+    ///
+    /// Returns:
+    ///     list[dict]: `data`, `salience`, `timestamp_ms`, `refreshed`.
+    fn working_memory_items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let wm = self
+            .inner
+            .working_memory()
+            .ok_or_else(|| rt_err("working memory not configured on this brain"))?;
+        to_py_json(py, &wm.items())
+    }
+
+    /// Stage `content` as the active imagined scene at `vividness` (C5);
+    /// blended into the next response at `0.2 × vividness`.
+    #[pyo3(signature = (content, vividness = 0.7))]
+    fn imagination_stage(&mut self, content: Vec<f32>, vividness: f32) -> PyResult<()> {
+        self.inner.imagination_stage(&content, vividness).map_err(rt_err)
+    }
+
+    /// The active imagined scene as `(vector, vividness)`, or `None` when
+    /// idle. Raises if imagination is not configured.
+    fn imagination_active(&self) -> PyResult<Option<(Vec<f32>, f32)>> {
+        let im = self
+            .inner
+            .imagination()
+            .ok_or_else(|| rt_err("imagination not configured on this brain"))?;
+        Ok(im.active_vector().map(|(v, viv)| (v.to_vec(), viv)))
+    }
+
+    /// Virtual cognition clock in ms — advances by `cognition.turn_ms`
+    /// per `language_respond`.
+    #[getter]
+    fn cognition_now_ms(&self) -> u64 {
+        self.inner.cognition_now_ms()
     }
 
     /// String representation for Python repr.

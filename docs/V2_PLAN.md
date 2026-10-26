@@ -525,8 +525,19 @@ the response confidence (`imagination_drift` adds one Passive step,
 default OFF). Empty sources are exact no-ops, so a fresh brain's first
 turn is unchanged. Explicit API: `working_memory[_mut|_add]`,
 `imagination[_mut|_stage|_begin]`, `cognition_now_ms`. Both stores are
-runtime state, not checkpointed (V1 parity). Still open: pybind has no
-language or cognition surface (separate item).
+runtime state, not checkpointed (V1 parity). **Surface (2026-10-26)**:
+pybind exposes the whole language + cognition track (`has_language`,
+`language_ground/learn/comprehend/respond/stats`, `reason`,
+`reason_in_content` + setter, `classify_toxicity`, `working_memory_add/
+items`, `imagination_stage/active`, `cognition_now_ms`); the daemon gained
+the matching RPCs (`language_learn/comprehend/respond`, `reason`,
+`set_reason_in_content`, `classify_toxicity`, `working_memory_add`,
+`imagination_stage`, `cognition_state`) with structured errors on a
+language-less brain; and the V1 adapter shim's `train_language` /
+`learn_language` / `generate_text` / `grounded_respond` (+ new
+`comprehend` / `reason` / `set_reason_in_content` / `working_memory_add`)
+are real when the brain's `config_json` carries `language`, stubs
+otherwise.
 
 ---
 
