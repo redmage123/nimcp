@@ -818,6 +818,10 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_coo(
         LOG_ERROR("Invalid parameters for sparse_from_coo");
         return NULL;
     }
+    /* Raw cudaMalloc below allocates on the thread's current device; make
+     * sure that is this context's device (the SNN may have left it on
+     * GPU 1 — see gpu_push_device in nimcp_gpu_context.cu). */
+    if (ctx->gpu_ctx) nimcp_gpu_context_set_device(ctx->gpu_ctx);
 
     if (rows <= 0 || cols <= 0 || nnz < 0) {
         LOG_ERROR("sparse_from_coo: invalid dimensions rows=%d cols=%d nnz=%d", rows, cols, nnz);

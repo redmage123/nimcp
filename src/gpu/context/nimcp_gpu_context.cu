@@ -285,6 +285,22 @@ const char* nimcp_gpu_context_get_error(const nimcp_gpu_context_t* ctx) {
     return ctx->last_error_msg;
 }
 
+/* Select ctx's device for one call and hand back the caller's device.
+ * These wrappers used to leave the thread on ctx's device: after the SNN
+ * synced a GPU-1 population, the ANN bridge's raw cudaMalloc landed on
+ * GPU 1 while its cuSPARSE handle lived on GPU 0 — illegal memory access
+ * one step after every homeostatic apply (2026-10-26). */
+static inline int gpu_push_device(const nimcp_gpu_context_t* ctx) {
+    int prev = -1;
+    cudaGetDevice(&prev);
+    if (prev != ctx->device_id) cudaSetDevice(ctx->device_id);
+    return prev;
+}
+
+static inline void gpu_pop_device(const nimcp_gpu_context_t* ctx, int prev) {
+    if (prev >= 0 && prev != ctx->device_id) cudaSetDevice(prev);
+}
+
 void* nimcp_gpu_malloc(nimcp_gpu_context_t* ctx, size_t size_bytes) {
     if (!nimcp_gpu_recovery_is_initialized()) {
         nimcp_gpu_recovery_init(NULL);
@@ -292,7 +308,7 @@ void* nimcp_gpu_malloc(nimcp_gpu_context_t* ctx, size_t size_bytes) {
 
     if (!nimcp_gpu_context_is_valid(ctx) || size_bytes == 0) return NULL;
 
-    cudaSetDevice(ctx->device_id);
+    int prev_device = gpu_push_device(ctx);
 
     void* dev_ptr = NULL;
     cudaError_t err = cudaMalloc(&dev_ptr, size_bytes);
@@ -304,9 +320,11 @@ void* nimcp_gpu_malloc(nimcp_gpu_context_t* ctx, size_t size_bytes) {
             err = cudaMalloc(&dev_ptr, size_bytes);
         }
         if (!check_cuda_error(ctx, err, "cudaMalloc")) {
+            gpu_pop_device(ctx, prev_device);
             return NULL;
         }
     }
+    gpu_pop_device(ctx, prev_device);
 
     /* P2: Use atomic operations for thread-safe memory counter updates */
     __atomic_fetch_add(&ctx->allocated_memory, size_bytes, __ATOMIC_SEQ_CST);
@@ -327,8 +345,9 @@ void* nimcp_gpu_malloc(nimcp_gpu_context_t* ctx, size_t size_bytes) {
 void nimcp_gpu_free(nimcp_gpu_context_t* ctx, void* dev_ptr) {
     if (!nimcp_gpu_context_is_valid(ctx) || !dev_ptr) return;
 
-    cudaSetDevice(ctx->device_id);
+    int prev_device = gpu_push_device(ctx);
     cudaFree(dev_ptr);
+    gpu_pop_device(ctx, prev_device);
     /* P2: GPU memory tracking - cannot decrement allocated_memory without knowing
      * the allocation size. Would need a size-tracking hash table for full tracking.
      * For now, deallocation_count is tracked atomically. */
@@ -346,8 +365,6 @@ int nimcp_gpu_memcpy(nimcp_gpu_context_t* ctx,
     if (!nimcp_gpu_context_is_valid(ctx)) return -1;
     if (!dst || !src || size_bytes == 0) return -1;
 
-    cudaSetDevice(ctx->device_id);
-
     cudaMemcpyKind cuda_kind;
     switch (kind) {
         case GPU_MEMCPY_HOST_TO_DEVICE:   cuda_kind = cudaMemcpyHostToDevice; break;
@@ -357,6 +374,7 @@ int nimcp_gpu_memcpy(nimcp_gpu_context_t* ctx,
         default: return -1;
     }
 
+    int prev_device = gpu_push_device(ctx);
     cudaError_t err = cudaMemcpy(dst, src, size_bytes, cuda_kind);
     if (err != cudaSuccess) {
         // Try recovery - validate result before retrying
@@ -366,9 +384,11 @@ int nimcp_gpu_memcpy(nimcp_gpu_context_t* ctx,
             err = cudaMemcpy(dst, src, size_bytes, cuda_kind);
         }
         if (!check_cuda_error(ctx, err, "cudaMemcpy")) {
+            gpu_pop_device(ctx, prev_device);
             return -1;
         }
     }
+    gpu_pop_device(ctx, prev_device);
     return 0;
 }
 
