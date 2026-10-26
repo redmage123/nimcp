@@ -1379,6 +1379,19 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
     }
     if (num_outputs == 0) num_outputs = proc->embedding_dim;
 
+    /* Sub-phase wall-clock profile per cortex type, logged every 100 calls.
+     * Slots: 0 label+target, 1 cnn_trainer_backward, 2 optimizer step (+LR
+     * scale/restore), 3 FNO self-distillation, 4 substrate debit + loss. */
+    static double   s_bwd_ms[4][5];
+    static uint32_t s_bwd_calls[4];
+    const uint32_t  pidx = (proc->type < 4) ? proc->type : 0;
+    struct timespec _pt0, _pt1;
+#define CB_START() clock_gettime(CLOCK_MONOTONIC, &_pt0)
+#define CB_END(slot) do { clock_gettime(CLOCK_MONOTONIC, &_pt1); \
+        s_bwd_ms[pidx][slot] += (_pt1.tv_sec - _pt0.tv_sec) * 1000.0 + \
+                                (_pt1.tv_nsec - _pt0.tv_nsec) / 1.0e6; } while (0)
+
+    CB_START();
     uint32_t label_idx = cortex_get_or_create_label(proc, label);
 
     /* Build one-hot target */
@@ -1392,10 +1405,13 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
     if (label_idx < target_dim) {
         target_data[label_idx] = 1.0f;
     }
+    CB_END(0);
 
     /* Backward + step */
+    CB_START();
     nimcp_error_t err = cnn_trainer_backward(proc->trainer, target, &proc->last_fwd);
     nimcp_tensor_destroy(target);
+    CB_END(1);
 
     if (err != NIMCP_SUCCESS) {
         static uint32_t _bwd_fail_count[4] = {0};
@@ -1418,6 +1434,7 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
      * dend_effects.plasticity_mod for this step only, then restore. When
      * the substrate knob is off (or no substrate attached, or the flag is
      * disabled), lr_scale stays at 1.0 and this is a no-op. */
+    CB_START();
     nimcp_optimizer_context_t* opt = cnn_trainer_get_optimizer(proc->trainer);
     float original_lr = 0.0f;
     float lr_scale    = 1.0f;
@@ -1442,6 +1459,8 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
     if (lr_scale != 1.0f && opt) {
         nimcp_optimizer_set_lr(opt, original_lr);
     }
+    CB_END(2);
+    CB_START();
 
     /* Phase 3: Self-distillation training for cortex FNOs.
      * For visual/speech/somato (where FNO supplements CNN), train FNO to
@@ -1476,6 +1495,8 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
         }
         if (any_trained) proc->fno_distill_calls++;
     }
+    CB_END(3);
+    CB_START();
 
     /* Substrate backward debit — plasticity updates are the expensive metabolic
      * event. Counts 1 unit per backward call (one gradient step). */
@@ -1503,6 +1524,21 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
         proc->ema_loss = loss;
     } else {
         proc->ema_loss = 0.99f * proc->ema_loss + 0.01f * loss;
+    }
+    CB_END(4);
+#undef CB_START
+#undef CB_END
+    if (++s_bwd_calls[pidx] % 100 == 0) {
+        static const char* pnames[] = {"visual", "audio", "speech", "somato"};
+        NIMCP_LOGGING_INFO("[CORTEX-BWD-PROFILE] %s: over %u calls — label/target=%.1f "
+                           "trainer_backward=%.1f opt_step=%.1f fno_distill=%.1f "
+                           "debit+loss=%.1f ms total (per call: %.1f ms)",
+                           pnames[pidx], 100u,
+                           s_bwd_ms[pidx][0], s_bwd_ms[pidx][1], s_bwd_ms[pidx][2],
+                           s_bwd_ms[pidx][3], s_bwd_ms[pidx][4],
+                           (s_bwd_ms[pidx][0] + s_bwd_ms[pidx][1] + s_bwd_ms[pidx][2] +
+                            s_bwd_ms[pidx][3] + s_bwd_ms[pidx][4]) / 100.0);
+        memset(s_bwd_ms[pidx], 0, sizeof(s_bwd_ms[pidx]));
     }
 
     /* W5 KG anomaly emit — NaN/Inf or runaway loss indicates gradient

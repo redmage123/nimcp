@@ -2431,6 +2431,12 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                           brain->unified_training != NULL,
                           brain->config.use_unified_training);
     }
+    /* Set when the unified branch below has already run the gated cortex CNN
+     * forward+backward for this step. The trailing "Step 3" block after the
+     * if/else used to run a SECOND, ungated forward+backward on the same
+     * sensory data every step (observed 2026-10-26: two optimizer LR
+     * scale/restore pairs per cortex per brain step, ~2x cortex cost). */
+    bool cortex_trained_this_step = false;
     if (brain->unified_training && brain->config.use_unified_training) {
         /* Unified training path: single composite loss across all networks.
          * Each network receives direct ground truth supervision via MSE gradient,
@@ -2755,31 +2761,74 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                             (void*)brain->staged_sensory.speech_data,
                             label ? label : "(null)");
             }
+            /* Per-cortex wall-clock profile (fwd / bwd per modality), logged
+             * every 10th step like the other BLV profiles. */
+            struct timespec _ct0, _ct1;
+            double _ct_ms[8] = {0};
+#define CT_START() clock_gettime(CLOCK_MONOTONIC, &_ct0)
+#define CT_END(slot) do { clock_gettime(CLOCK_MONOTONIC, &_ct1); \
+                _ct_ms[slot] += (_ct1.tv_sec - _ct0.tv_sec) * 1000.0 + \
+                                (_ct1.tv_nsec - _ct0.tv_nsec) / 1.0e6; } while (0)
             if (brain->cortex_cnns[0] && brain->staged_sensory.visual_frame) {
+                CT_START();
                 const float* emb = cortex_cnn_forward_visual(brain->cortex_cnns[0],
                     brain->staged_sensory.visual_frame,
                     brain->staged_sensory.visual_width,
                     brain->staged_sensory.visual_height,
                     brain->staged_sensory.visual_channels);
+                CT_END(0);
+                CT_START();
                 if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[0], label, num_out);
+                CT_END(1);
             }
             if (brain->cortex_cnns[1] && brain->staged_sensory.audio_data) {
+                CT_START();
                 const float* emb = cortex_cnn_forward_audio(brain->cortex_cnns[1],
                     brain->staged_sensory.audio_data,
                     brain->staged_sensory.audio_size);
+                CT_END(2);
+                CT_START();
                 if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[1], label, num_out);
+                CT_END(3);
             }
             if (brain->cortex_cnns[2] && brain->staged_sensory.speech_data) {
+                CT_START();
                 const float* emb = cortex_cnn_forward_speech(brain->cortex_cnns[2],
                     brain->staged_sensory.speech_data,
                     brain->staged_sensory.speech_size);
+                CT_END(4);
+                CT_START();
                 if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[2], label, num_out);
+                CT_END(5);
             }
             if (brain->cortex_cnns[3] && brain->staged_sensory.somato_data) {
+                CT_START();
                 const float* emb = cortex_cnn_forward_somato(brain->cortex_cnns[3],
                     brain->staged_sensory.somato_data,
                     brain->staged_sensory.somato_segments);
+                CT_END(6);
+                CT_START();
                 if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[3], label, num_out);
+                CT_END(7);
+            }
+#undef CT_START
+#undef CT_END
+            cortex_trained_this_step = true;
+            if (_blv_step_tracker % 10 == 0) {
+                NIMCP_LOGGING_INFO("[CORTEX-PROFILE] step %llu: visual fwd=%.1f bwd=%.1f | "
+                                   "audio fwd=%.1f bwd=%.1f | speech fwd=%.1f bwd=%.1f | "
+                                   "somato fwd=%.1f bwd=%.1f ms (freeze=%d, sizes: vis=%ux%ux%u "
+                                   "aud=%u spe=%u som=%u)",
+                                   (unsigned long long)_blv_step_tracker,
+                                   _ct_ms[0], _ct_ms[1], _ct_ms[2], _ct_ms[3],
+                                   _ct_ms[4], _ct_ms[5], _ct_ms[6], _ct_ms[7],
+                                   (int)cortex_cnn_freeze,
+                                   brain->staged_sensory.visual_width,
+                                   brain->staged_sensory.visual_height,
+                                   brain->staged_sensory.visual_channels,
+                                   brain->staged_sensory.audio_size,
+                                   brain->staged_sensory.speech_size,
+                                   brain->staged_sensory.somato_segments);
             }
         }
 
@@ -3138,7 +3187,13 @@ sequential_training:
 
         /* Cortex CNN training: forward with modality-specific input, then backward.
          * Check forward return value directly — has_fwd_result can be clobbered by
-         * the UTM adapter calling cortex_forward_1d between our forward and backward. */
+         * the UTM adapter calling cortex_forward_1d between our forward and backward.
+         * Skipped when the unified branch already trained the cortexes this step
+         * (with the train_cnn / recovery / warmup gate) — otherwise every step
+         * ran a second, ungated pass on the same data. */
+        if (cortex_trained_this_step) {
+            /* already done above */
+        } else {
         if (brain->cortex_cnns[0] && brain->staged_sensory.visual_frame) {
             const float* emb = cortex_cnn_forward_visual(brain->cortex_cnns[0],
                 brain->staged_sensory.visual_frame,
@@ -3182,6 +3237,7 @@ sequential_training:
                              _som_fwd_fail, brain->staged_sensory.somato_segments);
             }
         }
+        }  /* !cortex_trained_this_step */
     }
 
     /* Blend secondary network losses into composite return value.
