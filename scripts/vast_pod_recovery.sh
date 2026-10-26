@@ -252,9 +252,26 @@ fi
 ssh -i "$HETZNER_SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HETZNER_HOST" 'echo CONNECTED' 2>&1 | tail -1 | tee -a "$LOG_FILE"
 
 # ============================================================
-# STEP 9: Kill any stale training/watchdog, start watchdog
+# STEP 9: Install disk monitor cron (vast crontab is wiped on reboot)
 # ============================================================
-step "9. Start watchdog"
+step "9. Install disk monitor cron"
+
+if [ -f "$NIMCP_DIR/scripts/vast_disk_monitor.sh" ]; then
+    cp "$NIMCP_DIR/scripts/vast_disk_monitor.sh" /root/vast_disk_monitor.sh
+    chmod +x /root/vast_disk_monitor.sh
+    # Remove any existing entry, then add fresh
+    (crontab -l 2>/dev/null | grep -v vast_disk_monitor; \
+     echo "*/5 * * * * /root/vast_disk_monitor.sh") | crontab -
+    log "Disk monitor cron installed (runs every 5 min, cleans at >85%)"
+    log "  Logs: /tmp/vast_disk_monitor.log"
+else
+    log "WARNING: $NIMCP_DIR/scripts/vast_disk_monitor.sh not found — skipping"
+fi
+
+# ============================================================
+# STEP 10: Kill any stale training/watchdog, start watchdog
+# ============================================================
+step "10. Start watchdog"
 
 # Kill stale processes (idempotent — pkill returns 1 if none found)
 pkill -9 -f train_watchdog 2>/dev/null
