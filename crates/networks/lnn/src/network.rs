@@ -244,7 +244,7 @@ impl Clone for LnnNetwork {
             substrate_state: self.substrate_state,
             substrate_effects: self.substrate_effects,
             substrate_tick_counter: self.substrate_tick_counter,
-            thalamic_channel: self.thalamic_channel.clone(),
+            thalamic_channel: self.thalamic_channel,
             thalamic_submit_threshold: self.thalamic_submit_threshold,
             lnn_gpu: None,
         }

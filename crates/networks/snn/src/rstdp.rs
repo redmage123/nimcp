@@ -137,16 +137,10 @@ impl RstdpState {
     /// Reset all transient state. Does not resize buffers; a call to
     /// [`Self::new`] is appropriate if dimensions changed.
     pub fn reset(&mut self) {
-        for e in &mut self.eligibility {
-            *e = 0.0;
-        }
+        self.eligibility.fill(0.0);
         self.reward_trace = 0.0;
-        for t in &mut self.last_pre_spike_ms {
-            *t = f32::NEG_INFINITY;
-        }
-        for t in &mut self.last_post_spike_ms {
-            *t = f32::NEG_INFINITY;
-        }
+        self.last_pre_spike_ms.fill(f32::NEG_INFINITY);
+        self.last_post_spike_ms.fill(f32::NEG_INFINITY);
         self.rate_samples = 0;
     }
 

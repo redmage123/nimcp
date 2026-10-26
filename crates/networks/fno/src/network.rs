@@ -151,6 +151,8 @@ pub struct FnoNetwork {
 }
 
 impl FnoNetwork {
+    // By-value config for API symmetry with the other network constructors.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: FnoConfig) -> Result<Self, FnoError> {
         if config.n_blocks == 0 {
             return Err(FnoError::EmptyBlocks);

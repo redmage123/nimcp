@@ -127,9 +127,7 @@ impl DepressionState {
 
     /// Reset every entry to zero without reallocating.
     pub fn reset(&mut self) {
-        for v in &mut self.d {
-            *v = 0.0;
-        }
+        self.d.fill(0.0);
     }
 
     /// Number of neurons this state covers.

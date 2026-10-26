@@ -59,6 +59,9 @@ impl SpectralConv1dLayer {
     ///
     /// # Panics
     /// If `input.shape()[1]` ≠ `in_channels` or `length < 2 * modes`.
+    // Index loops deliberately mirror `W[k, ic, oc] · in[ic, k]` in the
+    // spectral-convolution equation; iterator form obscures the math.
+    #[allow(clippy::needless_range_loop)]
     pub fn forward(&self, input: &ndarray::Array3<f32>) -> ndarray::Array3<f32> {
         let (n, c_in, length) = input.dim();
         assert_eq!(c_in, self.in_channels, "spectral: input channel mismatch");

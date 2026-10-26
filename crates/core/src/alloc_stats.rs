@@ -72,7 +72,9 @@ fn counter(tag: AllocTag) -> &'static AtomicU64 {
 pub fn account(tag: AllocTag, bytes: u64) {
     let c = counter(tag);
     // Best-effort saturating add via CAS loop — `fetch_update` is
-    // robust to contention.
+    // robust to contention. (`try_update` is the non-deprecated name but
+    // needs Rust ≥ 1.92; the workspace MSRV is 1.85.)
+    #[allow(deprecated)]
     let _ = c.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
         Some(cur.saturating_add(bytes))
     });
@@ -81,6 +83,7 @@ pub fn account(tag: AllocTag, bytes: u64) {
 /// Decrement a tag's accounting by `bytes`. Saturating sub.
 pub fn release(tag: AllocTag, bytes: u64) {
     let c = counter(tag);
+    #[allow(deprecated)] // see `account`
     let _ = c.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
         Some(cur.saturating_sub(bytes))
     });

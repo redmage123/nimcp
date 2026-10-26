@@ -168,12 +168,8 @@ impl ConductanceState {
 
     /// Reset all conductances to zero — call on network reset.
     pub fn reset(&mut self) {
-        for g in &mut self.g_exc {
-            *g = 0.0;
-        }
-        for g in &mut self.g_inh {
-            *g = 0.0;
-        }
+        self.g_exc.fill(0.0);
+        self.g_inh.fill(0.0);
     }
 }
 
@@ -200,15 +196,9 @@ impl LifState {
     /// Return every neuron to rest and clear spikes + refractory counters.
     /// Also zeros conductance state if present.
     pub fn reset(&mut self, params: &LifParams) {
-        for v in &mut self.v_mem {
-            *v = params.v_rest;
-        }
-        for r in &mut self.refrac {
-            *r = 0;
-        }
-        for s in &mut self.spike {
-            *s = 0;
-        }
+        self.v_mem.fill(params.v_rest);
+        self.refrac.fill(0);
+        self.spike.fill(0);
         if let Some(cb) = self.conductance.as_mut() {
             cb.reset();
         }

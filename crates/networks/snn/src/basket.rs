@@ -119,15 +119,9 @@ impl BasketPool {
     /// Reset membrane to rest, refractory to zero, spikes to zero,
     /// drive EMA to zero.
     pub fn reset(&mut self) {
-        for v in &mut self.membrane_v {
-            *v = self.v_rest;
-        }
-        for r in &mut self.refractory {
-            *r = 0.0;
-        }
-        for s in &mut self.spike_output {
-            *s = 0.0;
-        }
+        self.membrane_v.fill(self.v_rest);
+        self.refractory.fill(0.0);
+        self.spike_output.fill(0.0);
         self.drive_filtered = 0.0;
     }
 
@@ -338,9 +332,7 @@ mod tests {
     fn inhibition_is_uniform_across_parent() {
         let mut bp = BasketPool::new(0, 50, 0.2).unwrap();
         // Force every basket cell to have spiked.
-        for s in &mut bp.spike_output {
-            *s = 1.0;
-        }
+        bp.spike_output.fill(1.0);
         let mut parent = vec![0.0_f32; 50];
         bp.emit_inhibition(&mut parent);
         // Same delta everywhere.

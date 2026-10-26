@@ -195,6 +195,8 @@ pub struct CnnNetwork {
 }
 
 impl CnnNetwork {
+    // By-value config for API symmetry with the other network constructors.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: CnnConfig) -> Result<Self, CnnError> {
         if config.layers.is_empty() {
             return Err(CnnError::Empty);

@@ -148,7 +148,7 @@ impl HnnNetwork {
         if config.dof == 0 {
             return Err(HnnError::ZeroDof);
         }
-        if !(config.dt > 0.0) {
+        if config.dt.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             return Err(HnnError::NonPositiveDt);
         }
         let mlp = HamiltonianMlp::new(config.dof, &config.hidden_layers, config.rng_seed);

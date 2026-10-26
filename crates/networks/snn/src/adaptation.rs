@@ -87,9 +87,7 @@ impl AdaptationState {
 
     /// Zero `adapt_var` without changing the parameters.
     pub fn reset(&mut self) {
-        for v in &mut self.adapt_var {
-            *v = 0.0;
-        }
+        self.adapt_var.fill(0.0);
     }
 
     /// Fill `out_hyperpol_mv[n] = gain_mv × adapt_var[n]`. Buffer is

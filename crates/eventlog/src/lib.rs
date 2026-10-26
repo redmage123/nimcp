@@ -186,7 +186,7 @@ impl EventLog {
         if &magic_buf != MAGIC {
             return Err(LogError::Corrupt(format!(
                 "bad magic: expected {:?}, got {:?}",
-                MAGIC, &magic_buf
+                MAGIC, magic_buf
             )));
         }
         let mut version_buf = [0u8; 4];

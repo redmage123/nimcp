@@ -174,6 +174,7 @@ impl LinearLayer {
     /// Backward through a dense layer.
     /// - `grad_weight`: `[out, in]`, accumulates `grad_out^T · input`.
     /// - `grad_bias`: `[out]`, accumulates row-summed `grad_out`.
+    ///
     /// Returns `grad_in = grad_out · W` (`[batch, in]`).
     pub fn backward(
         &self,
