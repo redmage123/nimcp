@@ -55,7 +55,7 @@ use serde::{Deserialize, Serialize};
 /// The selector is brain-wide rather than per-network so the user has a
 /// single knob (e.g. `nimcp.set_backend("gpu")`) to flip the entire
 /// inference pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
     /// CPU forward pass for every network. Always available.
@@ -64,6 +64,50 @@ pub enum Backend {
     /// GPU forward pass where compiled in. Falls back to CPU + logs a
     /// warning when the `cuda` feature wasn't enabled at build time.
     Gpu,
+    /// Phase 10g — GPU forward with the SNN's populations spread over
+    /// `devices` (`DeviceAssignment::MemoryBalanced` unless the SNN
+    /// config pins its own assignment). LNN stays on ordinal 0 — V1
+    /// only ever partitioned the SNN. Same CPU fallback as `Gpu`.
+    /// JSON: `{"multigpu": {"devices": [0, 1]}}`.
+    MultiGpu {
+        /// CUDA device ordinals to spread the SNN across.
+        devices: Vec<u32>,
+    },
+}
+
+impl Backend {
+    /// `true` for every backend that asks for GPU forward passes.
+    #[must_use]
+    pub fn wants_gpu(&self) -> bool {
+        !matches!(self, Self::Cpu)
+    }
+
+    /// Device ordinals for `MultiGpu`; `None` otherwise.
+    #[must_use]
+    pub fn devices(&self) -> Option<&[u32]> {
+        match self {
+            Self::MultiGpu { devices } => Some(devices),
+            _ => None,
+        }
+    }
+}
+
+/// Apply the brain-wide backend to an SNN config: GPU backends force
+/// `use_gpu_forward`; `MultiGpu` additionally spreads populations over
+/// its devices unless the SNN config already carries a non-default
+/// `device_assignment` (an explicit per-network choice wins).
+pub fn apply_backend_to_snn(backend: &Backend, cfg: &mut SnnConfig) {
+    if !backend.wants_gpu() {
+        return;
+    }
+    cfg.use_gpu_forward = true;
+    if let Some(devices) = backend.devices()
+        && cfg.device_assignment == nimcp_snn::DeviceAssignment::default()
+    {
+        cfg.device_assignment = nimcp_snn::DeviceAssignment::MemoryBalanced {
+            devices: devices.to_vec(),
+        };
+    }
 }
 
 /// Top-level brain configuration.
@@ -256,15 +300,14 @@ impl Brain {
         // `Backend::Gpu` is benign — SnnNetwork errors out with a
         // GpuUnavailable, which we log and degrade to CPU.
         let snn = if let Some(mut cfg) = config.snn.clone() {
-            if matches!(config.backend, Backend::Gpu) {
-                cfg.use_gpu_forward = true;
-            }
+            apply_backend_to_snn(&config.backend, &mut cfg);
             match SnnNetwork::new(cfg.clone()) {
                 Ok(net) => Some(net),
-                Err(e) if matches!(config.backend, Backend::Gpu) => {
+                Err(e) if config.backend.wants_gpu() => {
                     tracing::warn!(
                         ?e,
-                        "Backend::Gpu requested but SNN GPU init failed; falling back to CPU"
+                        backend = ?config.backend,
+                        "GPU backend requested but SNN GPU init failed; falling back to CPU"
                     );
                     cfg.use_gpu_forward = false;
                     Some(
@@ -288,18 +331,18 @@ impl Brain {
             // call succeeds or the underlying nimcp_gpu::GpuError is
             // logged and we fall back to CPU forward.
             #[cfg(feature = "cuda")]
-            if matches!(config.backend, Backend::Gpu) {
+            if config.backend.wants_gpu() {
                 if let Err(e) = net.enable_gpu() {
                     tracing::warn!(
                         ?e,
-                        "Backend::Gpu requested but LNN GPU init failed; using CPU forward"
+                        "GPU backend requested but LNN GPU init failed; using CPU forward"
                     );
                 }
             }
             #[cfg(not(feature = "cuda"))]
-            if matches!(config.backend, Backend::Gpu) {
+            if config.backend.wants_gpu() {
                 tracing::warn!(
-                    "Backend::Gpu requested but nimcp-lnn was not compiled with --features cuda; using CPU forward"
+                    "GPU backend requested but nimcp-lnn was not compiled with --features cuda; using CPU forward"
                 );
             }
             let state = net.new_state();
@@ -1365,6 +1408,54 @@ mod tests {
         let back_gpu: Backend = serde_json::from_str(&gpu).unwrap();
         assert_eq!(back_cpu, Backend::Cpu);
         assert_eq!(back_gpu, Backend::Gpu);
+
+        let multi = Backend::MultiGpu { devices: vec![0, 1] };
+        let s = serde_json::to_string(&multi).unwrap();
+        assert_eq!(s, r#"{"multigpu":{"devices":[0,1]}}"#);
+        let back: Backend = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, multi);
+    }
+
+    /// Phase 10g — MultiGpu degrades to CPU exactly like Gpu on a
+    /// CPU-only build, and the config keeps the requested backend.
+    #[tokio::test]
+    async fn backend_multigpu_boots_on_cpu_only_build() {
+        let cfg = BrainConfig {
+            backend: Backend::MultiGpu { devices: vec![0, 1] },
+            ..Default::default()
+        };
+        let brain = Brain::new(cfg).expect("Backend::MultiGpu must degrade gracefully on CPU build");
+        assert_eq!(brain.config().backend.devices(), Some(&[0, 1][..]));
+    }
+
+    #[test]
+    fn apply_backend_to_snn_rules() {
+        use nimcp_snn::DeviceAssignment;
+        let base = SnnConfig::default();
+
+        let mut cpu = base.clone();
+        apply_backend_to_snn(&Backend::Cpu, &mut cpu);
+        assert!(!cpu.use_gpu_forward);
+        assert_eq!(cpu.device_assignment, DeviceAssignment::default());
+
+        let mut gpu = base.clone();
+        apply_backend_to_snn(&Backend::Gpu, &mut gpu);
+        assert!(gpu.use_gpu_forward);
+        assert_eq!(gpu.device_assignment, DeviceAssignment::default());
+
+        let mut multi = base.clone();
+        apply_backend_to_snn(&Backend::MultiGpu { devices: vec![1, 0] }, &mut multi);
+        assert!(multi.use_gpu_forward);
+        assert_eq!(
+            multi.device_assignment,
+            DeviceAssignment::MemoryBalanced { devices: vec![1, 0] }
+        );
+
+        // An explicit per-network assignment is not overridden.
+        let mut pinned = base;
+        pinned.device_assignment = DeviceAssignment::RoundRobin { devices: vec![0] };
+        apply_backend_to_snn(&Backend::MultiGpu { devices: vec![0, 1] }, &mut pinned);
+        assert_eq!(pinned.device_assignment, DeviceAssignment::RoundRobin { devices: vec![0] });
     }
 
     /// Old configs (pre-9h, no `backend` field) deserialize with the
@@ -1992,4 +2083,5 @@ mod tests {
         let brain2 = Brain::new(cfg).unwrap();
         assert!(brain2.reason_in_content());
     }
+
 }

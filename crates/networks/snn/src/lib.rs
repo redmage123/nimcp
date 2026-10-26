@@ -44,6 +44,7 @@ pub mod autotune;
 pub mod basket;
 pub mod csr;
 pub mod depression;
+pub mod device;
 pub mod homeostatic;
 pub mod intrinsic_reward;
 pub mod lif;
@@ -58,6 +59,7 @@ pub use adaptation::{AdaptationError, AdaptationState};
 pub use autotune::{Actuator, AutotuneController, AutotuneSnapshot, CycleMetrics, Decision};
 pub use basket::{BasketError, BasketPool};
 pub use depression::{DepressionConfig, DepressionState, step_depression, weight_multiplier};
+pub use device::{DeviceAssignError, DeviceAssignment};
 pub use homeostatic::step_homeostatic_with_reward;
 pub use intrinsic_reward::{
     IntrinsicRewardConfig, compute_network_reward, compute_per_pop_reward,

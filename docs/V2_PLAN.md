@@ -381,6 +381,126 @@ on top of that for the full-GPU story.
 
 ---
 
+### Phase 10 — Multi-GPU (3–4 weeks)
+
+Phase 9 was explicitly single-device. V1 already partitions the 1.8M-neuron
+SNN across the pod's 2× RTX 5090s (visible in training logs as
+`[MULTI-GPU] Pop p: switching to GPU N / Launching CSR kernel on GPU N`).
+V2 must match this before it can replace V1 on the pod.
+
+#### What V1 actually does (ignoring the enum zoo)
+
+V1's `multigpu_config_t` lists five partition strategies (LAYER / NEURON
+/ HYBRID / DYNAMIC / AUTO) and three load-balance strategies, but the
+hot path uses exactly one shape: **per-population device assignment with
+host-mediated spike broadcast and isyn gather.**
+
+Per step, V1:
+1. Uploads the global spike vector once to each device (`cudaMemcpyAsync`
+   from host to each `d_spike_vec[dev]`).
+2. For each population `p`, calls `cudaSetDevice(pop[p].device_id)`,
+   launches its CSR SpMV kernel against its device-resident weight
+   block, then copies the resulting `isyn` chunk back to the host-side
+   accumulator.
+3. CPU drives LIF integration, plasticity, homeostatic scaling against
+   the gathered `isyn`.
+
+No P2P, no partition rebalance, no NCCL — static manual/round-robin
+assignment at network construction time. Phase 10 mirrors this, not the
+full enum.
+
+#### Sub-phase plan
+
+- **10a — Device enumeration.** `nimcp-gpu::enumerate_devices() →
+  Vec<DeviceInfo>`. Walks ordinals via `CudaContext::new(n)` until
+  failure. Tests skip gracefully when fewer than 2 devices are present
+  (dev + Hetzner have 0–1; only vast.ai has 2).
+- **10b — MultiGpuContext.** `Vec<Arc<CudaContext>>` keyed by ordinal.
+  Methods: `new(device_ids)`, `device_count()`, `context_for(ordinal)`,
+  `synchronize_all()`. One context per device (one default stream each
+  for Phase 10; stream pool deferred).
+- **10c — SNN population device assignment.** Network-level
+  `SnnConfig.device_assignment: DeviceAssignment::{SingleDevice,
+  RoundRobin, Manual, MemoryBalanced}` (`crates/networks/snn/src/
+  device.rs`), default `SingleDevice { ordinal: 0 }` = pre-Phase-10
+  behaviour. `Manual` carries one ordinal per population (index-aligned
+  with `populations`) rather than a field on `PopulationSpec` — keeps
+  the dozen existing `PopulationSpec` literals intact and puts a
+  topology decision at the topology level. `MemoryBalanced` is greedy
+  largest-population-first onto the least-loaded device (neuron count
+  as the proxy; synapse memory scales with the destination size).
+  `SnnNetwork::new` resolves it to `pop_device: Vec<u32>`, opens a
+  `MultiGpuContext` over the distinct ordinals, and builds each
+  population's `LifGpu` — and the `CsrGpu` + `RstdpGpu` of every edge
+  *into* it — on that population's context.
+- **10d — Per-step spike broadcast.** Already satisfied by the 9a
+  design: `CsrGpu::i_syn(src_spikes, …)` uploads the edge's source
+  population spikes to the edge's own device every step, so each
+  device only ever receives the spikes it needs. No separate mirror.
+- **10e — Per-device CSR SpMV + host gather.** Also already the 9a
+  shape: `i_syn` runs on the edge's context and downloads into the
+  host-side `edge.i_syn_scratch`, which the step pipeline sums into the
+  destination population. cudarc binds the owning context on every
+  stream op, so one thread can drive all devices in sequence.
+- **10f — Checkpoint save/load.** Nothing device-specific: host-side
+  `edge.csr.weights` is the source of truth (re-uploaded each step)
+  and `WeightSnapshot` reads it. A multi-device snapshot restores into
+  a single-device network and vice versa — covered by a test, not code.
+- **10g — Backend dispatch + V1-parity validation.**
+  `Backend::MultiGpu { devices }` (JSON `{"multigpu":{"devices":[0,1]}}`,
+  Python `backend="gpu:0,1"`). `apply_backend_to_snn` forces
+  `use_gpu_forward` and sets `DeviceAssignment::MemoryBalanced` over
+  the devices unless the SNN config pins its own assignment. LNN stays
+  on ordinal 0 (non-scope). Same CPU fallback as `Gpu`. **Still open:**
+  the soak on vast's 2× RTX 5090 at V1's apportionment (ANN 150K /
+  SNN 1.8M / LNN 512) — must match V1's steps/sec within 10 %.
+
+#### Exit criteria
+
+- `enumerate_devices()` returns ≥ 2 entries on vast; test skips when fewer.
+- `cargo test --workspace --features cuda` passes identically with
+  `MultiGpuContext::new(&[0])` (degenerate single-device) and with
+  `MultiGpuContext::new(&[0, 1])` on a multi-device host.
+- SNN 1.8M at V1 apportionment: ≥ V1's current throughput ± 10 % on
+  the same 2× RTX 5090 hardware. Allowed drift budget is validated
+  before merge; wider drift blocks the merge.
+- Checkpoint written by multi-GPU V2 loads cleanly into single-GPU V2
+  on Hetzner (RTX 4000) and vice versa — ckpt file is device-count-
+  independent.
+- `nimcp-pybind` surfaces `Backend::MultiGpu` to Python so the V1
+  training harness can drive V2 side-by-side on the same pod.
+
+#### Non-scope (defer to Phase 11+)
+
+- GPU-to-GPU P2P transfer (Phase 10 goes host-mediated — matches V1).
+- NCCL / collective ops (overkill for 2 devices; revisit at 4+).
+- Dynamic rebalancing (static assignment at init; manual Python-side
+  retune if V1-parity bench shows imbalance > 15 %).
+- Multi-GPU for LNN / adaptive (SNN only — matches V1's actual use;
+  LNN tiny, adaptive single-device sufficient).
+- Multi-host (distributed) — that is V2's eventual Phase 12.
+
+#### Dev constraint
+
+Hetzner dev has 1 GPU; vast.ai pod has 2. All 10a–f sub-phases must
+compile and the single-device degenerate path must pass on Hetzner.
+Multi-device integration tests (10e, 10g) only run on vast — attach
+pod-run log to the merge commit (same policy as Phase 9).
+
+#### Status (2026-10-26)
+
+10a–10f implemented; 10g dispatch implemented, soak open. Validated on
+the vast pod (2× RTX 5090, driver 580, CUDA runtime 12.8 via PyTorch's
+bundled libs) with `cargo test --features cuda` for `nimcp-gpu` (20),
+`nimcp-snn` (238) and `nimcp-brain` (37 + 17 integration): 312 passed,
+0 failed. `multi_device_round_robin_matches_single_device` ran the real
+two-device path — spike counts and weights bit-identical to the
+single-device network, and the multi-device snapshot restored into it.
+Toolchain + build dir were staged on the pod ephemerally (`/dev/shm` is
+`noexec`, so binaries went under `/root/v2rust`) and removed afterward.
+
+---
+
 ## 5. What to port vs rewrite vs drop
 
 ### Port (math is the math)

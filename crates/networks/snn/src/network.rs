@@ -272,6 +272,12 @@ pub struct SnnConfig {
     /// `SnnError::GpuUnavailable`.
     #[serde(default)]
     pub use_gpu_forward: bool,
+    /// Phase 10c — which CUDA device each population (and every edge
+    /// into it) is built on when `use_gpu_forward` is set. Validated on
+    /// the CPU path too, otherwise ignored there. Default: everything on
+    /// ordinal 0, i.e. the pre-Phase-10 behaviour.
+    #[serde(default)]
+    pub device_assignment: crate::device::DeviceAssignment,
 }
 
 impl Default for SnnConfig {
@@ -285,6 +291,7 @@ impl Default for SnnConfig {
             reward_coupled_homeostatic: false,
             thalamic: None,
             use_gpu_forward: false,
+            device_assignment: crate::device::DeviceAssignment::default(),
         }
     }
 }
@@ -362,6 +369,9 @@ pub enum SnnError {
     /// `--features cuda`, or CUDA device / NVRTC init failed.
     #[error("GPU forward requested but unavailable: {0}")]
     GpuUnavailable(String),
+    /// `device_assignment` could not be resolved against the population list.
+    #[error("device assignment: {0}")]
+    DeviceAssignment(#[from] crate::device::DeviceAssignError),
 }
 
 /// Per-population runtime state.
@@ -465,6 +475,13 @@ pub struct SnnNetwork {
     /// preventing the V1 double-rescale bomb (commit `f79764c9b` →
     /// fix in `7e69a2a5f` + `312c9b323`).
     cb_weights_rescaled: bool,
+    /// Phase 10c — device ordinal per population, resolved from
+    /// `config.device_assignment`. All zeros on the CPU path.
+    pop_device: Vec<u32>,
+    /// Phase 10b — one context per distinct ordinal in `pop_device`.
+    /// `Some` iff `use_gpu_forward`.
+    #[cfg(feature = "cuda")]
+    gpu: Option<nimcp_gpu::MultiGpuContext>,
 }
 
 impl SnnNetwork {
@@ -475,18 +492,29 @@ impl SnnNetwork {
 
         use rand::SeedableRng;
 
-        // Phase 9b — one shared CudaContext for all GPU objects in this
-        // network. Was per-object in 9a, which exhausted VRAM on large
-        // shapes (6 edges × per-context overhead on 20 GB RTX 4000).
+        let pop_sizes: Vec<u32> = config.populations.iter().map(|p| p.n_neurons).collect();
+        let pop_device = config.device_assignment.resolve(&pop_sizes)?;
+
+        // Phase 10 — one context per distinct device (Phase 9b's single
+        // shared context is the `SingleDevice` case; per-object contexts
+        // in 9a exhausted VRAM). A population's LIF integrator and every
+        // edge into it are built on the population's context; the host
+        // uploads each edge's source spikes and downloads its i_syn, so
+        // no device-to-device traffic is needed.
         #[cfg(feature = "cuda")]
-        let shared_gpu_ctx: Option<std::sync::Arc<cudarc::driver::CudaContext>> =
-            if config.use_gpu_forward {
-                Some(cudarc::driver::CudaContext::new(0).map_err(|e| {
-                    SnnError::GpuUnavailable(format!("CudaContext init: {e:?}"))
-                })?)
-            } else {
-                None
-            };
+        let gpu: Option<nimcp_gpu::MultiGpuContext> = if config.use_gpu_forward {
+            let ordinals = config.device_assignment.ordinals(&pop_sizes)?;
+            Some(nimcp_gpu::MultiGpuContext::new(&ordinals).map_err(|e| {
+                SnnError::GpuUnavailable(format!("MultiGpuContext init {ordinals:?}: {e:?}"))
+            })?)
+        } else {
+            None
+        };
+        #[cfg(feature = "cuda")]
+        let pop_ctx: Vec<Option<std::sync::Arc<cudarc::driver::CudaContext>>> = pop_device
+            .iter()
+            .map(|&o| gpu.as_ref().and_then(|g| g.context_for_ordinal(o).cloned()))
+            .collect();
 
         let mut populations: Vec<Pop> = Vec::with_capacity(config.populations.len());
         for (pop_idx, spec) in config.populations.iter().enumerate() {
@@ -581,11 +609,10 @@ impl SnnNetwork {
                     pop_idx,
                     msg: format!("basket: {e}"),
                 })?;
-            // Phase 9a/9b — GPU LIF integrator. Phase 9b uses the
-            // shared context so every pop's LifGpu shares one
-            // CUcontext instead of allocating its own.
+            // Phase 9a/9b/10 — GPU LIF integrator on this population's
+            // assigned device.
             #[cfg(feature = "cuda")]
-            let lif_gpu = if let Some(ctx) = shared_gpu_ctx.as_ref() {
+            let lif_gpu = if let Some(ctx) = pop_ctx[pop_idx].as_ref() {
                 Some(
                     crate::lif::LifGpu::new_with_context(
                         ctx.clone(),
@@ -676,18 +703,19 @@ impl SnnNetwork {
             );
             let i_syn_scratch = vec![0.0_f32; dst_pop.spec.n_neurons as usize];
 
-            // Phase 9a/9b — GPU CSR forward, shared context.
+            // Phase 9a/9b/10 — GPU CSR forward on the destination
+            // population's device (i_syn is per destination neuron).
             #[cfg(feature = "cuda")]
-            let csr_gpu = if let Some(ctx) = shared_gpu_ctx.as_ref() {
+            let csr_gpu = if let Some(ctx) = pop_ctx[spec.dst].as_ref() {
                 Some(crate::csr::CsrGpu::new_with_context(ctx.clone(), &csr).map_err(|e| {
                     SnnError::GpuUnavailable(format!("CsrGpu edge {edge_idx}: {e:?}"))
                 })?)
             } else {
                 None
             };
-            // Phase 9d — GPU R-STDP, same shared context.
+            // Phase 9d — GPU R-STDP, same device as the edge's CSR.
             #[cfg(feature = "cuda")]
-            let rstdp_gpu = if let Some(ctx) = shared_gpu_ctx.as_ref() {
+            let rstdp_gpu = if let Some(ctx) = pop_ctx[spec.dst].as_ref() {
                 Some(
                     crate::rstdp::RstdpGpu::new_with_context(ctx.clone(), &csr).map_err(
                         |e| SnnError::GpuUnavailable(format!("RstdpGpu edge {edge_idx}: {e:?}")),
@@ -738,7 +766,28 @@ impl SnnNetwork {
             thalamic_channel,
             thalamic_submit_threshold,
             cb_weights_rescaled: false,
+            pop_device,
+            #[cfg(feature = "cuda")]
+            gpu,
         })
+    }
+
+    /// Device ordinal each population (and the edges into it) was
+    /// assigned to. All zeros unless `config.device_assignment` spread
+    /// them.
+    #[must_use]
+    pub fn population_devices(&self) -> &[u32] {
+        &self.pop_device
+    }
+
+    /// Block until every device this network uses has drained its
+    /// work. No-op when the network runs on CPU.
+    #[cfg(feature = "cuda")]
+    pub fn synchronize_gpus(&self) -> Result<(), nimcp_gpu::GpuError> {
+        match self.gpu.as_ref() {
+            Some(g) => g.synchronize_all(),
+            None => Ok(()),
+        }
     }
 
     /// Read-only access to the network's thalamic channel, if configured.
@@ -1721,6 +1770,7 @@ mod tests {
             intrinsic_reward: crate::intrinsic_reward::IntrinsicRewardConfig::default(),
             thalamic: None,
             use_gpu_forward: false,
+            device_assignment: crate::device::DeviceAssignment::default(),
         }
     }
 
@@ -2454,5 +2504,67 @@ mod tests {
         for v in net.v_mem(0) {
             assert!(v.is_finite() && *v <= crate::membrane::SNN_E_EXC_MV + 1e-3);
         }
+    }
+
+    /// Phase 10 — populations spread round-robin over every visible
+    /// device must step identically to the single-device network, and
+    /// a multi-device snapshot must restore into a single-device one.
+    /// Multi-device assertions only bite on hosts with ≥2 GPUs (the
+    /// vast pod); on one GPU this degenerates to RoundRobin over [0].
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn multi_device_round_robin_matches_single_device() {
+        let devs = nimcp_gpu::enumerate_devices().unwrap_or_default();
+        if devs.is_empty() {
+            eprintln!("skipping: no CUDA device on this host");
+            return;
+        }
+        let ordinals: Vec<u32> = devs.iter().map(|d| d.ordinal).collect();
+
+        let mut cfg = two_pop_config(3, 0, 0.1, 0.4);
+        cfg.use_gpu_forward = true;
+        let mut single = SnnNetwork::new(cfg.clone()).expect("single-device GPU network");
+        cfg.device_assignment =
+            crate::device::DeviceAssignment::RoundRobin { devices: ordinals.clone() };
+        let mut multi = SnnNetwork::new(cfg).expect("multi-device GPU network");
+
+        assert_eq!(single.population_devices(), &[0, 0]);
+        assert_eq!(multi.population_devices()[0], ordinals[0]);
+        assert_eq!(multi.population_devices()[1], ordinals[1 % ordinals.len()]);
+
+        let ext = vec![100.0_f32; 128];
+        let empty: &[f32] = &[];
+        for step in 0..30 {
+            let a = single.step(&[&ext, empty], 0.5, 1.0);
+            let b = multi.step(&[&ext, empty], 0.5, 1.0);
+            assert_eq!(a, b, "spike counts diverged at step {step}");
+        }
+        multi.synchronize_gpus().unwrap();
+
+        let (s, m) = (single.snapshot(), multi.snapshot());
+        assert_eq!(s.edge_weights, m.edge_weights);
+        assert!(single.restore(&m), "multi-device snapshot must restore into single-device net");
+    }
+
+    #[test]
+    fn device_assignment_errors_surface_from_new() {
+        let mut cfg = two_pop_config(0, 0, 0.1, 0.4);
+        cfg.device_assignment =
+            crate::device::DeviceAssignment::Manual { per_population: vec![0] };
+        match SnnNetwork::new(cfg) {
+            Err(SnnError::DeviceAssignment(
+                crate::device::DeviceAssignError::ManualLengthMismatch { given: 1, n_pops: 2 },
+            )) => {}
+            other => panic!("expected ManualLengthMismatch, got {:?}", other.err()),
+        }
+    }
+
+    #[test]
+    fn cpu_path_records_resolved_devices() {
+        let mut cfg = two_pop_config(0, 0, 0.1, 0.4);
+        cfg.device_assignment =
+            crate::device::DeviceAssignment::Manual { per_population: vec![1, 0] };
+        let net = SnnNetwork::new(cfg).unwrap();
+        assert_eq!(net.population_devices(), &[1, 0]);
     }
 }

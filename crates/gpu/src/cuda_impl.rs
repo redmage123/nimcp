@@ -12,17 +12,38 @@ fn cuda_err<E: std::fmt::Debug>(e: E) -> GpuError {
     GpuError::Cuda(format!("{e:?}"))
 }
 
-/// Probe the default CUDA device.
+/// Probe the default CUDA device (ordinal 0).
+///
+/// Convenience wrapper around [`probe_device_at`] for single-device callers.
+pub fn probe_device() -> Result<DeviceInfo, GpuError> {
+    probe_device_at(0)
+}
+
+/// Probe a specific CUDA device by ordinal.
 ///
 /// Uses the cudarc driver API (not runtime API) so we don't need a
 /// CUDA runtime library present — only `libcuda.so` from the driver.
 ///
 /// # Errors
 ///
-/// - [`GpuError::NoDevice`] if no CUDA-capable device is present.
+/// - [`GpuError::NoDevice`] if no CUDA-capable device is present at
+///   this ordinal. Enumeration code (see
+///   [`crate::enumerate_devices`]) relies on this to detect the end
+///   of the device list.
 /// - [`GpuError::Cuda`] for any runtime failure.
-pub fn probe_device() -> Result<DeviceInfo, GpuError> {
-    let ctx = CudaContext::new(0).map_err(cuda_err)?;
+pub fn probe_device_at(ordinal: u32) -> Result<DeviceInfo, GpuError> {
+    let ctx = CudaContext::new(ordinal as usize).map_err(|e| {
+        // cudarc < 1.0 doesn't normalise CUDA_ERROR_INVALID_DEVICE into
+        // its own variant, so we inspect the Debug form. If the driver
+        // says "invalid device", surface NoDevice so enumeration can
+        // stop cleanly. Other errors stay as Cuda(_).
+        let msg = format!("{e:?}");
+        if msg.contains("InvalidDevice") || msg.contains("INVALID_DEVICE") {
+            GpuError::NoDevice
+        } else {
+            GpuError::Cuda(msg)
+        }
+    })?;
 
     let name = ctx.name().map_err(cuda_err)?;
     let (major_i, minor_i) = ctx.compute_capability().map_err(cuda_err)?;
@@ -43,13 +64,14 @@ pub fn probe_device() -> Result<DeviceInfo, GpuError> {
 
     tracing::info!(
         device = %name,
+        ordinal = ordinal,
         compute_cap = format!("sm_{}{}", major, minor),
         memory_gb = total_memory / (1024 * 1024 * 1024),
         "cuda device probed"
     );
 
     Ok(DeviceInfo {
-        ordinal: 0,
+        ordinal,
         name,
         compute_cap: (major, minor),
         total_memory,

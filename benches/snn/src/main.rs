@@ -160,6 +160,7 @@ fn build_config(shape: &Shape, seed: u64) -> SnnConfig {
         // CPU-side prep (noise / adaptation / basket / substrate)
         // would have modified v_mem.
         use_gpu_forward: std::env::var("NIMCP_GPU").ok().as_deref() == Some("1"),
+        device_assignment: Default::default(),
     }
 }
 

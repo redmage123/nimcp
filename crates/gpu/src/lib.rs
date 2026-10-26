@@ -39,11 +39,18 @@ pub mod mlp_forward;
 #[cfg(feature = "cuda")]
 pub mod mlp_backward;
 
+pub mod multi_device;
+
 #[cfg(feature = "cuda")]
-pub use cuda_impl::{probe_device, vector_add};
+pub use cuda_impl::{probe_device, probe_device_at, vector_add};
 
 #[cfg(feature = "cuda")]
 pub use mlp_forward::{Activation, GpuLayer, GpuWeightCache, mlp_forward as gpu_mlp_forward};
+
+pub use multi_device::enumerate_devices;
+
+#[cfg(feature = "cuda")]
+pub use multi_device::MultiGpuContext;
 
 /// GPU backend errors.
 #[derive(Debug, Error)]

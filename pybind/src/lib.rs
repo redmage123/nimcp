@@ -71,12 +71,42 @@ fn parse_activation(s: &str) -> PyResult<Activation> {
 }
 
 fn parse_backend(s: &str) -> PyResult<Backend> {
-    match s.to_ascii_lowercase().as_str() {
+    let lower = s.to_ascii_lowercase();
+    match lower.as_str() {
         "cpu" => Ok(Backend::Cpu),
         "gpu" => Ok(Backend::Gpu),
-        other => Err(PyValueError::new_err(format!(
-            "unknown backend '{other}', expected 'cpu' or 'gpu'"
-        ))),
+        _ => {
+            // "gpu:0,1" → MultiGpu over those ordinals.
+            let Some(list) = lower.strip_prefix("gpu:") else {
+                return Err(PyValueError::new_err(format!(
+                    "unknown backend '{s}', expected 'cpu', 'gpu' or 'gpu:<ord>,<ord>,...'"
+                )));
+            };
+            let devices = list
+                .split(',')
+                .map(|d| d.trim().parse::<u32>())
+                .collect::<std::result::Result<Vec<u32>, _>>()
+                .map_err(|e| {
+                    PyValueError::new_err(format!("backend '{s}': bad device ordinal: {e}"))
+                })?;
+            if devices.is_empty() {
+                return Err(PyValueError::new_err(format!(
+                    "backend '{s}': device list is empty"
+                )));
+            }
+            Ok(Backend::MultiGpu { devices })
+        }
+    }
+}
+
+fn backend_to_string(b: &Backend) -> String {
+    match b {
+        Backend::Cpu => "cpu".into(),
+        Backend::Gpu => "gpu".into(),
+        Backend::MultiGpu { devices } => format!(
+            "gpu:{}",
+            devices.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+        ),
     }
 }
 
@@ -97,11 +127,12 @@ impl PyBrain {
     ///     deterministic (bool): run in deterministic mode. Default: False.
     ///     layers (list[int]): MLP widths including input + output. Default: [64, 32, 10].
     ///     activation (str): 'relu' or 'tanh' for hidden activations. Default: 'relu'.
-    ///     backend (str): execution backend, 'cpu' (default) or 'gpu'.
-    ///         When 'gpu', SNN's `use_gpu_forward` is forced on and
-    ///         LNN's `enable_gpu()` is called automatically. On a CPU-only
-    ///         build (no `--features cuda`) 'gpu' degrades to CPU with a
-    ///         warning rather than failing.
+    ///     backend (str): execution backend: 'cpu' (default), 'gpu', or
+    ///         'gpu:0,1' (Phase 10g — SNN populations spread over those
+    ///         CUDA device ordinals). GPU backends force SNN's
+    ///         `use_gpu_forward` on and call LNN's `enable_gpu()`. On a
+    ///         CPU-only build (no `--features cuda`) they degrade to CPU
+    ///         with a warning rather than failing.
     #[new]
     #[pyo3(signature = (
         rng_seed = 0x5EED,
@@ -140,14 +171,11 @@ impl PyBrain {
         Ok(Self { inner })
     }
 
-    /// Currently-active backend, as a string. One of `"cpu"` / `"gpu"`.
-    /// Mirrors the `backend` arg passed to the constructor.
+    /// Currently-active backend, as a string: `"cpu"`, `"gpu"`, or
+    /// `"gpu:0,1"`. Mirrors the `backend` arg passed to the constructor.
     #[getter]
-    fn backend(&self) -> &'static str {
-        match self.inner.config().backend {
-            Backend::Cpu => "cpu",
-            Backend::Gpu => "gpu",
-        }
+    fn backend(&self) -> String {
+        backend_to_string(&self.inner.config().backend)
     }
 
     /// One gradient step; returns pre-update MSE loss.
