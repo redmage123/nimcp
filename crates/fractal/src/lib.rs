@@ -23,5 +23,5 @@ pub mod dfa;
 pub mod hilbert;
 
 pub use box_counting::box_counting_dimension;
-pub use dfa::{dfa_alpha, DfaError};
+pub use dfa::{DfaError, dfa_alpha};
 pub use hilbert::{hilbert_index_to_xy, hilbert_xy_to_index};

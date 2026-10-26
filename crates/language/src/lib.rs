@@ -39,13 +39,13 @@ pub mod text;
 
 pub use cascade::{CascadeConfig, ContentSources, Response};
 pub use comprehend::ComprehensionResult;
-pub use reasoning::{QueryType, ReasoningConclusion};
 pub use concept::{ConceptId, ConceptRegistry};
 pub use engine::{GroundedLanguage, LanguageStats};
-pub use persistence::{PersistError, FORMAT_MAGIC, FORMAT_VERSION};
-pub use lexicon::{Lexicon, LexiconEntry, Modality, WordBinding, WordClass, MODALITY_COUNT};
+pub use lexicon::{Lexicon, LexiconEntry, MODALITY_COUNT, Modality, WordBinding, WordClass};
+pub use persistence::{FORMAT_MAGIC, FORMAT_VERSION, PersistError};
 pub use phrase::PhraseTable;
 pub use produce::ProductionResult;
+pub use reasoning::{QueryType, ReasoningConclusion};
 pub use spectrum::{BigramSpectralMetrics, BigramSpectrum};
 pub use text::tokenize;
 
@@ -55,7 +55,7 @@ pub use text::tokenize;
 pub fn pos_expected_next(prev: Option<lexicon::WordClass>) -> Option<lexicon::WordClass> {
     use lexicon::WordClass::{Adjective, Adverb, Noun, Verb};
     match prev {
-        None => Some(Noun),           // sentence start → subject noun
+        None => Some(Noun), // sentence start → subject noun
         Some(Adjective) => Some(Noun),
         Some(Noun) => Some(Verb),
         Some(Verb) => Some(Noun),
@@ -199,11 +199,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         nb += y * y;
     }
     let denom = na.sqrt() * nb.sqrt();
-    if denom < 1e-8 {
-        0.0
-    } else {
-        dot / denom
-    }
+    if denom < 1e-8 { 0.0 } else { dot / denom }
 }
 
 /// L2-normalize in place. No-op when the norm is below `1e-8` (avoids
@@ -236,7 +232,11 @@ impl XorShift64 {
     #[must_use]
     pub fn new(seed: u64) -> Self {
         Self {
-            state: if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed },
+            state: if seed == 0 {
+                0x9E37_79B9_7F4A_7C15
+            } else {
+                seed
+            },
         }
     }
 

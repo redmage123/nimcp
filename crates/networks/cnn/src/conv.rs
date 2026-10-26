@@ -80,17 +80,7 @@ impl Conv2dLayer {
 
     /// Convenience constructor for the common `stride=1, pad=k/2` case.
     pub fn same_padding(in_channels: usize, out_channels: usize, k: usize, seed: u64) -> Self {
-        Self::new(
-            in_channels,
-            out_channels,
-            k,
-            k,
-            1,
-            1,
-            k / 2,
-            k / 2,
-            seed,
-        )
+        Self::new(in_channels, out_channels, k, k, 1, 1, k / 2, k / 2, seed)
     }
 
     /// Output `(H_out, W_out)` for given input H/W under the layer's

@@ -53,7 +53,9 @@ use crate::state::{NeuralSubstrate, NeuralSubstrateConfig, REST_TEMPERATURE_C};
 /// At full health ([`NeuralSubstrate::default`]) both outputs are the
 /// [`Default`] identity — every multiplier equals `1.0`.
 #[must_use]
-pub fn compute_effects(substrate: &NeuralSubstrate) -> (AxonSubstrateEffects, DendriteSubstrateEffects) {
+pub fn compute_effects(
+    substrate: &NeuralSubstrate,
+) -> (AxonSubstrateEffects, DendriteSubstrateEffects) {
     let mut s = *substrate;
     s.clamp();
 
@@ -192,7 +194,10 @@ mod tests {
         let s = NeuralSubstrate::default();
         let (a, d) = compute_effects(&s);
         assert!(a.is_identity(), "axon not identity at full health: {a:?}");
-        assert!(d.is_identity(), "dendrite not identity at full health: {d:?}");
+        assert!(
+            d.is_identity(),
+            "dendrite not identity at full health: {d:?}"
+        );
     }
 
     #[test]

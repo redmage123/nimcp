@@ -247,10 +247,7 @@ mod tests {
         let cfg = DepressionConfig::default();
         assert_eq!(cfg.decay(0.0), 1.0);
         assert_eq!(cfg.decay(-1.0), 1.0);
-        let bad = DepressionConfig {
-            tau_ms: 0.0,
-            ..cfg
-        };
+        let bad = DepressionConfig { tau_ms: 0.0, ..cfg };
         assert_eq!(bad.decay(1.0), 1.0);
     }
 

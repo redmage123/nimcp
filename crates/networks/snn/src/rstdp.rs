@@ -494,8 +494,7 @@ mod gpu {
     use std::sync::Arc;
 
     use cudarc::driver::{
-        CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig,
-        PushKernelArg,
+        CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
     };
     use nimcp_gpu::GpuError;
 
@@ -568,9 +567,7 @@ mod gpu {
             let n_pre = csr.n_pre;
             let n_post = csr.n_post;
             if n_syn == 0 || n_pre == 0 || n_post == 0 {
-                return Err(GpuError::Cuda(
-                    "RstdpGpu::new: empty CSR".into(),
-                ));
+                return Err(GpuError::Cuda("RstdpGpu::new: empty CSR".into()));
             }
             let stream = ctx.default_stream();
             let ptx = cudarc::nvrtc::compile_ptx(RSTDP_KERNEL_SRC).map_err(cuda_err)?;
@@ -585,8 +582,9 @@ mod gpu {
                 .load_function("rstdp_apply_reward")
                 .map_err(cuda_err)?;
 
-            let eligibility: CudaSlice<f32> =
-                stream.alloc_zeros::<f32>(n_syn as usize).map_err(cuda_err)?;
+            let eligibility: CudaSlice<f32> = stream
+                .alloc_zeros::<f32>(n_syn as usize)
+                .map_err(cuda_err)?;
             let last_pre_init: Vec<f32> = vec![f32::NEG_INFINITY; n_pre as usize];
             let last_post_init: Vec<f32> = vec![f32::NEG_INFINITY; n_post as usize];
             let last_pre_spike_ms = stream.memcpy_stod(&last_pre_init).map_err(cuda_err)?;
@@ -596,14 +594,12 @@ mod gpu {
             let col_idx = stream.memcpy_stod(&csr.col_idx).map_err(cuda_err)?;
             let weights = stream.memcpy_stod(&csr.weights).map_err(cuda_err)?;
 
-            let pre_spikes_buf: CudaSlice<u8> = stream
-                .alloc_zeros::<u8>(n_pre as usize)
-                .map_err(cuda_err)?;
+            let pre_spikes_buf: CudaSlice<u8> =
+                stream.alloc_zeros::<u8>(n_pre as usize).map_err(cuda_err)?;
             let post_spikes_buf: CudaSlice<u8> = stream
                 .alloc_zeros::<u8>(n_post as usize)
                 .map_err(cuda_err)?;
-            let n_moved_dev: CudaSlice<u32> =
-                stream.alloc_zeros::<u32>(1).map_err(cuda_err)?;
+            let n_moved_dev: CudaSlice<u32> = stream.alloc_zeros::<u32>(1).map_err(cuda_err)?;
 
             tracing::info!(n_syn, n_pre, n_post, "rstdp gpu buffers allocated");
 
@@ -680,8 +676,7 @@ mod gpu {
             dt_ms: f32,
             params: &RstdpParams,
         ) -> Result<u32, GpuError> {
-            if pre_spikes.len() != self.n_pre as usize
-                || post_spikes.len() != self.n_post as usize
+            if pre_spikes.len() != self.n_pre as usize || post_spikes.len() != self.n_post as usize
             {
                 return Err(GpuError::Cuda(format!(
                     "RstdpGpu::step: spike len mismatch (pre={} expected={}, post={} expected={})",
@@ -786,8 +781,10 @@ mod gpu {
                     // bounds-safe (single u32 slot).
                     unsafe { builder.launch(cfg_syn) }.map_err(cuda_err)?;
 
-                    let host_n_moved =
-                        self.stream.memcpy_dtov(&self.n_moved_dev).map_err(cuda_err)?;
+                    let host_n_moved = self
+                        .stream
+                        .memcpy_dtov(&self.n_moved_dev)
+                        .map_err(cuda_err)?;
                     n_moved = host_n_moved.first().copied().unwrap_or(0);
                 }
             }
@@ -811,7 +808,10 @@ mod gpu {
         /// Download the current eligibility trace into the host buffer.
         /// Test / debug helper; not on the hot path.
         pub fn download_eligibility(&self, out: &mut Vec<f32>) -> Result<(), GpuError> {
-            let host = self.stream.memcpy_dtov(&self.eligibility).map_err(cuda_err)?;
+            let host = self
+                .stream
+                .memcpy_dtov(&self.eligibility)
+                .map_err(cuda_err)?;
             out.clear();
             out.extend_from_slice(&host);
             Ok(())
@@ -831,21 +831,14 @@ mod gpu {
         use crate::rstdp::step_rstdp;
 
         fn fc_csr(n_pre: u32, n_post: u32, w0: f32) -> CsrSynapses {
-            let mut triples: Vec<(u32, u32, f32)> =
-                Vec::with_capacity((n_pre * n_post) as usize);
+            let mut triples: Vec<(u32, u32, f32)> = Vec::with_capacity((n_pre * n_post) as usize);
             for post in 0..n_post {
                 for pre in 0..n_pre {
                     triples.push((pre, post, w0));
                 }
             }
-            CsrSynapses::from_triples(
-                PopulationId(0),
-                PopulationId(1),
-                n_pre,
-                n_post,
-                triples,
-            )
-            .expect("fc_csr")
+            CsrSynapses::from_triples(PopulationId(0), PopulationId(1), n_pre, n_post, triples)
+                .expect("fc_csr")
         }
 
         // The GPU equivalence test is a strong contract — same inputs,
@@ -953,22 +946,17 @@ mod gpu {
             };
             for step in 0..50 {
                 let n_moved = gpu
-                    .step(
-                        &mut state,
-                        &[1, 1],
-                        &[1, 1],
-                        1.0,
-                        step as f32,
-                        1.0,
-                        &params,
-                    )
+                    .step(&mut state, &[1, 1], &[1, 1], 1.0, step as f32, 1.0, &params)
                     .expect("gpu step");
                 assert_eq!(n_moved, 0, "warmup gate must block movement");
             }
             let mut w: Vec<f32> = Vec::new();
             gpu.download_weights(&mut w).expect("download");
             for (i, &x) in w.iter().enumerate() {
-                assert!((x - 0.5).abs() < 1e-6, "weight {i} moved during warmup: {x}");
+                assert!(
+                    (x - 0.5).abs() < 1e-6,
+                    "weight {i} moved during warmup: {x}"
+                );
             }
         }
     }

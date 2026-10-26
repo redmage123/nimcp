@@ -12,6 +12,6 @@ pub mod poincare;
 
 pub use lorentz::{lorentz_boost, lorentz_factor};
 pub use poincare::{
-    poincare_clip, poincare_conformal_factor, poincare_distance, poincare_norm, PoincarePoint,
-    POINCARE_CLIP_EPS,
+    POINCARE_CLIP_EPS, PoincarePoint, poincare_clip, poincare_conformal_factor, poincare_distance,
+    poincare_norm,
 };

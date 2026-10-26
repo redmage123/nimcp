@@ -193,7 +193,10 @@ fn run_scenario() {
     let loss_count = stats2["data"]["loss"]["adaptive"]["count"]
         .as_u64()
         .unwrap_or(0);
-    assert!(loss_count >= 1, "expected loss count >= 1, got {loss_count}");
+    assert!(
+        loss_count >= 1,
+        "expected loss count >= 1, got {loss_count}"
+    );
 
     // 6. SNN requests should return structured errors (no SNN on default brain).
     let snn_pop = client.call(&json!({"cmd": "snn_pop_stats"}));
@@ -223,7 +226,10 @@ fn run_scenario() {
     ] {
         let r = client.call(&req);
         assert_eq!(r["status"], "err", "{req} → {r}");
-        assert!(r["message"].as_str().unwrap().contains("not configured"), "{r}");
+        assert!(
+            r["message"].as_str().unwrap().contains("not configured"),
+            "{r}"
+        );
     }
 
     // 9. Wait for the metrics writer to produce at least one file.
@@ -319,7 +325,10 @@ fn run_language_scenario() {
         assert_eq!(r["data"]["learned"], true);
     }
     let r = client.call(&json!({"cmd": "language_learn", "text": "the cat likes to sleep"}));
-    assert!(r["data"]["stats"]["learn_calls"].as_u64().unwrap() >= 6, "{r}");
+    assert!(
+        r["data"]["stats"]["learn_calls"].as_u64().unwrap() >= 6,
+        "{r}"
+    );
 
     let c = client.call(&json!({"cmd": "language_comprehend", "text": "the dog"}));
     assert_eq!(c["status"], "ok", "{c}");
@@ -329,7 +338,10 @@ fn run_language_scenario() {
     let state0 = client.call(&json!({"cmd": "cognition_state"}));
     assert_eq!(state0["status"], "ok", "{state0}");
     assert_eq!(state0["data"]["now_ms"], 0);
-    assert_eq!(state0["data"]["working_memory"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        state0["data"]["working_memory"].as_array().unwrap().len(),
+        0
+    );
     assert!(state0["data"]["imagination"].is_null());
 
     let resp = client.call(&json!({"cmd": "language_respond", "text": "the dog"}));
@@ -341,7 +353,10 @@ fn run_language_scenario() {
     // One turn fed WM (the prompt) and staged the imagined scene.
     let state1 = client.call(&json!({"cmd": "cognition_state"}));
     assert_eq!(state1["data"]["now_ms"], 1000, "{state1}");
-    assert_eq!(state1["data"]["working_memory"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        state1["data"]["working_memory"].as_array().unwrap().len(),
+        1
+    );
     assert_eq!(state1["data"]["imagination"]["dim"], 8);
 
     let reason = client.call(&json!({"cmd": "reason", "query": "what does the dog do"}));

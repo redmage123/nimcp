@@ -297,7 +297,9 @@ async fn lnn_loss_populates_after_train_step() {
         grad_clip: 1.0,
     };
     for _ in 0..5 {
-        brain.lnn_train_step_mse(&inputs, &targets, &params).unwrap();
+        brain
+            .lnn_train_step_mse(&inputs, &targets, &params)
+            .unwrap();
     }
 
     let post = brain.stats().loss.lnn.unwrap();
@@ -349,7 +351,9 @@ async fn stats_observes_every_training_path() {
         grad_clip: 1.0,
     };
     for _ in 0..3 {
-        brain.lnn_train_step_mse(&inputs, &targets, &params).unwrap();
+        brain
+            .lnn_train_step_mse(&inputs, &targets, &params)
+            .unwrap();
     }
 
     let s = brain.stats();

@@ -87,8 +87,8 @@ impl MultiGpuContext {
         let mut infos = Vec::with_capacity(ordinals.len());
         for &ordinal in ordinals {
             let info = crate::probe_device_at(ordinal)?;
-            let ctx = CudaContext::new(ordinal as usize)
-                .map_err(|e| GpuError::Cuda(format!("{e:?}")))?;
+            let ctx =
+                CudaContext::new(ordinal as usize).map_err(|e| GpuError::Cuda(format!("{e:?}")))?;
             contexts.push(ctx);
             infos.push(info);
         }
@@ -139,9 +139,8 @@ impl MultiGpuContext {
     /// Block until every device has drained its work.
     pub fn synchronize_all(&self) -> Result<(), GpuError> {
         for (i, ctx) in self.contexts.iter().enumerate() {
-            ctx.synchronize().map_err(|e| {
-                GpuError::Cuda(format!("synchronize device index {i}: {e:?}"))
-            })?;
+            ctx.synchronize()
+                .map_err(|e| GpuError::Cuda(format!("synchronize device index {i}: {e:?}")))?;
         }
         Ok(())
     }
@@ -206,7 +205,10 @@ mod tests {
                 eprintln!("skipping: 0 GPUs");
                 return;
             }
-            assert!(matches!(MultiGpuContext::new(&[0, 0]), Err(GpuError::Cuda(_))));
+            assert!(matches!(
+                MultiGpuContext::new(&[0, 0]),
+                Err(GpuError::Cuda(_))
+            ));
         }
 
         #[test]

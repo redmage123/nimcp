@@ -85,12 +85,20 @@ pub enum BasketError {
 impl BasketPool {
     /// Construct a new pool. `n_cells = max(1, round(parent_n × fraction))`,
     /// where `fraction` is clamped to `[0.01, 0.5]` (V1 default range).
-    pub fn new(parent_pop_id: u32, parent_n_neurons: usize, fraction: f32) -> Result<Self, BasketError> {
+    pub fn new(
+        parent_pop_id: u32,
+        parent_n_neurons: usize,
+        fraction: f32,
+    ) -> Result<Self, BasketError> {
         if parent_n_neurons == 0 {
             return Err(BasketError::EmptyParent);
         }
         let frac = fraction.clamp(FRACTION_MIN, FRACTION_MAX);
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss
+        )]
         let n_cells = ((parent_n_neurons as f32 * frac) as usize).max(1);
 
         Ok(Self {

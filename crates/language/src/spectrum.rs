@@ -266,7 +266,11 @@ mod tests {
             }
         }
         let m = s.compute();
-        for v in [m.peak_strength, m.low_freq_concentration, m.spectral_entropy] {
+        for v in [
+            m.peak_strength,
+            m.low_freq_concentration,
+            m.spectral_entropy,
+        ] {
             assert!((0.0..=1.0).contains(&v), "metric out of range: {v}");
         }
     }

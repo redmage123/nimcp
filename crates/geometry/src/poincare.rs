@@ -119,14 +119,8 @@ mod tests {
         // Two points at the same Euclidean offset, one near origin
         // and one near boundary. Hyperbolic distance should be larger
         // for the boundary pair.
-        let near_origin = (
-            PoincarePoint::new(0.0, 0.0),
-            PoincarePoint::new(0.1, 0.0),
-        );
-        let near_boundary = (
-            PoincarePoint::new(0.85, 0.0),
-            PoincarePoint::new(0.95, 0.0),
-        );
+        let near_origin = (PoincarePoint::new(0.0, 0.0), PoincarePoint::new(0.1, 0.0));
+        let near_boundary = (PoincarePoint::new(0.85, 0.0), PoincarePoint::new(0.95, 0.0));
         let d1 = poincare_distance(&near_origin.0, &near_origin.1);
         let d2 = poincare_distance(&near_boundary.0, &near_boundary.1);
         assert!(

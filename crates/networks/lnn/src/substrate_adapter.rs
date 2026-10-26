@@ -143,7 +143,10 @@ pub fn ltp_ltd_gates(
 ///
 /// Identity when `channel` is `None`.
 #[must_use]
-pub fn attention_scale_input(input: &Array1<f32>, channel: Option<&ThalamicChannel>) -> Array1<f32> {
+pub fn attention_scale_input(
+    input: &Array1<f32>,
+    channel: Option<&ThalamicChannel>,
+) -> Array1<f32> {
     let Some(ch) = channel else {
         return input.clone();
     };
@@ -155,7 +158,11 @@ pub fn attention_scale_input(input: &Array1<f32>, channel: Option<&ThalamicChann
         _ => {
             #[allow(clippy::cast_precision_loss)]
             let n = ch.n_destinations as f32;
-            let sum: f32 = ch.attention_weights.iter().take(ch.n_destinations as usize).sum();
+            let sum: f32 = ch
+                .attention_weights
+                .iter()
+                .take(ch.n_destinations as usize)
+                .sum();
             let mean_attn = (sum / n).clamp(0.0, 1.0);
             input * mean_attn
         }
@@ -217,12 +224,7 @@ pub fn ltc_forward_step_with_tau_override(
 
     // dx/dt = -x / tau_safe + tanh(pre). Euler step.
     let tau_source: &Array1<f32> = tau_override.unwrap_or(&layer.tau_base);
-    for ((x, &tau), &a) in state
-        .x
-        .iter_mut()
-        .zip(tau_source.iter())
-        .zip(act.iter())
-    {
+    for ((x, &tau), &a) in state.x.iter_mut().zip(tau_source.iter()).zip(act.iter()) {
         let tau_safe = tau.max(LTC_TAU_MIN);
         let dx = -*x / tau_safe + a;
         let x_new = *x + dt_eff * dx;

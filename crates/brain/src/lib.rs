@@ -39,10 +39,10 @@ use nimcp_fno::{FnoConfig, FnoNetwork};
 use nimcp_hnn::{HnnConfig, HnnNetwork};
 use nimcp_language::{CascadeConfig, GroundedLanguage};
 use nimcp_lnn::{LnnConfig, LnnNetwork, LtcState, TrainParams};
-use nimcp_toxicity::ToxicityStack;
 use nimcp_memory::{MemoryNode, QueryHit, ZLadder, ZLadderConfig};
 use nimcp_scheduler::{Scheduler, SchedulerConfig};
 use nimcp_snn::{SnnConfig, SnnNetwork};
+use nimcp_toxicity::ToxicityStack;
 use serde::{Deserialize, Serialize};
 
 /// Phase 9h — execution backend selector. Drives whether SNN + LNN run
@@ -423,10 +423,7 @@ impl Brain {
                         "GPU backend requested but SNN GPU init failed; falling back to CPU"
                     );
                     cfg.use_gpu_forward = false;
-                    Some(
-                        SnnNetwork::new(cfg)
-                            .map_err(|e| Error::Config(format!("snn: {e}")))?,
-                    )
+                    Some(SnnNetwork::new(cfg).map_err(|e| Error::Config(format!("snn: {e}")))?)
                 }
                 Err(e) => return Err(Error::Config(format!("snn: {e}"))),
             }
@@ -516,7 +513,11 @@ impl Brain {
         let (working_memory, imagination) = match (&config.language, &config.cognition) {
             (Some(lc), cc) => {
                 let wm = cc.working_memory.then(|| {
-                    WorkingMemory::with_config(cc.wm_capacity, cc.wm_decay_tau_ms, cc.wm_min_salience)
+                    WorkingMemory::with_config(
+                        cc.wm_capacity,
+                        cc.wm_decay_tau_ms,
+                        cc.wm_min_salience,
+                    )
                 });
                 let im = cc
                     .imagination
@@ -525,7 +526,9 @@ impl Brain {
             }
             (None, cc) => {
                 if cc.working_memory || cc.imagination {
-                    tracing::debug!("cognition sources configured but no language subsystem; skipping");
+                    tracing::debug!(
+                        "cognition sources configured but no language subsystem; skipping"
+                    );
                 }
                 (None, None)
             }
@@ -549,21 +552,11 @@ impl Brain {
         // itself; the router holds Hebbian weights across (source, dst)
         // pairs and is ticked once per `tick_thalamic()` call.
         let mut thalamic_router: Option<nimcp_thalamic::ThalamicRouter> = None;
-        let needs_router = snn
-            .as_ref()
-            .is_some_and(|s| s.thalamic_channel().is_some())
-            || lnn
-                .as_ref()
-                .is_some_and(|l| l.thalamic_channel.is_some())
-            || cnn
-                .as_ref()
-                .is_some_and(|c| c.thalamic_channel.is_some())
-            || fno
-                .as_ref()
-                .is_some_and(|f| f.thalamic_channel.is_some())
-            || hnn
-                .as_ref()
-                .is_some_and(|h| h.thalamic_channel.is_some());
+        let needs_router = snn.as_ref().is_some_and(|s| s.thalamic_channel().is_some())
+            || lnn.as_ref().is_some_and(|l| l.thalamic_channel.is_some())
+            || cnn.as_ref().is_some_and(|c| c.thalamic_channel.is_some())
+            || fno.as_ref().is_some_and(|f| f.thalamic_channel.is_some())
+            || hnn.as_ref().is_some_and(|h| h.thalamic_channel.is_some());
         if needs_router {
             let mut router = nimcp_thalamic::ThalamicRouter::new(
                 nimcp_thalamic::ThalamicRouterConfig::default(),
@@ -1023,7 +1016,8 @@ impl Brain {
         if let Some(tox) = self.toxicity.as_ref() {
             let verdict = tox.classify(input);
             if verdict.would_block {
-                let cc = tox.counterclaim(input, &verdict.matched_category, i32::from(stage as u16));
+                let cc =
+                    tox.counterclaim(input, &verdict.matched_category, i32::from(stage as u16));
                 return Ok(LanguageResponse {
                     text: cc.text,
                     confidence: 1.0 - verdict.predicted_harm,
@@ -1059,11 +1053,19 @@ impl Brain {
         let wm_items: Vec<(&[f32], f32)> = self
             .working_memory
             .as_ref()
-            .map(|wm| wm.items().iter().map(|i| (i.data.as_slice(), i.salience)).collect())
+            .map(|wm| {
+                wm.items()
+                    .iter()
+                    .map(|i| (i.data.as_slice(), i.salience))
+                    .collect()
+            })
             .unwrap_or_default();
         let sources = nimcp_language::ContentSources {
             working_memory: &wm_items,
-            imagination: self.imagination.as_ref().and_then(ImaginationEngine::active_vector),
+            imagination: self
+                .imagination
+                .as_ref()
+                .and_then(ImaginationEngine::active_vector),
             reasoning: reasoning
                 .as_ref()
                 .map(|r| (r.conclusion.vector.as_slice(), r.conclusion.confidence)),
@@ -1487,7 +1489,8 @@ impl Brain {
             let json = tox
                 .ml_to_json()
                 .map_err(|e| Error::Serialization(format!("toxicity ml serialize: {e}")))?;
-            std::fs::write(tmp_dir.join("toxicity_ml.json"), json.as_bytes()).map_err(Error::from)?;
+            std::fs::write(tmp_dir.join("toxicity_ml.json"), json.as_bytes())
+                .map_err(Error::from)?;
             manifest.files.push("toxicity_ml.json".into());
         }
 
@@ -1659,7 +1662,9 @@ impl Brain {
         // rebuilds the lexicon index inside from_json).
         if manifest.files.iter().any(|f| f == "language.json") {
             let slot = self.language.as_mut().ok_or_else(|| {
-                Error::Config("snapshot has language.json but brain was built without language".into())
+                Error::Config(
+                    "snapshot has language.json but brain was built without language".into(),
+                )
             })?;
             let json = std::fs::read_to_string(dir.join("language.json")).map_err(Error::from)?;
             *slot = GroundedLanguage::from_json(&json)
@@ -1672,7 +1677,8 @@ impl Brain {
                     "snapshot has toxicity_ml.json but brain was built without toxicity".into(),
                 )
             })?;
-            let json = std::fs::read_to_string(dir.join("toxicity_ml.json")).map_err(Error::from)?;
+            let json =
+                std::fs::read_to_string(dir.join("toxicity_ml.json")).map_err(Error::from)?;
             slot.restore_ml_json(&json)
                 .map_err(|e| Error::Serialization(format!("toxicity ml decode: {e}")))?;
         }
@@ -1749,7 +1755,9 @@ mod tests {
         assert_eq!(back_cpu, Backend::Cpu);
         assert_eq!(back_gpu, Backend::Gpu);
 
-        let multi = Backend::MultiGpu { devices: vec![0, 1] };
+        let multi = Backend::MultiGpu {
+            devices: vec![0, 1],
+        };
         let s = serde_json::to_string(&multi).unwrap();
         assert_eq!(s, r#"{"multigpu":{"devices":[0,1]}}"#);
         let back: Backend = serde_json::from_str(&s).unwrap();
@@ -1761,10 +1769,13 @@ mod tests {
     #[tokio::test]
     async fn backend_multigpu_boots_on_cpu_only_build() {
         let cfg = BrainConfig {
-            backend: Backend::MultiGpu { devices: vec![0, 1] },
+            backend: Backend::MultiGpu {
+                devices: vec![0, 1],
+            },
             ..Default::default()
         };
-        let brain = Brain::new(cfg).expect("Backend::MultiGpu must degrade gracefully on CPU build");
+        let brain =
+            Brain::new(cfg).expect("Backend::MultiGpu must degrade gracefully on CPU build");
         assert_eq!(brain.config().backend.devices(), Some(&[0, 1][..]));
     }
 
@@ -1784,18 +1795,33 @@ mod tests {
         assert_eq!(gpu.device_assignment, DeviceAssignment::default());
 
         let mut multi = base.clone();
-        apply_backend_to_snn(&Backend::MultiGpu { devices: vec![1, 0] }, &mut multi);
+        apply_backend_to_snn(
+            &Backend::MultiGpu {
+                devices: vec![1, 0],
+            },
+            &mut multi,
+        );
         assert!(multi.use_gpu_forward);
         assert_eq!(
             multi.device_assignment,
-            DeviceAssignment::MemoryBalanced { devices: vec![1, 0] }
+            DeviceAssignment::MemoryBalanced {
+                devices: vec![1, 0]
+            }
         );
 
         // An explicit per-network assignment is not overridden.
         let mut pinned = base;
         pinned.device_assignment = DeviceAssignment::RoundRobin { devices: vec![0] };
-        apply_backend_to_snn(&Backend::MultiGpu { devices: vec![0, 1] }, &mut pinned);
-        assert_eq!(pinned.device_assignment, DeviceAssignment::RoundRobin { devices: vec![0] });
+        apply_backend_to_snn(
+            &Backend::MultiGpu {
+                devices: vec![0, 1],
+            },
+            &mut pinned,
+        );
+        assert_eq!(
+            pinned.device_assignment,
+            DeviceAssignment::RoundRobin { devices: vec![0] }
+        );
     }
 
     /// Old configs (pre-9h, no `backend` field) deserialize with the
@@ -2132,7 +2158,10 @@ mod tests {
                     padding: 1,
                 },
                 CnnLayerSpec::Relu,
-                CnnLayerSpec::MaxPool2d { kernel: 2, stride: 2 },
+                CnnLayerSpec::MaxPool2d {
+                    kernel: 2,
+                    stride: 2,
+                },
                 CnnLayerSpec::Flatten,
                 CnnLayerSpec::Linear { out_features: 6 },
             ],
@@ -2278,7 +2307,10 @@ mod tests {
         cnn_ch.record_submit();
         cnn_ch.record_submit();
         let forwarded = brain.tick_thalamic();
-        assert_eq!(forwarded, 2, "both CNN submits should forward to the router");
+        assert_eq!(
+            forwarded, 2,
+            "both CNN submits should forward to the router"
+        );
     }
 
     #[tokio::test]
@@ -2329,9 +2361,21 @@ mod tests {
     fn teach(brain: &mut Brain) {
         use nimcp_language::Modality;
         let gl = brain.language_mut().unwrap();
-        gl.ground("dog", &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("cat", &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("run", &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Motor);
+        gl.ground(
+            "dog",
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "cat",
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "run",
+            &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Motor,
+        );
         for _ in 0..10 {
             brain.language_learn("the dog likes to run").unwrap();
         }
@@ -2397,7 +2441,10 @@ mod tests {
         // Vocabulary + bindings restored → identical response.
         let resp_b = b.language_respond("dog").unwrap();
         assert_eq!(resp_a.text, resp_b.text);
-        assert_eq!(b.language().unwrap().lexicon.vocab_count(), a.language().unwrap().lexicon.vocab_count());
+        assert_eq!(
+            b.language().unwrap().lexicon.vocab_count(),
+            a.language().unwrap().lexicon.vocab_count()
+        );
     }
 
     #[tokio::test]
@@ -2476,11 +2523,32 @@ mod tests {
         assert_eq!(r.lexicon_confidence, base.conclusion.confidence);
         assert!(r.conclusion.confidence > r.lexicon_confidence);
         assert!(r.conclusion.confidence <= 1.0);
-        assert_eq!(r.conclusion.evidence_count, base.conclusion.evidence_count + 1);
+        assert_eq!(
+            r.conclusion.evidence_count,
+            base.conclusion.evidence_count + 1
+        );
         // Identical recalled vector → direction unchanged.
-        let dot: f32 = r.conclusion.vector.iter().zip(&base.conclusion.vector).map(|(a, b)| a * b).sum();
-        let na: f32 = r.conclusion.vector.iter().map(|a| a * a).sum::<f32>().sqrt();
-        let nb: f32 = base.conclusion.vector.iter().map(|b| b * b).sum::<f32>().sqrt();
+        let dot: f32 = r
+            .conclusion
+            .vector
+            .iter()
+            .zip(&base.conclusion.vector)
+            .map(|(a, b)| a * b)
+            .sum();
+        let na: f32 = r
+            .conclusion
+            .vector
+            .iter()
+            .map(|a| a * a)
+            .sum::<f32>()
+            .sqrt();
+        let nb: f32 = base
+            .conclusion
+            .vector
+            .iter()
+            .map(|b| b * b)
+            .sum::<f32>()
+            .sqrt();
         assert!(dot / (na * nb) > 0.999);
         // Recall counted as an access on the hit node only.
         assert_eq!(brain.memory().unwrap().find(7).unwrap().access_count, 1);
@@ -2521,15 +2589,24 @@ mod tests {
         assert!(plain.working_memory().is_none());
         assert!(plain.imagination().is_none());
         assert!(matches!(
-            Brain::new(BrainConfig::default()).unwrap().working_memory_add(&[1.0], 1.0),
+            Brain::new(BrainConfig::default())
+                .unwrap()
+                .working_memory_add(&[1.0], 1.0),
             Err(Error::Config(_))
         ));
 
         let lang = Brain::new(language_config(51)).unwrap();
-        let wm = lang.working_memory().expect("WM built with language by default");
-        assert_eq!(wm.capacity(), nimcp_cognition::working_memory::DEFAULT_CAPACITY);
+        let wm = lang
+            .working_memory()
+            .expect("WM built with language by default");
+        assert_eq!(
+            wm.capacity(),
+            nimcp_cognition::working_memory::DEFAULT_CAPACITY
+        );
         assert!(wm.is_empty());
-        let im = lang.imagination().expect("imagination built with language by default");
+        let im = lang
+            .imagination()
+            .expect("imagination built with language by default");
         assert_eq!(im.latent_dim(), 8);
         assert!(im.active_vector().is_none());
 
@@ -2552,7 +2629,12 @@ mod tests {
         // comprehension confidence.
         let wm = brain.working_memory().unwrap();
         assert_eq!(wm.size(), 1);
-        let prompt = brain.language().unwrap().discourse.recent_turn_vector(1).unwrap();
+        let prompt = brain
+            .language()
+            .unwrap()
+            .discourse
+            .recent_turn_vector(1)
+            .unwrap();
         assert_eq!(wm.get(0).unwrap(), prompt);
         let (_, comp_conf) = {
             // Re-derive the comprehension confidence without touching discourse.
@@ -2564,7 +2646,11 @@ mod tests {
 
         // The response echo is the active imagined scene at the response
         // confidence (clamped).
-        let (scene, viv) = brain.imagination().unwrap().active_vector().expect("scene staged");
+        let (scene, viv) = brain
+            .imagination()
+            .unwrap()
+            .active_vector()
+            .expect("scene staged");
         assert_eq!(scene.len(), 8);
         assert!(scene.iter().any(|v| *v != 0.0));
         assert!((viv - r.confidence.clamp(0.0, 1.0)).abs() < 1e-6);
@@ -2610,8 +2696,12 @@ mod tests {
     async fn explicit_cognition_api_is_read_by_the_cascade() {
         let mut brain = Brain::new(language_config(55)).unwrap();
         teach(&mut brain);
-        brain.working_memory_add(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.9).unwrap();
-        brain.imagination_stage(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.8).unwrap();
+        brain
+            .working_memory_add(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.9)
+            .unwrap();
+        brain
+            .imagination_stage(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.8)
+            .unwrap();
         assert_eq!(brain.working_memory().unwrap().size(), 1);
         let r = brain.language_respond("the dog").unwrap();
         assert!(!r.text.is_empty());
@@ -2623,7 +2713,9 @@ mod tests {
         let (scene, _) = brain.imagination().unwrap().active_vector().unwrap();
         assert_ne!(scene, &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         // Scenario pool API.
-        let idx = brain.imagination_begin(ScenarioMode::Creative, None).unwrap();
+        let idx = brain
+            .imagination_begin(ScenarioMode::Creative, None)
+            .unwrap();
         assert_eq!(idx, 1);
     }
 

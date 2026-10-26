@@ -404,7 +404,11 @@ mod tests {
         for e in gl.lexicon.entries() {
             if e.context_initialized {
                 let n: f32 = e.context_vector.iter().map(|x| x * x).sum::<f32>().sqrt();
-                assert!((n - 1.0).abs() < 1e-3 || n < 1e-6, "norm {n} for {}", e.form);
+                assert!(
+                    (n - 1.0).abs() < 1e-3 || n < 1e-6,
+                    "norm {n} for {}",
+                    e.form
+                );
             }
         }
     }

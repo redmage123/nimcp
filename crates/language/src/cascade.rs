@@ -192,7 +192,11 @@ impl GroundedLanguage {
         }
 
         let (prod, self_match, self_vector) = best;
-        let confidence = if self_match > 0.0 { self_match } else { prod.fluency };
+        let confidence = if self_match > 0.0 {
+            self_match
+        } else {
+            prod.fluency
+        };
         Response {
             text: prod.text,
             words: prod.words,
@@ -243,10 +247,26 @@ mod tests {
 
     fn engine() -> GroundedLanguage {
         let mut gl = GroundedLanguage::new(8, 1);
-        gl.ground("dog", &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("cat", &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("run", &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Motor);
-        gl.ground("food", &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
+        gl.ground(
+            "dog",
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "cat",
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "run",
+            &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Motor,
+        );
+        gl.ground(
+            "food",
+            &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
         gl
     }
 
@@ -264,7 +284,12 @@ mod tests {
     #[test]
     fn stage0_response_is_one_word() {
         let mut gl = engine();
-        let cfg = CascadeConfig { stage: 0, min_produce_words: 1, recurrent_max_iters: 1, reason_in_content: false };
+        let cfg = CascadeConfig {
+            stage: 0,
+            min_produce_words: 1,
+            recurrent_max_iters: 1,
+            reason_in_content: false,
+        };
         let r = gl.respond("dog cat", &cfg);
         assert_eq!(r.words.len(), 1, "stage-0 floor → one word");
     }
@@ -281,7 +306,12 @@ mod tests {
     #[test]
     fn recurrent_keeps_best_and_counts_iters() {
         let mut gl = engine();
-        let cfg = CascadeConfig { stage: 4, min_produce_words: 1, recurrent_max_iters: 5, reason_in_content: false };
+        let cfg = CascadeConfig {
+            stage: 4,
+            min_produce_words: 1,
+            recurrent_max_iters: 5,
+            reason_in_content: false,
+        };
         let r = gl.respond("dog", &cfg);
         assert!(r.iterations >= 1 && r.iterations <= 5);
         // Best self_match retained → confidence equals it when positive.
@@ -303,7 +333,12 @@ mod tests {
     fn deterministic() {
         let mut a = engine();
         let mut b = engine();
-        let cfg = CascadeConfig { stage: 3, min_produce_words: 2, recurrent_max_iters: 4, reason_in_content: false };
+        let cfg = CascadeConfig {
+            stage: 3,
+            min_produce_words: 2,
+            recurrent_max_iters: 4,
+            reason_in_content: false,
+        };
         let ra = a.respond("dog cat food", &cfg);
         let rb = b.respond("dog cat food", &cfg);
         assert_eq!(ra.words, rb.words);
@@ -333,7 +368,10 @@ mod tests {
         // WM holds a strong "food" vector; prompt is empty-ish ("the").
         let food = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let wm: [(&[f32], f32); 1] = [(&food, 1.0)];
-        let sources = ContentSources { working_memory: &wm, ..Default::default() };
+        let sources = ContentSources {
+            working_memory: &wm,
+            ..Default::default()
+        };
         let cfg = CascadeConfig::default();
         let r = gl.respond_with_sources("the", &cfg, &sources);
         // With "the" unknown, WM is the dominant content source → "food".
@@ -346,7 +384,10 @@ mod tests {
         let food = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         // Salience 0.1 < floor 0.2 → contributes nothing.
         let wm: [(&[f32], f32); 1] = [(&food, 0.1)];
-        let sources = ContentSources { working_memory: &wm, ..Default::default() };
+        let sources = ContentSources {
+            working_memory: &wm,
+            ..Default::default()
+        };
         let plain = gl.respond("the", &CascadeConfig::default());
         let mut gl2 = engine();
         let gated = gl2.respond_with_sources("the", &CascadeConfig::default(), &sources);
@@ -365,14 +406,20 @@ mod tests {
         let mut gl_off = engine();
         let off = gl_off.respond_with_sources(
             "the",
-            &CascadeConfig { reason_in_content: false, ..Default::default() },
+            &CascadeConfig {
+                reason_in_content: false,
+                ..Default::default()
+            },
             &sources,
         );
         // ON: reasoning drives intent toward "cat".
         let mut gl_on = engine();
         let on = gl_on.respond_with_sources(
             "the",
-            &CascadeConfig { reason_in_content: true, ..Default::default() },
+            &CascadeConfig {
+                reason_in_content: true,
+                ..Default::default()
+            },
             &sources,
         );
         assert_eq!(on.words.first().map(String::as_str), Some("cat"));
@@ -384,7 +431,10 @@ mod tests {
         let mut gl = engine();
         let bad = [f32::NAN, f32::INFINITY, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let wm: [(&[f32], f32); 1] = [(&bad, 1.0)];
-        let sources = ContentSources { working_memory: &wm, ..Default::default() };
+        let sources = ContentSources {
+            working_memory: &wm,
+            ..Default::default()
+        };
         // Must not produce NaN/Inf in the response path.
         let r = gl.respond_with_sources("dog", &CascadeConfig::default(), &sources);
         assert!(r.confidence.is_finite());

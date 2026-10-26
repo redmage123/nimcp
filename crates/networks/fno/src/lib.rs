@@ -52,9 +52,7 @@ pub mod train;
 
 pub use block::FnoBlock;
 pub use linear_mix::LinearMixLayer;
-pub use network::{
-    FnoConfig, FnoError, FnoNetwork, FnoSubstrateCfg, FnoThalamicCfg,
-};
+pub use network::{FnoConfig, FnoError, FnoNetwork, FnoSubstrateCfg, FnoThalamicCfg};
 pub use spectral::SpectralConv1dLayer;
 pub use train::{
     FnoBlockGrads, FnoGradients, mse_loss, sgd_step, sgd_step_gated, train_step_mse,

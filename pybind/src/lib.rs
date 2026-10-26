@@ -65,7 +65,8 @@
 //! Built with `maturin develop` for editable installs.
 
 #![allow(unsafe_code)] // pyo3 macros expand to unsafe
-#![allow(unsafe_op_in_unsafe_fn)] // pyo3 macros
+#![allow(unsafe_op_in_unsafe_fn)]
+// pyo3 macros
 // PyO3 extractors produce Rust-owned values (String, Vec<T>) that we
 // consume once and drop. clippy::needless_pass_by_value is a false
 // positive for bindings.
@@ -132,7 +133,11 @@ fn backend_to_string(b: &Backend) -> String {
         Backend::Gpu => "gpu".into(),
         Backend::MultiGpu { devices } => format!(
             "gpu:{}",
-            devices.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+            devices
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
         ),
     }
 }
@@ -155,7 +160,8 @@ fn parse_modality(s: &str) -> PyResult<Modality> {
 /// object via `json.loads` — keeps the Rust→Python schema identical to
 /// the daemon's JSON wire form.
 fn to_py_json<'py, T: serde::Serialize>(py: Python<'py>, v: &T) -> PyResult<Bound<'py, PyAny>> {
-    let json = serde_json::to_string(v).map_err(|e| PyRuntimeError::new_err(format!("encode: {e}")))?;
+    let json =
+        serde_json::to_string(v).map_err(|e| PyRuntimeError::new_err(format!("encode: {e}")))?;
     py.import("json")?.call_method1("loads", (json,))
 }
 
@@ -788,7 +794,12 @@ impl PyBrain {
     /// Returns:
     ///     int: the concept id the word was bound to.
     #[pyo3(signature = (word, features, modality = "visual".to_string()))]
-    fn language_ground(&mut self, word: &str, features: Vec<f32>, modality: String) -> PyResult<u32> {
+    fn language_ground(
+        &mut self,
+        word: &str,
+        features: Vec<f32>,
+        modality: String,
+    ) -> PyResult<u32> {
         let m = parse_modality(&modality)?;
         let gl = self
             .inner
@@ -820,7 +831,11 @@ impl PyBrain {
     /// Returns:
     ///     dict: `text`, `confidence`, `blocked_for_toxicity`,
     ///     `toxicity_category` (empty unless blocked).
-    fn language_respond<'py>(&mut self, py: Python<'py>, text: &str) -> PyResult<Bound<'py, PyAny>> {
+    fn language_respond<'py>(
+        &mut self,
+        py: Python<'py>,
+        text: &str,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let r = self.inner.language_respond(text).map_err(rt_err)?;
         let d = pyo3::types::PyDict::new(py);
         d.set_item("text", r.text)?;
@@ -886,7 +901,9 @@ impl PyBrain {
     /// e-fold per turn by default.
     #[pyo3(signature = (data, salience = 0.5))]
     fn working_memory_add(&mut self, data: Vec<f32>, salience: f32) -> PyResult<()> {
-        self.inner.working_memory_add(&data, salience).map_err(rt_err)
+        self.inner
+            .working_memory_add(&data, salience)
+            .map_err(rt_err)
     }
 
     /// Current working-memory items, oldest first.
@@ -905,7 +922,9 @@ impl PyBrain {
     /// blended into the next response at `0.2 × vividness`.
     #[pyo3(signature = (content, vividness = 0.7))]
     fn imagination_stage(&mut self, content: Vec<f32>, vividness: f32) -> PyResult<()> {
-        self.inner.imagination_stage(&content, vividness).map_err(rt_err)
+        self.inner
+            .imagination_stage(&content, vividness)
+            .map_err(rt_err)
     }
 
     /// The active imagined scene as `(vector, vividness)`, or `None` when

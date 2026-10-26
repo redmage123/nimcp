@@ -41,10 +41,7 @@ impl LinearMixLayer {
     /// `input: [N, in_channels, L]` → `[N, out_channels, L]`.
     pub fn forward(&self, input: &Array3<f32>) -> Array3<f32> {
         let (n, c_in, length) = input.dim();
-        assert_eq!(
-            c_in, self.in_channels,
-            "linear_mix: input channel mismatch"
-        );
+        assert_eq!(c_in, self.in_channels, "linear_mix: input channel mismatch");
         let mut out = Array3::<f32>::zeros((n, self.out_channels, length));
 
         for ni in 0..n {

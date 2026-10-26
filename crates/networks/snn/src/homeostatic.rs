@@ -676,7 +676,10 @@ mod tests {
             scale < 0.95,
             "widened scale-down not applied: got {scale}, expected ~0.90"
         );
-        assert!(scale >= 0.90 - 1e-6, "scale overshot widened floor: {scale}");
+        assert!(
+            scale >= 0.90 - 1e-6,
+            "scale overshot widened floor: {scale}"
+        );
     }
 
     /// Saturated but reward healthy → normal tight bounds apply. Reward
@@ -706,7 +709,10 @@ mod tests {
         for _ in 0..500 {
             rate.update(0.03);
         }
-        assert!((rate.rate() - 0.03).abs() < 1e-4, "EMA should settle to target");
+        assert!(
+            (rate.rate() - 0.03).abs() < 1e-4,
+            "EMA should settle to target"
+        );
         let params = HomeostaticParams::default();
         let outcome = step_homeostatic_with_reward(&mut csr, &mut rate, 0.03, &params, 0.0);
         assert!(outcome.is_none(), "unexpected scale inside deadband");

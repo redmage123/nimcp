@@ -148,10 +148,8 @@ impl SpectralConv1dLayer {
                         let dgw = conj_x * dl_dy;
                         grad_weight_re[[k, ic, oc]] += dgw.re;
                         grad_weight_im[[k, ic, oc]] += dgw.im;
-                        let conj_w = Complex::new(
-                            self.weight_re[[k, ic, oc]],
-                            -self.weight_im[[k, ic, oc]],
-                        );
+                        let conj_w =
+                            Complex::new(self.weight_re[[k, ic, oc]], -self.weight_im[[k, ic, oc]]);
                         grad_x_bins[ic][k] += conj_w * dl_dy;
                     }
                 }
@@ -216,18 +214,12 @@ impl FnoBlock {
         }
         // Step 2: split into spectral + linear-mix branches (both
         // receive the full grad_pre because forward summed them).
-        let g_in_spec = self.spectral.backward(
-            input,
-            &grad_pre,
-            &mut grads.spec_w_re,
-            &mut grads.spec_w_im,
-        );
-        let g_in_mix = self.linear_mix.backward(
-            input,
-            &grad_pre,
-            &mut grads.mix_w,
-            &mut grads.mix_b,
-        );
+        let g_in_spec =
+            self.spectral
+                .backward(input, &grad_pre, &mut grads.spec_w_re, &mut grads.spec_w_im);
+        let g_in_mix =
+            self.linear_mix
+                .backward(input, &grad_pre, &mut grads.mix_w, &mut grads.mix_b);
         // Step 3: sum the two input gradients.
         let mut grad_in = g_in_spec;
         for (a, b) in grad_in.iter_mut().zip(g_in_mix.iter()) {
@@ -409,16 +401,36 @@ fn backward_grads(
 }
 
 pub fn sgd_step(net: &mut FnoNetwork, grads: &FnoGradients, lr: f32) {
-    for (w, g) in net.input_proj.weight.iter_mut().zip(grads.input_proj_w.iter()) {
+    for (w, g) in net
+        .input_proj
+        .weight
+        .iter_mut()
+        .zip(grads.input_proj_w.iter())
+    {
         *w -= lr * *g;
     }
-    for (b, g) in net.input_proj.bias.iter_mut().zip(grads.input_proj_b.iter()) {
+    for (b, g) in net
+        .input_proj
+        .bias
+        .iter_mut()
+        .zip(grads.input_proj_b.iter())
+    {
         *b -= lr * *g;
     }
-    for (w, g) in net.output_proj.weight.iter_mut().zip(grads.output_proj_w.iter()) {
+    for (w, g) in net
+        .output_proj
+        .weight
+        .iter_mut()
+        .zip(grads.output_proj_w.iter())
+    {
         *w -= lr * *g;
     }
-    for (b, g) in net.output_proj.bias.iter_mut().zip(grads.output_proj_b.iter()) {
+    for (b, g) in net
+        .output_proj
+        .bias
+        .iter_mut()
+        .zip(grads.output_proj_b.iter())
+    {
         *b -= lr * *g;
     }
     for (block, bg) in net.blocks.iter_mut().zip(grads.blocks.iter()) {
@@ -442,19 +454,37 @@ pub fn sgd_step(net: &mut FnoNetwork, grads: &FnoGradients, lr: f32) {
 /// under `param -= lr*g`) and by `ltd` when it would *lower* it.
 /// `(ltp, ltd) = (1.0, 1.0)` is bit-identical to [`sgd_step`].
 pub fn sgd_step_gated(net: &mut FnoNetwork, grads: &FnoGradients, lr: f32, ltp: f32, ltd: f32) {
-    let gate = |g: f32| -> f32 {
-        if g < 0.0 { g * ltp } else { g * ltd }
-    };
-    for (w, g) in net.input_proj.weight.iter_mut().zip(grads.input_proj_w.iter()) {
+    let gate = |g: f32| -> f32 { if g < 0.0 { g * ltp } else { g * ltd } };
+    for (w, g) in net
+        .input_proj
+        .weight
+        .iter_mut()
+        .zip(grads.input_proj_w.iter())
+    {
         *w -= lr * gate(*g);
     }
-    for (b, g) in net.input_proj.bias.iter_mut().zip(grads.input_proj_b.iter()) {
+    for (b, g) in net
+        .input_proj
+        .bias
+        .iter_mut()
+        .zip(grads.input_proj_b.iter())
+    {
         *b -= lr * gate(*g);
     }
-    for (w, g) in net.output_proj.weight.iter_mut().zip(grads.output_proj_w.iter()) {
+    for (w, g) in net
+        .output_proj
+        .weight
+        .iter_mut()
+        .zip(grads.output_proj_w.iter())
+    {
         *w -= lr * gate(*g);
     }
-    for (b, g) in net.output_proj.bias.iter_mut().zip(grads.output_proj_b.iter()) {
+    for (b, g) in net
+        .output_proj
+        .bias
+        .iter_mut()
+        .zip(grads.output_proj_b.iter())
+    {
         *b -= lr * gate(*g);
     }
     for (block, bg) in net.blocks.iter_mut().zip(grads.blocks.iter()) {

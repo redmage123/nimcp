@@ -125,7 +125,11 @@ impl ThalamicRouter {
             return 0.0;
         };
         let attn = ch.get_gate(dest_id);
-        let hebb = self.hebbian.get(&(source_id, dest_id)).copied().unwrap_or(1.0);
+        let hebb = self
+            .hebbian
+            .get(&(source_id, dest_id))
+            .copied()
+            .unwrap_or(1.0);
         (attn * hebb).clamp(0.0, self.config.hebbian_max)
     }
 

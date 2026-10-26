@@ -95,7 +95,6 @@ pub enum Request {
     // Language (L8) + cognition (C4/C5). Every variant returns a
     // structured `err` on a brain built without `language`.
     // ---------------------------------------------------------------
-
     /// Learn from a text span (distributional + n-gram; mark-not-filter
     /// for toxic text). Responds with the engine's `LanguageStats`.
     LanguageLearn {
@@ -298,14 +297,48 @@ mod tests {
     #[test]
     fn language_round_trips() {
         for (req, cmd) in [
-            (Request::LanguageLearn { text: "the dog runs".into() }, "language_learn"),
-            (Request::LanguageComprehend { text: "dog".into() }, "language_comprehend"),
-            (Request::LanguageRespond { text: "dog".into() }, "language_respond"),
-            (Request::Reason { query: "why".into() }, "reason"),
-            (Request::SetReasonInContent { on: true }, "set_reason_in_content"),
-            (Request::ClassifyToxicity { text: "hi".into() }, "classify_toxicity"),
-            (Request::WorkingMemoryAdd { data: vec![1.0, 0.0], salience: 0.9 }, "working_memory_add"),
-            (Request::ImaginationStage { content: vec![0.0, 1.0], vividness: 0.5 }, "imagination_stage"),
+            (
+                Request::LanguageLearn {
+                    text: "the dog runs".into(),
+                },
+                "language_learn",
+            ),
+            (
+                Request::LanguageComprehend { text: "dog".into() },
+                "language_comprehend",
+            ),
+            (
+                Request::LanguageRespond { text: "dog".into() },
+                "language_respond",
+            ),
+            (
+                Request::Reason {
+                    query: "why".into(),
+                },
+                "reason",
+            ),
+            (
+                Request::SetReasonInContent { on: true },
+                "set_reason_in_content",
+            ),
+            (
+                Request::ClassifyToxicity { text: "hi".into() },
+                "classify_toxicity",
+            ),
+            (
+                Request::WorkingMemoryAdd {
+                    data: vec![1.0, 0.0],
+                    salience: 0.9,
+                },
+                "working_memory_add",
+            ),
+            (
+                Request::ImaginationStage {
+                    content: vec![0.0, 1.0],
+                    vividness: 0.5,
+                },
+                "imagination_stage",
+            ),
             (Request::CognitionState, "cognition_state"),
         ] {
             let s = serde_json::to_string(&req).unwrap();
@@ -314,8 +347,11 @@ mod tests {
             assert_eq!(serde_json::to_string(&back).unwrap(), s);
         }
         let hand: Request =
-            serde_json::from_str(r#"{"cmd":"working_memory_add","data":[0.5],"salience":1.0}"#).unwrap();
-        assert!(matches!(hand, Request::WorkingMemoryAdd { salience, .. } if (salience - 1.0).abs() < f32::EPSILON));
+            serde_json::from_str(r#"{"cmd":"working_memory_add","data":[0.5],"salience":1.0}"#)
+                .unwrap();
+        assert!(
+            matches!(hand, Request::WorkingMemoryAdd { salience, .. } if (salience - 1.0).abs() < f32::EPSILON)
+        );
     }
 
     #[test]

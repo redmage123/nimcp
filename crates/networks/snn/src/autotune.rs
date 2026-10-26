@@ -269,10 +269,7 @@ impl AutotuneController {
                     actuator: Actuator::NoiseRateHz,
                     current: cur,
                     target: new,
-                    reason: format!(
-                        "rescue: collapse_streak={}",
-                        self.collapse_streak
-                    ),
+                    reason: format!("rescue: collapse_streak={}", self.collapse_streak),
                 });
             }
         }
@@ -287,9 +284,7 @@ impl AutotuneController {
                     actuator: Actuator::SleepIntervalSec,
                     current: interval_sec,
                     target: new,
-                    reason: format!(
-                        "recovery_t={rec:.0}s > 0.7*interval"
-                    ),
+                    reason: format!("recovery_t={rec:.0}s > 0.7*interval"),
                 });
             }
         }

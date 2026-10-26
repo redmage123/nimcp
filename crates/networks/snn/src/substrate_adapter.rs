@@ -43,7 +43,11 @@ pub fn effective_lif(
     let tau_ms = (base.tau_ms * dend.membrane_time_constant_mod).max(0.1);
     let v_gap = base.v_thresh - base.v_rest;
     let v_thresh = base.v_rest + v_gap * dend.spike_threshold_mod;
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     let refrac_steps_f = (base.refrac_steps as f32 * axon.refractory_period_mod).round();
     let refrac_steps = refrac_steps_f.max(0.0) as u32;
     LifParams {

@@ -67,7 +67,14 @@ fn sigmoid(x: f32) -> f32 {
 }
 
 /// `out[o] = act(W·x + b)`; `W` is row-major `[n_out][n_in]`.
-fn dense(w: &[f32], b: &[f32], x: &[f32], n_in: usize, n_out: usize, act: fn(f32) -> f32) -> Vec<f32> {
+fn dense(
+    w: &[f32],
+    b: &[f32],
+    x: &[f32],
+    n_in: usize,
+    n_out: usize,
+    act: fn(f32) -> f32,
+) -> Vec<f32> {
     let mut out = vec![0.0_f32; n_out];
     for o in 0..n_out {
         let row = &w[o * n_in..o * n_in + n_in];
@@ -196,9 +203,39 @@ impl MlClassifier {
         }
 
         // Apply momentum-SGD: m = β·m + grad; w -= lr·m.
-        apply_dense(&mut self.w3, &mut self.mw3, &mut self.b3, &mut self.mb3, &dz3, &h2, H2, OUTPUT, lr);
-        apply_dense(&mut self.w2, &mut self.mw2, &mut self.b2, &mut self.mb2, &dz2, &h1, H1, H2, lr);
-        apply_dense(&mut self.w1, &mut self.mw1, &mut self.b1, &mut self.mb1, &dz1, &x, INPUT, H1, lr);
+        apply_dense(
+            &mut self.w3,
+            &mut self.mw3,
+            &mut self.b3,
+            &mut self.mb3,
+            &dz3,
+            &h2,
+            H2,
+            OUTPUT,
+            lr,
+        );
+        apply_dense(
+            &mut self.w2,
+            &mut self.mw2,
+            &mut self.b2,
+            &mut self.mb2,
+            &dz2,
+            &h1,
+            H1,
+            H2,
+            lr,
+        );
+        apply_dense(
+            &mut self.w1,
+            &mut self.mw1,
+            &mut self.b1,
+            &mut self.mb1,
+            &dz1,
+            &x,
+            INPUT,
+            H1,
+            lr,
+        );
 
         self.train_steps += 1;
         self.recent_loss_ema = if self.train_steps == 1 {

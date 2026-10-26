@@ -48,12 +48,17 @@ pub enum CnnLayerSpec {
         padding: usize,
     },
     /// `(kernel, stride)` — square pool with matching stride.
-    MaxPool2d { kernel: usize, stride: usize },
+    MaxPool2d {
+        kernel: usize,
+        stride: usize,
+    },
     Relu,
     Flatten,
     /// Dense layer width. The constructor infers `in_features` from the
     /// running flattened shape; `out_features` is the spec value.
-    Linear { out_features: usize },
+    Linear {
+        out_features: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,7 +214,10 @@ impl CnnNetwork {
         for (idx, spec) in config.layers.iter().enumerate() {
             // Sub-seed each layer so reordering / inserting layers
             // doesn't shift every downstream init.
-            let sub_seed = config.rng_seed.wrapping_add(idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let sub_seed = config
+                .rng_seed
+                .wrapping_add(idx as u64)
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15);
             match spec {
                 CnnLayerSpec::Conv2d {
                     out_channels,
@@ -514,7 +522,10 @@ mod tests {
                     padding: 1,
                 },
                 CnnLayerSpec::Relu,
-                CnnLayerSpec::MaxPool2d { kernel: 2, stride: 2 },
+                CnnLayerSpec::MaxPool2d {
+                    kernel: 2,
+                    stride: 2,
+                },
                 CnnLayerSpec::Flatten,
                 CnnLayerSpec::Linear { out_features: 5 },
             ],
@@ -577,7 +588,10 @@ mod tests {
                     padding: 0,
                 }, // 28 → 24
                 CnnLayerSpec::Relu,
-                CnnLayerSpec::MaxPool2d { kernel: 2, stride: 2 }, // 24 → 12
+                CnnLayerSpec::MaxPool2d {
+                    kernel: 2,
+                    stride: 2,
+                }, // 24 → 12
                 CnnLayerSpec::Conv2d {
                     out_channels: 16,
                     kh: 5,
@@ -586,7 +600,10 @@ mod tests {
                     padding: 0,
                 }, // 12 → 8
                 CnnLayerSpec::Relu,
-                CnnLayerSpec::MaxPool2d { kernel: 2, stride: 2 }, // 8 → 4
+                CnnLayerSpec::MaxPool2d {
+                    kernel: 2,
+                    stride: 2,
+                }, // 8 → 4
                 CnnLayerSpec::Flatten,
                 CnnLayerSpec::Linear { out_features: 10 },
             ],
@@ -678,7 +695,10 @@ mod tests {
         let modulated = net.forward_modulated(&inp);
         let plain = plain_net.forward(&inp);
         for (a, b) in modulated.iter().zip(plain.iter()) {
-            assert!((a - b).abs() < 1e-6, "full health should be identity: {a} vs {b}");
+            assert!(
+                (a - b).abs() < 1e-6,
+                "full health should be identity: {a} vs {b}"
+            );
         }
     }
 
@@ -694,7 +714,10 @@ mod tests {
             let _ = net.forward_modulated(&inp);
         }
         let atp_after = net.substrate_state().unwrap().atp_level;
-        assert!(atp_after <= atp_before, "ATP should not rise under activity");
+        assert!(
+            atp_after <= atp_before,
+            "ATP should not rise under activity"
+        );
     }
 
     #[test]

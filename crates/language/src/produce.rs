@@ -92,7 +92,10 @@ impl GroundedLanguage {
     fn candidate_pool(&self, intent: &[f32]) -> Vec<(usize, f32)> {
         let mut scored: Vec<(usize, f32)> = Vec::new();
         for (idx, entry) in self.lexicon.entries().iter().enumerate() {
-            if matches!(entry.learned_class, WordClass::Function | WordClass::Pronoun) {
+            if matches!(
+                entry.learned_class,
+                WordClass::Function | WordClass::Pronoun
+            ) {
                 continue;
             }
             scored.push((idx, self.score_word(idx, intent)));
@@ -105,7 +108,12 @@ impl GroundedLanguage {
     /// Produce text from an `intent` vector at developmental `stage`,
     /// emitting at least `min_produce_words`.
     #[must_use]
-    pub fn produce(&self, intent: &[f32], stage: u32, min_produce_words: usize) -> ProductionResult {
+    pub fn produce(
+        &self,
+        intent: &[f32],
+        stage: u32,
+        min_produce_words: usize,
+    ) -> ProductionResult {
         if self.lexicon.vocab_count() == 0 {
             return ProductionResult::empty(intent);
         }

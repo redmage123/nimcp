@@ -46,10 +46,17 @@ impl From<PhraseTable> for PhraseWire {
         let mut bigrams: Vec<(u32, u32, u32)> =
             t.bigrams.iter().map(|(&(a, b), &f)| (a, b, f)).collect();
         bigrams.sort_unstable();
-        let mut trigrams: Vec<(u32, u32, u32, u32)> =
-            t.trigrams.iter().map(|(&(a, b, c), &f)| (a, b, c, f)).collect();
+        let mut trigrams: Vec<(u32, u32, u32, u32)> = t
+            .trigrams
+            .iter()
+            .map(|(&(a, b, c), &f)| (a, b, c, f))
+            .collect();
         trigrams.sort_unstable();
-        Self { bigrams, trigrams, cap: t.cap }
+        Self {
+            bigrams,
+            trigrams,
+            cap: t.cap,
+        }
     }
 }
 
@@ -63,7 +70,11 @@ impl From<PhraseWire> for PhraseTable {
         for (a, b, c, f) in w.trigrams {
             trigrams.insert((a, b, c), f);
         }
-        Self { bigrams, trigrams, cap: w.cap.max(1) }
+        Self {
+            bigrams,
+            trigrams,
+            cap: w.cap.max(1),
+        }
     }
 }
 

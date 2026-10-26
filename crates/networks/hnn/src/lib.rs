@@ -33,6 +33,4 @@ pub mod substrate_adapter;
 
 pub use integrator::symplectic_euler_step;
 pub use mlp::{HamiltonianMlp, MlpActivation};
-pub use network::{
-    HnnConfig, HnnError, HnnNetwork, HnnSubstrateCfg, HnnThalamicCfg,
-};
+pub use network::{HnnConfig, HnnError, HnnNetwork, HnnSubstrateCfg, HnnThalamicCfg};

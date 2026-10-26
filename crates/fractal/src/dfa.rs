@@ -214,10 +214,7 @@ mod tests {
             })
             .collect();
         let a = dfa_alpha(&samples, 8, 512).unwrap();
-        assert!(
-            (a - 1.5).abs() < 0.25,
-            "Brownian α should be ~1.5, got {a}"
-        );
+        assert!((a - 1.5).abs() < 0.25, "Brownian α should be ~1.5, got {a}");
     }
 }
 

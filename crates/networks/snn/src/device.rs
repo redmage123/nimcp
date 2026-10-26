@@ -144,7 +144,9 @@ mod tests {
 
     #[test]
     fn round_robin_cycles() {
-        let a = DeviceAssignment::RoundRobin { devices: vec![0, 1] };
+        let a = DeviceAssignment::RoundRobin {
+            devices: vec![0, 1],
+        };
         assert_eq!(a.resolve(&[1, 1, 1, 1, 1]).unwrap(), vec![0, 1, 0, 1, 0]);
         assert_eq!(a.ordinals(&[1, 1, 1]).unwrap(), vec![0, 1]);
     }
@@ -156,18 +158,26 @@ mod tests {
             Err(DeviceAssignError::NoDevices)
         );
         assert_eq!(
-            DeviceAssignment::RoundRobin { devices: vec![0, 1, 0] }.resolve(&[1]),
+            DeviceAssignment::RoundRobin {
+                devices: vec![0, 1, 0]
+            }
+            .resolve(&[1]),
             Err(DeviceAssignError::DuplicateDevice(0))
         );
     }
 
     #[test]
     fn manual_passthrough_and_length_check() {
-        let a = DeviceAssignment::Manual { per_population: vec![1, 0, 1] };
+        let a = DeviceAssignment::Manual {
+            per_population: vec![1, 0, 1],
+        };
         assert_eq!(a.resolve(&[1, 1, 1]).unwrap(), vec![1, 0, 1]);
         assert_eq!(
             a.resolve(&[1, 1]),
-            Err(DeviceAssignError::ManualLengthMismatch { given: 3, n_pops: 2 })
+            Err(DeviceAssignError::ManualLengthMismatch {
+                given: 3,
+                n_pops: 2
+            })
         );
     }
 
@@ -175,13 +185,17 @@ mod tests {
     fn memory_balanced_greedy_largest_first() {
         // Sizes 100, 10, 90, 20 over 2 devices: 100→d0, 90→d1, 20→d1
         // (load 90 < 100), 10→d0 (load 100 < 110). Loads: 110 / 110.
-        let a = DeviceAssignment::MemoryBalanced { devices: vec![0, 1] };
+        let a = DeviceAssignment::MemoryBalanced {
+            devices: vec![0, 1],
+        };
         assert_eq!(a.resolve(&[100, 10, 90, 20]).unwrap(), vec![0, 0, 1, 1]);
     }
 
     #[test]
     fn memory_balanced_ties_prefer_earlier_device() {
-        let a = DeviceAssignment::MemoryBalanced { devices: vec![3, 1] };
+        let a = DeviceAssignment::MemoryBalanced {
+            devices: vec![3, 1],
+        };
         assert_eq!(a.resolve(&[7, 7]).unwrap(), vec![3, 1]);
     }
 
@@ -193,12 +207,15 @@ mod tests {
 
     #[test]
     fn serde_round_trip_tagged() {
-        let a = DeviceAssignment::RoundRobin { devices: vec![0, 1] };
+        let a = DeviceAssignment::RoundRobin {
+            devices: vec![0, 1],
+        };
         let s = serde_json::to_string(&a).unwrap();
         assert!(s.contains("\"kind\":\"round_robin\""), "{s}");
         let b: DeviceAssignment = serde_json::from_str(&s).unwrap();
         assert_eq!(a, b);
-        let d: DeviceAssignment = serde_json::from_str(r#"{"kind":"single_device","ordinal":0}"#).unwrap();
+        let d: DeviceAssignment =
+            serde_json::from_str(r#"{"kind":"single_device","ordinal":0}"#).unwrap();
         assert_eq!(d, DeviceAssignment::default());
     }
 }

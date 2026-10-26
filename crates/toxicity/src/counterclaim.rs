@@ -21,9 +21,31 @@ const DEFAULT_ANTIFRAMES_TSV: &str = include_str!("../data/toxicity_antiframes.t
 
 /// Demographic group terms scanned to fill the `{group}` placeholder.
 const GROUPS: &[&str] = &[
-    "jews", "muslims", "christians", "hindus", "buddhists", "catholics", "blacks", "whites",
-    "asians", "latinos", "hispanics", "arabs", "africans", "mexicans", "immigrants", "refugees",
-    "women", "men", "girls", "gays", "lesbians", "trans", "queers", "disabled", "elderly",
+    "jews",
+    "muslims",
+    "christians",
+    "hindus",
+    "buddhists",
+    "catholics",
+    "blacks",
+    "whites",
+    "asians",
+    "latinos",
+    "hispanics",
+    "arabs",
+    "africans",
+    "mexicans",
+    "immigrants",
+    "refugees",
+    "women",
+    "men",
+    "girls",
+    "gays",
+    "lesbians",
+    "trans",
+    "queers",
+    "disabled",
+    "elderly",
 ];
 
 /// A counterclaim template row.
@@ -61,7 +83,9 @@ pub struct CounterclaimEngine {
 /// TSV fields).
 fn unquote(s: &str) -> &str {
     let s = s.trim();
-    s.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(s)
+    s.strip_prefix('"')
+        .and_then(|x| x.strip_suffix('"'))
+        .unwrap_or(s)
 }
 
 impl CounterclaimEngine {
@@ -116,7 +140,11 @@ impl CounterclaimEngine {
         // Longest phrase first so "a man's property" beats "property".
         multi.sort_by_key(|(phrase, _)| std::cmp::Reverse(phrase.len()));
 
-        Self { templates, single, multi }
+        Self {
+            templates,
+            single,
+            multi,
+        }
     }
 
     /// Number of templates / anti-frame swaps loaded.
@@ -160,7 +188,10 @@ impl CounterclaimEngine {
         let lower = text.to_ascii_lowercase();
         for g in GROUPS {
             // Whole-word-ish: bounded by non-alphanumerics.
-            if lower.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == *g) {
+            if lower
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|w| w == *g)
+            {
                 return (*g).to_string();
             }
         }
@@ -198,7 +229,12 @@ impl CounterclaimEngine {
     /// Generate a counterclaim against `toxic_text` for `matched_category`
     /// at `current_stage` (template tier first, then anti-frame fallback).
     #[must_use]
-    pub fn generate(&self, toxic_text: &str, matched_category: &str, current_stage: i32) -> CounterclaimResult {
+    pub fn generate(
+        &self,
+        toxic_text: &str,
+        matched_category: &str,
+        current_stage: i32,
+    ) -> CounterclaimResult {
         if let Some(t) = self.best_template(matched_category, current_stage) {
             let text = t.text.replace("{group}", &Self::extract_group(toxic_text));
             return CounterclaimResult {

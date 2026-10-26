@@ -23,7 +23,9 @@ use serde::{Deserialize, Serialize};
 use crate::concept::ConceptId;
 use crate::engine::GroundedLanguage;
 use crate::text::tokenize;
-use crate::{ASSOC_PRUNE_THRESHOLD, NEGATION_WINDOW, W_CONCEPT_FEATURES, W_DISTRIBUTIONAL, normalize_vector};
+use crate::{
+    ASSOC_PRUNE_THRESHOLD, NEGATION_WINDOW, W_CONCEPT_FEATURES, W_DISTRIBUTIONAL, normalize_vector,
+};
 
 /// Result of comprehending a text span.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +161,12 @@ impl GroundedLanguage {
 }
 
 /// Accumulate `delta` onto `cid`'s activation, deduplicating concepts.
-fn merge_activation(concepts: &mut Vec<ConceptId>, levels: &mut Vec<f32>, cid: ConceptId, delta: f32) {
+fn merge_activation(
+    concepts: &mut Vec<ConceptId>,
+    levels: &mut Vec<f32>,
+    cid: ConceptId,
+    delta: f32,
+) {
     if let Some(pos) = concepts.iter().position(|&c| c == cid) {
         levels[pos] += delta;
     } else {
@@ -177,9 +184,21 @@ mod tests {
     fn grounded_engine() -> GroundedLanguage {
         let mut gl = GroundedLanguage::new(8, 1);
         // Ground three words with distinct one-hot-ish feature vectors.
-        gl.ground("dog", &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("cat", &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("runs", &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Motor);
+        gl.ground(
+            "dog",
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "cat",
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "runs",
+            &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Motor,
+        );
         gl
     }
 
@@ -218,8 +237,16 @@ mod tests {
         let negated = gl.comprehend("not dog");
         // Activation sign flips negative under negation.
         let dog = gl.concepts.intern_text("dog");
-        let pa = plain.activation_levels[plain.activated_concepts.iter().position(|&c| c == dog).unwrap()];
-        let na = negated.activation_levels[negated.activated_concepts.iter().position(|&c| c == dog).unwrap()];
+        let pa = plain.activation_levels[plain
+            .activated_concepts
+            .iter()
+            .position(|&c| c == dog)
+            .unwrap()];
+        let na = negated.activation_levels[negated
+            .activated_concepts
+            .iter()
+            .position(|&c| c == dog)
+            .unwrap()];
         assert!(pa > 0.0, "plain activation positive");
         assert!(na < 0.0, "negated activation negative");
         // But the semantic vector keeps the concept's (positive) feature

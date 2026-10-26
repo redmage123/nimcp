@@ -18,7 +18,7 @@
 
 use nimcp_mathutils::cosine_similarity;
 use nimcp_memory::{MemoryNode, Tier, ZLadder, ZLadderConfig};
-use nimcp_quantum::{probabilities, QuantumWalker};
+use nimcp_quantum::{QuantumWalker, probabilities};
 
 /// Build an undirected adjacency list: `adj[i]` contains `j` (j != i)
 /// iff `cosine_similarity(features[i], features[j]) > threshold`.

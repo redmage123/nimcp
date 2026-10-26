@@ -60,7 +60,9 @@ impl MetropolisState {
             )));
         }
         if proposal_sigma.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-            return Err(MetropolisError::NonPositiveSigma(format!("{proposal_sigma}")));
+            return Err(MetropolisError::NonPositiveSigma(format!(
+                "{proposal_sigma}"
+            )));
         }
         Ok(Self {
             x: x_init,
@@ -91,10 +93,7 @@ impl MetropolisState {
 /// One Metropolis step: propose `x' = x + N(0, σ²)`, accept with
 /// probability `min(1, exp(-ΔE / T))`. Mutates `state` in place.
 /// Returns `true` if the proposal was accepted.
-pub fn metropolis_step<F: Fn(f32) -> f32>(
-    state: &mut MetropolisState,
-    energy_fn: F,
-) -> bool {
+pub fn metropolis_step<F: Fn(f32) -> f32>(state: &mut MetropolisState, energy_fn: F) -> bool {
     // Propose — Gaussian via Box-Muller using two uniforms.
     let u1: f32 = state.rng.random::<f32>().max(1e-9);
     let u2: f32 = state.rng.random::<f32>();

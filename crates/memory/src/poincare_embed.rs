@@ -19,7 +19,7 @@
 //! [`poincare_distance`] never sees a point on or outside the
 //! boundary (where hyperbolic distance diverges).
 
-use nimcp_geometry::{poincare_clip, poincare_distance, PoincarePoint};
+use nimcp_geometry::{PoincarePoint, poincare_clip, poincare_distance};
 
 /// Quick Poincaré-disk embedding of a feature vector.
 ///
@@ -95,7 +95,7 @@ pub fn embed_unit_disk(features: &[f32]) -> PoincarePoint {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use nimcp_geometry::{poincare_norm, POINCARE_CLIP_EPS};
+    use nimcp_geometry::{POINCARE_CLIP_EPS, poincare_norm};
 
     #[test]
     fn short_features_pad_with_zero() {

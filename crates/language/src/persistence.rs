@@ -101,8 +101,16 @@ mod tests {
     fn trained_engine() -> GroundedLanguage {
         let mut gl = GroundedLanguage::new(8, 123);
         gl.enable_bigram_spectrum(16);
-        gl.ground("dog", &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("cat", &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
+        gl.ground(
+            "dog",
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "cat",
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
         for _ in 0..10 {
             gl.learn_from_text("the dog chased the cat");
         }
@@ -121,7 +129,10 @@ mod tests {
         let dog = back.lexicon.find("dog").expect("dog present after load");
         assert_eq!(
             back.lexicon.entry(dog).bindings.len(),
-            gl.lexicon.entry(gl.lexicon.find("dog").unwrap()).bindings.len()
+            gl.lexicon
+                .entry(gl.lexicon.find("dog").unwrap())
+                .bindings
+                .len()
         );
         // Phrase table survived (the V1 silent-wipe bug).
         let the = back.lexicon.find("the").unwrap();
@@ -140,7 +151,10 @@ mod tests {
             gl.spectrum.as_ref().unwrap().total_events()
         );
         // Stats survived.
-        assert_eq!(back.stats.total_comprehensions, gl.stats.total_comprehensions);
+        assert_eq!(
+            back.stats.total_comprehensions,
+            gl.stats.total_comprehensions
+        );
     }
 
     #[test]
@@ -148,7 +162,10 @@ mod tests {
         let gl = trained_engine();
         let back = GroundedLanguage::from_json(&gl.to_json().unwrap()).unwrap();
         let intent = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-        assert_eq!(gl.produce(&intent, 4, 1).words, back.produce(&intent, 4, 1).words);
+        assert_eq!(
+            gl.produce(&intent, 4, 1).words,
+            back.produce(&intent, 4, 1).words
+        );
     }
 
     #[test]
@@ -164,7 +181,10 @@ mod tests {
     fn bad_version_is_rejected() {
         let mut gl = GroundedLanguage::new(4, 1);
         gl.learn_from_text("a b c");
-        let json = gl.to_json().unwrap().replace("\"version\":1", "\"version\":999");
+        let json = gl
+            .to_json()
+            .unwrap()
+            .replace("\"version\":1", "\"version\":999");
         assert!(matches!(
             GroundedLanguage::from_json(&json),
             Err(PersistError::BadVersion(999))

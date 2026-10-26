@@ -192,7 +192,10 @@ mod tests {
         let v = -50.0;
         let dv = compute_dv(v, -70.0, 20.0, 1.0, 0.0, 1000.0, 0.0, 0.0, -80.0, true);
         let v_after = v + dv;
-        assert!(v_after <= 0.0 + 1e-3, "v_after = {v_after} should be <= E_exc");
+        assert!(
+            v_after <= 0.0 + 1e-3,
+            "v_after = {v_after} should be <= E_exc"
+        );
     }
 
     #[test]
@@ -201,13 +204,18 @@ mod tests {
         let v = -75.0;
         let dv = compute_dv(v, -70.0, 20.0, 1.0, 0.0, 0.0, 1000.0, 0.0, -80.0, true);
         let v_after = v + dv;
-        assert!(v_after >= -80.0 - 1e-3, "v_after = {v_after} should be >= E_inh");
+        assert!(
+            v_after >= -80.0 - 1e-3,
+            "v_after = {v_after} should be >= E_inh"
+        );
     }
 
     #[test]
     fn dv_is_clamped_to_100mv() {
         // Pathological tau collapse: tau very small → dv would explode.
-        let dv = compute_dv(-65.0, -70.0, 0.001, 1.0, 1000.0, 0.0, 0.0, 0.0, -80.0, false);
+        let dv = compute_dv(
+            -65.0, -70.0, 0.001, 1.0, 1000.0, 0.0, 0.0, 0.0, -80.0, false,
+        );
         assert!(dv.abs() <= DV_CLAMP_MV);
     }
 

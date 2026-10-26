@@ -157,7 +157,12 @@ pub fn vec_and(a: &[Trit], b: &[Trit]) -> Option<Vec<Trit>> {
     if a.len() != b.len() {
         return None;
     }
-    Some(a.iter().zip(b.iter()).map(|(&x, &y)| trit_and(x, y)).collect())
+    Some(
+        a.iter()
+            .zip(b.iter())
+            .map(|(&x, &y)| trit_and(x, y))
+            .collect(),
+    )
 }
 
 /// Element-wise [`trit_or`].
@@ -166,7 +171,12 @@ pub fn vec_or(a: &[Trit], b: &[Trit]) -> Option<Vec<Trit>> {
     if a.len() != b.len() {
         return None;
     }
-    Some(a.iter().zip(b.iter()).map(|(&x, &y)| trit_or(x, y)).collect())
+    Some(
+        a.iter()
+            .zip(b.iter())
+            .map(|(&x, &y)| trit_or(x, y))
+            .collect(),
+    )
 }
 
 /// Dot product of two ternary vectors, treating trits as `-1/0/+1`.
@@ -252,7 +262,9 @@ impl TritPacked {
     /// Unpack to a freshly-allocated `Vec<Trit>`.
     #[must_use]
     pub fn to_trits(&self) -> Vec<Trit> {
-        (0..self.len).map(|i| self.get(i).unwrap_or(Trit::Zero)).collect()
+        (0..self.len)
+            .map(|i| self.get(i).unwrap_or(Trit::Zero))
+            .collect()
     }
 
     /// Get the `i`-th trit. Returns `TernaryError::OutOfBounds` for
@@ -367,7 +379,10 @@ mod tests {
     #[test]
     fn from_floats_batch() {
         let v = from_floats(&[0.5, -0.1, 0.0, -0.9], 0.3);
-        assert_eq!(v, vec![Trit::Positive, Trit::Zero, Trit::Zero, Trit::Negative]);
+        assert_eq!(
+            v,
+            vec![Trit::Positive, Trit::Zero, Trit::Zero, Trit::Negative]
+        );
     }
 
     #[test]
@@ -380,7 +395,10 @@ mod tests {
     fn vec_and_length_check() {
         assert!(vec_and(&[Trit::Positive], &[Trit::Zero, Trit::Zero]).is_none());
         assert_eq!(
-            vec_and(&[Trit::Positive, Trit::Negative], &[Trit::Negative, Trit::Positive]),
+            vec_and(
+                &[Trit::Positive, Trit::Negative],
+                &[Trit::Negative, Trit::Positive]
+            ),
             Some(vec![Trit::Negative, Trit::Negative])
         );
     }

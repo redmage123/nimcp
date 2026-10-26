@@ -166,10 +166,7 @@ mod tests {
         let mut g = PinkNoiseGen::new(8, 0x5EED);
         let samples = g.step_n(10_000);
         for &s in &samples {
-            assert!(
-                s.abs() < 2.0,
-                "pink-noise sample {s} out of ±2 band"
-            );
+            assert!(s.abs() < 2.0, "pink-noise sample {s} out of ±2 band");
         }
     }
 

@@ -66,8 +66,13 @@ impl ToxicityStack {
     /// MSE. Never mutates inputs / drops data.
     pub fn train_ml_from_pattern(&mut self, text: &str, lr: f32, dead_zone: f32) -> f32 {
         let teacher = self.pattern.classify(text);
-        self.ml
-            .train_step(text, teacher.predicted_harm, teacher.fairness_violation, lr, dead_zone)
+        self.ml.train_step(
+            text,
+            teacher.predicted_harm,
+            teacher.fairness_violation,
+            lr,
+            dead_zone,
+        )
     }
 
     /// Serialize just the ML weights (the only learned state).

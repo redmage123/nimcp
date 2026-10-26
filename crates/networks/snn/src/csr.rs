@@ -490,11 +490,7 @@ impl CsrSynapses {
                 n += 1;
             }
         }
-        if n == 0 {
-            1.0
-        } else {
-            sum / (n as f32)
-        }
+        if n == 0 { 1.0 } else { sum / (n as f32) }
     }
 
     /// Like [`Self::i_syn_cpu`] but uses a ternary weight buffer
@@ -1516,10 +1512,7 @@ mod tests {
             let downloaded = gpu.download_weights().unwrap();
             assert_eq!(downloaded.len(), cpu_ref.len());
             for (a, b) in downloaded.iter().zip(cpu_ref.iter()) {
-                assert!(
-                    (a - b).abs() < 1e-6,
-                    "scale drift: gpu={a} cpu_ref={b}"
-                );
+                assert!((a - b).abs() < 1e-6, "scale drift: gpu={a} cpu_ref={b}");
             }
         }
 

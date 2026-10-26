@@ -315,8 +315,7 @@ mod gpu {
     use std::sync::Arc;
 
     use cudarc::driver::{
-        CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig,
-        PushKernelArg,
+        CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
     };
     use ndarray::Array1;
     use nimcp_gpu::GpuError;
@@ -383,10 +382,7 @@ mod gpu {
         /// Phase 9b shared-context constructor — when the brain creates
         /// multiple LNN layers, reuse one context to avoid the
         /// per-context VRAM tax that bit V1 hard at scale.
-        pub fn new_with_context(
-            ctx: Arc<CudaContext>,
-            layer: &LtcLayer,
-        ) -> Result<Self, GpuError> {
+        pub fn new_with_context(ctx: Arc<CudaContext>, layer: &LtcLayer) -> Result<Self, GpuError> {
             let n_rec = layer.params.n_rec as u32;
             let n_in = layer.params.n_in as u32;
             if n_rec == 0 {
@@ -397,9 +393,7 @@ mod gpu {
             let module = ctx.load_module(ptx).map_err(cuda_err)?;
             let kernel = module.load_function("ltc_forward_step").map_err(cuda_err)?;
             // Phase 9g+ training-primitive kernels.
-            let outer_kernel = module
-                .load_function("outer_accumulate")
-                .map_err(cuda_err)?;
+            let outer_kernel = module.load_function("outer_accumulate").map_err(cuda_err)?;
             let axpy_kernel = module.load_function("axpy_step").map_err(cuda_err)?;
             let zero_kernel = module.load_function("zero_buffer").map_err(cuda_err)?;
 
@@ -427,22 +421,26 @@ mod gpu {
             let w_in = stream.memcpy_stod(w_in_host).map_err(cuda_err)?;
             let b = stream.memcpy_stod(b_host).map_err(cuda_err)?;
             let tau_base = stream.memcpy_stod(tau_host).map_err(cuda_err)?;
-            let x: CudaSlice<f32> = stream.alloc_zeros::<f32>(n_rec as usize).map_err(cuda_err)?;
+            let x: CudaSlice<f32> = stream
+                .alloc_zeros::<f32>(n_rec as usize)
+                .map_err(cuda_err)?;
             let u_buf: CudaSlice<f32> = if n_in == 0 {
                 stream.alloc_zeros::<f32>(1).map_err(cuda_err)?
             } else {
                 stream.alloc_zeros::<f32>(n_in as usize).map_err(cuda_err)?
             };
-            let pre_buf: CudaSlice<f32> =
-                stream.alloc_zeros::<f32>(n_rec as usize).map_err(cuda_err)?;
+            let pre_buf: CudaSlice<f32> = stream
+                .alloc_zeros::<f32>(n_rec as usize)
+                .map_err(cuda_err)?;
 
             // BPTT scratch — sized to the largest dimension we'd
             // multiply (n_rec) so the same buffer can hold dl_dpre or
             // x_prev. b_buf gets sized to max(n_rec, n_in) for x_prev
             // OR the layer-input vector.
             let bptt_max = (n_rec.max(n_in)).max(1) as usize;
-            let bptt_a_buf: CudaSlice<f32> =
-                stream.alloc_zeros::<f32>(n_rec as usize).map_err(cuda_err)?;
+            let bptt_a_buf: CudaSlice<f32> = stream
+                .alloc_zeros::<f32>(n_rec as usize)
+                .map_err(cuda_err)?;
             let bptt_b_buf: CudaSlice<f32> =
                 stream.alloc_zeros::<f32>(bptt_max).map_err(cuda_err)?;
 
@@ -508,7 +506,9 @@ mod gpu {
             self.stream
                 .memcpy_htod(w_in_host, &mut self.w_in)
                 .map_err(cuda_err)?;
-            self.stream.memcpy_htod(b_host, &mut self.b).map_err(cuda_err)?;
+            self.stream
+                .memcpy_htod(b_host, &mut self.b)
+                .map_err(cuda_err)?;
             self.stream
                 .memcpy_htod(tau_host, &mut self.tau_base)
                 .map_err(cuda_err)?;
@@ -588,7 +588,9 @@ mod gpu {
         /// Reset the device-resident hidden state to zeros.
         pub fn reset(&mut self) -> Result<(), GpuError> {
             let zero: Vec<f32> = vec![0.0; self.n_rec as usize];
-            self.stream.memcpy_htod(&zero, &mut self.x).map_err(cuda_err)?;
+            self.stream
+                .memcpy_htod(&zero, &mut self.x)
+                .map_err(cuda_err)?;
             Ok(())
         }
 
@@ -630,8 +632,16 @@ mod gpu {
             }
             let nrec = self.n_rec as usize;
             let nin = self.n_in as usize;
-            self.grad_w_rec = Some(self.stream.alloc_zeros::<f32>(nrec * nrec).map_err(cuda_err)?);
-            self.grad_w_in = Some(self.stream.alloc_zeros::<f32>(nrec * nin).map_err(cuda_err)?);
+            self.grad_w_rec = Some(
+                self.stream
+                    .alloc_zeros::<f32>(nrec * nrec)
+                    .map_err(cuda_err)?,
+            );
+            self.grad_w_in = Some(
+                self.stream
+                    .alloc_zeros::<f32>(nrec * nin)
+                    .map_err(cuda_err)?,
+            );
             self.grad_b = Some(self.stream.alloc_zeros::<f32>(nrec).map_err(cuda_err)?);
             self.grad_tau = Some(self.stream.alloc_zeros::<f32>(nrec).map_err(cuda_err)?);
             Ok(())
@@ -640,7 +650,12 @@ mod gpu {
         /// Zero every gradient buffer in place. No-op if grads were
         /// never allocated. Run between epochs / after `sgd_step`.
         pub fn zero_grads(&mut self) -> Result<(), GpuError> {
-            for buf in [&mut self.grad_w_rec, &mut self.grad_w_in, &mut self.grad_b, &mut self.grad_tau] {
+            for buf in [
+                &mut self.grad_w_rec,
+                &mut self.grad_w_in,
+                &mut self.grad_b,
+                &mut self.grad_tau,
+            ] {
                 if let Some(b) = buf.as_mut() {
                     let n = b.len() as u32;
                     let cfg = LaunchConfig::for_num_elems(n);
@@ -922,12 +937,18 @@ mod gpu {
             };
             gpu.ensure_grads().expect("alloc grads");
             // Two consecutive accumulations must sum.
-            let dl_dpre1: Vec<f32> = (0..layer.params.n_rec).map(|i| 0.1 * (i as f32 + 1.0)).collect();
-            let x_prev1: Vec<f32> = (0..layer.params.n_rec).map(|j| -0.05 * (j as f32 + 1.0)).collect();
+            let dl_dpre1: Vec<f32> = (0..layer.params.n_rec)
+                .map(|i| 0.1 * (i as f32 + 1.0))
+                .collect();
+            let x_prev1: Vec<f32> = (0..layer.params.n_rec)
+                .map(|j| -0.05 * (j as f32 + 1.0))
+                .collect();
             let dl_dpre2: Vec<f32> = vec![0.5; layer.params.n_rec];
             let x_prev2: Vec<f32> = vec![-0.2; layer.params.n_rec];
-            gpu.accumulate_grad_w_rec(&dl_dpre1, &x_prev1).expect("acc1");
-            gpu.accumulate_grad_w_rec(&dl_dpre2, &x_prev2).expect("acc2");
+            gpu.accumulate_grad_w_rec(&dl_dpre1, &x_prev1)
+                .expect("acc1");
+            gpu.accumulate_grad_w_rec(&dl_dpre2, &x_prev2)
+                .expect("acc2");
 
             let mut got: Vec<f32> = Vec::new();
             gpu.download_grad_w_rec(&mut got).expect("download");
@@ -979,7 +1000,8 @@ mod gpu {
             // Accumulate a known grad (all-ones outer of 1.0 vectors → 1.0
             // in every cell).
             let ones_n_rec = vec![1.0_f32; layer.params.n_rec];
-            gpu.accumulate_grad_w_rec(&ones_n_rec, &ones_n_rec).expect("acc");
+            gpu.accumulate_grad_w_rec(&ones_n_rec, &ones_n_rec)
+                .expect("acc");
             // sgd with lr=0.1 → w_rec[i,j] -= 0.1 * 1.0 = -0.1.
             gpu.sgd_step(0.1).expect("sgd");
             // Run forward once more — if SGD silently no-op'd, the

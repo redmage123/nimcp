@@ -38,5 +38,5 @@
 pub mod channel;
 pub mod router;
 
-pub use channel::{RelayMode, ThalamicChannel, ThalamicSubmit, THALAMIC_MAX_DESTINATIONS};
+pub use channel::{RelayMode, THALAMIC_MAX_DESTINATIONS, ThalamicChannel, ThalamicSubmit};
 pub use router::{ThalamicError, ThalamicRouter, ThalamicRouterConfig};

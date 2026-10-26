@@ -45,7 +45,11 @@ const DEFAULT_METRICS_INTERVAL_SEC: u64 = 1;
 
 /// CLI.
 #[derive(Debug, Parser)]
-#[command(name = "nimcp-v2-daemon", version, about = "NIMCP V2 brain daemon — the Hera model")]
+#[command(
+    name = "nimcp-v2-daemon",
+    version,
+    about = "NIMCP V2 brain daemon — the Hera model"
+)]
 struct Args {
     /// Path to the Unix socket the daemon listens on. Removed before
     /// bind so a stale socket from a prior crash doesn't block startup.
@@ -370,7 +374,9 @@ async fn handle_request(
         Request::SetReasonInContent { on } => {
             let mut g = brain.lock().await;
             if g.language().is_none() {
-                return Response::err("set_reason_in_content: language not configured on this brain");
+                return Response::err(
+                    "set_reason_in_content: language not configured on this brain",
+                );
             }
             g.set_reason_in_content(on);
             tracing::info!(on, "set_reason_in_content");
@@ -393,7 +399,9 @@ async fn handle_request(
             let mut g = brain.lock().await;
             match g.working_memory_add(&data, salience) {
                 Ok(()) => {
-                    let size = g.working_memory().map_or(0, nimcp_cognition::WorkingMemory::size);
+                    let size = g
+                        .working_memory()
+                        .map_or(0, nimcp_cognition::WorkingMemory::size);
                     Response::ok(json!({"size": size, "now_ms": g.cognition_now_ms()}))
                 }
                 Err(e) => Response::err(format!("working_memory_add: {e}")),
@@ -404,7 +412,10 @@ async fn handle_request(
             let mut g = brain.lock().await;
             match g.imagination_stage(&content, vividness) {
                 Ok(()) => {
-                    let viv = g.imagination().and_then(|im| im.active_vector()).map(|(_, v)| v);
+                    let viv = g
+                        .imagination()
+                        .and_then(|im| im.active_vector())
+                        .map(|(_, v)| v);
                     Response::ok(json!({"staged": true, "vividness": viv}))
                 }
                 Err(e) => Response::err(format!("imagination_stage: {e}")),
@@ -535,8 +546,7 @@ fn init_tracing(training_log: &PathBuf) -> eyre_like::Result<()> {
     if let Some(parent) = training_log.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create {parent:?}: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
     }
     // Plain append-only line log. We don't daily-rotate here — supervisord
     // and logrotate handle that in production.

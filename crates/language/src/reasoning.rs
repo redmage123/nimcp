@@ -106,7 +106,10 @@ impl GroundedLanguage {
                 Some(idx) => {
                     let entry = self.lexicon.entry(idx);
                     // Drop closed-class words (same filter as produce/cascade).
-                    if matches!(entry.learned_class, WordClass::Function | WordClass::Pronoun) {
+                    if matches!(
+                        entry.learned_class,
+                        WordClass::Function | WordClass::Pronoun
+                    ) {
                         continue;
                     }
                     evidences.push(word_evidence(
@@ -206,9 +209,21 @@ mod tests {
 
     fn engine() -> GroundedLanguage {
         let mut gl = GroundedLanguage::new(8, 1);
-        gl.ground("dog", &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("cat", &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Visual);
-        gl.ground("run", &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], Modality::Motor);
+        gl.ground(
+            "dog",
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "cat",
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Visual,
+        );
+        gl.ground(
+            "run",
+            &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Modality::Motor,
+        );
         for _ in 0..30 {
             gl.learn_from_text("the dog and the cat run");
         }
@@ -219,10 +234,19 @@ mod tests {
     fn classifies_query_types() {
         assert_eq!(classify_query_type("what is a dog"), QueryType::Factual);
         assert_eq!(classify_query_type("why does it run"), QueryType::Causal);
-        assert_eq!(classify_query_type("how do cats hunt"), QueryType::Procedural);
-        assert_eq!(classify_query_type("when did it happen"), QueryType::Temporal);
+        assert_eq!(
+            classify_query_type("how do cats hunt"),
+            QueryType::Procedural
+        );
+        assert_eq!(
+            classify_query_type("when did it happen"),
+            QueryType::Temporal
+        );
         assert_eq!(classify_query_type("where is the cat"), QueryType::Spatial);
-        assert_eq!(classify_query_type("who let the dog out"), QueryType::Identity);
+        assert_eq!(
+            classify_query_type("who let the dog out"),
+            QueryType::Identity
+        );
         assert_eq!(classify_query_type("the dog runs"), QueryType::Declarative);
         assert_eq!(classify_query_type(""), QueryType::Declarative);
     }
@@ -243,7 +267,11 @@ mod tests {
         // approach a known answer.
         let single_unknown = gl.reason("xyzzy");
         assert!(single_unknown.confidence <= UNKNOWN_EVIDENCE + 1e-6);
-        assert!(unknown.confidence < 0.25, "multi-gap stays low: {}", unknown.confidence);
+        assert!(
+            unknown.confidence < 0.25,
+            "multi-gap stays low: {}",
+            unknown.confidence
+        );
     }
 
     #[test]

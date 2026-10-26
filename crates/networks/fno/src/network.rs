@@ -170,9 +170,16 @@ impl FnoNetwork {
                 .wrapping_mul(0xD123_4567_89AB_CDEF)
         };
 
-        let input_proj = LinearMixLayer::new(config.in_channels, config.hidden_channels, mix_seed(0));
+        let input_proj =
+            LinearMixLayer::new(config.in_channels, config.hidden_channels, mix_seed(0));
         let blocks: Vec<FnoBlock> = (0..config.n_blocks)
-            .map(|i| FnoBlock::new(config.hidden_channels, config.modes, mix_seed((i + 1) as u64)))
+            .map(|i| {
+                FnoBlock::new(
+                    config.hidden_channels,
+                    config.modes,
+                    mix_seed((i + 1) as u64),
+                )
+            })
             .collect();
         let output_proj = LinearMixLayer::new(
             config.hidden_channels,
@@ -373,7 +380,11 @@ mod tests {
         for length in [16, 32, 64] {
             let input = Array3::from_shape_fn((1, 1, length), |(_, _, l)| l as f32 * 0.05);
             let out = net.forward(&input);
-            assert_eq!(out.dim(), (1, 1, length), "fno length not preserved at {length}");
+            assert_eq!(
+                out.dim(),
+                (1, 1, length),
+                "fno length not preserved at {length}"
+            );
         }
     }
 
@@ -400,7 +411,10 @@ mod tests {
         let a = net.forward(&input);
         let b = restored.forward(&input);
         for (x, y) in a.iter().zip(b.iter()) {
-            assert!((x - y).abs() < 1e-5, "forward drift after serde: {x} vs {y}");
+            assert!(
+                (x - y).abs() < 1e-5,
+                "forward drift after serde: {x} vs {y}"
+            );
         }
     }
 
@@ -438,7 +452,10 @@ mod tests {
         let modulated = net.forward_modulated(&inp);
         let plain = plain_net.forward(&inp);
         for (a, b) in modulated.iter().zip(plain.iter()) {
-            assert!((a - b).abs() < 1e-6, "full health should be identity: {a} vs {b}");
+            assert!(
+                (a - b).abs() < 1e-6,
+                "full health should be identity: {a} vs {b}"
+            );
         }
     }
 
@@ -453,7 +470,10 @@ mod tests {
             let _ = net.forward_modulated(&inp);
         }
         let atp_after = net.substrate_state().unwrap().atp_level;
-        assert!(atp_after <= atp_before, "ATP should not rise under activity");
+        assert!(
+            atp_after <= atp_before,
+            "ATP should not rise under activity"
+        );
     }
 
     #[test]

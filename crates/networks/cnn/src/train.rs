@@ -163,7 +163,11 @@ impl ReluLayer {
 
 impl FlattenLayer {
     /// Backward through flatten — reshape only.
-    pub fn backward(&self, original_shape: (usize, usize, usize, usize), grad_out: &Array2<f32>) -> Array4<f32> {
+    pub fn backward(
+        &self,
+        original_shape: (usize, usize, usize, usize),
+        grad_out: &Array2<f32>,
+    ) -> Array4<f32> {
         let raw: Vec<f32> = grad_out.iter().copied().collect();
         Array4::from_shape_vec(original_shape, raw)
             .expect("flatten backward: element count must match original shape")
@@ -439,9 +443,7 @@ fn backward_grads(
             }
             CnnLayer::Relu(r) => {
                 if let Some(grad) = g_spatial.take() {
-                    let input_4d = cache.spatial[in_idx]
-                        .as_ref()
-                        .expect("relu spatial input");
+                    let input_4d = cache.spatial[in_idx].as_ref().expect("relu spatial input");
                     g_spatial = Some(r.backward(input_4d, &grad));
                 } else if let Some(grad) = g_flat.take() {
                     let input_2d = cache.flat[in_idx].as_ref().expect("relu flat input");
@@ -449,17 +451,17 @@ fn backward_grads(
                 }
             }
             CnnLayer::Pool(p) => {
-                let input_4d = cache.spatial[in_idx]
-                    .as_ref()
-                    .expect("pool spatial input");
-                let grad = g_spatial.take().expect("pool backward without spatial grad");
+                let input_4d = cache.spatial[in_idx].as_ref().expect("pool spatial input");
+                let grad = g_spatial
+                    .take()
+                    .expect("pool backward without spatial grad");
                 g_spatial = Some(p.backward(input_4d, &grad));
             }
             CnnLayer::Conv(c) => {
-                let input_4d = cache.spatial[in_idx]
-                    .as_ref()
-                    .expect("conv spatial input");
-                let grad = g_spatial.take().expect("conv backward without spatial grad");
+                let input_4d = cache.spatial[in_idx].as_ref().expect("conv spatial input");
+                let grad = g_spatial
+                    .take()
+                    .expect("conv backward without spatial grad");
                 let gw = grads.conv_weight[idx].as_mut().expect("alloc'd above");
                 let gb = grads.conv_bias[idx].as_mut().expect("alloc'd above");
                 let g_in = c.backward(input_4d, &grad, gw, gb);
@@ -500,9 +502,10 @@ pub fn sgd_step(net: &mut CnnNetwork, grads: &CnnGradients, lr: f32) {
     for (idx, layer) in net.layers.iter_mut().enumerate() {
         match layer {
             CnnLayer::Conv(c) => {
-                if let (Some(gw), Some(gb)) =
-                    (grads.conv_weight[idx].as_ref(), grads.conv_bias[idx].as_ref())
-                {
+                if let (Some(gw), Some(gb)) = (
+                    grads.conv_weight[idx].as_ref(),
+                    grads.conv_bias[idx].as_ref(),
+                ) {
                     for (w, g) in c.weight.iter_mut().zip(gw.iter()) {
                         *w -= lr * *g;
                     }
@@ -542,9 +545,10 @@ pub fn sgd_step_gated(net: &mut CnnNetwork, grads: &CnnGradients, lr: f32, ltp: 
     for (idx, layer) in net.layers.iter_mut().enumerate() {
         match layer {
             CnnLayer::Conv(c) => {
-                if let (Some(gw), Some(gb)) =
-                    (grads.conv_weight[idx].as_ref(), grads.conv_bias[idx].as_ref())
-                {
+                if let (Some(gw), Some(gb)) = (
+                    grads.conv_weight[idx].as_ref(),
+                    grads.conv_bias[idx].as_ref(),
+                ) {
                     for (w, g) in c.weight.iter_mut().zip(gw.iter()) {
                         *w -= lr * gate(*g);
                     }
@@ -729,16 +733,16 @@ mod tests {
             gw[[oc, ic, di, dj]],
             num
         );
-        assert!(gb[0] - 1.0 < 1e-6, "conv grad_bias should be 1 for a unit upstream");
+        assert!(
+            gb[0] - 1.0 < 1e-6,
+            "conv grad_bias should be 1 for a unit upstream"
+        );
     }
 
     #[test]
     fn maxpool_backward_routes_to_argmax() {
         let pool = MaxPool2dLayer::square(2);
-        let input = Array4::from_shape_vec(
-            (1, 1, 2, 2),
-            vec![1.0_f32, 4.0, 3.0, 2.0],
-        ).unwrap();
+        let input = Array4::from_shape_vec((1, 1, 2, 2), vec![1.0_f32, 4.0, 3.0, 2.0]).unwrap();
         let grad_out = Array4::from_shape_vec((1, 1, 1, 1), vec![5.0_f32]).unwrap();
         let g_in = pool.backward(&input, &grad_out);
         // argmax was at [0,0,0,1] (value 4.0); all gradient should land there.

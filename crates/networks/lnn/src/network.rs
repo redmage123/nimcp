@@ -351,12 +351,11 @@ impl LnnNetwork {
         // Thalamic channel — constructed iff thalamic cfg provided.
         let (thalamic_channel, thalamic_submit_threshold) = match config.thalamic.as_ref() {
             Some(cfg) => {
-                let mut ch =
-                    nimcp_thalamic::ThalamicChannel::new(cfg.source_id, &cfg.destinations)
-                        .ok_or(LnnError::InputDimMismatch {
-                            got: cfg.destinations.len(),
-                            expected: nimcp_thalamic::THALAMIC_MAX_DESTINATIONS,
-                        })?;
+                let mut ch = nimcp_thalamic::ThalamicChannel::new(cfg.source_id, &cfg.destinations)
+                    .ok_or(LnnError::InputDimMismatch {
+                        got: cfg.destinations.len(),
+                        expected: nimcp_thalamic::THALAMIC_MAX_DESTINATIONS,
+                    })?;
                 ch.mode = cfg.mode;
                 (Some(ch), cfg.submit_threshold.max(0.0))
             }
@@ -578,10 +577,8 @@ impl LnnNetwork {
         }
 
         // Thalamic attention-scale on input.
-        let modulated_input = crate::substrate_adapter::attention_scale_input(
-            input,
-            self.thalamic_channel.as_ref(),
-        );
+        let modulated_input =
+            crate::substrate_adapter::attention_scale_input(input, self.thalamic_channel.as_ref());
 
         // Effective dt from substrate capacitance (if enabled + opted in).
         let dt_eff = if has_substrate && self.substrate_cfg.capacitance_on {
@@ -591,9 +588,8 @@ impl LnnNetwork {
         };
 
         // Burst-mode tau ceiling (biological: burst relays run fast).
-        let burst_clamp = crate::substrate_adapter::burst_tau_clamp_ms(
-            self.thalamic_channel.as_ref(),
-        );
+        let burst_clamp =
+            crate::substrate_adapter::burst_tau_clamp_ms(self.thalamic_channel.as_ref());
 
         // Walk layers forward with override-aware kernel.
         let mut curr_input: Array1<f32> = modulated_input;
@@ -832,13 +828,12 @@ mod tests {
         let net = LnnNetwork::new(cfg).unwrap();
         assert!(net.thalamic_channel.is_some());
 
-        let mut router = nimcp_thalamic::ThalamicRouter::new(
-            nimcp_thalamic::ThalamicRouterConfig {
+        let mut router =
+            nimcp_thalamic::ThalamicRouter::new(nimcp_thalamic::ThalamicRouterConfig {
                 hebbian_lr: 0.5,
                 hebbian_decay: 0.0,
                 ..Default::default()
-            },
-        );
+            });
         router.open_channel(77, &[10, 20]).unwrap();
         router.record_submit(77);
         router.tick();

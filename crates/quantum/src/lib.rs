@@ -22,5 +22,5 @@
 pub mod qmc;
 pub mod walk;
 
-pub use qmc::{metropolis_step, MetropolisError, MetropolisState};
-pub use walk::{normalize_amplitudes, probabilities, Amp, QuantumWalker, WalkError};
+pub use qmc::{MetropolisError, MetropolisState, metropolis_step};
+pub use walk::{Amp, QuantumWalker, WalkError, normalize_amplitudes, probabilities};

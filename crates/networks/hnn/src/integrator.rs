@@ -62,7 +62,8 @@ mod tests {
     fn energy_conservation_harmonic_oscillator() {
         // H(q,p) = 0.5 * (q^2 + p^2). dH/dq = q, dH/dp = p.
         let h_fn = |q: &Array1<f32>, p: &Array1<f32>| {
-            let h = 0.5 * (q.iter().map(|v| v * v).sum::<f32>() + p.iter().map(|v| v * v).sum::<f32>());
+            let h =
+                0.5 * (q.iter().map(|v| v * v).sum::<f32>() + p.iter().map(|v| v * v).sum::<f32>());
             (h, q.clone(), p.clone())
         };
 
@@ -91,7 +92,8 @@ mod tests {
     #[test]
     fn forward_euler_drifts_more_than_symplectic() {
         let h_fn = |q: &Array1<f32>, p: &Array1<f32>| {
-            let h = 0.5 * (q.iter().map(|v| v * v).sum::<f32>() + p.iter().map(|v| v * v).sum::<f32>());
+            let h =
+                0.5 * (q.iter().map(|v| v * v).sum::<f32>() + p.iter().map(|v| v * v).sum::<f32>());
             (h, q.clone(), p.clone())
         };
 

@@ -228,11 +228,21 @@ impl Lexicon {
     /// `strength ← min(1, strength + delta)`, `modality_strength[m] +=
     /// lr·input`, `exposure += 1`, `confidence = 1 − exp(−exposure/5)`.
     /// New binding: created at `input_strength`.
-    pub fn bind(&mut self, idx: usize, concept_id: ConceptId, input_strength: f32, modality: Modality) {
+    pub fn bind(
+        &mut self,
+        idx: usize,
+        concept_id: ConceptId,
+        input_strength: f32,
+        modality: Modality,
+    ) {
         let lr = self.hebbian_lr;
         let entry = &mut self.entries[idx];
         let input = input_strength.clamp(0.0, 1.0);
-        if let Some(b) = entry.bindings.iter_mut().find(|b| b.concept_id == concept_id) {
+        if let Some(b) = entry
+            .bindings
+            .iter_mut()
+            .find(|b| b.concept_id == concept_id)
+        {
             let delta = lr * (1.0 - b.strength) * input;
             b.strength = (b.strength + delta).min(1.0);
             b.modality_strength[modality as usize] =
@@ -240,7 +250,9 @@ impl Lexicon {
             b.exposure_count = b.exposure_count.saturating_add(1);
             b.confidence = confidence_for(b.exposure_count);
         } else {
-            entry.bindings.push(WordBinding::new(concept_id, input, modality));
+            entry
+                .bindings
+                .push(WordBinding::new(concept_id, input, modality));
         }
     }
 
@@ -259,7 +271,12 @@ impl Lexicon {
         self.bind(idx, concept_id, crate::FAST_MAP_STRENGTH, modality);
         let dim = self.semantic_dim;
         let entry = &mut self.entries[idx];
-        for (dst, &src) in entry.context_vector.iter_mut().zip(features.iter()).take(dim) {
+        for (dst, &src) in entry
+            .context_vector
+            .iter_mut()
+            .zip(features.iter())
+            .take(dim)
+        {
             *dst = src;
         }
         entry.context_initialized = true;
@@ -350,13 +367,21 @@ mod tests {
         lex.bind(i, ConceptId(1), 0.6, Modality::Visual);
         lex.bind(i, ConceptId(2), 0.4, Modality::Linguistic);
         assert_eq!(lex.entry(i).bindings.len(), 2);
-        assert_eq!(lex.entry(i).best_binding().unwrap().concept_id, ConceptId(1));
+        assert_eq!(
+            lex.entry(i).best_binding().unwrap().concept_id,
+            ConceptId(1)
+        );
     }
 
     #[test]
     fn fast_map_strong_binds_and_seeds_vector() {
         let mut lex = Lexicon::new(4);
-        let i = lex.fast_map("apple", ConceptId(3), &[0.1, 0.2, 0.3, 0.4], Modality::Visual);
+        let i = lex.fast_map(
+            "apple",
+            ConceptId(3),
+            &[0.1, 0.2, 0.3, 0.4],
+            Modality::Visual,
+        );
         assert_eq!(lex.entry(i).bindings[0].strength, crate::FAST_MAP_STRENGTH);
         assert!(lex.entry(i).context_initialized);
         assert_eq!(lex.entry(i).context_vector, vec![0.1, 0.2, 0.3, 0.4]);

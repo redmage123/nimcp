@@ -321,7 +321,10 @@ RssShmem:\t   512 kB
         // platforms the snapshot is zero — both cases are valid.
         let s = snapshot();
         #[cfg(target_os = "linux")]
-        assert!(s.proc.vm_rss_bytes > 0, "live linux process must have RSS > 0");
+        assert!(
+            s.proc.vm_rss_bytes > 0,
+            "live linux process must have RSS > 0"
+        );
         #[cfg(not(target_os = "linux"))]
         assert_eq!(s.proc.vm_rss_bytes, 0);
     }

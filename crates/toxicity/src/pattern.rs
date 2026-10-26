@@ -109,11 +109,17 @@ impl PatternClassifier {
             if pat.starts_with(LOAD_FROM_FILE_MARKER) {
                 continue; // external slurs file not shipped
             }
-            let description = cols.get(4).map(|s| s.trim().to_string()).unwrap_or_default();
+            let description = cols
+                .get(4)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             let regex = regex::RegexBuilder::new(pat)
                 .case_insensitive(true)
                 .build()
-                .map_err(|e| RulesError::Regex { line: i + 1, source: e })?;
+                .map_err(|e| RulesError::Regex {
+                    line: i + 1,
+                    source: e,
+                })?;
             rules.push(PatternRule {
                 category,
                 harm_weight,

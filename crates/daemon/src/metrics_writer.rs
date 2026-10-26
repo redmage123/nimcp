@@ -159,7 +159,12 @@ impl MetricsSnapshot {
             + stats
                 .snn
                 .as_ref()
-                .map(|s| s.populations.iter().map(|p| p.n_neurons as u64).sum::<u64>())
+                .map(|s| {
+                    s.populations
+                        .iter()
+                        .map(|p| p.n_neurons as u64)
+                        .sum::<u64>()
+                })
                 .unwrap_or(0)
             + stats
                 .lnn
@@ -174,12 +179,8 @@ impl MetricsSnapshot {
         // sparsity is (1 - mean_spike_fraction_this_step).
         let (snn_rate_hz, snn_sparsity) = if let Some(snn) = stats.snn.as_ref() {
             let n_pops = snn.populations.len().max(1);
-            let mean_rate_ema: f32 = snn
-                .populations
-                .iter()
-                .map(|p| p.rate_ema)
-                .sum::<f32>()
-                / n_pops as f32;
+            let mean_rate_ema: f32 =
+                snn.populations.iter().map(|p| p.rate_ema).sum::<f32>() / n_pops as f32;
             let mean_spike_frac: f32 = snn
                 .populations
                 .iter()
@@ -191,7 +192,10 @@ impl MetricsSnapshot {
                 / n_pops as f32;
             // rate_ema is fraction-spiking-per-step; 1-sparsity is the
             // active fraction. Sparsity = 1 - active_fraction.
-            (mean_rate_ema * 1000.0, (1.0 - mean_spike_frac).clamp(0.0, 1.0))
+            (
+                mean_rate_ema * 1000.0,
+                (1.0 - mean_spike_frac).clamp(0.0, 1.0),
+            )
         } else {
             (0.0, 0.0)
         };

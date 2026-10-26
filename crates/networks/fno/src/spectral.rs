@@ -32,7 +32,10 @@ pub struct SpectralConv1dLayer {
 
 impl SpectralConv1dLayer {
     pub fn new(in_channels: usize, out_channels: usize, modes: usize, seed: u64) -> Self {
-        assert!(in_channels > 0 && out_channels > 0 && modes > 0, "spectral: zero dim");
+        assert!(
+            in_channels > 0 && out_channels > 0 && modes > 0,
+            "spectral: zero dim"
+        );
         let mut rng = ChaCha20Rng::seed_from_u64(seed);
         let bound = 1.0_f32 / (in_channels as f32 * modes as f32);
         let dist = Uniform::new(-bound, bound).expect("scale > 0");
@@ -114,10 +117,8 @@ impl SpectralConv1dLayer {
                 for ic in 0..self.in_channels {
                     let xk = in_bins[ic][k];
                     for oc in 0..self.out_channels {
-                        let w = Complex::new(
-                            self.weight_re[[k, ic, oc]],
-                            self.weight_im[[k, ic, oc]],
-                        );
+                        let w =
+                            Complex::new(self.weight_re[[k, ic, oc]], self.weight_im[[k, ic, oc]]);
                         out_bins[oc][k] += w * xk;
                     }
                 }

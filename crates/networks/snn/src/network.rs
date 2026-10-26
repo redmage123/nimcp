@@ -614,14 +614,10 @@ impl SnnNetwork {
             #[cfg(feature = "cuda")]
             let lif_gpu = if let Some(ctx) = pop_ctx[pop_idx].as_ref() {
                 Some(
-                    crate::lif::LifGpu::new_with_context(
-                        ctx.clone(),
-                        spec.n_neurons,
-                        &spec.lif,
-                    )
-                    .map_err(|e| {
-                        SnnError::GpuUnavailable(format!("LifGpu pop {pop_idx}: {e:?}"))
-                    })?,
+                    crate::lif::LifGpu::new_with_context(ctx.clone(), spec.n_neurons, &spec.lif)
+                        .map_err(|e| {
+                            SnnError::GpuUnavailable(format!("LifGpu pop {pop_idx}: {e:?}"))
+                        })?,
                 )
             } else {
                 None
@@ -707,9 +703,11 @@ impl SnnNetwork {
             // population's device (i_syn is per destination neuron).
             #[cfg(feature = "cuda")]
             let csr_gpu = if let Some(ctx) = pop_ctx[spec.dst].as_ref() {
-                Some(crate::csr::CsrGpu::new_with_context(ctx.clone(), &csr).map_err(|e| {
-                    SnnError::GpuUnavailable(format!("CsrGpu edge {edge_idx}: {e:?}"))
-                })?)
+                Some(
+                    crate::csr::CsrGpu::new_with_context(ctx.clone(), &csr).map_err(|e| {
+                        SnnError::GpuUnavailable(format!("CsrGpu edge {edge_idx}: {e:?}"))
+                    })?,
+                )
             } else {
                 None
             };
@@ -717,9 +715,9 @@ impl SnnNetwork {
             #[cfg(feature = "cuda")]
             let rstdp_gpu = if let Some(ctx) = pop_ctx[spec.dst].as_ref() {
                 Some(
-                    crate::rstdp::RstdpGpu::new_with_context(ctx.clone(), &csr).map_err(
-                        |e| SnnError::GpuUnavailable(format!("RstdpGpu edge {edge_idx}: {e:?}")),
-                    )?,
+                    crate::rstdp::RstdpGpu::new_with_context(ctx.clone(), &csr).map_err(|e| {
+                        SnnError::GpuUnavailable(format!("RstdpGpu edge {edge_idx}: {e:?}"))
+                    })?,
                 )
             } else {
                 None
@@ -742,16 +740,15 @@ impl SnnNetwork {
         // Thalamic channel — constructed from optional network-level cfg.
         let (thalamic_channel, thalamic_submit_threshold) = match config.thalamic.as_ref() {
             Some(cfg) => {
-                let mut ch =
-                    nimcp_thalamic::ThalamicChannel::new(cfg.source_id, &cfg.destinations)
-                        .ok_or_else(|| SnnError::StabilityInit {
-                            pop_idx: 0,
-                            msg: format!(
-                                "thalamic: too many destinations ({} > {})",
-                                cfg.destinations.len(),
-                                nimcp_thalamic::THALAMIC_MAX_DESTINATIONS
-                            ),
-                        })?;
+                let mut ch = nimcp_thalamic::ThalamicChannel::new(cfg.source_id, &cfg.destinations)
+                    .ok_or_else(|| SnnError::StabilityInit {
+                        pop_idx: 0,
+                        msg: format!(
+                            "thalamic: too many destinations ({} > {})",
+                            cfg.destinations.len(),
+                            nimcp_thalamic::THALAMIC_MAX_DESTINATIONS
+                        ),
+                    })?;
                 ch.mode = cfg.mode;
                 (Some(ch), cfg.submit_threshold.clamp(0.0, 1.0))
             }
@@ -1018,8 +1015,7 @@ impl SnnNetwork {
         //    helper just like a synaptic input — positive→g_exc,
         //    negative→g_inh.
         for (pop_idx, pop) in self.populations.iter_mut().enumerate() {
-            let cb_mode = pop.spec.lif.conductance.is_some()
-                && pop.state.conductance.is_some();
+            let cb_mode = pop.spec.lif.conductance.is_some() && pop.state.conductance.is_some();
 
             // Zero I_syn scratch (still used for non-synaptic terms in CB
             // mode; for current mode it accumulates synaptic input).
@@ -1038,11 +1034,8 @@ impl SnnNetwork {
                         .conductance
                         .as_mut()
                         .expect("cb_mode implies conductance state present");
-                    for ((g_exc, g_inh), &src) in cb
-                        .g_exc
-                        .iter_mut()
-                        .zip(cb.g_inh.iter_mut())
-                        .zip(ext.iter())
+                    for ((g_exc, g_inh), &src) in
+                        cb.g_exc.iter_mut().zip(cb.g_inh.iter_mut()).zip(ext.iter())
                     {
                         if src >= 0.0 {
                             *g_exc += src;
@@ -1097,10 +1090,7 @@ impl SnnNetwork {
             //   - Poisson → per-neuron Bernoulli pulses
             //   - Pink    → one shared 1/f sample per step, also recorded
             //     into the population's ring buffer for DFA monitoring.
-            let factor = crate::noise::noise_factor_for_pop(
-                pop.rate.rate(),
-                pop.spec.target_rate,
-            );
+            let factor = crate::noise::noise_factor_for_pop(pop.rate.rate(), pop.spec.target_rate);
             match pop.spec.noise.kind {
                 crate::noise::NoiseKind::Poisson => {
                     crate::noise::inject_poisson_noise(
@@ -1145,7 +1135,11 @@ impl SnnNetwork {
                         *h += t;
                     }
                 }
-                for (vp, &h) in pop.v_prep_scratch.iter_mut().zip(pop.hyperpol_scratch.iter()) {
+                for (vp, &h) in pop
+                    .v_prep_scratch
+                    .iter_mut()
+                    .zip(pop.hyperpol_scratch.iter())
+                {
                     *vp -= h;
                 }
             }
@@ -1178,8 +1172,7 @@ impl SnnNetwork {
             let src_spikes = &self.populations[src].state.spike;
             // Depression scale — only supply when STD actually in play,
             // so the non-depression hot path stays at v1 perf.
-            let pre_scale: Option<&[f32]> = if self.populations[src].spec.depression.is_disabled()
-            {
+            let pre_scale: Option<&[f32]> = if self.populations[src].spec.depression.is_disabled() {
                 None
             } else {
                 Some(&self.populations[src].depression_scale_scratch)
@@ -1237,28 +1230,26 @@ impl SnnNetwork {
             let used_gpu = false;
 
             if !used_gpu {
-                edge.csr.i_syn_cpu_with_pre_scale(
-                    src_spikes,
-                    pre_scale,
-                    &mut edge.i_syn_scratch,
-                );
+                edge.csr
+                    .i_syn_cpu_with_pre_scale(src_spikes, pre_scale, &mut edge.i_syn_scratch);
             }
         }
         for edge in &self.edges {
             let dst_pop = &mut self.populations[edge.spec.dst];
-            let dst_cb_mode = dst_pop.spec.lif.conductance.is_some()
-                && dst_pop.state.conductance.is_some();
+            let dst_cb_mode =
+                dst_pop.spec.lif.conductance.is_some() && dst_pop.state.conductance.is_some();
             if dst_cb_mode {
                 let cb = dst_pop
                     .state
                     .conductance
                     .as_mut()
                     .expect("dst_cb_mode implies conductance state present");
-                for ((g_exc, g_inh), (&de, &di)) in cb
-                    .g_exc
-                    .iter_mut()
-                    .zip(cb.g_inh.iter_mut())
-                    .zip(edge.cb_g_exc_scratch.iter().zip(edge.cb_g_inh_scratch.iter()))
+                for ((g_exc, g_inh), (&de, &di)) in
+                    cb.g_exc.iter_mut().zip(cb.g_inh.iter_mut()).zip(
+                        edge.cb_g_exc_scratch
+                            .iter()
+                            .zip(edge.cb_g_inh_scratch.iter()),
+                    )
                 {
                     *g_exc += de;
                     *g_inh += di;
@@ -1294,9 +1285,7 @@ impl SnnNetwork {
             // agree).
             let cpu_only = pop.spec.lif.conductance.is_some() || pop.spec.substrate.enabled;
             #[cfg(feature = "cuda")]
-            let used_gpu = if !cpu_only
-                && let Some(lif_gpu) = pop.lif_gpu.as_mut()
-            {
+            let used_gpu = if !cpu_only && let Some(lif_gpu) = pop.lif_gpu.as_mut() {
                 let mut spikes_buf: Vec<u8> = Vec::with_capacity(pop.state.spike.len());
                 match lif_gpu.step_with_prep(
                     &pop.i_syn_scratch,
@@ -1574,7 +1563,10 @@ impl SnnNetwork {
     /// `reward` argument to [`Self::step`] when running intrinsic-only
     /// training. Combine with external reward additively when needed.
     #[must_use]
-    pub fn compute_intrinsic_reward(&self, cfg: &crate::intrinsic_reward::IntrinsicRewardConfig) -> f32 {
+    pub fn compute_intrinsic_reward(
+        &self,
+        cfg: &crate::intrinsic_reward::IntrinsicRewardConfig,
+    ) -> f32 {
         crate::intrinsic_reward::compute_network_reward(
             self.populations
                 .iter()
@@ -1966,7 +1958,10 @@ mod tests {
         net.step(&slices, 0.0, 1.0);
         let effects = net.populations[0].substrate_effects.as_ref().unwrap();
         assert!(effects.0.is_identity(), "axon effects should be identity");
-        assert!(effects.1.is_identity(), "dendrite effects should be identity");
+        assert!(
+            effects.1.is_identity(),
+            "dendrite effects should be identity"
+        );
     }
 
     /// Substrate at very low ATP + activity: ATP continues to drop as
@@ -2070,9 +2065,8 @@ mod tests {
     /// and `thalamic_output_gain` returns identity 1.0.
     #[test]
     fn thalamic_disabled_returns_identity_gain() {
-        let router = nimcp_thalamic::ThalamicRouter::new(
-            nimcp_thalamic::ThalamicRouterConfig::default(),
-        );
+        let router =
+            nimcp_thalamic::ThalamicRouter::new(nimcp_thalamic::ThalamicRouterConfig::default());
         let net = SnnNetwork::new(two_pop_config(0, 0, 0.1, 0.5)).unwrap();
         assert!(net.thalamic_channel().is_none());
         assert_eq!(net.thalamic_output_gain(&router, 100), 1.0);
@@ -2143,13 +2137,12 @@ mod tests {
     /// the caller has opened a matching channel on the router.
     #[test]
     fn thalamic_output_gain_reads_router() {
-        let mut router = nimcp_thalamic::ThalamicRouter::new(
-            nimcp_thalamic::ThalamicRouterConfig {
+        let mut router =
+            nimcp_thalamic::ThalamicRouter::new(nimcp_thalamic::ThalamicRouterConfig {
                 hebbian_lr: 0.5,
                 hebbian_decay: 0.0,
                 ..Default::default()
-            },
-        );
+            });
         let _ = router.open_channel(42, &[100]).unwrap();
         // Reinforce the (42, 100) route.
         router.record_submit(42);
@@ -2208,10 +2201,7 @@ mod tests {
         let alpha = net
             .pink_alpha(0)
             .expect("alpha must be Some once the ring is full");
-        assert!(
-            alpha.is_finite(),
-            "pink_alpha must be finite, got {alpha}"
-        );
+        assert!(alpha.is_finite(), "pink_alpha must be finite, got {alpha}");
         // Coarse 1/f sanity — Voss-McCartney with 16 octaves should put
         // α firmly above white (0.5). We don't over-tighten because the
         // DFA is approximate on 1024 samples.
@@ -2524,8 +2514,9 @@ mod tests {
         let mut cfg = two_pop_config(3, 0, 0.1, 0.4);
         cfg.use_gpu_forward = true;
         let mut single = SnnNetwork::new(cfg.clone()).expect("single-device GPU network");
-        cfg.device_assignment =
-            crate::device::DeviceAssignment::RoundRobin { devices: ordinals.clone() };
+        cfg.device_assignment = crate::device::DeviceAssignment::RoundRobin {
+            devices: ordinals.clone(),
+        };
         let mut multi = SnnNetwork::new(cfg).expect("multi-device GPU network");
 
         assert_eq!(single.population_devices(), &[0, 0]);
@@ -2543,17 +2534,24 @@ mod tests {
 
         let (s, m) = (single.snapshot(), multi.snapshot());
         assert_eq!(s.edge_weights, m.edge_weights);
-        assert!(single.restore(&m), "multi-device snapshot must restore into single-device net");
+        assert!(
+            single.restore(&m),
+            "multi-device snapshot must restore into single-device net"
+        );
     }
 
     #[test]
     fn device_assignment_errors_surface_from_new() {
         let mut cfg = two_pop_config(0, 0, 0.1, 0.4);
-        cfg.device_assignment =
-            crate::device::DeviceAssignment::Manual { per_population: vec![0] };
+        cfg.device_assignment = crate::device::DeviceAssignment::Manual {
+            per_population: vec![0],
+        };
         match SnnNetwork::new(cfg) {
             Err(SnnError::DeviceAssignment(
-                crate::device::DeviceAssignError::ManualLengthMismatch { given: 1, n_pops: 2 },
+                crate::device::DeviceAssignError::ManualLengthMismatch {
+                    given: 1,
+                    n_pops: 2,
+                },
             )) => {}
             other => panic!("expected ManualLengthMismatch, got {:?}", other.err()),
         }
@@ -2562,8 +2560,9 @@ mod tests {
     #[test]
     fn cpu_path_records_resolved_devices() {
         let mut cfg = two_pop_config(0, 0, 0.1, 0.4);
-        cfg.device_assignment =
-            crate::device::DeviceAssignment::Manual { per_population: vec![1, 0] };
+        cfg.device_assignment = crate::device::DeviceAssignment::Manual {
+            per_population: vec![1, 0],
+        };
         let net = SnnNetwork::new(cfg).unwrap();
         assert_eq!(net.population_devices(), &[1, 0]);
     }

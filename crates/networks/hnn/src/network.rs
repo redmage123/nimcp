@@ -268,9 +268,8 @@ impl HnnNetwork {
         };
 
         let mlp = &self.mlp;
-        let energy = symplectic_euler_step(&mut self.q, &mut self.p, dt_eff, |q, p| {
-            mlp.evaluate(q, p)
-        });
+        let energy =
+            symplectic_euler_step(&mut self.q, &mut self.p, dt_eff, |q, p| mlp.evaluate(q, p));
 
         // Thalamic auto-submit on post-step momentum magnitude.
         if let Some(ch) = self.thalamic_channel.as_mut() {
@@ -408,7 +407,10 @@ mod tests {
         for _ in 0..200 {
             let em = modn.step_modulated();
             let ep = plain.step();
-            assert!((em - ep).abs() < 1e-6, "full health must not perturb dt: {em} vs {ep}");
+            assert!(
+                (em - ep).abs() < 1e-6,
+                "full health must not perturb dt: {em} vs {ep}"
+            );
         }
         for (a, b) in modn.q.iter().zip(plain.q.iter()) {
             assert!((a - b).abs() < 1e-6, "q diverged at full health");
@@ -429,7 +431,10 @@ mod tests {
             let _ = net.step_modulated();
         }
         let atp_after = net.substrate_state().unwrap().atp_level;
-        assert!(atp_after <= atp_before, "ATP should not rise under activity");
+        assert!(
+            atp_after <= atp_before,
+            "ATP should not rise under activity"
+        );
     }
 
     #[test]
@@ -448,6 +453,9 @@ mod tests {
         );
         let _ = net.step_modulated();
         let ch = net.thalamic_channel.as_ref().unwrap();
-        assert!(ch.submits_this_step >= 1, "large momentum should record a submit");
+        assert!(
+            ch.submits_this_step >= 1,
+            "large momentum should record a submit"
+        );
     }
 }
