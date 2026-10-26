@@ -63,6 +63,7 @@ set(NIMCP_STANDALONE_LANG_TESTS
     test_lang_phonological_loop
     test_lang_cerebellar_correction
     test_gl_fno_audio_guard
+    test_fno_fft
     test_snn_fno_recording
     test_lang_thalamic_gates
     test_lang_distributional_anticollapse

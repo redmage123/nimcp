@@ -84,11 +84,81 @@ static uint32_t next_power_of_2(uint32_t v) {
     return v < 4 ? 4 : v;
 }
 
-/** Simple radix-2 FFT (real input → complex output) */
-static void fft_real(const float* input, uint32_t n,
-                     float* out_real, float* out_imag) {
-    /* Zero-pad to n if needed, then DFT */
+/* -------------------------------------------------------------------------
+ * Real FFT / inverse real FFT.
+ *
+ * Until 2026-10-26 these were O(n^2) DFTs evaluating double cos/sin for
+ * every (k, j) pair. With the visual cortex FNO (fft_size 1024, 16 hidden
+ * channels, 2 blocks) that was ~1M trig evaluations per transform, 64
+ * transforms per forward and ~544 per backward (one inverse transform per
+ * (out_ch, in_ch) pair) — ~5.4 s per visual cortex backward on the pod.
+ *
+ * fft_size is always a power of two (next_power_of_2 in create), so the
+ * transforms now go through an iterative radix-2 Cooley-Tukey FFT in double
+ * precision (O(n log n)); the DFT remains as the fallback for a non-power-
+ * of-two n so the public helpers stay correct for any length. Sign and
+ * scaling conventions are identical to the old DFT: forward uses
+ * exp(-2*pi*i*k*j/n), inverse divides by n and treats the DC and Nyquist
+ * bins as purely real.
+ * ------------------------------------------------------------------------- */
+
+static inline bool fno_is_pow2(uint32_t n) {
+    return n != 0 && (n & (n - 1)) == 0;
+}
+
+/* In-place iterative radix-2 complex FFT; n must be a power of two.
+ * inverse != 0 uses the +i kernel (no 1/n scaling applied here). */
+static void fno_fft_complex_pow2(double* re, double* im, uint32_t n, int inverse) {
+    /* Bit-reversal permutation */
+    for (uint32_t i = 1, j = 0; i < n; i++) {
+        uint32_t bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            double t = re[i]; re[i] = re[j]; re[j] = t;
+            t = im[i]; im[i] = im[j]; im[j] = t;
+        }
+    }
+    for (uint32_t len = 2; len <= n; len <<= 1) {
+        double ang = (inverse ? 2.0 : -2.0) * M_PI / (double)len;
+        double wlen_re = cos(ang), wlen_im = sin(ang);
+        uint32_t half = len >> 1;
+        for (uint32_t i = 0; i < n; i += len) {
+            double w_re = 1.0, w_im = 0.0;
+            for (uint32_t j = 0; j < half; j++) {
+                uint32_t a = i + j, b = a + half;
+                double v_re = re[b] * w_re - im[b] * w_im;
+                double v_im = re[b] * w_im + im[b] * w_re;
+                double u_re = re[a], u_im = im[a];
+                re[a] = u_re + v_re; im[a] = u_im + v_im;
+                re[b] = u_re - v_re; im[b] = u_im - v_im;
+                double nw_re = w_re * wlen_re - w_im * wlen_im;
+                w_im = w_re * wlen_im + w_im * wlen_re;
+                w_re = nw_re;
+            }
+        }
+    }
+}
+
+/** Real input → complex half-spectrum (k = 0 .. n/2). */
+void fno_fft_real(const float* input, uint32_t n,
+                  float* out_real, float* out_imag) {
     uint32_t freq_n = n / 2 + 1;
+    if (fno_is_pow2(n)) {
+        double* re = (double*)nimcp_malloc(2u * n * sizeof(double));
+        if (re) {
+            double* im = re + n;
+            for (uint32_t j = 0; j < n; j++) { re[j] = input[j]; im[j] = 0.0; }
+            fno_fft_complex_pow2(re, im, n, 0);
+            for (uint32_t k = 0; k < freq_n; k++) {
+                out_real[k] = (float)re[k];
+                out_imag[k] = (float)im[k];
+            }
+            nimcp_free(re);
+            return;
+        }
+        /* allocation failure: fall through to the O(n^2) path */
+    }
     for (uint32_t k = 0; k < freq_n; k++) {
         double re = 0.0, im = 0.0;
         for (uint32_t j = 0; j < n; j++) {
@@ -101,10 +171,30 @@ static void fft_real(const float* input, uint32_t n,
     }
 }
 
-/** Inverse FFT (complex half-spectrum → real output) using Hermitian symmetry */
-static void ifft_real(const float* in_real, const float* in_imag,
-                      uint32_t n, float* output) {
+/** Complex half-spectrum → real output using Hermitian symmetry (1/n scaled). */
+void fno_ifft_real(const float* in_real, const float* in_imag,
+                   uint32_t n, float* output) {
     uint32_t freq_n = n / 2 + 1;
+    if (fno_is_pow2(n)) {
+        double* re = (double*)nimcp_malloc(2u * n * sizeof(double));
+        if (re) {
+            double* im = re + n;
+            /* Rebuild the full spectrum: X[n-k] = conj(X[k]); the DC and
+             * Nyquist bins are taken as purely real, as the DFT path does. */
+            re[0] = in_real[0]; im[0] = 0.0;
+            for (uint32_t k = 1; k < freq_n - 1; k++) {
+                re[k] = in_real[k];      im[k] = in_imag[k];
+                re[n - k] = in_real[k];  im[n - k] = -in_imag[k];
+            }
+            re[n / 2] = (freq_n > 1) ? in_real[freq_n - 1] : 0.0;
+            im[n / 2] = 0.0;
+            fno_fft_complex_pow2(re, im, n, 1);
+            double inv_n = 1.0 / (double)n;
+            for (uint32_t j = 0; j < n; j++) output[j] = (float)(re[j] * inv_n);
+            nimcp_free(re);
+            return;
+        }
+    }
     float inv_n = 1.0f / (float)n;
     for (uint32_t j = 0; j < n; j++) {
         double re = in_real[0]; /* DC component (k=0, real only) */
@@ -121,6 +211,9 @@ static void ifft_real(const float* in_real, const float* in_imag,
         output[j] = (float)(re * inv_n);
     }
 }
+
+#define fft_real  fno_fft_real
+#define ifft_real fno_ifft_real
 
 /** GELU activation: x * 0.5 * (1 + tanh(sqrt(2/pi) * (x + 0.044715*x^3))) */
 static float gelu(float x) {
@@ -398,14 +491,25 @@ int fno_spectral_conv_backward(fno_spectral_conv_t* layer,
         }
     }
 
-    /* Spectral gradient: FFT dl_dpre, accumulate grad_W, propagate to dl_din */
+    /* Spectral gradient: FFT dl_dpre, accumulate grad_W, propagate to dl_din.
+     *
+     * The spectral part of dl_din[ic] is IFFT( sum_oc conj(W[oc,ic]) * dl_hat[oc] ).
+     * The inverse transform is linear, so the sum over output channels is
+     * accumulated in the frequency domain and ONE inverse transform is done
+     * per input channel (in_ch transforms) instead of one per (oc, ic) pair
+     * (out_ch * in_ch transforms — 256 vs 16 for the cortex FNOs). */
     float* padded = nimcp_calloc(fft_n, sizeof(float));
     float* dl_hat_real = nimcp_calloc(freq_n, sizeof(float));
     float* dl_hat_imag = nimcp_calloc(freq_n, sizeof(float));
+    float* din_hat_real = dl_din ? nimcp_calloc((size_t)in_ch * freq_n, sizeof(float)) : NULL;
+    float* din_hat_imag = dl_din ? nimcp_calloc((size_t)in_ch * freq_n, sizeof(float)) : NULL;
+    float* din_spatial  = dl_din ? nimcp_calloc(fft_n, sizeof(float)) : NULL;
 
-    if (!padded || !dl_hat_real || !dl_hat_imag) {
+    if (!padded || !dl_hat_real || !dl_hat_imag ||
+        (dl_din && (!din_hat_real || !din_hat_imag || !din_spatial))) {
         nimcp_free(dl_dpre); nimcp_free(padded);
         nimcp_free(dl_hat_real); nimcp_free(dl_hat_imag);
+        nimcp_free(din_hat_real); nimcp_free(din_hat_imag); nimcp_free(din_spatial);
         return -1;
     }
 
@@ -419,42 +523,44 @@ int fno_spectral_conv_backward(fno_spectral_conv_t* layer,
             size_t w_off = (size_t)oc * in_ch * n_modes + ic * n_modes;
             float* ihr = layer->input_hat_real + ic * freq_n;
             float* ihi = layer->input_hat_imag + ic * freq_n;
+            float* dhr = dl_din ? din_hat_real + (size_t)ic * freq_n : NULL;
+            float* dhi = dl_din ? din_hat_imag + (size_t)ic * freq_n : NULL;
 
             for (uint32_t k = 0; k < n_modes && k < freq_n; k++) {
-                /* grad_W = dl_hat * conj(input_hat) */
-                layer->grad_W_real[w_off + k] +=
-                    dl_hat_real[k] * ihr[k] + dl_hat_imag[k] * ihi[k];
-                layer->grad_W_imag[w_off + k] +=
-                    dl_hat_imag[k] * ihr[k] - dl_hat_real[k] * ihi[k];
-            }
+                /* grad_W = scale_k * dl_hat * conj(input_hat).
+                 * The forward output is the Hermitian inverse transform
+                 * (1/n)(X_0 + 2*sum_{0<k<n/2} Re(.) + X_{n/2}), so each
+                 * spectral weight enters the output scaled by 2/n (1/n for
+                 * the DC and Nyquist bins). Before 2026-10-26 this scale was
+                 * missing and grad_W was n/2 (n at DC) too large — a
+                 * size-dependent learning-rate inflation (x512 on the
+                 * 1024-point visual FNO). Verified by finite differences in
+                 * tests/unit/test_fno_fft.c. */
+                float sc = (k == 0 || (k == freq_n - 1 && (fft_n % 2 == 0)))
+                           ? (1.0f / (float)fft_n) : (2.0f / (float)fft_n);
+                layer->grad_W_real[w_off + k] += sc *
+                    (dl_hat_real[k] * ihr[k] + dl_hat_imag[k] * ihi[k]);
+                layer->grad_W_imag[w_off + k] += sc *
+                    (dl_hat_imag[k] * ihr[k] - dl_hat_real[k] * ihi[k]);
 
-            /* Spectral contribution to dl_din: IFFT(W^H * dl_hat) */
-            if (dl_din) {
-                float* din_hat_real = nimcp_calloc(freq_n, sizeof(float));
-                float* din_hat_imag = nimcp_calloc(freq_n, sizeof(float));
-                float* din_spatial = nimcp_calloc(fft_n, sizeof(float));
-                if (!din_hat_real || !din_hat_imag || !din_spatial) {
-                    nimcp_free(din_hat_real);
-                    nimcp_free(din_hat_imag);
-                    nimcp_free(din_spatial);
-                    continue;  /* Skip this channel pair */
+                /* Spectral contribution to dl_din: accumulate W^H * dl_hat
+                 * (= conj(W) * dl_hat) per input channel; transformed below. */
+                if (dhr) {
+                    float wr = layer->W_real[w_off + k];
+                    float wi = layer->W_imag[w_off + k];
+                    dhr[k] += wr * dl_hat_real[k] + wi * dl_hat_imag[k];
+                    dhi[k] += wr * dl_hat_imag[k] - wi * dl_hat_real[k];
                 }
-                {
-                    for (uint32_t k = 0; k < n_modes && k < freq_n; k++) {
-                        float wr = layer->W_real[w_off + k];
-                        float wi = layer->W_imag[w_off + k];
-                        /* W^H * dl_hat = conj(W) * dl_hat */
-                        din_hat_real[k] += wr * dl_hat_real[k] + wi * dl_hat_imag[k];
-                        din_hat_imag[k] += wr * dl_hat_imag[k] - wi * dl_hat_real[k];
-                    }
-                    ifft_real(din_hat_real, din_hat_imag, fft_n, din_spatial);
-                    for (uint32_t i = 0; i < sp; i++) {
-                        dl_din[ic * sp + i] += din_spatial[i];
-                    }
-                }
-                nimcp_free(din_hat_real);
-                nimcp_free(din_hat_imag);
-                nimcp_free(din_spatial);
+            }
+        }
+    }
+
+    if (dl_din) {
+        for (uint32_t ic = 0; ic < in_ch; ic++) {
+            ifft_real(din_hat_real + (size_t)ic * freq_n,
+                      din_hat_imag + (size_t)ic * freq_n, fft_n, din_spatial);
+            for (uint32_t i = 0; i < sp; i++) {
+                dl_din[ic * sp + i] += din_spatial[i];
             }
         }
     }
@@ -463,6 +569,9 @@ int fno_spectral_conv_backward(fno_spectral_conv_t* layer,
     nimcp_free(padded);
     nimcp_free(dl_hat_real);
     nimcp_free(dl_hat_imag);
+    nimcp_free(din_hat_real);
+    nimcp_free(din_hat_imag);
+    nimcp_free(din_spatial);
     return 0;
 }
 

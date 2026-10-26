@@ -27,6 +27,21 @@ extern "C" {
 #endif
 
 /* =========================================================================
+ * Real FFT helpers (shared by the spectral conv layer; exposed for tests)
+ * ========================================================================= */
+
+/** Real input[n] → half spectrum out_real/out_imag[n/2 + 1], kernel
+ *  exp(-2*pi*i*k*j/n). O(n log n) when n is a power of two, O(n^2) DFT
+ *  otherwise. */
+void fno_fft_real(const float* input, uint32_t n,
+                  float* out_real, float* out_imag);
+
+/** Half spectrum[n/2 + 1] → real output[n], scaled by 1/n, with the DC and
+ *  Nyquist bins treated as purely real (Hermitian reconstruction). */
+void fno_ifft_real(const float* in_real, const float* in_imag,
+                   uint32_t n, float* output);
+
+/* =========================================================================
  * Spectral Convolution Layer
  * ========================================================================= */
 
