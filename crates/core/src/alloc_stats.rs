@@ -229,28 +229,38 @@ pub fn snapshot() -> AllocSnapshot {
 mod tests {
     use super::*;
 
-    // Tag-counter tests use a `serial_test`-like contract — they share
-    // global state, so explicit reset_all_tags_for_test at the top of
-    // each test keeps them isolated when run in the same thread. Cargo
-    // test runs lib tests on a thread pool so we additionally enforce
-    // ordering by NEVER asserting cross-test residual values.
+    // The tag counters are process-global atomics and cargo runs lib
+    // tests on a thread pool, so the three counter tests below serialize
+    // on this lock — otherwise `reset_all_tags_for_test` in one test
+    // races the exact-value asserts in another (seen as intermittent
+    // failures of each of the three in turn). The guard tolerates a
+    // poisoned lock so one failed test doesn't cascade.
+    static TAG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn tag_guard() -> std::sync::MutexGuard<'static, ()> {
+        TAG_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn account_increments_and_release_decrements() {
+        let _serial = tag_guard();
         reset_all_tags_for_test();
         account(AllocTag::SnnSynapses, 1_000);
         account(AllocTag::SnnSynapses, 500);
         let s = snapshot();
-        assert!(s.tagged.snn_synapse_bytes >= 1_500); // may include other-thread noise
+        assert_eq!(s.tagged.snn_synapse_bytes, 1_500);
 
         release(AllocTag::SnnSynapses, 700);
         let s = snapshot();
-        assert!(s.tagged.snn_synapse_bytes < 1_500);
+        assert_eq!(s.tagged.snn_synapse_bytes, 800);
         reset_all_tags_for_test();
     }
 
     #[test]
     fn release_saturates_at_zero() {
+        let _serial = tag_guard();
         reset_all_tags_for_test();
         release(AllocTag::Memory, 999_999);
         let s = snapshot();
@@ -260,6 +270,7 @@ mod tests {
 
     #[test]
     fn tagged_total_sums_every_counter() {
+        let _serial = tag_guard();
         reset_all_tags_for_test();
         account(AllocTag::SnnPopulationState, 100);
         account(AllocTag::SnnSynapses, 200);
