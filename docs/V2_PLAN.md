@@ -499,6 +499,21 @@ single-device network, and the multi-device snapshot restored into it.
 Toolchain + build dir were staged on the pod ephemerally (`/dev/shm` is
 `noexec`, so binaries went under `/root/v2rust`) and removed afterward.
 
+### Cognition track (C1–C4)
+
+Tracked in commit messages rather than phases: C1+C2 `WorkingMemory` +
+`ImaginationEngine` cores in `nimcp-cognition` (`6bd9680b20`), C3
+lexicon-grounded `GroundedLanguage::reason` in `nimcp-language`
+(`9abc011cc5`). **C4 (2026-10-26)**: `Brain::reason` enriches the C3
+conclusion with Z-Ladder recall — top-5 hits with cosine ≥ 0.5 are
+blended into the conclusion vector (≤ 0.3 × mean similarity) and lift
+confidence by ≤ 0.25 × best similarity of the remaining headroom; each
+hit is `access`ed so recall reinforces consolidation. `language_respond`
+now supplies that conclusion to the cascade when `reason_in_content` is
+on — the flag is no longer dormant. Still unwired into the brain:
+working memory and imagination as cascade sources; pybind has no
+language surface yet (separate item).
+
 ---
 
 ## 5. What to port vs rewrite vs drop

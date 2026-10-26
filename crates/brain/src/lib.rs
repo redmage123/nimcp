@@ -110,6 +110,31 @@ pub fn apply_backend_to_snn(backend: &Backend, cfg: &mut SnnConfig) {
     }
 }
 
+/// Max Z-Ladder hits consulted per reasoning query (C4).
+pub const REASON_MEMORY_K: usize = 5;
+/// Minimum cosine for a memory hit to count as reasoning evidence.
+pub const REASON_MEMORY_SIM_FLOOR: f32 = 0.5;
+/// Max blend weight of recalled memory into the conclusion vector
+/// (scaled by mean hit similarity).
+pub const REASON_MEMORY_BLEND: f32 = 0.3;
+/// Max confidence lift from memory evidence, as a fraction of the
+/// remaining headroom (scaled by best hit similarity).
+pub const REASON_MEMORY_BOOST: f32 = 0.25;
+
+/// A brain-level reasoning result (C4): the C3 lexicon conclusion after
+/// Z-Ladder enrichment, plus what the memory contributed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrainReasoning {
+    /// Conclusion after memory enrichment (vector / confidence /
+    /// evidence_count may differ from the pure lexicon result).
+    pub conclusion: nimcp_language::ReasoningConclusion,
+    /// Confidence before memory enrichment.
+    pub lexicon_confidence: f32,
+    /// Memory hits that contributed (descending similarity). Empty when
+    /// no memory is configured or nothing cleared the similarity floor.
+    pub memory_hits: Vec<QueryHit>,
+}
+
 /// Top-level brain configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrainConfig {
@@ -194,8 +219,9 @@ pub struct LanguageConfig {
     pub recurrent_max_iters: usize,
     /// Opt-in: blend a reasoning conclusion into the cascade content
     /// intent (V1 `reason_in_content`, Tier-1 Step E). Default OFF;
-    /// runtime-togglable via [`Brain::set_reason_in_content`]. Dormant
-    /// until V2 grows a reasoning subsystem to supply the vector.
+    /// runtime-togglable via [`Brain::set_reason_in_content`]. When on,
+    /// `language_respond` runs [`Brain::reason`] on the prompt (C4) and
+    /// feeds the memory-enriched conclusion to the cascade.
     #[serde(default)]
     pub reason_in_content: bool,
 }
@@ -895,22 +921,33 @@ impl Brain {
             }
         }
 
-        // (2) Cascade production. V2 has no working-memory / imagination /
-        // reasoning subsystems yet, so no `ContentSources` are supplied —
-        // the cascade applies native discourse continuity only. The
-        // `reason_in_content` flag is threaded for parity (it gates the
-        // reasoning blend once a source exists).
+        // (2) Cascade production. Reasoning (C4) is the only cognitive
+        // source V2 supplies so far — working memory / imagination live in
+        // nimcp-cognition but are not yet wired into the brain. The
+        // conclusion is computed before the cascade borrow so the
+        // memory-enriched vector can be handed in by reference.
+        let reasoning = if self.lang_reason_in_content {
+            Some(self.reason(input)?)
+        } else {
+            None
+        };
         let cascade_cfg = CascadeConfig {
             stage,
             min_produce_words: cfg.min_produce_words,
             recurrent_max_iters: cfg.recurrent_max_iters,
             reason_in_content: self.lang_reason_in_content,
         };
+        let sources = nimcp_language::ContentSources {
+            reasoning: reasoning
+                .as_ref()
+                .map(|r| (r.conclusion.vector.as_slice(), r.conclusion.confidence)),
+            ..Default::default()
+        };
         let gl = self
             .language
             .as_mut()
             .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
-        let resp = gl.respond(input, &cascade_cfg);
+        let resp = gl.respond_with_sources(input, &cascade_cfg, &sources);
 
         // (3) Defense-in-depth output gate — mark, don't filter.
         let mut confidence = resp.confidence;
@@ -944,8 +981,9 @@ impl Brain {
     }
 
     /// Runtime toggle for the cascade reasoning-blend (V1
-    /// `nimcp_brain_set_reason_in_content` RPC parity). Dormant until a
-    /// reasoning subsystem supplies a conclusion vector.
+    /// `nimcp_brain_set_reason_in_content` RPC parity). When on,
+    /// `language_respond` feeds [`Brain::reason`]'s conclusion to the
+    /// cascade.
     pub fn set_reason_in_content(&mut self, on: bool) {
         self.lang_reason_in_content = on;
     }
@@ -954,6 +992,83 @@ impl Brain {
     #[must_use]
     pub fn reason_in_content(&self) -> bool {
         self.lang_reason_in_content
+    }
+
+    // -------------------------------------------------------------------------
+    // Reasoning (C4): lexicon conclusion enriched by Z-Ladder recall.
+    // -------------------------------------------------------------------------
+
+    /// Reason about `query`: the lexicon-grounded conclusion
+    /// (`GroundedLanguage::reason`, C3) enriched by Z-Ladder recall.
+    ///
+    /// The conclusion vector is used as the memory query. Hits at or
+    /// above [`REASON_MEMORY_SIM_FLOOR`] (top [`REASON_MEMORY_K`]) are
+    /// blended into the vector as a similarity-weighted mean — weight
+    /// [`REASON_MEMORY_BLEND`] × mean similarity — and lift confidence by
+    /// [`REASON_MEMORY_BOOST`] × best similarity of the remaining
+    /// headroom. Each recalled node is `access`ed, so recall reinforces
+    /// consolidation as in V1. Without a memory subsystem (or with no
+    /// matching memories) this is exactly the C3 conclusion.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Config` if language is not configured.
+    pub fn reason(&mut self, query: &str) -> Result<BrainReasoning> {
+        let gl = self
+            .language
+            .as_ref()
+            .ok_or_else(|| Error::Config("language not configured on this brain".into()))?;
+        let mut conclusion = gl.reason(query);
+        let lexicon_confidence = conclusion.confidence;
+        let mut memory_hits = Vec::new();
+
+        if let Some(mem) = self.memory.as_mut()
+            && conclusion.vector.iter().any(|v| *v != 0.0)
+        {
+            let hits: Vec<QueryHit> = mem
+                .query_all_tiers(&conclusion.vector, REASON_MEMORY_K)
+                .into_iter()
+                .filter(|h| h.similarity >= REASON_MEMORY_SIM_FLOOR)
+                .collect();
+            if !hits.is_empty() {
+                let dim = conclusion.vector.len();
+                let mut recalled = vec![0.0_f32; dim];
+                let mut weight_sum = 0.0_f32;
+                for h in &hits {
+                    if let Some(node) = mem.find(h.node_id)
+                        && node.features.len() == dim
+                    {
+                        for (r, &f) in recalled.iter_mut().zip(&node.features) {
+                            *r += h.similarity * f;
+                        }
+                        weight_sum += h.similarity;
+                    }
+                }
+                if weight_sum > 0.0 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let mean_sim = weight_sum / hits.len() as f32;
+                    let alpha = REASON_MEMORY_BLEND * mean_sim;
+                    for (v, r) in conclusion.vector.iter_mut().zip(&recalled) {
+                        *v = (1.0 - alpha) * *v + alpha * (r / weight_sum);
+                    }
+                    let best = hits[0].similarity.clamp(0.0, 1.0);
+                    conclusion.confidence = (conclusion.confidence
+                        + (1.0 - conclusion.confidence) * REASON_MEMORY_BOOST * best)
+                        .clamp(0.0, 1.0);
+                    conclusion.evidence_count += hits.len();
+                }
+                for h in &hits {
+                    mem.access(h.node_id);
+                }
+                memory_hits = hits;
+            }
+        }
+
+        Ok(BrainReasoning {
+            conclusion,
+            lexicon_confidence,
+            memory_hits,
+        })
     }
 
     // -------------------------------------------------------------------------
@@ -2084,4 +2199,86 @@ mod tests {
         assert!(brain2.reason_in_content());
     }
 
+    // --- C4: reasoning with Z-Ladder enrichment ---
+
+    fn language_memory_config(seed: u64) -> BrainConfig {
+        let mut cfg = language_config(seed);
+        cfg.memory = Some(ZLadderConfig::default());
+        cfg
+    }
+
+    #[tokio::test]
+    async fn reason_without_memory_is_the_lexicon_conclusion() {
+        let mut brain = Brain::new(language_config(41)).unwrap();
+        teach(&mut brain);
+        let expected = brain.language().unwrap().reason("what does the dog run");
+        let r = brain.reason("what does the dog run").unwrap();
+        assert!(r.memory_hits.is_empty());
+        assert_eq!(r.conclusion.confidence, expected.confidence);
+        assert_eq!(r.conclusion.confidence, r.lexicon_confidence);
+        assert_eq!(r.conclusion.vector, expected.vector);
+        assert_eq!(r.conclusion.evidence_count, expected.evidence_count);
+        assert!(r.conclusion.evidence_count > 0);
+    }
+
+    #[tokio::test]
+    async fn reason_errors_without_language() {
+        let mut brain = Brain::new(BrainConfig::default()).unwrap();
+        assert!(matches!(brain.reason("why"), Err(Error::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn reason_memory_hit_boosts_confidence_and_reinforces_node() {
+        let mut brain = Brain::new(language_memory_config(42)).unwrap();
+        teach(&mut brain);
+        let query = "what does the dog run";
+        // Empty memory → pure lexicon conclusion; use its vector as a memory.
+        let base = brain.reason(query).unwrap();
+        assert!(base.memory_hits.is_empty());
+        assert!(base.conclusion.vector.iter().any(|v| *v != 0.0));
+        brain
+            .memory_insert(MemoryNode::new(7, base.conclusion.vector.clone(), 0))
+            .unwrap();
+        // An unrelated memory must not clear the floor.
+        let mut off = vec![0.0_f32; base.conclusion.vector.len()];
+        off[base.conclusion.vector.len() - 1] = 1.0;
+        brain.memory_insert(MemoryNode::new(8, off, 0)).unwrap();
+
+        let r = brain.reason(query).unwrap();
+        assert_eq!(r.memory_hits.len(), 1);
+        assert_eq!(r.memory_hits[0].node_id, 7);
+        assert!(r.memory_hits[0].similarity > 0.99);
+        assert_eq!(r.lexicon_confidence, base.conclusion.confidence);
+        assert!(r.conclusion.confidence > r.lexicon_confidence);
+        assert!(r.conclusion.confidence <= 1.0);
+        assert_eq!(r.conclusion.evidence_count, base.conclusion.evidence_count + 1);
+        // Identical recalled vector → direction unchanged.
+        let dot: f32 = r.conclusion.vector.iter().zip(&base.conclusion.vector).map(|(a, b)| a * b).sum();
+        let na: f32 = r.conclusion.vector.iter().map(|a| a * a).sum::<f32>().sqrt();
+        let nb: f32 = base.conclusion.vector.iter().map(|b| b * b).sum::<f32>().sqrt();
+        assert!(dot / (na * nb) > 0.999);
+        // Recall counted as an access on the hit node only.
+        assert_eq!(brain.memory().unwrap().find(7).unwrap().access_count, 1);
+        assert_eq!(brain.memory().unwrap().find(8).unwrap().access_count, 0);
+    }
+
+    #[tokio::test]
+    async fn reason_in_content_feeds_cascade_without_breaking_respond() {
+        let mut brain = Brain::new(language_memory_config(43)).unwrap();
+        teach(&mut brain);
+        let seed = brain.reason("the dog").unwrap();
+        brain
+            .memory_insert(MemoryNode::new(1, seed.conclusion.vector.clone(), 0))
+            .unwrap();
+        let off = brain.language_respond("the dog").unwrap();
+        brain.set_reason_in_content(true);
+        let on = brain.language_respond("the dog").unwrap();
+        for r in [&off, &on] {
+            assert!(!r.blocked_for_toxicity);
+            assert!(r.confidence.is_finite());
+            assert!(!r.text.is_empty());
+        }
+        // The blend path ran: the memory node was recalled by the respond call.
+        assert!(brain.memory().unwrap().find(1).unwrap().access_count >= 1);
+    }
 }
