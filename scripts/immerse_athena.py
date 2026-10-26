@@ -7355,8 +7355,8 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
         if (i + 1) % 2000 == 0:
             parent.inspire(brain, composer, stage=0)
 
-        # Checkpoint every 50 steps
-        if (i + 1) % 50 == 0:
+        # Checkpoint every 50 steps (or at the first step after a skipped one)
+        if (i + 1) % 50 == 0 or _checkpoint_pending:
             _save_checkpoint(brain, decoder, stage=0, step=i+1)
     prefetcher.stop()
 
@@ -7472,7 +7472,7 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
                       f"({ms_per:.0f}ms/item, {n_items} items)", flush=True)
 
             # Checkpoint
-            if batch_end % 50 == 0:
+            if batch_end % 50 == 0 or _checkpoint_pending:
                 _save_checkpoint(brain, decoder, stage=1, step=batch_end)
 
             # Canonical-corpus drip — small priming pass interleaved with
@@ -7873,8 +7873,8 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
         if (i + 1) % 5000 == 0:
             parent.inspire(brain, composer, stage=1)
 
-        # Checkpoint every 50 steps
-        if (i + 1) % 50 == 0:
+        # Checkpoint every 50 steps (or at the first step after a skipped one)
+        if (i + 1) % 50 == 0 or _checkpoint_pending:
             _save_checkpoint(brain, decoder, stage=1, step=i+1)
 
         # Forward chain KB every 2000
@@ -8786,7 +8786,7 @@ def run_stage_3(brain, composer, parent, clock, source, decoder,
             _run_probe_drips(brain, stage=3, composer=composer)
 
         # Checkpoint every 50 steps (state file only)
-        if (i + 1) % 50 == 0 and (i + 1) % 2000 != 0:
+        if ((i + 1) % 50 == 0 and (i + 1) % 2000 != 0) or _checkpoint_pending:
             _save_checkpoint(brain, decoder, stage=3, step=i+1)
 
         # Chat eval every 2000 + on-demand
@@ -9496,6 +9496,11 @@ def evaluate_performance(brain, composer, decoder, stage, step):
 
 
 _checkpoint_thread = None
+# Set when a cadence save was skipped because the previous save/ship was
+# still running; the training loops then save at the first step after that
+# thread finishes instead of waiting for the next 50-step boundary (a 21 GB
+# ship takes ~30 min at pod→Hetzner rates, i.e. 2 cadences).
+_checkpoint_pending = False
 
 def _cleanup_old_checkpoints(keep_current=True):
     """Remove old checkpoint files to free disk space.
@@ -10224,7 +10229,7 @@ def _save_checkpoint(brain, decoder, stage, step, wait=False):
     Cadence saves therefore skip when a save is in flight (the next cadence
     point retries); stage transitions and shutdown pass wait=True and block.
     """
-    global _checkpoint_thread
+    global _checkpoint_thread, _checkpoint_pending
     from threading import Thread
 
     # State file is now updated INSIDE _save_checkpoint_sync after the .bin
@@ -10233,15 +10238,20 @@ def _save_checkpoint(brain, decoder, stage, step, wait=False):
 
     if _checkpoint_thread is not None and _checkpoint_thread.is_alive():
         if not wait:
-            logger.warning("Checkpoint stage=%d step=%d skipped — previous "
-                           "checkpoint still saving/shipping (overlapping "
-                           "saves double-ship the .snn and evict the "
-                           "canonical mid-transfer); next cadence retries",
-                           stage, step)
+            if not _checkpoint_pending:
+                logger.warning("Checkpoint stage=%d step=%d skipped — previous "
+                               "checkpoint still saving/shipping (overlapping "
+                               "saves double-ship the .snn and evict the "
+                               "canonical mid-transfer); will save as soon as "
+                               "it finishes", stage, step)
+            _checkpoint_pending = True
             return False
         logger.info("Waiting for the previous checkpoint to finish before "
                     "saving stage=%d step=%d", stage, step)
         _checkpoint_thread.join()
+    if _checkpoint_pending:
+        logger.info("Deferred checkpoint firing at stage=%d step=%d", stage, step)
+    _checkpoint_pending = False
     _checkpoint_thread = Thread(target=_save_checkpoint_sync,
                                 args=(brain, decoder, stage, step),
                                 daemon=False)
