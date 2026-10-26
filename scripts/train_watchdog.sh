@@ -124,13 +124,18 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     restart_count=$((restart_count + 1))
     log_wd "Starting training attempt #$restart_count"
 
-    # Check checkpoint exists
-    if [ -f "$CKPT_DIR/athena_immersive.bin" ]; then
+    # Check checkpoint exists. The trainer resumes from $CKPT_DIR only; the
+    # old fallback to $NIMCP_DIR/checkpoints/athena was a stale symlink trap
+    # (it reported "step2950" on 2026-10-26 while the trainer fresh-inited).
+    # With a lineage on record (state file names a snapshot) and no local
+    # canonical set — e.g. the canonical was just evicted to Hetzner — refuse
+    # to start rather than let --resume become a fresh brain.
+    if [ -f "$CKPT_DIR/athena_immersive.bin" ] && [ -f "$CKPT_DIR/athena_immersive.bin.snn" ]; then
         ckpt=$(readlink -f "$CKPT_DIR/athena_immersive.bin")
         log_wd "Resuming from checkpoint: $(basename $ckpt)"
-    elif [ -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin" ]; then
-        ckpt=$(readlink -f "$NIMCP_DIR/checkpoints/athena/athena_immersive.bin")
-        log_wd "Resuming from checkpoint: $(basename $ckpt)"
+    elif grep -q '"snapshot"' "$NIMCP_DIR/checkpoints/athena/immersive_state.json" 2>/dev/null; then
+        log_wd "FATAL: no local canonical checkpoint in $CKPT_DIR but the state file records a lineage ($(tr -d '\n' < "$NIMCP_DIR/checkpoints/athena/immersive_state.json" | cut -c1-120)) — restore it from Hetzner (scripts/vast_pod_recovery.sh) before starting; refusing to train a fresh brain"
+        exit 3
     else
         log_wd "No checkpoint found, starting fresh"
     fi
@@ -182,6 +187,10 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
         0)
             log_wd "Training completed successfully!"
             exit 0
+            ;;
+        3)
+            log_wd "FATAL: trainer refused to resume (exit 3: lineage on record but no local checkpoint) - not restarting"
+            exit 3
             ;;
         42)
             log_wd "GPU error detected (code 42) - diagnosing and fixing"

@@ -10850,6 +10850,19 @@ def main():
         default_ckpt = os.path.join(CHECKPOINT_DIR, "athena_immersive.bin")
         if os.path.exists(default_ckpt):
             checkpoint_path = default_ckpt
+        elif not args.fresh:
+            # --resume with an existing lineage but no local snapshot must NOT
+            # silently become a fresh full init (2026-10-26: the canonical was
+            # evicted to Hetzner seconds before a restart; the trainer created
+            # a fresh brain and would have saved it over the step6500 lineage).
+            _st = _load_state()
+            if _st and _st.get("snapshot"):
+                print(f"  ERROR: --resume but {default_ckpt} is missing while the state file "
+                      f"says stage={_st.get('stage')} step={_st.get('step')} "
+                      f"({_st.get('snapshot')}). Refusing to create a fresh brain over an "
+                      "existing lineage — restore the checkpoint from Hetzner "
+                      "(scripts/vast_pod_recovery.sh) or pass --fresh explicitly.")
+                sys.exit(3)
     if args.fresh:
         checkpoint_path = None
 
