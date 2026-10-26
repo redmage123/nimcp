@@ -10010,10 +10010,16 @@ def _ship_and_remove_previous_snapshot():
                 "(keeping current %s)",
                 os.path.basename(target_path), current_target or "none")
 
+    # Must mirror the full sidecar list from _ship_to_hetzner — otherwise
+    # the pre-save ship leaves orphan .gl_lang/.kg/.immune files behind
+    # when the main .bin + canonical sidecars get removed. See 2026-10-26.
     sidecars = ['.snn', '.cnn', '.lnn',
                 '.cortex_visual', '.cortex_audio',
                 '.cortex_speech', '.cortex_somato',
-                '.meta', '.tokenizer', '.mirror_neurons', '.executive']
+                '.meta', '.tokenizer', '.mirror_neurons', '.executive',
+                '.gl_lang', '.gl_multiturn', '.kg', '.immune',
+                '.concept_registry', '.knowledge', '.pink_noise',
+                '.temperature']
     files = [target_path] + [target_path + ext for ext in sidecars
                               if os.path.exists(target_path + ext)]
     if not files:
@@ -10052,11 +10058,18 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
     HETZNER_HOST = "bbrelin@176.9.99.103"
     HETZNER_DIR = "/home/bbrelin/nimcp/checkpoints/athena"
 
-    # 1. VALIDATE — check each expected file exists with reasonable size
+    # 1. VALIDATE — check each expected file exists with reasonable size.
+    # Include the eager-init sidecars (.gl_lang, .gl_multiturn, .kg, .immune,
+    # .concept_registry) so they ship to Hetzner — otherwise they live only
+    # in /dev/shm and are lost on pod reboot (observed: 17.8 MB of trained
+    # vocab vanished on 2026-10-26 when ship list omitted gl_lang).
     sidecars = ['.snn', '.cnn', '.lnn',
                 '.cortex_visual', '.cortex_audio',
                 '.cortex_speech', '.cortex_somato',
-                '.meta', '.tokenizer', '.mirror_neurons', '.executive']
+                '.meta', '.tokenizer', '.mirror_neurons', '.executive',
+                '.gl_lang', '.gl_multiturn', '.kg', '.immune',
+                '.concept_registry', '.knowledge', '.pink_noise',
+                '.temperature']
     # Min sizes (bytes) — refuse to ship truncated files.
     # .snn is the big one (gzipped, expect 5+ GB for 1.45B synapses)
     min_sizes = {
