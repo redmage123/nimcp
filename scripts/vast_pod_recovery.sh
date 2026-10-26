@@ -44,6 +44,32 @@ step() {
 }
 
 # ============================================================
+# STEP 0: Disable ollama autostart (reclaims ~5-11 GB permanently)
+# ============================================================
+step "0. Disable ollama autostart (prevents disk-fill on reboot)"
+
+OLLAMA_CONF=/etc/supervisor/conf.d/ollama.conf
+if [ -f "$OLLAMA_CONF" ]; then
+    if grep -q '^autostart=true' "$OLLAMA_CONF"; then
+        log "Disabling ollama autostart in $OLLAMA_CONF"
+        sed -i 's/^autostart=true/autostart=false/' "$OLLAMA_CONF"
+    else
+        log "Ollama autostart already disabled"
+    fi
+    # Kill running ollama processes (they re-materialize models in /workspace)
+    pkill -9 -f /opt/supervisor-scripts/ollama.sh 2>/dev/null
+    pkill -9 -f /usr/bin/ollama 2>/dev/null
+    # Delete any already-materialized ollama models (user approved on 2026-10-26)
+    if [ -d /workspace/ollama ]; then
+        OLLAMA_SIZE=$(du -sh /workspace/ollama 2>/dev/null | awk '{print $1}')
+        rm -rf /workspace/ollama/* 2>/dev/null
+        log "Deleted /workspace/ollama/* (was: ${OLLAMA_SIZE:-unknown})"
+    fi
+else
+    log "No ollama config found, skipping"
+fi
+
+# ============================================================
 # STEP 1: Disk cleanup (if overlay is tight)
 # ============================================================
 step "1. Disk cleanup"
