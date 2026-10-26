@@ -6134,6 +6134,16 @@ snn_network_t* snn_network_load(const char* path) {
         fclose(f); return NULL;
     }
 
+    /* Dual-GPU is a runtime property of the host, not of the checkpoint:
+     * the fresh hierarchical build always asks for it, and the manager
+     * falls back to one device with a warning when GPU 1 is absent. A
+     * resumed run must not silently drop to a single GPU. */
+    if (!config.enable_dual_gpu) {
+        NIMCP_LOGGING_INFO("snn_network_load: checkpoint config has dual-GPU off — "
+                           "enabling for resume (falls back if only one device)");
+        config.enable_dual_gpu = true;
+    }
+
     /* Recreate network from config */
     snn_network_t* net = snn_network_create(&config);
     if (!net) {
@@ -6467,6 +6477,25 @@ snn_network_t* snn_network_load(const char* path) {
                 nimcp_free(pop_offsets);
             }
         }
+    }
+
+    /* Population device IDs are not persisted (every restored pop is on
+     * GPU 0). Re-apply the hierarchical builder's balance: large pops
+     * alternate starting on GPU 1, small ones starting on GPU 0, so the
+     * CSR uploads and per-pop kernels that follow spread across both. */
+    if (net->gpu_manager && net->gpu_manager->n_devices == 2) {
+        size_t neurons_on[2] = {0, 0};
+        uint32_t pops_on[2] = {0, 0};
+        for (uint32_t p = 0; p < net->n_populations; p++) {
+            snn_population_t* pop = net->populations[p];
+            if (!pop) continue;
+            pop->device_id = (pop->n_neurons > 50000) ? 1 - (p % 2) : (p % 2);
+            neurons_on[pop->device_id] += pop->n_neurons;
+            pops_on[pop->device_id]++;
+        }
+        NIMCP_LOGGING_INFO("snn_network_load: dual-GPU assignment — GPU 0: %u pops / %zu neurons, "
+                           "GPU 1: %u pops / %zu neurons",
+                           pops_on[0], neurons_on[0], pops_on[1], neurons_on[1]);
     }
 
     fclose(f);
