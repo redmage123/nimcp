@@ -8909,7 +8909,16 @@ def _print_utm_health(brain):
         if not grad_ok:
             parts.append("GRAD_UNHEALTHY")
         if early:
-            parts.append("EARLY_STOPPED")
+            # Self-heal: an early-stopped UTM stops CNN/LNN training entirely.
+            # It latched at stage-0 step 10000 on 2026-10-27 and stayed
+            # latched for 10,000 more stage-0 steps and all of stage 1 while
+            # this line merely printed EARLY_STOPPED.
+            try:
+                brain.utm_reset_early_stopping()
+                brain.utm_set_early_stopping_enabled(False)
+                parts.append("EARLY_STOPPED→reset+disabled")
+            except Exception as _e:
+                parts.append(f"EARLY_STOPPED (reset failed: {_e})")
         print(f"    [UTM] {' | '.join(parts)}")
     except (AttributeError, RuntimeError):
         pass  # UTM not available
@@ -11111,6 +11120,20 @@ def main():
                             init_mode='full',
                             snn_neuron_count=args.snn_neuron_count,
                             lnn_neuron_count=args.lnn_neuron_count)
+
+    # UTM early-stopping must never latch during immersive training: it
+    # silently stops CNN/LNN training inside the unified manager. It tripped
+    # at stage-0 step 10000 on 2026-10-27 (patience 5000 on a plateau) and
+    # stayed tripped for the rest of stage 0 and all of stage 1; the reported
+    # loss scale changed at the same moment. The daemon path already did this
+    # at startup (brain_daemon.py); the in-process trainer did not.
+    for _m, _a in (("utm_reset_early_stopping", ()),
+                   ("utm_set_early_stopping_enabled", (False,))):
+        try:
+            getattr(brain, _m)(*_a)
+            print(f"  [UTM] {_m}{_a} applied")
+        except Exception as _ue:
+            print(f"  [UTM] WARNING: {_m} unavailable ({_ue}) — early-stop latch may recur")
 
     # Sync BRAIN_INPUT_DIM / BRAIN_OUTPUT_DIM with the brain's *actual* dims.
     # On --resume the checkpoint may have layer_sizes[last] != args.num_outputs

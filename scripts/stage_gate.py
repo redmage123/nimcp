@@ -11,14 +11,17 @@ Usage:
         print(f"Gate blocked: {result.reason}")
 
 The gate enforces ALL of:
-    1. Minimum step count (so early noise doesn't trigger)
-    2. Mean loss below threshold (stage-specific)
-    3. Loss plateau (two successive 200-step windows within 5% of each other)
+    1. Minimum step count (the stage's full example budget — more is better)
+    2. (only with use_loss_criteria) Mean loss below threshold
+    3. (only with use_loss_criteria) Loss plateau
     4. Per-item non-zero ratio high (few collapsed responses)
     5. SNN biologically stable (sparsity 0.88-0.99 ≈ 1-12% firing)
     6. Chat eval passes (coherence + differentiation)
 
 Criteria are intentionally conjunctive: if ANY fails, the stage does NOT advance.
+Loss is deliberately NOT a stage-ending criterion by default (2026-10-27):
+Athena should receive as many training examples as possible, as a human
+would; the gate only verifies the brain is healthy before moving on.
 """
 from __future__ import annotations
 
@@ -50,12 +53,21 @@ class StageGate:
 
     # Criteria thresholds — tunable per stage
     min_step: int = 500
-    max_mean_loss: float = 1.0            # per-item loss target
+    # Loss is NOT a stage-ending criterion (user directive 2026-10-27:
+    # "athena should get as many training examples as possible just as a
+    # human would"). A stage runs through at least min_step examples and
+    # ends when the HEALTH criteria below pass; loss convergence/plateau is
+    # only consulted when use_loss_criteria is set explicitly.
+    use_loss_criteria: bool = False
+    max_mean_loss: float = 1.0            # per-item loss target (only if use_loss_criteria)
     plateau_window: int = 200             # two 200-step windows
     max_plateau_delta: float = 0.05       # 5% change between windows = plateaued
     min_nz_of_50: int = 48                # ≥48 non-zero in last 50 steps
-    snn_sparsity_min: float = 0.88        # firing ≤ 12%
-    snn_sparsity_max: float = 0.99        # firing ≥ 1%
+    snn_sparsity_min: float = 0.88        # legacy, unused (see criterion 5)
+    snn_sparsity_max: float = 0.99        # legacy, unused
+    snn_rate_min_hz: float = 0.5          # population mean firing rate band
+    snn_rate_max_hz: float = 20.0
+    snn_max_hyperactive: int = 1000       # neurons >200 Hz (pathological)
     chat_eval_interval: int = 500         # run chat_eval at most this often
     chat_coherence_min: float = 0.30      # input↔output alignment
     chat_similarity_min: float = 0.20     # decode quality
@@ -94,40 +106,39 @@ class StageGate:
         if step < self.min_step:
             return GateResult(False, f"min_step_not_reached ({step}<{self.min_step})", details)
 
-        # 2-3. Need enough history for plateau comparison
-        if len(losses) < 2 * self.plateau_window:
+        # 2-3. Loss level / plateau — informational unless use_loss_criteria.
+        if len(losses) >= 2 * self.plateau_window:
+            recent = losses[-self.plateau_window:]
+            prior = losses[-2 * self.plateau_window:-self.plateau_window]
+            nonzero_recent = [x for x in recent if x > 0.001]
+            nonzero_prior = [x for x in prior if x > 0.001]
+            if nonzero_recent and nonzero_prior:
+                mean_recent = sum(nonzero_recent) / len(nonzero_recent)
+                mean_prior = sum(nonzero_prior) / len(nonzero_prior)
+                details["mean_recent"] = mean_recent
+                details["mean_prior"] = mean_prior
+                plateau_delta = abs(mean_recent - mean_prior) / (abs(mean_prior) + 1e-6)
+                details["plateau_delta"] = plateau_delta
+                if self.use_loss_criteria:
+                    if mean_recent > self.max_mean_loss:
+                        return GateResult(False,
+                                          f"mean_loss_too_high ({mean_recent:.4f} > {self.max_mean_loss})",
+                                          details)
+                    if plateau_delta > self.max_plateau_delta:
+                        return GateResult(False,
+                                          f"not_plateaued (delta={plateau_delta:.3f} > {self.max_plateau_delta})",
+                                          details)
+            elif self.use_loss_criteria:
+                return GateResult(False, "all_zero_losses_in_window", details)
+        elif self.use_loss_criteria:
             return GateResult(False,
                               f"insufficient_loss_history ({len(losses)} < {2*self.plateau_window})",
                               details)
 
-        recent = losses[-self.plateau_window:]
-        prior = losses[-2 * self.plateau_window:-self.plateau_window]
-        nonzero_recent = [x for x in recent if x > 0.001]
-        nonzero_prior = [x for x in prior if x > 0.001]
-
-        if not nonzero_recent or not nonzero_prior:
-            return GateResult(False, "all_zero_losses_in_window", details)
-
-        mean_recent = sum(nonzero_recent) / len(nonzero_recent)
-        mean_prior = sum(nonzero_prior) / len(nonzero_prior)
-        details["mean_recent"] = mean_recent
-        details["mean_prior"] = mean_prior
-
-        # 2. Loss low enough
-        if mean_recent > self.max_mean_loss:
-            return GateResult(False,
-                              f"mean_loss_too_high ({mean_recent:.4f} > {self.max_mean_loss})",
-                              details)
-
-        # 3. Plateau
-        plateau_delta = abs(mean_recent - mean_prior) / (abs(mean_prior) + 1e-6)
-        details["plateau_delta"] = plateau_delta
-        if plateau_delta > self.max_plateau_delta:
-            return GateResult(False,
-                              f"not_plateaued (delta={plateau_delta:.3f} > {self.max_plateau_delta})",
-                              details)
-
-        # 4. Non-zero count in last 50 (most recent mini-window)
+        # 4. Non-zero count in last 50 (most recent mini-window) — output
+        # health (collapsed/empty responses), not a loss target.
+        if len(losses) < 50:
+            return GateResult(False, f"insufficient_history ({len(losses)} < 50)", details)
         last_50 = losses[-50:]
         nz_count = sum(1 for x in last_50 if x > 0.001)
         details["nz_count"] = nz_count
@@ -136,20 +147,34 @@ class StageGate:
                               f"too_many_zeros ({nz_count}/50 < {self.min_nz_of_50})",
                               details)
 
-        # 5. SNN biological range
+        # 5. SNN biological range. The network's `sparsity` statistic is the
+        # fraction of neurons that fired ZERO times over the stats window
+        # (~100 steps, nimcp_snn_network.c), not a per-step silent fraction:
+        # at ~2 Hz mean rate most neurons fire at least once per window, so
+        # it reads 0.0-0.4 on a healthy network and the old 0.88-0.99 band
+        # could never pass. Gate on the population mean firing rate instead
+        # (cortical neurons: ~0.5-20 Hz) and on hyperactive neurons.
         try:
             ss = brain.snn_get_stats() if hasattr(brain, "snn_get_stats") else None
         except Exception as e:
             return GateResult(False, f"snn_stats_failed:{e}", details)
         if not ss:
             return GateResult(False, "snn_stats_empty", details)
-        sparsity = float(ss.get("sparsity", 0.0) or 0.0)
-        details["snn_sparsity"] = sparsity
-        if not (self.snn_sparsity_min <= sparsity <= self.snn_sparsity_max):
+        rate_hz = float(ss.get("mean_firing_rate", ss.get("firing_rate", 0.0)) or 0.0)
+        details["snn_mean_rate_hz"] = rate_hz
+        details["snn_window_silent_fraction"] = float(ss.get("sparsity", 0.0) or 0.0)
+        if not (self.snn_rate_min_hz <= rate_hz <= self.snn_rate_max_hz):
             return GateResult(False,
-                              f"snn_sparsity_out_of_range ({sparsity:.3f} not in "
-                              f"[{self.snn_sparsity_min},{self.snn_sparsity_max}])",
+                              f"snn_rate_out_of_range ({rate_hz:.2f} Hz not in "
+                              f"[{self.snn_rate_min_hz},{self.snn_rate_max_hz}])",
                               details)
+        hyper = ss.get("hyperactive_neurons")
+        if hyper is not None:
+            details["snn_hyperactive"] = int(hyper)
+            if int(hyper) > self.snn_max_hyperactive:
+                return GateResult(False,
+                                  f"snn_hyperactive ({int(hyper)} > {self.snn_max_hyperactive})",
+                                  details)
 
         # 6. Chat eval
         chat_result = self._check_chat_eval(step, brain, composer, decoder, chat_eval_fn)
@@ -251,7 +276,7 @@ def stage_gate_for(stage: int) -> StageGate:
     if stage == 0:
         return StageGate(stage=0,
                          min_step=500,
-                         max_mean_loss=1.0,          # stage 0 plateaued at ~1.17 on 2026-10-27 — must get under 1.0
+                         max_mean_loss=1.0,          # informational only (use_loss_criteria=False)
                          plateau_window=200,
                          max_plateau_delta=0.05,
                          min_nz_of_50=48,
