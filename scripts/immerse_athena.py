@@ -10001,7 +10001,8 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                                           "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no",
                                           ] + files + [
                                           "bbrelin@176.9.99.103:/home/bbrelin/nimcp/checkpoints/athena/"],
-                                         timeout=3600, check=False, capture_output=True)
+                                         timeout=_ship_budget_s(sum(os.path.getsize(f) for f in files)),
+                                         check=False, capture_output=True)
                             if _r.returncode != 0:
                                 raise RuntimeError(
                                     "rsync rc=%d: %s" % (_r.returncode,
@@ -10356,6 +10357,12 @@ def _ship_and_remove_previous_snapshot():
         logger.warning("Pre-save ship error: %s", e)
 
 
+def _ship_budget_s(nbytes, floor_mb_s=2.0, min_s=3600):
+    """Wall-clock budget for one rsync: at least min_s, else enough for the
+    transfer at a pessimistic floor_mb_s plus 10 minutes of slack."""
+    return int(max(min_s, nbytes / (floor_mb_s * 1024 * 1024) + 600))
+
+
 def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
     """Validate, compress (non-gzipped sidecars), and rsync-move to Hetzner.
 
@@ -10464,7 +10471,12 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
         if copyable:
             copy_bytes = sum(os.path.getsize(f) for f in copyable)
             cmd = RSYNC_BASE + copyable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
-            r = subprocess.run(cmd, timeout=3600, capture_output=True)
+            # Wall-clock budget scales with size: the pod->Hetzner link has
+            # run as slow as ~5 MB/s (21 GB = 70 min); a fixed 3600 s killed
+            # the copy at 20.06/21.3 GB on 2026-10-27 and left an abandoned
+            # temp on Hetzner. rsync's own --timeout=1800 still catches a
+            # stalled link.
+            r = subprocess.run(cmd, timeout=_ship_budget_s(copy_bytes), capture_output=True)
             if r.returncode != 0:
                 logger.warning("Hetzner copy failed: %s", r.stderr.decode()[:500])
                 return
@@ -10474,7 +10486,8 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
         # MOVE older snapshot files (--remove-source-files deletes after success)
         if movable:
             cmd = RSYNC_BASE + ["--remove-source-files"] + movable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
-            r = subprocess.run(cmd, timeout=3600, capture_output=True)
+            r = subprocess.run(cmd, timeout=_ship_budget_s(sum(os.path.getsize(f) for f in movable)),
+                               capture_output=True)
             if r.returncode != 0:
                 logger.warning("Hetzner move failed: %s", r.stderr.decode()[:500])
                 return

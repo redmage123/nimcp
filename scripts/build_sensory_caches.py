@@ -75,6 +75,59 @@ def build_cifar(archives, out):
         print(f"{name}: {len(obj)} labels, {sum(len(v) for v in obj.values())} images")
 
 
+CIFAR100_FINE = [
+    "apple", "aquarium_fish", "baby", "bear", "beaver", "bed", "bee", "beetle", "bicycle",
+    "bottle", "bowl", "boy", "bridge", "bus", "butterfly", "camel", "can", "castle",
+    "caterpillar", "cattle", "chair", "chimpanzee", "clock", "cloud", "cockroach", "couch",
+    "crab", "crocodile", "cup", "dinosaur", "dolphin", "elephant", "flatfish", "forest",
+    "fox", "girl", "hamster", "house", "kangaroo", "keyboard", "lamp", "lawn_mower",
+    "leopard", "lion", "lizard", "lobster", "man", "maple_tree", "motorcycle", "mountain",
+    "mouse", "mushroom", "oak_tree", "orange", "orchid", "otter", "palm_tree", "pear",
+    "pickup_truck", "pine_tree", "plain", "plate", "poppy", "porcupine", "possum", "rabbit",
+    "raccoon", "ray", "road", "rocket", "rose", "sea", "seal", "shark", "shrew", "skunk",
+    "skyscraper", "snail", "snake", "spider", "squirrel", "streetcar", "sunflower",
+    "sweet_pepper", "table", "tank", "telephone", "television", "tiger", "tractor", "train",
+    "trout", "tulip", "turtle", "wardrobe", "whale", "willow_tree", "wolf", "woman", "worm",
+]
+CIFAR10 = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
+
+
+def build_cifar_from_parquet(pq_dir, out):
+    """Same outputs as build_cifar, from the HuggingFace parquet mirrors
+    (uoft-cs/cifar100: cifar100/{train,test}-00000-of-00001.parquet with
+    columns img{bytes,path}, fine_label, coarse_label; uoft-cs/cifar10:
+    plain_text/{train,test}-...parquet with img, label). The Toronto mirror
+    serves ~70 KB/s; the HF CDN serves MB/s."""
+    import io as _io
+    import pyarrow.parquet as pq
+    from PIL import Image
+
+    def rows(path, label_col):
+        t = pq.read_table(path).to_pydict()
+        imgs = t["img"]
+        labels = t[label_col]
+        for im, li in zip(imgs, labels):
+            data = im["bytes"] if isinstance(im, dict) else im
+            arr = np.array(Image.open(_io.BytesIO(data)).convert("RGB").resize((32, 32)),
+                           dtype=np.uint8)
+            yield arr.tobytes(), int(li)
+
+    train, test, c100_train = {}, {}, {}
+    for split, dst in (("train", train), ("test", test)):
+        for raw, li in rows(os.path.join(pq_dir, f"cifar100_{split}.parquet"), "fine_label"):
+            name = CIFAR100_FINE[li]
+            dst.setdefault(name, []).append(raw)
+            if split == "train":
+                c100_train.setdefault(name, []).append(raw)
+        for raw, li in rows(os.path.join(pq_dir, f"cifar10_{split}.parquet"), "label"):
+            dst.setdefault(CIFAR10[li], []).append(raw)
+    for name, obj in (("cifar_by_label.pkl", train), ("cifar_heldout_by_label.pkl", test),
+                      ("cifar100_by_label.pkl", c100_train)):
+        with open(os.path.join(out, name), "wb") as f:
+            pickle.dump(obj, f, protocol=4)
+        print(f"{name}: {len(obj)} labels, {sum(len(v) for v in obj.values())} images")
+
+
 def build_speech(archives, out, clips_per_word):
     p = os.path.join(archives, "speech_commands_v0.02.tar.gz")
     if not os.path.exists(p):
@@ -115,9 +168,15 @@ def main():
     ap.add_argument("--archives", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--clips-per-word", type=int, default=150)
+    ap.add_argument("--parquet", default=None,
+                    help="Directory with cifar100_{train,test}.parquet and "
+                         "cifar10_{train,test}.parquet (HF mirrors) instead of the tarballs")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    build_cifar(a.archives, a.out)
+    if a.parquet:
+        build_cifar_from_parquet(a.parquet, a.out)
+    else:
+        build_cifar(a.archives, a.out)
     build_speech(a.archives, a.out, a.clips_per_word)
 
 
