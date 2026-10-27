@@ -88,6 +88,13 @@ STAGE_RULES: dict[int, dict] = {
     # well-formed utterances are developmental progress (max_words=None).
     1: {"min_words": 2, "max_words": None, "vocab_size_target": 200},
     2: {"min_words": 3, "max_words": 5, "vocab_size_target": 800},
+    # Stages 3+ (docs/claude/curriculum-stages-4-7.md). No ceilings: longer
+    # well-formed productions are progress.
+    3: {"min_words": 3, "max_words": None, "vocab_size_target": 1500},
+    4: {"min_words": 3, "max_words": None, "vocab_size_target": 2000},
+    5: {"min_words": 5, "max_words": None, "vocab_size_target": 5000},
+    6: {"min_words": 5, "max_words": None, "vocab_size_target": 10000},
+    7: {"min_words": 1, "max_words": None, "vocab_size_target": 20000},
 }
 
 # Copulas / linking verbs. Their presence signals a copula construction

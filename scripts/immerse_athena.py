@@ -10934,6 +10934,16 @@ def main():
     parser.add_argument("--stage1-stimuli", type=int, default=40000)
     parser.add_argument("--stage2-stimuli", type=int, default=40000)
     parser.add_argument("--stage3-interactions", type=int, default=30000)
+    # Stages 4-7 (docs/claude/curriculum-stages-4-7.md): one step = one
+    # multi-turn episode; counts are minimums, the StageGate health criteria +
+    # stage probes decide the transition. Stage 7 is open-ended (0 = unbounded).
+    parser.add_argument("--stage4-episodes", type=int, default=50000)
+    parser.add_argument("--stage5-episodes", type=int, default=50000)
+    parser.add_argument("--stage6-episodes", type=int, default=100000)
+    parser.add_argument("--stage7-episodes", type=int, default=0)
+    for _s in (4, 5, 6, 7):
+        parser.add_argument(f"--stage{_s}-max-episodes", type=int, default=0,
+                            help=f"Safety ceiling for stage {_s} (0 = none)")
     parser.add_argument("--fresh", action="store_true",
                         help="Start fresh (ignore existing checkpoint)")
     parser.add_argument("--no-multimodal", action="store_true",
@@ -11746,12 +11756,36 @@ def main():
         run_stage_3(brain, composer, parent, clock, source, decoder,
                     num_interactions=args.stage3_interactions,
                     start_from=start_step if start_stage == 3 else 0)
+        start_step = 0
+        _save_checkpoint(brain, decoder, stage=4, step=0, wait=True)
+        print("  [Checkpoint] Stage 3 complete → saved as stage 4, step 0")
+
+    # --- Stages 4-7: episodes (docs/claude/curriculum-stages-4-7.md) ---
+    import stages_4_7 as _s47
+    _ia_module = sys.modules[__name__]
+    _later_stages = (
+        (4, _s47.run_stage_4, args.stage4_episodes, args.stage4_max_episodes),
+        (5, _s47.run_stage_5, args.stage5_episodes, args.stage5_max_episodes),
+        (6, _s47.run_stage_6, args.stage6_episodes, args.stage6_max_episodes),
+        (7, _s47.run_stage_7, args.stage7_episodes, args.stage7_max_episodes),
+    )
+    for _st, _run, _n_eps, _max_eps in _later_stages:
+        if start_stage <= _st:
+            training_progress[0], training_progress[1] = _st, (start_step if start_stage == _st else 0)
+            _run(_ia_module, brain, composer, parent, clock, source, decoder,
+                 num_episodes=_n_eps,
+                 start_from=start_step if start_stage == _st else 0,
+                 max_episodes=_max_eps)
+            start_step = 0
+            if _st < 7:
+                _save_checkpoint(brain, decoder, stage=_st + 1, step=0, wait=True)
+                print(f"  [Checkpoint] Stage {_st} complete → saved as stage {_st + 1}, step 0")
 
     # --- Final checkpoint ---
     print("\n" + "=" * 60)
     print("  DEVELOPMENTAL TRAINING COMPLETE")
     print("=" * 60)
-    _save_checkpoint(brain, decoder, stage=3, step=-1, wait=True)
+    _save_checkpoint(brain, decoder, stage=7, step=-1, wait=True)
 
     # Final stats
     print("\n  Final biological state:")

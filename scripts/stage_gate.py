@@ -308,6 +308,18 @@ def stage_gate_for(stage: int) -> StageGate:
                          chat_coherence_min=0.35,
                          chat_similarity_min=0.25,
                          required_consecutive_passes=3)
+    elif stage >= 4:
+        # Stages 4-7 (docs/claude/curriculum-stages-4-7.md): health criteria
+        # only, chat thresholds rising with the stage; stage-specific
+        # capability probes are applied by stages_4_7._run_stage on top.
+        coh = {4: 0.35, 5: 0.40, 6: 0.45}.get(stage, 0.50)
+        sim = {4: 0.25, 5: 0.30, 6: 0.35}.get(stage, 0.40)
+        xs = {4: 0.85, 5: 0.80, 6: 0.75}.get(stage, 0.70)
+        return StageGate(stage=stage, min_step=1000,
+                         chat_eval_interval=500,
+                         chat_coherence_min=coh, chat_similarity_min=sim,
+                         chat_cross_sim_max=xs,
+                         required_consecutive_passes=3)
     else:
         return StageGate(stage=stage)
 
