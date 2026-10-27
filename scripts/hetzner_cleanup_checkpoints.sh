@@ -54,12 +54,26 @@ cleanup_dir() {
     # List main .bin files SORTED BY MTIME (newest first), then take ones to delete.
     # Using NUL-separated output + null-delimited mapfile keeps whitespace-safe.
     local -a all_bins
+    # All stages (was athena_s0_* only — stage-1 sets were invisible to the
+    # keep-count), newest first by mtime.
     mapfile -d '' -t all_bins < <(
-        find "$dir" -maxdepth 1 -type f -name 'athena_s0_step*.bin' \
+        find "$dir" -maxdepth 1 -type f -name 'athena_s*_step*.bin' \
           -printf '%T@ %p\0' 2>/dev/null \
           | sort -z -k1,1 -r -n \
           | cut -z -d' ' -f2-
     )
+    # Never delete the newest KEEP_COMPLETE sets that carry a non-empty .snn
+    # sidecar, wherever they fall in the mtime order. On 2026-10-27 the
+    # trainer produced 5+ newer snapshots WITHOUT .snn (tmpfs full) and this
+    # script deleted every older complete set — no restorable checkpoint
+    # was left anywhere.
+    local KEEP_COMPLETE=2
+    local -a protected=()
+    for b in "${all_bins[@]}"; do
+        if [ -s "$b.snn" ] && [ "${#protected[@]}" -lt "$KEEP_COMPLETE" ]; then
+            protected+=("$b")
+        fi
+    done
 
     if [ "${#all_bins[@]}" -le "$KEEP_LATEST" ]; then
         log "KEEP: $dir has ${#all_bins[@]} snapshots (<= keep=$KEEP_LATEST)"
@@ -90,6 +104,14 @@ cleanup_dir() {
         # Never delete the canonical symlink target
         if [ "$base_name" = "$canonical_base" ]; then
             log "SKIP $dir/$base_name (canonical target)"
+            continue
+        fi
+        local is_protected=0
+        for p in "${protected[@]}"; do
+            [ "$p" = "$main_bin" ] && is_protected=1
+        done
+        if [ "$is_protected" = 1 ]; then
+            log "SKIP $dir/$base_name (one of the newest $KEEP_COMPLETE complete sets with .snn)"
             continue
         fi
 

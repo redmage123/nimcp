@@ -61,6 +61,12 @@ class StageGate:
     chat_similarity_min: float = 0.20     # decode quality
     chat_cross_sim_max: float = 0.90      # 1-diversity; want differentiation
 
+    # Where chat_eval writes its JSONL summary. immerse_athena.py writes
+    # checkpoints/athena/chat_eval_log.jsonl (relative to its cwd); the
+    # fixed candidates in _find_chat_log never matched it, so the chat
+    # criterion could not pass. Callers set this explicitly.
+    chat_log_path: str | None = None
+
     # Internal state
     last_chat_step: int = -1
     last_chat_result: dict | None = None
@@ -70,6 +76,18 @@ class StageGate:
     def check(self, step: int, losses: list[float],
               brain: Any, composer: Any = None, decoder: Any = None,
               chat_eval_fn: Callable | None = None) -> GateResult:
+        """Evaluate all criteria. Passes must be CONSECUTIVE: any failed
+        criterion resets the pass counter (the original implementation
+        returned early without resetting, so 3 passes spread over hours
+        of failures would have counted)."""
+        result = self._check_once(step, losses, brain, composer, decoder, chat_eval_fn)
+        if not result.passed and not result.reason.startswith("accumulating_passes"):
+            self.cumulative_passes = 0
+        return result
+
+    def _check_once(self, step: int, losses: list[float],
+                    brain: Any, composer: Any = None, decoder: Any = None,
+                    chat_eval_fn: Callable | None = None) -> GateResult:
         details = {"step": step}
 
         # 1. Minimum steps
@@ -215,6 +233,8 @@ class StageGate:
         return result
 
     def _find_chat_log(self) -> str | None:
+        if self.chat_log_path and os.path.exists(self.chat_log_path):
+            return self.chat_log_path
         candidates = [
             "/var/log/athena/chat_eval.jsonl",
             "/workspace/nimcp/chat_eval.jsonl",
@@ -228,6 +248,20 @@ class StageGate:
 
 def stage_gate_for(stage: int) -> StageGate:
     """Factory — per-stage calibrated thresholds."""
+    if stage == 0:
+        return StageGate(stage=0,
+                         min_step=500,
+                         max_mean_loss=1.0,          # stage 0 plateaued at ~1.17 on 2026-10-27 — must get under 1.0
+                         plateau_window=200,
+                         max_plateau_delta=0.05,
+                         min_nz_of_50=48,
+                         snn_sparsity_min=0.88,
+                         snn_sparsity_max=0.99,
+                         chat_eval_interval=500,
+                         chat_coherence_min=0.30,
+                         chat_similarity_min=0.20,
+                         chat_cross_sim_max=0.90,
+                         required_consecutive_passes=3)
     if stage == 1:
         return StageGate(stage=1,
                          min_step=1500,              # enough warm-up

@@ -32,6 +32,7 @@ import argparse
 import hashlib
 import logging
 import os
+import shutil
 import socket
 import struct
 import sys
@@ -6908,7 +6909,7 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
 
     Goal: Get neurons responding. Self-reconstruction of sensory patterns.
     """
-    if start_from >= num_stimuli:
+    if start_from >= num_stimuli and not STAGE_GATE_ENABLED:
         print(f"  [Stage 0] Already complete (step {start_from} >= {num_stimuli}) — skipping")
         return []
     print("\n" + "=" * 60)
@@ -7030,7 +7031,30 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
                     lr_physics=lr_scheduler.get_lr(),
                     lr_chemistry=lr_scheduler.get_lr(),
                     lr_biology=lr_scheduler.get_lr())
-    for i in range(start_from, num_stimuli):
+    # Stage gate: num_stimuli is a MINIMUM. The loop keeps presenting stage-0
+    # content past it until ALL StageGate criteria pass 3x consecutively
+    # (loss < 1.0, plateau, non-zero outputs, SNN sparsity, chat eval). The
+    # stimulus stream comes from the prefetcher, not an index, so running
+    # past num_stimuli is safe.
+    gate = None
+    gate_passed = False
+    if STAGE_GATE_ENABLED:
+        from stage_gate import stage_gate_for, log_gate_event
+        gate = stage_gate_for(0)
+        gate.chat_log_path = _CHAT_LOG_FILE
+        print(f"  [StageGate 0] active — min {num_stimuli} stimuli, then ALL criteria "
+              f"3x consecutively; safety ceiling: "
+              f"{STAGE0_MAX_STIMULI if STAGE0_MAX_STIMULI else 'none'}")
+    import itertools as _it
+    for i in _it.count(start_from):
+        TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 0, i
+        if i >= num_stimuli:
+            if gate is None or gate_passed:
+                break
+            if STAGE0_MAX_STIMULI and i >= STAGE0_MAX_STIMULI:
+                print(f"  [StageGate 0] SAFETY CEILING {STAGE0_MAX_STIMULI} reached at step {i} "
+                      "— advancing WITHOUT a gate pass", flush=True)
+                break
         # Mode collapse early detection
         if ((i + 1) % COLLAPSE_CHECK_INTERVAL == 0
                 and (i + 1) >= COLLAPSE_WARMUP_STEPS):
@@ -7343,7 +7367,22 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             if early_stop.check(avg_loss):
                 print(f"    Early stopping: loss plateaued at {avg_loss:.4f} "
                       f"for {early_stop.patience} evals")
-                break
+                if gate is None:
+                    break
+                print("    (ignored — the StageGate governs the transition)")
+
+        # Stage gate check every plateau window; the transition itself happens
+        # at the top of the loop once i >= num_stimuli and the gate has passed.
+        if gate is not None and (i + 1) % STAGE_GATE_CHECK_EVERY == 0:
+            try:
+                _gr = gate.check(i + 1, losses, brain, composer, decoder,
+                                 chat_eval_fn=chat_eval)
+            except Exception as _ge:
+                from stage_gate import GateResult as _GR
+                _gr = _GR(False, f"gate_exception:{_ge}")
+            gate_passed = _gr.passed
+            print(f"    [StageGate 0] step {i+1}: {_gr}", flush=True)
+            log_gate_event(STAGE_GATE_LOG, 0, i + 1, _gr)
 
         # Chat eval disabled for Stage 0 — OOM risk with 2.5M neurons.
         # Enable manually via: touch /tmp/athena_chat_now
@@ -7372,7 +7411,7 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
     word types) alongside the object naming — like a parent who says both
     "That's a DOG!" and "Dog is a NOUN — nouns name things."
     """
-    if start_from >= num_stimuli:
+    if start_from >= num_stimuli and not STAGE_GATE_ENABLED:
         print(f"  [Stage 1] Already complete (step {start_from} >= {num_stimuli}) — skipping")
         return []
     print("\n" + "=" * 60)
@@ -7572,7 +7611,25 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
                     lr_physics=lr_ctrl.get_lr(),
                     lr_chemistry=lr_ctrl.get_lr(),
                     lr_biology=lr_ctrl.get_lr())
-    for i in range(start_from, num_stimuli):
+    gate = None
+    gate_passed = False
+    if STAGE_GATE_ENABLED:
+        from stage_gate import stage_gate_for, log_gate_event
+        gate = stage_gate_for(1)
+        gate.chat_log_path = _CHAT_LOG_FILE
+        print(f"  [StageGate 1] active — min {num_stimuli} stimuli, then ALL criteria "
+              f"3x consecutively; safety ceiling: "
+              f"{STAGE1_MAX_STIMULI if STAGE1_MAX_STIMULI else 'none'}")
+    import itertools as _it
+    for i in _it.count(start_from):
+        TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 1, i
+        if i >= num_stimuli:
+            if gate is None or gate_passed:
+                break
+            if STAGE1_MAX_STIMULI and i >= STAGE1_MAX_STIMULI:
+                print(f"  [StageGate 1] SAFETY CEILING {STAGE1_MAX_STIMULI} reached at step {i} "
+                      "— advancing WITHOUT a gate pass", flush=True)
+                break
         # Mode collapse early detection
         if ((i + 1) % COLLAPSE_CHECK_INTERVAL == 0
                 and (i + 1) >= COLLAPSE_WARMUP_STEPS):
@@ -7854,6 +7911,19 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
                 decoder.force_refit()
             evaluate_performance(brain, composer, decoder, stage=1, step=i+1)
 
+        # Stage gate check every plateau window (transition happens at the
+        # top of the loop once i >= num_stimuli and the gate has passed).
+        if gate is not None and (i + 1) % STAGE_GATE_CHECK_EVERY == 0:
+            try:
+                _gr = gate.check(i + 1, losses, brain, composer, decoder,
+                                 chat_eval_fn=chat_eval)
+            except Exception as _ge:
+                from stage_gate import GateResult as _GR
+                _gr = _GR(False, f"gate_exception:{_ge}")
+            gate_passed = _gr.passed
+            print(f"    [StageGate 1] step {i+1}: {_gr}", flush=True)
+            log_gate_event(STAGE_GATE_LOG, 1, i + 1, _gr)
+
         # Moral lesson every 3000
         if (i + 1) % 3000 == 0:
             parent.teach_moral_lesson(brain, composer, stage=1)
@@ -7987,6 +8057,7 @@ def run_stage_2(brain, composer, parent, clock, source, decoder,
                     lr_biology=lr_ctrl.get_lr() * 1.5)
 
     for i in range(start_from, num_stimuli):
+        TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 2, i
         # Full mode collapse detection (every 100 steps)
         if ((i + 1) % COLLAPSE_CHECK_INTERVAL == 0
                 and (i + 1) >= COLLAPSE_WARMUP_STEPS):
@@ -8460,6 +8531,7 @@ def run_stage_3(brain, composer, parent, clock, source, decoder,
                     lr_biology=lr_scheduler.get_lr())
 
     for i in range(start_from, num_interactions):
+        TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 3, i
         action = clock.tick(brain)
         if action == "sleep":
             clock.do_sleep(brain, parent)
@@ -9496,6 +9568,27 @@ def evaluate_performance(brain, composer, decoder, stage, step):
 
 
 _checkpoint_thread = None
+# Live (stage, step) bookmark, updated at the top of every stage loop
+# iteration. The SIGUSR1 / shutdown save handlers name their snapshot and
+# write the state file from this — before 2026-10-27 only the stage-boundary
+# code touched it, so an on-demand save in stage 1 at step 250 was named
+# athena_s1_step0.bin and rewound the state file to step 0.
+TRAINING_PROGRESS = [0, 0]
+# Stage transitions are governed by scripts/stage_gate.py (ALL metrics must
+# pass 3x consecutively), not by the --stageN-stimuli counts, which are now
+# MINIMUMS. Set from --no-stage-gate / --stage0-max-stimuli in main().
+STAGE_GATE_ENABLED = True
+STAGE0_MAX_STIMULI = 0          # 0 = no safety ceiling (block until the gate passes)
+STAGE1_MAX_STIMULI = 0
+STAGE_GATE_CHECK_EVERY = 200    # one plateau window
+STAGE_GATE_LOG = "checkpoints/athena/stage_gate_log.jsonl"
+# Expected SNN sidecar size (bytes) — seeded from the resumed checkpoint and
+# refreshed by every successful save. A save whose .snn is missing or far
+# smaller is DISCARDED instead of advancing the lineage (2026-10-27: 73
+# consecutive saves silently shipped without SNN state because /dev/shm had
+# no room for the 21 GB sidecar; Hetzner's cleanup then deleted every older
+# complete set).
+_expected_snn_bytes = 0
 # Set when a cadence save was skipped because the previous save/ship was
 # still running; the training loops then save at the first step after that
 # thread finishes instead of waiting for the next 50-step boundary (a 21 GB
@@ -9671,6 +9764,26 @@ def _prune_checkpoint_snapshots(max_snapshots=1):
         logger.info("Pruned %d old snapshots (+%d sidecars, freed %.1f GB)",
                     len(to_remove), sidecar_count, freed / 1e9)
 
+    # Orphan sidecars: a sidecar whose .bin is gone (shipped/pruned while a
+    # later save failed to replace the sidecar) is unusable and, for the
+    # 21 GB .snn, blocks every subsequent SNN save on a 31 GB tmpfs
+    # (2026-10-27: athena_s0_step12727.bin.snn sat orphaned for 7 hours).
+    orphan_freed = 0
+    for f in glob_mod.glob(pattern + ".*"):
+        if ".tmp" in os.path.basename(f):
+            continue  # in-progress save artefacts
+        base = f[:f.index(".bin") + 4]
+        if os.path.exists(base):
+            continue
+        try:
+            orphan_freed += os.path.getsize(f)
+            os.remove(f)
+            logger.warning("Removed orphan sidecar %s (its .bin is gone)", os.path.basename(f))
+        except OSError:
+            pass
+    if orphan_freed > 0:
+        logger.info("Orphan sidecar cleanup freed %.1f GB", orphan_freed / 1e9)
+
 
 def _save_checkpoint_sync(brain, decoder, stage, step):
     """Synchronous checkpoint save (runs in background thread).
@@ -9680,6 +9793,7 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
     Keeps up to 5 snapshots, auto-prunes oldest.
     Uses write-to-temp + size validation to prevent corruption.
     """
+    global _expected_snn_bytes
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     # Need ~5 GB free for new checkpoint write (brain state ~2-3 GB total).
@@ -9704,9 +9818,27 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                 '.mirror_neurons', '.executive', '.gl_lang', '.gl_multiturn',
                 '.kg', '.immune', '.concept_registry', '.knowledge',
                 '.pink_noise', '.temperature'] if os.path.exists(_tgt + _e))
+        # The canonical target may lack a .snn (a previous save failed) while a
+        # stale 21 GB .snn still occupies the tmpfs: size the headroom from the
+        # largest .snn present AND the expected sidecar size, not only from
+        # the canonical set.
+        import glob as _gh
+        _largest_snn = max([os.path.getsize(p) for p in
+                            _gh.glob(os.path.join(CHECKPOINT_DIR, "athena_s*_step*.bin.snn"))]
+                           + [0])
+        _needed = max(_needed, _largest_snn + 800 * 1024 * 1024,
+                      _expected_snn_bytes + 800 * 1024 * 1024)
         DISK_HEADROOM_GB = max(DISK_HEADROOM_GB, _needed / (1024 ** 3) + 1.0)
     except OSError:
         pass
+    if _expected_snn_bytes == 0:
+        # Seed from the resumed checkpoint's sidecar so the very first save of
+        # a process already knows what a complete .snn looks like.
+        try:
+            _expected_snn_bytes = os.path.getsize(
+                os.path.join(CHECKPOINT_DIR, "athena_immersive.bin.snn"))
+        except OSError:
+            pass
     if not _check_disk_space(min_gb=DISK_HEADROOM_GB):
         logger.warning("Low disk space (<%.1f GB free needed for the next snapshot) — "
                        "shipping previous snapshot first", DISK_HEADROOM_GB)
@@ -9806,11 +9938,29 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                     pass
             return
 
-        # Verify SNN sidecar exists if SNN is in use (the big one we kept losing)
+        # Verify the SNN sidecar. A missing or truncated .snn (snn_network_save
+        # logs "fwrite failed" on ENOSPC but brain.save still returns) must
+        # DISCARD the snapshot — never advance the state file to a checkpoint
+        # without SNN state.
         snn_tmp = snapshot_tmp + ".snn"
-        if os.path.exists(snn_tmp):
-            snn_size = os.path.getsize(snn_tmp)
+        snn_size = os.path.getsize(snn_tmp) if os.path.exists(snn_tmp) else 0
+        if snn_size > 0:
             logger.info("SNN sidecar size: %.1f GB", snn_size / 1e9)
+        if _expected_snn_bytes > 0 and snn_size < 0.9 * _expected_snn_bytes:
+            logger.error("SNN sidecar missing/truncated (%.2f GB, expected ~%.2f GB) — "
+                         "discarding snapshot %s; state NOT advanced. Free space in %s "
+                         "(%.1f GB free) and the next save will retry.",
+                         snn_size / 1e9, _expected_snn_bytes / 1e9, snapshot_name,
+                         CHECKPOINT_DIR, shutil.disk_usage(CHECKPOINT_DIR).free / 1e9)
+            import glob as _gd
+            for stmp in [snapshot_tmp] + _gd.glob(snapshot_tmp + ".*"):
+                try:
+                    os.remove(stmp)
+                except OSError:
+                    pass
+            return
+        if snn_size > 0:
+            _expected_snn_bytes = snn_size
 
         # Atomic rename temp -> snapshot
         os.replace(snapshot_tmp, snapshot_path)
@@ -10627,7 +10777,17 @@ def main():
                         help=f"SNN target neuron count (default: {DEFAULT_SNN_NEURONS})")
     parser.add_argument("--lnn-neuron-count", type=int, default=DEFAULT_LNN_NEURONS,
                         help=f"LNN neuron count (default: {DEFAULT_LNN_NEURONS})")
-    parser.add_argument("--stage0-stimuli", type=int, default=20000)
+    parser.add_argument("--stage0-stimuli", type=int, default=20000,
+                        help="MINIMUM stage-0 stimuli; the stage ends only when the "
+                             "StageGate passes (see --no-stage-gate)")
+    parser.add_argument("--stage0-max-stimuli", type=int, default=0,
+                        help="Safety ceiling for stage 0 (0 = none: block until the gate passes)")
+    parser.add_argument("--stage1-max-stimuli", type=int, default=0,
+                        help="Safety ceiling for stage 1 (0 = none)")
+    parser.add_argument("--no-stage-gate", action="store_true",
+                        help="Transition on stimulus counts alone (NOT recommended — "
+                             "the 2026-10-27 stage 0→1 transition happened this way "
+                             "with loss plateaued at 1.17)")
     parser.add_argument("--stage1-stimuli", type=int, default=40000)
     parser.add_argument("--stage2-stimuli", type=int, default=40000)
     parser.add_argument("--stage3-interactions", type=int, default=30000)
@@ -10734,6 +10894,9 @@ def main():
     parser.add_argument("--no-probe-drips", dest="probe_drips",
                         action="store_false")
     args = parser.parse_args()
+    globals().update(STAGE_GATE_ENABLED=not args.no_stage_gate,
+                     STAGE0_MAX_STIMULI=args.stage0_max_stimuli,
+                     STAGE1_MAX_STIMULI=args.stage1_max_stimuli)
 
     # Publish probe-drips toggle so the module-level run_stage_* functions can
     # gate _run_probe_drips without referencing main()'s local `args` (which
@@ -11213,7 +11376,8 @@ def main():
     # with the resume bookmark so a shutdown save before the first
     # curriculum step is named by the real step, not step 0 (which also
     # rewound the state file to 0 on 2026-10-26).
-    training_progress = [start_stage, start_step]
+    training_progress = TRAINING_PROGRESS
+    training_progress[0], training_progress[1] = start_stage, start_step
 
     ipc_server = [None]  # mutable container for signal handler access
 
