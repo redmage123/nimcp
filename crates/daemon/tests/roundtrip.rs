@@ -82,20 +82,32 @@ impl DaemonProc {
         if config_json.is_some() {
             cmd.arg("--config-json").arg(&config_path);
         }
-        let child = cmd
+        // Keep stderr so a daemon that dies before binding (config parse
+        // error, brain construction failure) explains itself in the
+        // assertion below instead of a bare 5s timeout.
+        let stderr_path = tmp.path().join("daemon.stderr");
+        let stderr_file = std::fs::File::create(&stderr_path).expect("stderr file");
+        let mut child = cmd
             .env("NIMCP_METRICS_INTERVAL_SEC", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(stderr_file))
             .spawn()
             .expect("spawn daemon");
 
-        // Wait for the socket to appear.
+        // Wait for the socket to appear — or the process to die.
         let deadline = Instant::now() + Duration::from_secs(5);
         while !socket.exists() && Instant::now() < deadline {
+            if let Ok(Some(status)) = child.try_wait() {
+                let err = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+                panic!("daemon exited before binding its socket ({status}):\n{err}");
+            }
             thread::sleep(Duration::from_millis(25));
         }
-        assert!(socket.exists(), "daemon failed to bind socket in 5s");
+        if !socket.exists() {
+            let err = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+            panic!("daemon failed to bind socket in 5s; stderr:\n{err}");
+        }
 
         Self {
             child,
@@ -426,7 +438,7 @@ fn run_snn_watchdog_scenario() {
             "edges": [{"src": 0, "dst": 1, "fan_in": 8, "weight_init": 0.4, "weight_jitter": 0.0,
                        "rstdp": nimcp_snn::RstdpParams::default()}],
             "rng_seed": 3,
-            "rate_ema_alpha": 0.05,
+            // `rate_ema_alpha` deliberately omitted — serde default.
         }
     });
     let proc = DaemonProc::spawn_with_config(Some(&cfg));
@@ -530,4 +542,33 @@ fn daemon_language_rpcs_under_timeout() {
 #[test]
 fn daemon_snn_watchdog_rpcs_under_timeout() {
     run_under_timeout(run_snn_watchdog_scenario);
+}
+
+/// A config the brain rejects must surface the daemon's own error text
+/// through the spawn helper, not a bare socket-bind timeout.
+#[test]
+fn daemon_spawn_reports_config_errors() {
+    let bad = json!({
+        "rng_seed": 1,
+        "deterministic": true,
+        "state_dir": "./ignored",
+        "adaptive": {"layers": [2, 4, 1], "rng_seed": 1, "activation": "Tanh"},
+        // `populations` missing → serde error at config parse.
+        "snn": {"edges": [], "rng_seed": 1}
+    });
+    let outcome = thread::spawn(move || {
+        let _proc = DaemonProc::spawn_with_config(Some(&bad));
+    })
+    .join();
+    let payload = outcome.expect_err("spawn must panic on an unparseable config");
+    let msg = payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_default();
+    assert!(msg.contains("exited before binding"), "{msg}");
+    assert!(
+        msg.contains("populations"),
+        "daemon stderr should name the missing field: {msg}"
+    );
 }

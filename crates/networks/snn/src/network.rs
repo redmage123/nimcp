@@ -233,7 +233,10 @@ pub struct SnnConfig {
     pub edges: Vec<EdgeSpec>,
     /// Seed for the deterministic topology RNG.
     pub rng_seed: u64,
-    /// Initial alpha for every population's firing-rate EMA.
+    /// Initial alpha for every population's firing-rate EMA. Defaults to
+    /// [`DEFAULT_RATE_EMA_ALPHA`] when absent from JSON — hand-written
+    /// daemon / Python configs no longer have to spell it out.
+    #[serde(default = "default_rate_ema_alpha")]
     pub rate_ema_alpha: f32,
     /// Intrinsic-reward config shared across populations. See
     /// [`SnnNetwork::compute_intrinsic_reward`]; callers pass the
@@ -279,6 +282,10 @@ pub struct SnnConfig {
     /// ordinal 0, i.e. the pre-Phase-10 behaviour.
     #[serde(default)]
     pub device_assignment: crate::device::DeviceAssignment,
+}
+
+fn default_rate_ema_alpha() -> f32 {
+    DEFAULT_RATE_EMA_ALPHA
 }
 
 impl Default for SnnConfig {
@@ -2816,6 +2823,17 @@ mod tests {
         };
         let net = SnnNetwork::new(cfg).unwrap();
         assert_eq!(net.population_devices(), &[1, 0]);
+    }
+
+    #[test]
+    fn snn_config_json_defaults_rate_ema_alpha() {
+        let raw = r#"{"populations": [], "edges": [], "rng_seed": 7}"#;
+        let cfg: SnnConfig = serde_json::from_str(raw).unwrap();
+        assert_eq!(cfg.rate_ema_alpha, DEFAULT_RATE_EMA_ALPHA);
+        // An explicit value still wins.
+        let raw = r#"{"populations": [], "edges": [], "rng_seed": 7, "rate_ema_alpha": 0.5}"#;
+        let cfg: SnnConfig = serde_json::from_str(raw).unwrap();
+        assert_eq!(cfg.rate_ema_alpha, 0.5);
     }
 
     // --- live tuning + quench ---
