@@ -475,6 +475,38 @@ _SOMATO_KW = frozenset(["touch", "feel", "rough", "smooth", "soft", "hard",
                          "ice", "water", "mud", "fabric", "cotton", "wicker"])
 
 
+_REAL_SENSORY = None          # RealSensoryBank or False once probed
+STAGE0_VIEWS_PER_OBJECT = 2   # successive augmented views of a real image
+
+
+def _get_real_sensory():
+    """Lazily construct the real-image/speech bank (scripts/real_sensory.py).
+
+    Enabled by default when the caches exist under data/multimodal
+    (built by scripts/build_sensory_caches.py); NIMCP_REAL_SENSORY=0 disables.
+    Returns None when unavailable so every caller falls back to synthetic."""
+    global _REAL_SENSORY
+    if _REAL_SENSORY is None:
+        _REAL_SENSORY = False
+        if os.environ.get("NIMCP_REAL_SENSORY", "1") != "0":
+            try:
+                from real_sensory import RealSensoryBank
+                _dd = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "..", "data", "multimodal")
+                _bank = RealSensoryBank(_dd)
+                if _bank.available():
+                    _REAL_SENSORY = _bank
+                    print(f"  [RealSensory] enabled — {len(_bank.images)} image labels, "
+                          f"{len(_bank.speech)} spoken words, {len(_bank.heldout)} held-out labels "
+                          f"(views/object={STAGE0_VIEWS_PER_OBJECT})", flush=True)
+                else:
+                    print(f"  [RealSensory] caches not found in {_dd} — synthetic frames only",
+                          flush=True)
+            except Exception as _e:
+                print(f"  [RealSensory] unavailable ({_e}) — synthetic frames only", flush=True)
+    return _REAL_SENSORY or None
+
+
 def submit_multimodal(brain, description, target_word=None):
     """Submit synthetic sensory data for a description to the brain.
 
@@ -530,10 +562,20 @@ def submit_multimodal(brain, description, target_word=None):
     # Individual fire-and-forget submit works reliably for audio/speech,
     # so use the same path for visual. This bypasses submit_sensory_batch.
     try:
-        _vf = generate_visual_frame(description)
+        # Real photograph when the description names an object we have
+        # images for (scripts/real_sensory.py: CIFAR-10/100, re-augmented on
+        # every presentation); synthetic keyword-seeded frame otherwise.
+        _rs = _get_real_sensory()
+        _rf = _rs.get_frame(description) if _rs else None
+        if _rf:
+            _vf = (_rf[0], _rf[1], _rf[2], _rf[3])
+            _vtag = "V*"
+        else:
+            _vf = generate_visual_frame(description)
+            _vtag = "V"
         _pixels = list(_vf[0])  # _vf is (bytes, w, h, ch) tuple
         brain.submit_sensory("visual", _pixels, width=_vf[1], height=_vf[2], channels=_vf[3])
-        _sensory_submitted.append("V")
+        _sensory_submitted.append(_vtag)
     except Exception as _ve:
         import traceback
         print(f"  [VISUAL-ERR] submit_sensory visual failed: {_ve}", flush=True)
@@ -546,7 +588,14 @@ def submit_multimodal(brain, description, target_word=None):
     batch_modalities["audio"] = mel
     _sensory_submitted.append("A")
 
-    if desc_words & _SPEECH_KW:
+    # Real spoken-word clip (Google Speech Commands, CC BY 4.0) when the
+    # description contains a word we have recordings of; synthesized
+    # waveform on the speech keywords otherwise.
+    _rs_sp = _rs.get_speech(description) if _rs else None
+    if _rs_sp:
+        batch_modalities["speech"] = _rs_sp[0]
+        _sensory_submitted.append("Sp*")
+    elif desc_words & _SPEECH_KW:
         samples = generate_audio_samples(description)
         batch_modalities["speech"] = samples
         _sensory_submitted.append("Sp")
@@ -7046,6 +7095,7 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
               f"3x consecutively; safety ceiling: "
               f"{STAGE0_MAX_STIMULI if STAGE0_MAX_STIMULI else 'none'}")
     import itertools as _it
+    _repeat_left = 0   # remaining augmented views of the current real-image object
     for i in _it.count(start_from):
         TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 0, i
         if i >= num_stimuli:
@@ -7069,12 +7119,23 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
         elif action == "consolidate":
             clock.do_consolidate(brain)
 
-        # Get pre-computed stimulus from prefetcher (batch-encoded)
-        if batch_idx >= len(batch):
-            batch = prefetcher.get_batch()
-            batch_idx = 0
-        description, features, target = batch[batch_idx]
-        batch_idx += 1
+        # Get pre-computed stimulus from prefetcher (batch-encoded). When the
+        # previous item matched a real image, present the SAME object again
+        # for STAGE0_VIEWS_PER_OBJECT consecutive steps — each submit draws a
+        # fresh augmentation, so the cortex sees successive views of one
+        # object (temporal continuity) instead of one canonical rendering.
+        if _repeat_left > 0:
+            _repeat_left -= 1
+        else:
+            if batch_idx >= len(batch):
+                batch = prefetcher.get_batch()
+                batch_idx = 0
+            description, features, target = batch[batch_idx]
+            batch_idx += 1
+            _rs0 = _get_real_sensory()
+            if (_rs0 and STAGE0_VIEWS_PER_OBJECT > 1
+                    and _rs0.match_label(description) is not None):
+                _repeat_left = STAGE0_VIEWS_PER_OBJECT - 1
 
         # Forward pass for observation — stage sensory data first
         narration = parent._pop_content("_narrations")
@@ -7352,6 +7413,9 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             _print_bio_stats(brain)
             if curriculum:
                 print(f"    [Curriculum] {curriculum.get_status()}")
+            _rsp = _get_real_sensory()
+            if _rsp:
+                print(f"    [RealSensory] {_rsp.stats_str()}")
             losses_to_report = losses[-500:]
             if len(losses_to_report) > 100:
                 early = np.mean(losses_to_report[:50])
@@ -9406,8 +9470,20 @@ def evaluate_performance(brain, composer, decoder, stage, step):
     responses = []
     embeddings = []
 
+    _rs_eval = _get_real_sensory()
     for probe_name, probe_text in _EVAL_PROBES:
         features = composer.compose(text=probe_text, modality="text")
+        # Stage a held-out (test-split, un-augmented) real photograph of the
+        # probe's object when we have one, so the probe is answered with a
+        # real percept in view rather than the keyword-seeded synthetic frame.
+        if _rs_eval:
+            _hf = _rs_eval.get_heldout_frame(probe_name, index=step // 500)
+            if _hf:
+                try:
+                    brain.submit_sensory("visual", list(_hf[0]), width=_hf[1],
+                                         height=_hf[2], channels=_hf[3])
+                except Exception:
+                    pass
         result = brain.decide_full(features)
 
         output_vec = result.get("output_vector")
@@ -9445,6 +9521,46 @@ def evaluate_performance(brain, composer, decoder, stage, step):
             (step, decoded_text, similarity, vec_norm))
 
         responses.append((probe_name, output_emb, decoded_text, similarity))
+
+    # --- Visual-only probes: does a real photograph alone pull the response
+    # toward its object? Same neutral prompt for every image; only the staged
+    # picture differs. Decoded top-3 per label plus how often the label (or a
+    # synonym) appears in the top-3 — stage 0's only direct recognition metric.
+    if _rs_eval and _rs_eval.heldout:
+        try:
+            from real_sensory import SYNONYMS as _SYN
+            _vlabels = [l for l in ("dog", "cat", "bird", "horse", "sea", "house",
+                                    "apple", "truck") if l in _rs_eval.heldout]
+            _neutral = composer.compose(text="look at this", modality="text")
+            _vhits = 0
+            print(f"\n  Visual-only probes (held-out photos, prompt 'look at this'):")
+            for _vl in _vlabels:
+                _hf = _rs_eval.get_heldout_frame(_vl, index=step // 500)
+                if not _hf:
+                    continue
+                try:
+                    brain.submit_sensory("visual", list(_hf[0]), width=32, height=32, channels=3)
+                except Exception:
+                    pass
+                _vres = brain.decide_full(_neutral)
+                _vout = _vres.get("output_vector")
+                if _vout is None:
+                    print(f"    {_vl:8s} → [no output]")
+                    continue
+                _vemb = extract_embedding_from_output(np.array(_vout, dtype=np.float32))
+                _top = []
+                if decoder and len(decoder.vocabulary) > 0:
+                    _m = decoder.vocabulary.decode(_vemb, top_k=3)
+                    _top = [t for t, s in (_m or []) if t]
+                _syns = {_vl} | {k for k, v in _SYN.items() if _vl in v}
+                _hit = any(any(s in t.lower() for s in _syns) for t in _top)
+                _vhits += int(_hit)
+                print(f"    {_vl:8s} → {', '.join(t[:20] for t in _top) or '[no match]'}"
+                      f"{'  ✓' if _hit else ''}")
+            if _vlabels:
+                print(f"    [VisualProbe] {_vhits}/{len(_vlabels)} labels recognised in top-3")
+        except Exception as _vpe:
+            print(f"    [VisualProbe] failed: {_vpe}")
 
     # --- Differentiation matrix: can she tell things apart? ---
     if len(embeddings) >= 2:
@@ -10790,6 +10906,10 @@ def main():
                         help="MINIMUM stage-0 stimuli (user directive 2026-10-27: as many "
                              "examples as possible; raised 20000 -> 100000); the stage ends "
                              "only when the StageGate health criteria pass (see --no-stage-gate)")
+    parser.add_argument("--stage0-views-per-object", type=int, default=2,
+                        help="Consecutive augmented views of a real image per stage-0 object (1 = off)")
+    parser.add_argument("--no-real-sensory", action="store_true",
+                        help="Synthetic frames/speech only (same as NIMCP_REAL_SENSORY=0)")
     parser.add_argument("--stage0-max-stimuli", type=int, default=0,
                         help="Safety ceiling for stage 0 (0 = none: block until the gate passes)")
     parser.add_argument("--stage1-max-stimuli", type=int, default=0,
@@ -10906,7 +11026,10 @@ def main():
     args = parser.parse_args()
     globals().update(STAGE_GATE_ENABLED=not args.no_stage_gate,
                      STAGE0_MAX_STIMULI=args.stage0_max_stimuli,
-                     STAGE1_MAX_STIMULI=args.stage1_max_stimuli)
+                     STAGE1_MAX_STIMULI=args.stage1_max_stimuli,
+                     STAGE0_VIEWS_PER_OBJECT=max(1, args.stage0_views_per_object))
+    if args.no_real_sensory:
+        os.environ["NIMCP_REAL_SENSORY"] = "0"
 
     # Publish probe-drips toggle so the module-level run_stage_* functions can
     # gate _run_probe_drips without referencing main()'s local `args` (which
