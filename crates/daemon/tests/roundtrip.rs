@@ -479,14 +479,26 @@ fn run_snn_watchdog_scenario() {
     assert_eq!(lr["data"]["applied"], true, "{lr}");
     assert_eq!(lr["data"]["edges"], 1);
 
-    let rec = client.call(&json!({"cmd": "snn_tune", "name": "max_scale_dead", "value": 1.07}));
-    assert_eq!(rec["status"], "ok", "{rec}");
-    assert_eq!(rec["data"]["applied"], false);
+    let dead = client.call(&json!({"cmd": "snn_tune", "name": "max_scale_dead", "value": 1.07}));
+    assert_eq!(dead["status"], "ok", "{dead}");
+    assert_eq!(dead["data"]["applied"], true);
+    assert_eq!(dead["data"]["populations"], 2);
+    let alpha =
+        client.call(&json!({"cmd": "snn_tune", "name": "rstdp_baseline_alpha", "value": 0.001}));
+    assert_eq!(alpha["data"]["applied"], true, "{alpha}");
+    let get2 = client.call(&json!({"cmd": "snn_tune_get"}));
     assert!(
-        rec["data"]["note"]
-            .as_str()
+        (get2["data"]["params"]["max_scale_dead"].as_f64().unwrap() - 1.07).abs() < 1e-6,
+        "{get2}"
+    );
+    assert!(
+        (get2["data"]["params"]["rstdp_baseline_alpha"]
+            .as_f64()
             .unwrap()
-            .contains("not applied")
+            - 0.001)
+            .abs()
+            < 1e-9,
+        "{get2}"
     );
 
     let bad = client.call(&json!({"cmd": "snn_tune", "name": "nonsense", "value": 1.0}));

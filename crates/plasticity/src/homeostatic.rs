@@ -12,6 +12,18 @@
 //! where `η` is the gain. The output is clamped to `[min_scale, max_scale]`,
 //! and a deadband around `r*` returns exactly `1.0` to prevent micro-dither.
 //!
+//! # Dead-population escape velocity
+//!
+//! A population whose rate has collapsed below `dead_threshold_frac · r*`
+//! ("dead") gets a wider scale-*up* ceiling, `max_scale_dead`, instead of
+//! `max_scale` (V1 `nimcp_snn_training.c`: "escape velocity for dead
+//! pops"). Only scale-up is widened, and only while the pop is quiet — a
+//! pop scaling from nothing cannot overshoot into hot-collapse territory,
+//! and once it clears the threshold the tight cap resumes so the approach
+//! to target stays smooth. Both knobs are live-tunable through the SNN
+//! (`max_scale_dead`, `dead_threshold`). Setting `max_scale_dead <=
+//! max_scale` disables the override.
+//!
 //! # V1 history — "emergency band oscillation"
 //!
 //! V1 shipped with `[0.90, 1.10]` bounds, which gave the loop enough gain to
@@ -36,6 +48,11 @@ pub const DEFAULT_MAX_SCALE: f32 = 1.02;
 pub const DEFAULT_DEADBAND_FRAC: f32 = 0.01;
 /// Default gain on the proportional term.
 pub const DEFAULT_GAIN: f32 = 1.0;
+/// Default "dead" multiplier: a rate below this fraction of target engages
+/// the widened scale-up ceiling (V1 `g_homeo_dead_threshold`).
+pub const DEFAULT_DEAD_THRESHOLD_FRAC: f32 = 0.1;
+/// Default scale-up ceiling for dead populations (V1 `g_homeo_max_scale_dead`).
+pub const DEFAULT_MAX_SCALE_DEAD: f32 = 1.05;
 
 /// Homeostatic scaling parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -49,6 +66,12 @@ pub struct HomeostaticParams {
     pub deadband_frac: f32,
     /// Proportional gain. Default `1.0`.
     pub gain: f32,
+    /// Rates below `dead_threshold_frac · target` count as dead and use
+    /// `max_scale_dead` as the scale-up ceiling. Default `0.1`.
+    pub dead_threshold_frac: f32,
+    /// Scale-up ceiling for dead populations. Default `1.05`. Values
+    /// `<= max_scale` disable the override.
+    pub max_scale_dead: f32,
 }
 
 impl Default for HomeostaticParams {
@@ -58,6 +81,8 @@ impl Default for HomeostaticParams {
             max_scale: DEFAULT_MAX_SCALE,
             deadband_frac: DEFAULT_DEADBAND_FRAC,
             gain: DEFAULT_GAIN,
+            dead_threshold_frac: DEFAULT_DEAD_THRESHOLD_FRAC,
+            max_scale_dead: DEFAULT_MAX_SCALE_DEAD,
         }
     }
 }
@@ -66,7 +91,10 @@ impl Default for HomeostaticParams {
 /// toward `target_rate`.
 ///
 /// - Returns `1.0` exactly when `|r − r*| ≤ deadband_frac · r*`.
-/// - Otherwise returns `clamp(1 + gain · (r* − r)/r*, min_scale, max_scale)`.
+/// - Otherwise returns `clamp(1 + gain · (r* − r)/r*, min_scale, upper)`,
+///   where `upper = max(max_scale, max_scale_dead)` when
+///   `r < dead_threshold_frac · r*` (dead population) and `max_scale`
+///   otherwise.
 /// - A non-positive `target_rate` is a no-op (returns `1.0`); plasticity on a
 ///   dead target is undefined.
 #[must_use]
@@ -83,9 +111,16 @@ pub fn homeostatic_scale(current_rate: f32, target_rate: f32, params: &Homeostat
         return 1.0;
     }
 
-    // Proportional control law, clamped.
+    // Proportional control law, clamped. Dead pops get the wider scale-up
+    // ceiling; `max` keeps a misconfigured `max_scale_dead < max_scale`
+    // from *tightening* the loop.
+    let upper = if current_rate < params.dead_threshold_frac * target_rate {
+        params.max_scale_dead.max(params.max_scale)
+    } else {
+        params.max_scale
+    };
     let raw = 1.0 + params.gain * (err / target_rate);
-    raw.clamp(params.min_scale, params.max_scale)
+    raw.clamp(params.min_scale, upper)
 }
 
 #[cfg(test)]
@@ -111,12 +146,61 @@ mod tests {
         assert_eq!(s, 0.98, "expected exact lower-bound clamp at 0.98, got {s}");
     }
 
-    /// Dead rate (r=0) clamps to upper bound exactly.
+    /// Dead rate (r=0) clamps to the *dead* upper bound exactly — the V1
+    /// escape-velocity ceiling, not the tight 1.02.
     #[test]
-    fn dead_rate_clamps_to_upper_bound() {
+    fn dead_rate_clamps_to_dead_upper_bound() {
         let p = HomeostaticParams::default();
         let s = homeostatic_scale(0.0, 0.03, &p);
-        assert_eq!(s, 1.02);
+        assert_eq!(s, DEFAULT_MAX_SCALE_DEAD);
+        assert_eq!(s, 1.05);
+    }
+
+    /// The dead ceiling engages strictly below `dead_threshold_frac · r*`
+    /// and hands back to the tight cap at / above it.
+    #[test]
+    fn dead_threshold_boundary() {
+        let p = HomeostaticParams::default();
+        let target = 0.03_f32;
+        let thr = p.dead_threshold_frac * target; // 0.003
+        assert_eq!(homeostatic_scale(thr * 0.99, target, &p), 1.05);
+        // At the threshold the pop is not dead; raw = 1 + 0.9 = 1.9 → clamps to 1.02.
+        assert_eq!(homeostatic_scale(thr, target, &p), 1.02);
+        assert_eq!(homeostatic_scale(thr * 1.5, target, &p), 1.02);
+    }
+
+    /// `max_scale_dead <= max_scale` disables the override (never tightens).
+    #[test]
+    fn dead_override_disabled_when_not_wider() {
+        let p = HomeostaticParams {
+            max_scale_dead: 1.0,
+            ..HomeostaticParams::default()
+        };
+        assert_eq!(homeostatic_scale(0.0, 0.03, &p), 1.02);
+        let p = HomeostaticParams {
+            max_scale_dead: 1.02,
+            ..HomeostaticParams::default()
+        };
+        assert_eq!(homeostatic_scale(0.0, 0.03, &p), 1.02);
+    }
+
+    /// Dead override never widens scale-DOWN.
+    #[test]
+    fn dead_override_leaves_lower_bound_alone() {
+        let p = HomeostaticParams {
+            max_scale_dead: 1.5,
+            ..HomeostaticParams::default()
+        };
+        assert_eq!(homeostatic_scale(1.0, 0.03, &p), 0.98);
+    }
+
+    /// Old JSON without the dead-pop fields deserializes to the V1 defaults.
+    #[test]
+    fn dead_fields_default_via_serde() {
+        let raw = r#"{"min_scale": 0.98, "max_scale": 1.02, "deadband_frac": 0.01, "gain": 1.0}"#;
+        let p: HomeostaticParams = serde_json::from_str(raw).unwrap();
+        assert_eq!(p.dead_threshold_frac, DEFAULT_DEAD_THRESHOLD_FRAC);
+        assert_eq!(p.max_scale_dead, DEFAULT_MAX_SCALE_DEAD);
     }
 
     /// Rate within deadband returns exactly 1.0 (no micro-adjustment).

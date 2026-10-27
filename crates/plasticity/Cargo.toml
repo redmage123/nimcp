@@ -15,3 +15,6 @@ workspace = true
 # Pure plasticity math: no event log, no actors, no tensors. Params structs
 # derive `Serialize`/`Deserialize` so they round-trip with checkpoints.
 serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

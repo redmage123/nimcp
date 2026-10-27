@@ -71,8 +71,17 @@ pub struct RstdpParams {
     /// Reward-trace decay, ms. Default 50.
     pub reward_tau_ms: f32,
     /// Baseline reward subtracted from raw reward before modulating Δw
-    /// (TD-style advantage). Default 0.
+    /// (TD-style advantage). Default 0. Used verbatim when
+    /// `baseline_alpha == 0`; otherwise it only seeds the EMA below.
     pub baseline_reward: f32,
+    /// EMA rate for an *adaptive* reward baseline (V1
+    /// `g_rstdp_baseline_alpha`, V1 default 0.001): after each step
+    /// `baseline ← (1 − α)·baseline + α·reward_trace`, and Δw uses
+    /// `reward_trace − baseline`. `0.0` (V2 default) disables the EMA and
+    /// keeps the constant `baseline_reward` — bit-identical to pre-EMA
+    /// behaviour. Live-tunable as `rstdp_baseline_alpha`.
+    #[serde(default)]
+    pub baseline_alpha: f32,
     /// Warmup threshold — R-STDP is a no-op on weights until
     /// `rate_samples ≥ warmup_samples`. Default
     /// [`nimcp_plasticity::DEFAULT_WARMUP_THRESHOLD`] (100).
@@ -93,6 +102,7 @@ impl Default for RstdpParams {
             eligibility_tau_ms: 100.0,
             reward_tau_ms: 50.0,
             baseline_reward: 0.0,
+            baseline_alpha: 0.0,
             warmup_samples: DEFAULT_WARMUP_THRESHOLD,
             w_min: 0.0,
             w_max: 1.0,
@@ -118,6 +128,10 @@ pub struct RstdpState {
     pub last_post_spike_ms: Vec<f32>,
     /// Rate-samples counter — incremented by one per [`step_rstdp`] call.
     pub rate_samples: u32,
+    /// Adaptive reward baseline (EMA of `reward_trace`). Only read when
+    /// `RstdpParams::baseline_alpha > 0`; seeded from `baseline_reward`
+    /// on the first such step (`None` until then).
+    pub reward_baseline: Option<f32>,
 }
 
 impl RstdpState {
@@ -131,6 +145,7 @@ impl RstdpState {
             last_pre_spike_ms: vec![f32::NEG_INFINITY; n_pre as usize],
             last_post_spike_ms: vec![f32::NEG_INFINITY; n_post as usize],
             rate_samples: 0,
+            reward_baseline: None,
         }
     }
 
@@ -148,6 +163,30 @@ impl RstdpState {
     #[must_use]
     pub fn warmup_done(&self, params: &RstdpParams) -> bool {
         rate_samples_ready(self.rate_samples, params.warmup_samples)
+    }
+}
+
+/// Baseline the reward trace is measured against this step: the constant
+/// `baseline_reward` when the EMA is off (`baseline_alpha == 0`), else the
+/// adaptive EMA (seeded from `baseline_reward` on first use).
+#[must_use]
+pub fn effective_baseline(state: &RstdpState, params: &RstdpParams) -> f32 {
+    if params.baseline_alpha > 0.0 {
+        state.reward_baseline.unwrap_or(params.baseline_reward)
+    } else {
+        params.baseline_reward
+    }
+}
+
+/// Advance the adaptive reward baseline after a step (V1: `baseline =
+/// (1−α)·baseline + α·reward`). No-op when `baseline_alpha == 0`. Runs
+/// every step, warmup included, so the baseline is warm when weights
+/// start moving.
+pub fn update_baseline(state: &mut RstdpState, params: &RstdpParams) {
+    if params.baseline_alpha > 0.0 {
+        let a = params.baseline_alpha.min(1.0);
+        let prev = state.reward_baseline.unwrap_or(params.baseline_reward);
+        state.reward_baseline = Some((1.0 - a) * prev + a * state.reward_trace);
     }
 }
 
@@ -338,7 +377,7 @@ pub fn step_rstdp(
     //    isn't cold); weights never move. This is the Hebbian-runaway gate.
     let mut n_moved: u32 = 0;
     if rate_samples_ready(state.rate_samples, params.warmup_samples) {
-        let modulator = state.reward_trace - params.baseline_reward;
+        let modulator = state.reward_trace - effective_baseline(state, params);
         // `modulator == 0` short-circuits: reward-trace is exactly at baseline,
         // so there's nothing to apply. This is the "zero reward ⇒ no update"
         // invariant the V1 `reward_modulation_multiplicative` regression holds.
@@ -357,7 +396,9 @@ pub fn step_rstdp(
         }
     }
 
-    // 6. Rate-samples counter increments regardless of gate state.
+    // 6. Adaptive baseline tracks the reward trace (no-op when α = 0), then
+    //    the rate-samples counter increments regardless of gate state.
+    update_baseline(state, params);
     state.rate_samples = state.rate_samples.saturating_add(1);
 
     n_moved
@@ -758,7 +799,7 @@ mod gpu {
             // 5. Apply reward modulation iff warmup gate is open.
             let mut n_moved: u32 = 0;
             if rate_samples_ready(state.rate_samples, params.warmup_samples) {
-                let modulator = state.reward_trace - params.baseline_reward;
+                let modulator = state.reward_trace - effective_baseline(state, params);
                 if modulator != 0.0 {
                     // Reset the device-side counter to zero before launch.
                     let zero_host: [u32; 1] = [0];
@@ -789,7 +830,8 @@ mod gpu {
                 }
             }
 
-            // 6. Bump rate counter (matches CPU contract).
+            // 6. Adaptive baseline + rate counter (matches CPU contract).
+            update_baseline(state, params);
             state.rate_samples = state.rate_samples.saturating_add(1);
             Ok(n_moved)
         }
@@ -1571,5 +1613,88 @@ mod tests {
         );
         // Buffer lengths preserved.
         assert_eq!(state.eligibility.len(), 4);
+    }
+
+    // --- adaptive reward baseline (V1 rstdp_baseline_alpha) ---
+
+    /// α = 0 (default): the EMA never engages and `baseline_reward` is used
+    /// verbatim — the pre-EMA disable path.
+    #[test]
+    fn baseline_alpha_zero_is_constant_baseline() {
+        let mut csr = fc_csr(2, 2, 0.5);
+        let mut state = RstdpState::new(csr.weights.len(), 2, 2);
+        let params = RstdpParams {
+            baseline_reward: 0.25,
+            warmup_samples: 0,
+            ..RstdpParams::default()
+        };
+        assert_eq!(effective_baseline(&state, &params), 0.25);
+        step_rstdp(
+            &mut csr,
+            &mut state,
+            &[1, 0],
+            &[0, 1],
+            1.0,
+            1.0,
+            1.0,
+            &params,
+        );
+        assert!(state.reward_baseline.is_none());
+        assert_eq!(effective_baseline(&state, &params), 0.25);
+    }
+
+    /// α > 0: the baseline is seeded from `baseline_reward` and then tracks
+    /// `reward_trace` by `(1−α)·b + α·trace` each step; the modulator is
+    /// `trace − baseline`, so a constant reward is progressively discounted.
+    #[test]
+    fn baseline_alpha_tracks_reward_trace() {
+        let mut csr = fc_csr(2, 2, 0.5);
+        let mut state = RstdpState::new(csr.weights.len(), 2, 2);
+        let params = RstdpParams {
+            baseline_reward: 0.0,
+            baseline_alpha: 0.5,
+            reward_tau_ms: f32::INFINITY, // trace = cumulative reward, easy to follow
+            warmup_samples: 0,
+            ..RstdpParams::default()
+        };
+        // Step 1: trace = 1.0; modulator used 0 (seed); baseline → 0.5·0 + 0.5·1 = 0.5
+        step_rstdp(
+            &mut csr,
+            &mut state,
+            &[0, 0],
+            &[0, 0],
+            1.0,
+            1.0,
+            1.0,
+            &params,
+        );
+        assert_eq!(state.reward_baseline, Some(0.5));
+        // Step 2: trace = 2.0; baseline → 0.5·0.5 + 0.5·2 = 1.25
+        step_rstdp(
+            &mut csr,
+            &mut state,
+            &[0, 0],
+            &[0, 0],
+            1.0,
+            2.0,
+            1.0,
+            &params,
+        );
+        assert_eq!(state.reward_baseline, Some(1.25));
+        assert_eq!(effective_baseline(&state, &params), 1.25);
+        // α is clamped to 1 → baseline jumps to the trace.
+        let fast = RstdpParams {
+            baseline_alpha: 5.0,
+            ..params
+        };
+        step_rstdp(&mut csr, &mut state, &[0, 0], &[0, 0], 1.0, 3.0, 1.0, &fast);
+        assert_eq!(state.reward_baseline, Some(state.reward_trace));
+    }
+
+    /// Old JSON without `baseline_alpha` deserializes to 0 (disabled).
+    #[test]
+    fn baseline_alpha_defaults_via_serde() {
+        let p: RstdpParams = serde_json::from_str("{}").unwrap();
+        assert_eq!(p.baseline_alpha, 0.0);
     }
 }

@@ -512,10 +512,6 @@ pub struct SnnNetwork {
     /// Construction-time `(a_plus, a_minus)` per edge — the reference the
     /// `rstdp_lr` scale is applied to (avoids drift from repeated ratios).
     rstdp_ref: Vec<(f32, f32)>,
-    /// Watchdog knobs V2 accepts for wire parity but has no mechanism
-    /// for (see [`TUNABLE_NAMES`] docs). Stored so `tunables()` reflects
-    /// what the operator set; never read by `step()`.
-    unapplied_tunables: std::collections::BTreeMap<String, f32>,
 }
 
 /// Live-tunable knob names accepted by [`SnnNetwork::tune`] — the V1
@@ -527,7 +523,8 @@ pub struct SnnNetwork {
 /// | `homeo_min_scale` / `homeo_max_scale` | every population | homeostatic scale clamp |
 /// | `target_rate` | every population | homeostatic target (fraction spiking / step) |
 /// | `noise_rate_hz` / `noise_pulse_mv` | every population | background noise |
-/// | `max_scale_dead` / `dead_threshold` / `rstdp_baseline_alpha` | — | **recorded only**: V2 has no dead-population scale override and no reward-baseline EMA; `TuneOutcome::applied == false` |
+/// | `max_scale_dead` / `dead_threshold` | every population | dead-population scale-up ceiling / "dead" fraction of target (`HomeostaticParams::{max_scale_dead, dead_threshold_frac}`) |
+/// | `rstdp_baseline_alpha` | every edge | adaptive reward-baseline EMA rate (`RstdpParams::baseline_alpha`; 0 = constant baseline) |
 pub const TUNABLE_NAMES: &[&str] = &[
     "rstdp_lr",
     "homeo_min_scale",
@@ -551,13 +548,14 @@ pub struct TuneOutcome {
     pub name: String,
     /// Value now in force (after any clamping — none today).
     pub value: f32,
-    /// `false` for the recorded-only knobs.
+    /// Whether the knob changed network state. Always `true` today; kept
+    /// so clients can detect a future recorded-only knob.
     pub applied: bool,
     /// Populations touched.
     pub populations: usize,
     /// Edges touched.
     pub edges: usize,
-    /// Operator-readable note for recorded-only knobs.
+    /// Operator-readable note (e.g. a knob whose V2 semantics differ from V1).
     pub note: Option<String>,
 }
 
@@ -849,7 +847,6 @@ impl SnnNetwork {
             gpu,
             rstdp_lr: TunableState::snapshot(RSTDP_LR_BASELINE),
             rstdp_ref,
-            unapplied_tunables: std::collections::BTreeMap::new(),
         })
     }
 
@@ -859,9 +856,9 @@ impl SnnNetwork {
     // -------------------------------------------------------------------------
 
     /// Current value of every knob in [`TUNABLE_NAMES`]. Population-level
-    /// knobs report population 0 (V1 tunes them network-wide, and `tune`
-    /// writes all populations). Recorded-only knobs report the last value
-    /// set, or V1's default before any `tune`.
+    /// knobs report population 0 and edge-level knobs edge 0 (V1 tunes them
+    /// network-wide, and `tune` writes every population / edge). Networks
+    /// without populations or edges omit the corresponding keys.
     #[must_use]
     pub fn tunables(&self) -> std::collections::BTreeMap<String, f32> {
         let mut m = std::collections::BTreeMap::new();
@@ -869,21 +866,17 @@ impl SnnNetwork {
         if let Some(p0) = self.populations.first() {
             m.insert("homeo_min_scale".into(), p0.spec.homeostatic.min_scale);
             m.insert("homeo_max_scale".into(), p0.spec.homeostatic.max_scale);
+            m.insert("max_scale_dead".into(), p0.spec.homeostatic.max_scale_dead);
+            m.insert(
+                "dead_threshold".into(),
+                p0.spec.homeostatic.dead_threshold_frac,
+            );
             m.insert("target_rate".into(), p0.spec.target_rate);
             m.insert("noise_rate_hz".into(), p0.spec.noise.rate_hz);
             m.insert("noise_pulse_mv".into(), p0.spec.noise.pulse_mv);
         }
-        for (name, default) in [
-            ("max_scale_dead", 1.05_f32),
-            ("dead_threshold", 0.1),
-            ("rstdp_baseline_alpha", 0.001),
-        ] {
-            let v = self
-                .unapplied_tunables
-                .get(name)
-                .copied()
-                .unwrap_or(default);
-            m.insert(name.into(), v);
+        if let Some(e0) = self.edges.first() {
+            m.insert("rstdp_baseline_alpha".into(), e0.spec.rstdp.baseline_alpha);
         }
         m
     }
@@ -980,20 +973,35 @@ impl SnnNetwork {
                 }
                 ok(true, n_pops, 0, None)
             }
-            _ => {
-                // max_scale_dead / dead_threshold / rstdp_baseline_alpha
-                self.unapplied_tunables.insert(name.to_string(), value);
-                ok(
-                    false,
-                    0,
-                    0,
-                    Some(format!(
-                        "`{name}` recorded but not applied: V2's homeostatic step has no \
-                         dead-population scale override and its R-STDP uses a constant \
-                         baseline_reward, not an EMA"
-                    )),
-                )
+            "max_scale_dead" => {
+                // V1 accepts (1, 2); values <= max_scale disable the override.
+                if !(1.0..2.0).contains(&value) {
+                    return Err(invalid("must be in [1, 2)"));
+                }
+                for p in &mut self.populations {
+                    p.spec.homeostatic.max_scale_dead = value;
+                }
+                ok(true, n_pops, 0, None)
             }
+            "dead_threshold" => {
+                if !(0.0 < value && value < 1.0) {
+                    return Err(invalid("must be in (0, 1) (fraction of target_rate)"));
+                }
+                for p in &mut self.populations {
+                    p.spec.homeostatic.dead_threshold_frac = value;
+                }
+                ok(true, n_pops, 0, None)
+            }
+            "rstdp_baseline_alpha" => {
+                if !(0.0..=1.0).contains(&value) {
+                    return Err(invalid("must be in [0, 1] (0 disables the EMA)"));
+                }
+                for e in &mut self.edges {
+                    e.spec.rstdp.baseline_alpha = value;
+                }
+                ok(true, 0, n_edges, None)
+            }
+            _ => Err(SnnError::UnknownTunable(name.to_string())),
         }
     }
 
@@ -2848,7 +2856,15 @@ mod tests {
         assert_eq!(t["rstdp_lr"], RSTDP_LR_BASELINE);
         assert_eq!(t["target_rate"], 0.1);
         assert_eq!(t["homeo_min_scale"], HomeostaticParams::default().min_scale);
-        assert_eq!(t["max_scale_dead"], 1.05);
+        assert_eq!(
+            t["max_scale_dead"],
+            HomeostaticParams::default().max_scale_dead
+        );
+        assert_eq!(
+            t["dead_threshold"],
+            HomeostaticParams::default().dead_threshold_frac
+        );
+        assert_eq!(t["rstdp_baseline_alpha"], 0.0);
     }
 
     #[test]
@@ -2897,14 +2913,73 @@ mod tests {
     }
 
     #[test]
-    fn tune_recorded_only_knobs_report_unapplied() {
+    fn tune_dead_pop_and_baseline_knobs_apply() {
         let mut net = SnnNetwork::new(two_pop_config(5, 0, 0.1, 0.4)).unwrap();
-        for name in ["max_scale_dead", "dead_threshold", "rstdp_baseline_alpha"] {
-            let out = net.tune(name, 0.42).unwrap();
-            assert!(!out.applied, "{name}");
-            assert!(out.note.as_deref().unwrap().contains("not applied"));
-            assert_eq!(net.tunables()[name], 0.42);
+        let out = net.tune("max_scale_dead", 1.08).unwrap();
+        assert!(out.applied);
+        assert_eq!(out.populations, 2);
+        let out = net.tune("dead_threshold", 0.25).unwrap();
+        assert!(out.applied);
+        for p in &net.populations {
+            assert_eq!(p.spec.homeostatic.max_scale_dead, 1.08);
+            assert_eq!(p.spec.homeostatic.dead_threshold_frac, 0.25);
         }
+        let out = net.tune("rstdp_baseline_alpha", 0.001).unwrap();
+        assert!(out.applied);
+        assert_eq!(out.edges, net.n_edges());
+        for e in &net.edges {
+            assert_eq!(e.spec.rstdp.baseline_alpha, 0.001);
+        }
+        let t = net.tunables();
+        assert_eq!(t["max_scale_dead"], 1.08);
+        assert_eq!(t["dead_threshold"], 0.25);
+        assert_eq!(t["rstdp_baseline_alpha"], 0.001);
+        // Range checks (V1 accepts (1,2) / (0,1) / (0,1]; V2 allows 0 to disable the EMA).
+        assert!(matches!(
+            net.tune("max_scale_dead", 0.99),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("max_scale_dead", 2.0),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("dead_threshold", 1.0),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(matches!(
+            net.tune("rstdp_baseline_alpha", 1.5),
+            Err(SnnError::InvalidTunable { .. })
+        ));
+        assert!(net.tune("rstdp_baseline_alpha", 0.0).unwrap().applied);
+    }
+
+    /// The dead-pop ceiling is live in the step: a silent population with
+    /// the widened ceiling scales its incoming weights up faster than one
+    /// with the override disabled.
+    #[test]
+    fn dead_pop_ceiling_speeds_recovery_in_step() {
+        let run = |max_scale_dead: f32| {
+            let mut net = SnnNetwork::new(two_pop_config(9, 0, 0.1, 0.05)).unwrap();
+            net.tune("max_scale_dead", max_scale_dead).unwrap();
+            net.tune("noise_rate_hz", 0.0).unwrap();
+            let w0: f32 = net.edge_weights(0).iter().sum();
+            let empty: &[f32] = &[];
+            let silent = vec![0.0_f32; 128];
+            // Homeostatic scaling is gated behind DEFAULT_WARMUP_THRESHOLD
+            // (100) rate samples; run 100 warmup + 40 scaling steps.
+            for _ in 0..140 {
+                net.step(&[&silent, empty], 0.0, 1.0);
+            }
+            net.edge_weights(0).iter().sum::<f32>() / w0
+        };
+        let tight = run(1.0); // override disabled → 1.02 ceiling
+        let wide = run(1.2);
+        assert!(tight > 1.0, "silent pop must scale up at all: {tight}");
+        assert!(
+            wide > tight,
+            "dead ceiling 1.2 should outpace 1.02: {wide} vs {tight}"
+        );
     }
 
     #[test]

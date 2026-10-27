@@ -376,8 +376,7 @@ impl PyBrain {
     ///         `rstdp_baseline_alpha`.
     ///     value (float): new value.
     /// Returns:
-    ///     dict: `name`, `value`, `applied` (False for the knobs V2 only
-    ///     records), `populations`, `edges`, `note`.
+    ///     dict: `name`, `value`, `applied`, `populations`, `edges`, `note`.
     /// Raises:
     ///     RuntimeError: no SNN, unknown name, or out-of-range value.
     fn snn_tune<'py>(

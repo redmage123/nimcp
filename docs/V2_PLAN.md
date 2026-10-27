@@ -247,10 +247,15 @@ The harness calls 77 distinct `brain.*` methods:
   `SnnNetwork::tune` / `tunables` / `force_quench` (nimcp-snn) replace
   the daemon-side mirror that accepted tunes without applying them and
   the no-op quench. `rstdp_lr` is a *scale* knob on V2 (STDP `A±` ×
-  `value / 1e-4` relative to construction values); `max_scale_dead`,
-  `dead_threshold`, `rstdp_baseline_alpha` are recorded but not applied
-  (`TuneOutcome::applied == false`) because V2's homeostatic step has no
-  dead-population override and R-STDP uses a constant baseline. Quench
+  `value / 1e-4` relative to construction values). **2026-10-27:** the
+  remaining three knobs are real — `max_scale_dead` / `dead_threshold`
+  drive `HomeostaticParams::{max_scale_dead, dead_threshold_frac}` (V1
+  escape-velocity ceiling for pops under `dead_threshold × target`,
+  defaults 1.05 / 0.1 as in V1, scale-up only), and `rstdp_baseline_alpha`
+  drives `RstdpParams::baseline_alpha`, an EMA reward baseline
+  (`b ← (1−α)b + α·trace`, Δw uses `trace − b`). The EMA defaults to 0 =
+  constant `baseline_reward` (bit-identical to before) — V1 ran 0.001;
+  turn it on deliberately. Quench
   resets the first `n` neurons per population to `v_reset`, on the
   device too when the GPU LIF is active (`LifGpu::quench_prefix`, compiled
   under `cuda`, not yet run on a device). Exposed via pybind

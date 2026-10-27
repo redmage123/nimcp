@@ -74,9 +74,9 @@ pub enum Request {
     SnnTuneGet,
 
     /// Set a named SNN tunable network-wide (`SnnNetwork::tune`). Responds
-    /// with the `TuneOutcome` (`applied` is `false` for the knobs V2 only
-    /// records — see `nimcp_snn::TUNABLE_NAMES`). Unknown names and
-    /// out-of-range values are structured errors.
+    /// with the `TuneOutcome` (see `nimcp_snn::TUNABLE_NAMES` for what each
+    /// knob does on V2). Unknown names and out-of-range values are
+    /// structured errors.
     SnnTune {
         /// Parameter name (e.g. `"rstdp_lr"`, `"target_rate"`).
         name: String,
