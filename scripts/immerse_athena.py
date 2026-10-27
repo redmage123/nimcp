@@ -10786,9 +10786,10 @@ def main():
                         help=f"SNN target neuron count (default: {DEFAULT_SNN_NEURONS})")
     parser.add_argument("--lnn-neuron-count", type=int, default=DEFAULT_LNN_NEURONS,
                         help=f"LNN neuron count (default: {DEFAULT_LNN_NEURONS})")
-    parser.add_argument("--stage0-stimuli", type=int, default=20000,
-                        help="MINIMUM stage-0 stimuli; the stage ends only when the "
-                             "StageGate passes (see --no-stage-gate)")
+    parser.add_argument("--stage0-stimuli", type=int, default=100000,
+                        help="MINIMUM stage-0 stimuli (user directive 2026-10-27: as many "
+                             "examples as possible; raised 20000 -> 100000); the stage ends "
+                             "only when the StageGate health criteria pass (see --no-stage-gate)")
     parser.add_argument("--stage0-max-stimuli", type=int, default=0,
                         help="Safety ceiling for stage 0 (0 = none: block until the gate passes)")
     parser.add_argument("--stage1-max-stimuli", type=int, default=0,
