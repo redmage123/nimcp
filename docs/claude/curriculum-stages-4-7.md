@@ -15,8 +15,13 @@
 | 7 Apprenticeship | 12+ | one episode | none (open-ended) | no transition out |
 
 All stages also require the common StageGate health criteria (≥48/50 non-zero outputs, SNN mean
-firing rate 0.5–20 Hz, chat eval coherence/similarity/diversity thresholds) — see
-`scripts/stage_gate.py` `stage_gate_for(stage)`.
+firing rate 0.5–20 Hz) — see `scripts/stage_gate.py` `stage_gate_for(stage)`. Chat eval
+(coherence / similarity / diversity) is a language-production criterion and gates the language
+stages only, ramping 1: 0.10/0.10, 2: 0.20/0.15, 3: 0.30/0.20, 4: 0.35/0.25, 5: 0.40/0.30,
+6: 0.45/0.35, 7: 0.50/0.40. Stage 0 is pre-linguistic: it does not require chat eval and gates
+on perceptual health instead — responses to eight held-out photographs must not collapse (mean
+pairwise cosine < 0.95, `_visual_differentiation_probe`); recognition (top-3 label hits) is
+reported, not gating (decision 2026-10-30).
 
 ## Common skeleton (`_run_stage`)
 

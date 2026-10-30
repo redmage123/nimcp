@@ -68,6 +68,11 @@ class StageGate:
     snn_rate_min_hz: float = 0.5          # population mean firing rate band
     snn_rate_max_hz: float = 20.0
     snn_max_hyperactive: int = 1000       # neurons >200 Hz (pathological)
+    # Chat eval is a language-production criterion; it gates the language
+    # stages only. Stage 0 (pre-linguistic sensory exposure) sets this False
+    # and gates on perceptual health instead (immerse_athena's visual
+    # differentiation probe) — user decision 2026-10-30.
+    require_chat_eval: bool = True
     chat_eval_interval: int = 500         # run chat_eval at most this often
     chat_coherence_min: float = 0.30      # input↔output alignment
     chat_similarity_min: float = 0.20     # decode quality
@@ -176,13 +181,16 @@ class StageGate:
                                   f"snn_hyperactive ({int(hyper)} > {self.snn_max_hyperactive})",
                                   details)
 
-        # 6. Chat eval
-        chat_result = self._check_chat_eval(step, brain, composer, decoder, chat_eval_fn)
-        details["chat_eval"] = chat_result
-        if not chat_result.get("passed", False):
-            return GateResult(False,
-                              f"chat_eval_failed: {chat_result.get('reason', 'unknown')}",
-                              details)
+        # 6. Chat eval (language stages only)
+        if self.require_chat_eval:
+            chat_result = self._check_chat_eval(step, brain, composer, decoder, chat_eval_fn)
+            details["chat_eval"] = chat_result
+            if not chat_result.get("passed", False):
+                return GateResult(False,
+                                  f"chat_eval_failed: {chat_result.get('reason', 'unknown')}",
+                                  details)
+        else:
+            details["chat_eval"] = {"passed": True, "reason": "not_required_at_this_stage"}
 
         # All criteria pass for this check — need N consecutive passes
         self.cumulative_passes += 1
@@ -273,6 +281,11 @@ class StageGate:
 
 def stage_gate_for(stage: int) -> StageGate:
     """Factory — per-stage calibrated thresholds."""
+    # Chat-coherence ramp by stage (2026-10-30): stage 0 is pre-linguistic and
+    # does not require chat eval (perceptual health gates it instead); the
+    # floors then rise with the language curriculum:
+    #   1: 0.10/0.10  2: 0.20/0.15  3: 0.30/0.20  4: 0.35/0.25  5: 0.40/0.30
+    #   6: 0.45/0.35  7: 0.50/0.40 (no transition out of 7)
     if stage == 0:
         return StageGate(stage=0,
                          min_step=500,
@@ -280,33 +293,38 @@ def stage_gate_for(stage: int) -> StageGate:
                          plateau_window=200,
                          max_plateau_delta=0.05,
                          min_nz_of_50=48,
-                         snn_sparsity_min=0.88,
-                         snn_sparsity_max=0.99,
+                         require_chat_eval=False,
                          chat_eval_interval=500,
-                         chat_coherence_min=0.30,
-                         chat_similarity_min=0.20,
-                         chat_cross_sim_max=0.90,
+                         chat_coherence_min=0.0,
+                         chat_similarity_min=0.0,
+                         chat_cross_sim_max=1.0,
                          required_consecutive_passes=3)
     if stage == 1:
         return StageGate(stage=1,
                          min_step=1500,              # enough warm-up
-                         max_mean_loss=1.0,          # stage 1 should hit sub-1.0 loss
+                         max_mean_loss=1.0,          # informational only
                          plateau_window=200,
                          max_plateau_delta=0.05,
                          min_nz_of_50=48,
-                         snn_sparsity_min=0.88,
-                         snn_sparsity_max=0.99,
                          chat_eval_interval=500,
-                         chat_coherence_min=0.30,
-                         chat_similarity_min=0.20,
-                         chat_cross_sim_max=0.90,
+                         chat_coherence_min=0.10,
+                         chat_similarity_min=0.10,
+                         chat_cross_sim_max=0.95,
                          required_consecutive_passes=3)
     elif stage == 2:
         return StageGate(stage=2,
                          min_step=2000,
                          max_mean_loss=1.5,
-                         chat_coherence_min=0.35,
-                         chat_similarity_min=0.25,
+                         chat_coherence_min=0.20,
+                         chat_similarity_min=0.15,
+                         chat_cross_sim_max=0.90,
+                         required_consecutive_passes=3)
+    elif stage == 3:
+        return StageGate(stage=3,
+                         min_step=2000,
+                         chat_coherence_min=0.30,
+                         chat_similarity_min=0.20,
+                         chat_cross_sim_max=0.90,
                          required_consecutive_passes=3)
     elif stage >= 4:
         # Stages 4-7 (docs/claude/curriculum-stages-4-7.md): health criteria

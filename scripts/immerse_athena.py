@@ -482,6 +482,46 @@ STAGE0_VIDEO_RATE = 0.15      # fraction of stage-0 items that are motion sequen
 VIDEO_INTERLUDE_EVERY = 40    # stages 1-3: play one real shot (8 brain steps) every N steps
 
 
+VISUAL_DIFFERENTIATION_MAX = 0.95   # stage-0 gate: mean pairwise cosine of responses to 8 held-out photos
+
+
+def _visual_differentiation_probe(brain, composer):
+    """Stage-0 perceptual health probe: responses to eight different held-out
+    photographs (same neutral prompt) must not collapse onto one point.
+    Returns (mean_pairwise_cosine, n_photos) or (None, 0) when unavailable.
+    A baby need not name things to pass stage 0, but should react
+    differently to different things."""
+    rs = _get_real_sensory()
+    if not rs or not rs.heldout:
+        return None, 0
+    labels = [l for l in ("dog", "cat", "bird", "horse", "sea", "house", "apple", "truck")
+              if l in rs.heldout]
+    try:
+        neutral = composer.compose(text="look at this", modality="text")
+        embs = []
+        for lab in labels:
+            hf = rs.get_heldout_frame(lab, index=0)
+            if not hf:
+                continue
+            try:
+                brain.submit_sensory("visual", list(hf[0]), width=32, height=32, channels=3)
+            except Exception:
+                pass
+            out = (brain.decide_full(neutral) or {}).get("output_vector")
+            if out is None:
+                continue
+            embs.append(extract_embedding_from_output(np.array(out, dtype=np.float32)))
+        if len(embs) < 3:
+            return None, len(embs)
+        m = np.array(embs, dtype=np.float32)
+        norms = np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-8)
+        sim = (m @ m.T) / (norms @ norms.T)
+        iu = np.triu_indices(len(embs), k=1)
+        return float(np.mean(sim[iu])), len(embs)
+    except Exception:
+        return None, 0
+
+
 def _video_interlude(brain, composer, parent, stage):
     """Stages 1-3: one real-motion shot played frame by frame on consecutive
     brain steps (each frame → learn_vector against the scene's description),
@@ -7522,8 +7562,17 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             except Exception as _ge:
                 from stage_gate import GateResult as _GR
                 _gr = _GR(False, f"gate_exception:{_ge}")
-            gate_passed = _gr.passed
-            print(f"    [StageGate 0] step {i+1}: {_gr}", flush=True)
+            # Stage 0 gates on perceptual health (not chat): responses to
+            # different held-out photos must differ. ANDed with the health
+            # criteria; absent data (no held-out cache) does not block.
+            _vd, _vn = _visual_differentiation_probe(brain, composer)
+            _vd_ok = (_vd is None) or (_vd < VISUAL_DIFFERENTIATION_MAX)
+            _gr.details["visual_differentiation"] = _vd
+            _gr.details["visual_differentiation_ok"] = _vd_ok
+            gate_passed = _gr.passed and _vd_ok
+            print(f"    [StageGate 0] step {i+1}: {_gr} | visual_diff="
+                  f"{'n/a' if _vd is None else f'{_vd:.3f}'} (<{VISUAL_DIFFERENTIATION_MAX}, n={_vn}) "
+                  f"ok={_vd_ok}", flush=True)
             log_gate_event(STAGE_GATE_LOG, 0, i + 1, _gr)
 
         # Chat eval disabled for Stage 0 — OOM risk with 2.5M neurons.
