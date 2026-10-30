@@ -498,27 +498,59 @@ def _visual_differentiation_probe(brain, composer):
               if l in rs.heldout]
     try:
         neutral = composer.compose(text="look at this", modality="text")
-        embs = []
+        raws, embs = [], []
+
+        def _decide_with(frame_bytes):
+            try:
+                brain.submit_sensory("visual", list(frame_bytes), width=32, height=32, channels=3)
+            except Exception:
+                pass
+            out = (brain.decide_full(neutral) or {}).get("output_vector")
+            return None if out is None else np.array(out, dtype=np.float32)
+
+        first = None
         for lab in labels:
             hf = rs.get_heldout_frame(lab, index=0)
             if not hf:
                 continue
-            try:
-                brain.submit_sensory("visual", list(hf[0]), width=32, height=32, channels=3)
-            except Exception:
-                pass
-            out = (brain.decide_full(neutral) or {}).get("output_vector")
-            if out is None:
+            raw = _decide_with(hf[0])
+            if raw is None:
                 continue
-            embs.append(extract_embedding_from_output(np.array(out, dtype=np.float32)))
-        if len(embs) < 3:
-            return None, len(embs)
-        m = np.array(embs, dtype=np.float32)
-        norms = np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-8)
-        sim = (m @ m.T) / (norms @ norms.T)
-        iu = np.triu_indices(len(embs), k=1)
-        return float(np.mean(sim[iu])), len(embs)
-    except Exception:
+            if first is None:
+                first = hf[0]
+            raws.append(raw)
+            embs.append(extract_embedding_from_output(raw))
+        if len(raws) < 3:
+            return None, len(raws)
+
+        def _mean_pairwise(vs):
+            m = np.array(vs, dtype=np.float32)
+            norms = np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-8)
+            sim = (m @ m.T) / (norms @ norms.T)
+            iu = np.triu_indices(len(vs), k=1)
+            return float(np.mean(sim[iu]))
+
+        raw_cos = _mean_pairwise(raws)
+        emb_cos = _mean_pairwise(embs)
+        # Control: the same photo twice. If this is also < 1 the output has
+        # stochastic variation; if different photos score the same as the
+        # repeat, the visual input is not reaching the output.
+        rep_cos = None
+        if first is not None:
+            a = _decide_with(first); b = _decide_with(first)
+            if a is not None and b is not None:
+                rep_cos = float(a @ b / max(1e-8, np.linalg.norm(a) * np.linalg.norm(b)))
+        print(f"    [VisualDiff] n={len(raws)} raw_output_cos={raw_cos:.5f} "
+              f"embedding_cos={emb_cos:.5f} same_photo_twice_cos="
+              f"{'n/a' if rep_cos is None else f'{rep_cos:.5f}'}", flush=True)
+        try:
+            _cm = brain.get_cortex_cnn_metrics()
+            print(f"    [VisualDiff] cortex metrics: {str(_cm)[:300]}", flush=True)
+        except Exception as _me:
+            print(f"    [VisualDiff] cortex metrics unavailable: {_me}", flush=True)
+        return emb_cos, len(raws)
+    except Exception as _e:
+        print(f"    [VisualDiff] probe failed: {_e}", flush=True)
         return None, 0
 
 
@@ -10169,6 +10201,15 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                              "Consider manual intervention.")
                 return
 
+    # Name the snapshot by the step at SAVE time, not at thread start: the
+    # pre-save ship above can take 60-80 min, during which the trainer
+    # advances (2026-10-30: a save requested at step 39550 ran at ~41000 and
+    # the restart then rewound the bookmark by ~1500 steps). Only within the
+    # same stage — transition saves carry stage N+1 / step 0 on purpose.
+    if TRAINING_PROGRESS[0] == stage and TRAINING_PROGRESS[1] > step:
+        logger.info("Checkpoint step %d → %d (trainer advanced during the pre-save ship)",
+                    step, TRAINING_PROGRESS[1])
+        step = TRAINING_PROGRESS[1]
     snapshot_name = f"athena_s{stage}_step{step}.bin"
     snapshot_path = os.path.join(CHECKPOINT_DIR, snapshot_name)
     snapshot_tmp = snapshot_path + ".tmp"
