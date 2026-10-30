@@ -122,6 +122,25 @@ gives a durable, replayable path that also trains.
 - Wall-clock (3–4 s per brain step, 2–6 brain steps per episode): stage 4 ≈ 3–5 days,
   stage 5 ≈ 3–5 days, stage 6 ≈ 1–2 weeks, stage 7 indefinite.
 
+## Video in every stage (2026-10-30)
+
+Source: public-domain Prelinger films from the Internet Archive, built by
+`scripts/build_video_cache.py` into `data/multimodal/video_sequences.pkl` (8-frame shots at
+2 fps, 32×32, with the archive's synopsis per film). Frames are played one per brain step
+through `RealSensoryBank.queue_frames` / `pop_frame`, so a shot is a genuine temporal
+experience; there is no brain-side video API.
+
+| Stage | Use | Cadence / weight |
+|---|---|---|
+| 0 | a shot plays across consecutive steps with one description/target | `--stage0-video-rate` 0.15 of items |
+| 1 | shot, then the parent names it ("Look! …") | `--video-interlude-every` 40 steps (≈17% of brain steps) |
+| 2 | shot, "What do you see?" → critic → synopsis as recast | every 40 steps |
+| 3 | shot, "What is happening here?" exchange, synopsis as reply | every 40 steps |
+| 4 | `video_next`: first half of a shot, "what happens next?", scored against the real next frame | 0.10 |
+| 5 | `video_describe`: write one sentence about the scene | 0.10 |
+| 6 | `video_explain`: explain what is happening and why, scored against the synopsis | 0.10 |
+| 7 | `watch_film`: four consecutive shots of one film, teach it back | 0.10 |
+
 ## Not done / follow-ups
 
 - Episode content is template-based; richer generators (COCO captions, children's-story corpora,

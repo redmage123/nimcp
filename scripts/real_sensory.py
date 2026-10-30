@@ -180,6 +180,26 @@ class RealSensoryBank:
         self.sequence_hits += 1
         return self.rng.choice(seqs)
 
+    def get_film(self, n_sequences: int = 4) -> list[dict]:
+        """Up to n consecutive sequences of one film (ordered by start time),
+        for 'watching' a longer stretch. Empty list without a cache."""
+        seqs = self.sequences
+        if not seqs:
+            return []
+        item = self.rng.choice(seqs)["item"]
+        run = sorted((s for s in seqs if s["item"] == item), key=lambda s: s.get("start_s", 0.0))
+        if len(run) <= n_sequences:
+            return run
+        start = self.rng.randint(0, len(run) - n_sequences)
+        return run[start:start + n_sequences]
+
+    @staticmethod
+    def sequence_text(seq: dict) -> str:
+        """Best available ground-truth text for a sequence: the archive's
+        synopsis when present, else the generic description."""
+        s = (seq.get("summary") or "").strip()
+        return s if len(s) > 20 else seq.get("description", "a moving scene")
+
     def queue_frames(self, frames: list[bytes]):
         """Frames to be submitted, in order, by the next presentations
         (pop_frame). Used to play a sequence across consecutive steps."""

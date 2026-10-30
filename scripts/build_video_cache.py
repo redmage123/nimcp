@@ -134,6 +134,7 @@ def main():
             for j, fr in enumerate(seqs):
                 sequences.append({"item": ident, "title": title,
                                   "description": f"a moving scene from the film '{title}'",
+                                  "summary": desc,   # the archive's own synopsis of the film
                                   "start_s": float(j * a.seq_len / a.fps), "frames": fr})
             print(f"[{k}/{len(films)}] {ident}: {len(frames)} frames -> {len(seqs)} sequences "
                   f"({os.path.getsize(local) / 1e6:.0f} MB, {time.time() - t0:.0f}s)", flush=True)

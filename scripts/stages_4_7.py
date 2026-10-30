@@ -474,6 +474,92 @@ def ep_video_next(B: _Brain, trainer, stage: int, lr: float, ia) -> Optional[Epi
                    details={"item": seq.get("item"), "frames_shown": k})
 
 
+def _play_sequence(B: _Brain, rs, seq: dict, trainer, label: str, lr: float, frames=None):
+    """Play frames of `seq` on consecutive brain steps (each learned against
+    the scene description). Returns the description."""
+    desc = seq["description"]
+    for fr in (frames if frames is not None else seq["frames"]):
+        rs.queue_frames([fr])
+        feats = B.present(desc)
+        B.learn(trainer, desc, label=label, confidence=0.5, lr=lr, features=feats)
+    return desc
+
+
+def ep_video_describe(B: _Brain, trainer, stage: int, lr: float, ia) -> Optional[Episode]:
+    """Stage 5: watch a shot, then write one sentence about it (critic-scored,
+    synopsis as the model sentence)."""
+    rs = _safe(ia._get_real_sensory, default=None) if hasattr(ia, "_get_real_sensory") else None
+    seq = rs.get_sequence() if rs else None
+    if not seq:
+        return None
+    desc = _play_sequence(B, rs, seq, trainer, "s5_video", lr)
+    truth = rs.sequence_text(seq)
+    q = "Write one sentence about what you just saw."
+    resp, _ = B.respond(q)
+    toks = _tokens(resp)
+    sim = B.similarity(resp, truth)
+    score = min(1.0, 0.5 * (len(toks) >= 5) + 0.5 * sim)
+    B.critic(q, stage)
+    loss = B.learn(trainer, truth, label="s5_video_text", confidence=0.6, lr=lr)
+    B.reward(0.3 + 0.6 * score, 0.5)
+    return Episode("video_describe", q, resp, truth[:60], score=float(score), loss=loss,
+                   turns=len(seq["frames"]) + 1, details={"item": seq.get("item")})
+
+
+def ep_video_explain(B: _Brain, trainer, stage: int, lr: float, ia) -> Optional[Episode]:
+    """Stage 6: watch a shot, explain what is happening and why; scored
+    against the film's synopsis plus causal-connective use."""
+    rs = _safe(ia._get_real_sensory, default=None) if hasattr(ia, "_get_real_sensory") else None
+    seq = rs.get_sequence() if rs else None
+    if not seq:
+        return None
+    desc = _play_sequence(B, rs, seq, trainer, "s6_video", lr)
+    truth = rs.sequence_text(seq)
+    q = "Explain what is happening in this scene and why."
+    resp, _ = B.respond(q)
+    sim = B.similarity(resp, truth)
+    connective = any(c in (resp or "").lower() for c in CAUSAL_CONNECTIVES)
+    score = min(1.0, 0.6 * sim + (0.4 if connective else 0.0))
+    teacher = getattr(B.parent, "teacher", None)
+    if teacher is not None:
+        ev = _safe(teacher.evaluate_response, truth, resp, default=None)
+        if isinstance(ev, tuple) and ev and isinstance(ev[0], (int, float)):
+            score = float(max(0.0, min(1.0, 0.5 * score + 0.5 * ev[0])))
+    B.critic(q, stage)
+    loss = B.learn(trainer, truth, label="s6_video_text", confidence=0.6, lr=lr)
+    B.reward(0.3 + 0.6 * score, 0.5)
+    return Episode("video_explain", q, resp, truth[:60], score=float(score), loss=loss,
+                   turns=len(seq["frames"]) + 1, details={"item": seq.get("item"), "connective": connective})
+
+
+def ep_watch_film(B: _Brain, trainer, stage: int, lr: float, ia, mastery=None) -> Optional[Episode]:
+    """Stage 7: watch several consecutive shots of one film, then teach it
+    back; scored against the synopsis (Claude-scored when available)."""
+    rs = _safe(ia._get_real_sensory, default=None) if hasattr(ia, "_get_real_sensory") else None
+    run = rs.get_film(4) if rs else []
+    if not run:
+        return None
+    for seq in run:
+        _play_sequence(B, rs, seq, trainer, "s7_film", lr)
+    truth = rs.sequence_text(run[0])
+    title = run[0].get("title", "the film")
+    q = f"Tell me what the film '{title}' was about, in your own words."
+    resp, _ = B.respond(q)
+    score = B.similarity(resp, truth)
+    teacher = getattr(B.parent, "teacher", None)
+    if teacher is not None:
+        ev = _safe(teacher.evaluate_response, truth, resp, default=None)
+        if isinstance(ev, tuple) and ev and isinstance(ev[0], (int, float)):
+            score = float(max(0.0, min(1.0, ev[0])))
+    B.critic(q, stage)
+    loss = B.learn(trainer, truth, label="s7_film_text", confidence=0.6, lr=lr)
+    B.reward(0.3 + 0.6 * score, 0.5)
+    if mastery is not None:
+        _safe(mastery.record, "film_" + str(run[0].get("item")), loss if loss is not None else 1.0, score)
+    return Episode("watch_film", q, resp, truth[:60], score=float(score), loss=loss,
+                   turns=sum(len(s["frames"]) for s in run) + 1, details={"item": run[0].get("item")})
+
+
 # ---------------------------------------------------------------------------
 # Stage 5 episodes — Literacy
 # ---------------------------------------------------------------------------
@@ -1034,11 +1120,12 @@ def run_stage_4(ia, brain, composer, parent, clock, source, decoder,
 def run_stage_5(ia, brain, composer, parent, clock, source, decoder,
                 num_episodes=50000, start_from=0, max_episodes=0):
     mix = [
-        (0.30, lambda B, t, lr: ep_read_aloud(B, t, 5, lr, ia)),
+        (0.25, lambda B, t, lr: ep_read_aloud(B, t, 5, lr, ia)),
         (0.20, lambda B, t, lr: ep_phonics(B, t, 5, lr)),
-        (0.20, lambda B, t, lr: ep_write(B, t, 5, lr)),
+        (0.15, lambda B, t, lr: ep_write(B, t, 5, lr)),
         (0.15, lambda B, t, lr: ep_retell_passage(B, t, 5, lr, ia)),
         (0.15, lambda B, t, lr: ep_vocabulary(B, t, 5, lr, source)),
+        (0.10, lambda B, t, lr: ep_video_describe(B, t, 5, lr, ia)),   # None without a video cache
     ]
     B = _Brain(brain, ia, composer, decoder, parent)
     return _run_stage(ia, 5, brain, composer, parent, clock, source, decoder,
@@ -1051,11 +1138,12 @@ def run_stage_6(ia, brain, composer, parent, clock, source, decoder,
     _safe(mastery.load, getattr(ia, "MASTERY_FILE", "checkpoints/athena/mastery_state.json"))
     domains = list(getattr(source, "ADVANCED_TOPICS", {}).keys()) or SCHOOL_DOMAINS
     mix = [
-        (0.30, lambda B, t, lr: ep_socratic(B, t, 6, lr, source, mastery, domains)),
+        (0.25, lambda B, t, lr: ep_socratic(B, t, 6, lr, source, mastery, domains)),
         (0.20, lambda B, t, lr: ep_worksheet(B, t, 6, lr, source, mastery, domains)),
         (0.20, lambda B, t, lr: ep_math_logic(B, t, 6, lr)),
         (0.15, lambda B, t, lr: ep_explain_back(B, t, 6, lr, source)),
-        (0.15, lambda B, t, lr: ep_research(B, t, 6, lr, source, ia)),
+        (0.10, lambda B, t, lr: ep_research(B, t, 6, lr, source, ia)),
+        (0.10, lambda B, t, lr: ep_video_explain(B, t, 6, lr, ia)),    # None without a video cache
     ]
     B = _Brain(brain, ia, composer, decoder, parent)
     return _run_stage(ia, 6, brain, composer, parent, clock, source, decoder,
@@ -1071,10 +1159,11 @@ def run_stage_7(ia, brain, composer, parent, clock, source, decoder,
     mastery = ia.MasteryTracker()
     _safe(mastery.load, getattr(ia, "MASTERY_FILE", "checkpoints/athena/mastery_state.json"))
     mix = [
-        (0.40, lambda B, t, lr: ep_self_directed(B, t, 7, lr, source, ia, mastery)),
+        (0.35, lambda B, t, lr: ep_self_directed(B, t, 7, lr, source, ia, mastery)),
         (0.25, lambda B, t, lr: ep_conversation(B, t, 7, lr, ia)),
-        (0.20, lambda B, t, lr: ep_teach_back(B, t, 7, lr, source)),
+        (0.15, lambda B, t, lr: ep_teach_back(B, t, 7, lr, source)),
         (0.15, lambda B, t, lr: ep_reflect(B, t, 7, lr)),
+        (0.10, lambda B, t, lr: ep_watch_film(B, t, 7, lr, ia, mastery)),  # None without a video cache
     ]
     return _run_stage(ia, 7, brain, composer, parent, clock, source, decoder,
                       num_episodes, start_from, mix, None, max_episodes, mastery=mastery)

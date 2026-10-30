@@ -32,6 +32,7 @@ import argparse
 import hashlib
 import logging
 import os
+import re
 import shutil
 import socket
 import struct
@@ -478,6 +479,65 @@ _SOMATO_KW = frozenset(["touch", "feel", "rough", "smooth", "soft", "hard",
 _REAL_SENSORY = None          # RealSensoryBank or False once probed
 STAGE0_VIEWS_PER_OBJECT = 2   # successive augmented views of a real image
 STAGE0_VIDEO_RATE = 0.15      # fraction of stage-0 items that are motion sequences (when cached)
+VIDEO_INTERLUDE_EVERY = 40    # stages 1-3: play one real shot (8 brain steps) every N steps
+
+
+def _video_interlude(brain, composer, parent, stage):
+    """Stages 1-3: one real-motion shot played frame by frame on consecutive
+    brain steps (each frame → learn_vector against the scene's description),
+    followed by the stage-appropriate language exchange:
+        1 — the parent names it ("Look! ...");
+        2 — Athena produces ("What do you see?"), the critic scores, the
+            film's synopsis is the recast;
+        3 — a short exchange ("What is happening here?"), synopsis as reply.
+    Best-effort; returns the number of frames shown (0 when no cache)."""
+    rs = _get_real_sensory()
+    if not rs or not rs.sequences:
+        return 0
+    seq = rs.get_sequence()
+    if not seq:
+        return 0
+    desc = seq["description"]
+    truth = rs.sequence_text(seq)
+    try:
+        features = composer.compose(text=desc, modality="text")
+        target = make_semantic_target(desc)
+        shown = 0
+        for fr in seq["frames"]:
+            rs.queue_frames([fr])
+            submit_multimodal(brain, desc)
+            try:
+                brain.learn_vector(features, target, label=f"video_s{stage}"[:50], confidence=0.6)
+            except Exception:
+                pass
+            shown += 1
+        if stage == 1:
+            title_words = [w for w in re.findall(r"[A-Za-z]+", seq.get("title", "")) if len(w) > 3]
+            name = (title_words[0] if title_words else "scene").lower()
+            try:
+                brain.learn_language(f"Look! {desc}. {name}.")
+            except Exception:
+                pass
+        elif stage == 2:
+            try:
+                parent.run_critic_eval(brain, "What do you see?", stage=2)
+                brain.learn_language(truth)
+            except Exception:
+                pass
+        elif stage >= 3:
+            try:
+                r = brain.grounded_respond("What is happening here?")
+                resp = r.get("response", "") if isinstance(r, dict) else ""
+                parent.run_critic_eval(brain, "What is happening here?", stage=stage)
+                brain.learn_language(truth)
+                if resp and (random.random() < 0.02):
+                    print(f"  [Video] {desc[:50]} | Athena: {resp[:60]}", flush=True)
+            except Exception:
+                pass
+        return shown
+    except Exception as _ve:
+        print(f"  [Video] interlude failed: {_ve}", flush=True)
+        return 0
 
 
 def _get_real_sensory():
@@ -7705,6 +7765,8 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
     import itertools as _it
     for i in _it.count(start_from):
         TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 1, i
+        if VIDEO_INTERLUDE_EVERY and (i + 1) % VIDEO_INTERLUDE_EVERY == 0:
+            _video_interlude(brain, composer, parent, stage=1)
         if i >= num_stimuli:
             if gate is None or gate_passed:
                 break
@@ -8140,6 +8202,8 @@ def run_stage_2(brain, composer, parent, clock, source, decoder,
 
     for i in range(start_from, num_stimuli):
         TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 2, i
+        if VIDEO_INTERLUDE_EVERY and (i + 1) % VIDEO_INTERLUDE_EVERY == 0:
+            _video_interlude(brain, composer, parent, stage=2)
         # Full mode collapse detection (every 100 steps)
         if ((i + 1) % COLLAPSE_CHECK_INTERVAL == 0
                 and (i + 1) >= COLLAPSE_WARMUP_STEPS):
@@ -8614,6 +8678,8 @@ def run_stage_3(brain, composer, parent, clock, source, decoder,
 
     for i in range(start_from, num_interactions):
         TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 3, i
+        if VIDEO_INTERLUDE_EVERY and (i + 1) % VIDEO_INTERLUDE_EVERY == 0:
+            _video_interlude(brain, composer, parent, stage=3)
         action = clock.tick(brain)
         if action == "sleep":
             clock.do_sleep(brain, parent)
@@ -10942,6 +11008,8 @@ def main():
     parser.add_argument("--stage0-video-rate", type=float, default=0.15,
                         help="Fraction of stage-0 items presented as real-motion frame sequences "
                              "(data/multimodal/video_sequences.pkl; 0 = off)")
+    parser.add_argument("--video-interlude-every", type=int, default=40,
+                        help="Stages 1-3: play one real shot (8 brain steps) every N steps (0 = off)")
     parser.add_argument("--no-real-sensory", action="store_true",
                         help="Synthetic frames/speech only (same as NIMCP_REAL_SENSORY=0)")
     parser.add_argument("--stage0-max-stimuli", type=int, default=0,
@@ -11072,7 +11140,8 @@ def main():
                      STAGE0_MAX_STIMULI=args.stage0_max_stimuli,
                      STAGE1_MAX_STIMULI=args.stage1_max_stimuli,
                      STAGE0_VIEWS_PER_OBJECT=max(1, args.stage0_views_per_object),
-                     STAGE0_VIDEO_RATE=max(0.0, min(1.0, args.stage0_video_rate)))
+                     STAGE0_VIDEO_RATE=max(0.0, min(1.0, args.stage0_video_rate)),
+                     VIDEO_INTERLUDE_EVERY=max(0, args.video_interlude_every))
     if args.no_real_sensory:
         os.environ["NIMCP_REAL_SENSORY"] = "0"
 

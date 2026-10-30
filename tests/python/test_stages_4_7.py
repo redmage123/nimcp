@@ -257,8 +257,12 @@ with tempfile.TemporaryDirectory() as d:
     # Stage-4 video episode: None without a cache, scored with one
     class FakeBank:
         def __init__(self): self.q = []
-        def get_sequence(self): return {"item": "f", "description": "a moving scene from the film 'f'",
+        def get_sequence(self): return {"item": "f", "title": "Film F", "summary": "A film about a fox who learns to swim across a river.",
+                                        "description": "a moving scene from the film 'f'",
                                         "frames": [bytes([i]) * 3072 for i in range(8)]}
+        def get_film(self, n=4): return [dict(self.get_sequence(), start_s=float(k)) for k in range(n)]
+        @staticmethod
+        def sequence_text(seq): return seq.get("summary") or seq["description"]
         def queue_frames(self, fr): self.q = list(fr)
         def pop_frame(self): return (self.q.pop(0), 32, 32, 3, "video") if self.q else None
     ia_nov = types.SimpleNamespace(**vars(ia))
@@ -269,6 +273,12 @@ with tempfile.TemporaryDirectory() as d:
     epv = S.ep_video_next(B, tr, 4, 1.0, ia_vid)
     expect(epv is not None and epv.kind == "video_next" and 0.0 <= epv.score <= 1.0 and epv.turns == 6,
            f"video_next episode {epv}")
+    for name, fn in (("video_describe", lambda: S.ep_video_describe(B, tr, 5, 1.0, ia_vid)),
+                     ("video_explain", lambda: S.ep_video_explain(B, tr, 6, 1.0, ia_vid)),
+                     ("watch_film", lambda: S.ep_watch_film(B, tr, 7, 1.0, ia_vid, MockMastery()))):
+        e = fn()
+        expect(e is not None and e.kind == name and 0.0 <= e.score <= 1.0 and e.turns >= 9, f"{name}: {e}")
+        expect(fn.__call__ is not None and S.ep_video_describe(B, tr, 5, 1.0, ia_nov) is None, "video episodes None without cache")
 
     # Probe sets return floats in range
     for name, pf in (("p4", lambda: S.probe_stage4(B)), ("p5", lambda: S.probe_stage5(B, ia)),
