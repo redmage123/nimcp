@@ -254,6 +254,22 @@ with tempfile.TemporaryDirectory() as d:
     finally:
         os.chdir(cwd)
 
+    # Stage-4 video episode: None without a cache, scored with one
+    class FakeBank:
+        def __init__(self): self.q = []
+        def get_sequence(self): return {"item": "f", "description": "a moving scene from the film 'f'",
+                                        "frames": [bytes([i]) * 3072 for i in range(8)]}
+        def queue_frames(self, fr): self.q = list(fr)
+        def pop_frame(self): return (self.q.pop(0), 32, 32, 3, "video") if self.q else None
+    ia_nov = types.SimpleNamespace(**vars(ia))
+    ia_nov._get_real_sensory = lambda: None
+    expect(S.ep_video_next(B, tr, 4, 1.0, ia_nov) is None, "video_next without cache -> None")
+    ia_vid = types.SimpleNamespace(**vars(ia))
+    ia_vid._get_real_sensory = lambda: FakeBank()
+    epv = S.ep_video_next(B, tr, 4, 1.0, ia_vid)
+    expect(epv is not None and epv.kind == "video_next" and 0.0 <= epv.score <= 1.0 and epv.turns == 6,
+           f"video_next episode {epv}")
+
     # Probe sets return floats in range
     for name, pf in (("p4", lambda: S.probe_stage4(B)), ("p5", lambda: S.probe_stage5(B, ia)),
                      ("p6", lambda: S.probe_stage6(B))):

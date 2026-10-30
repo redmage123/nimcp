@@ -437,6 +437,43 @@ def ep_number_category(B: _Brain, trainer, stage: int, lr: float) -> Episode:
     return Episode("category", q, resp, odd, score=1.0 if ok else 0.0, loss=loss, turns=2)
 
 
+def ep_video_next(B: _Brain, trainer, stage: int, lr: float, ia) -> Optional[Episode]:
+    """Real motion: show the first half of a public-domain film shot frame by
+    frame, ask "what happens next?", then show the actual next frame. The
+    score is how close the brain's response to the question was to its
+    response to the real next percept (cosine of the two output embeddings,
+    mapped to 0..1) — a prediction metric with the world as ground truth.
+    Returns None when no video cache is present."""
+    rs = _safe(ia._get_real_sensory, default=None) if hasattr(ia, "_get_real_sensory") else None
+    seq = rs.get_sequence() if rs else None
+    if not seq:
+        return None
+    frames = seq["frames"]
+    k = max(2, len(frames) // 2)
+    desc = seq["description"]
+    for fr in frames[:k]:
+        rs.queue_frames([fr])
+        feats = B.present(desc)
+        B.learn(trainer, desc, label="s4_video", confidence=0.5, lr=lr, features=feats)
+    q = "What happens next?"
+    qfeats = B.composer.compose(text=q, modality="text")
+    pred = (_safe(B.b.decide_full, qfeats, default={}) or {}).get("output_vector")
+    resp, _ = B.respond(q)
+    rs.queue_frames([frames[k]])
+    B.present(desc)
+    actual = (_safe(B.b.decide_full, qfeats, default={}) or {}).get("output_vector")
+    score = 0.0
+    if pred is not None and actual is not None:
+        a = np.asarray(pred, dtype=np.float32); b = np.asarray(actual, dtype=np.float32)
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        if na > 0 and nb > 0:
+            score = float((a @ b / (na * nb) + 1.0) / 2.0)
+    B.critic(q, stage)
+    B.reward(0.3 + 0.6 * score, 0.5)
+    return Episode("video_next", q, resp, desc, score=score, turns=k + 2,
+                   details={"item": seq.get("item"), "frames_shown": k})
+
+
 # ---------------------------------------------------------------------------
 # Stage 5 episodes — Literacy
 # ---------------------------------------------------------------------------
@@ -982,11 +1019,12 @@ def _run_stage(ia, stage: int, brain, composer, parent, clock, source, decoder,
 def run_stage_4(ia, brain, composer, parent, clock, source, decoder,
                 num_episodes=50000, start_from=0, max_episodes=0):
     mix = [
-        (0.30, lambda B, t, lr: ep_causal(B, t, 4, lr)),
+        (0.25, lambda B, t, lr: ep_causal(B, t, 4, lr)),
         (0.20, lambda B, t, lr: ep_athena_asks(B, t, 4, lr, source)),
-        (0.20, lambda B, t, lr: ep_narrative(B, t, 4, lr)),
+        (0.15, lambda B, t, lr: ep_narrative(B, t, 4, lr)),
         (0.15, lambda B, t, lr: ep_other_minds(B, t, 4, lr)),
         (0.15, lambda B, t, lr: ep_number_category(B, t, 4, lr)),
+        (0.10, lambda B, t, lr: ep_video_next(B, t, 4, lr, ia)),   # None without a video cache
     ]
     B = _Brain(brain, ia, composer, decoder, parent)
     return _run_stage(ia, 4, brain, composer, parent, clock, source, decoder,

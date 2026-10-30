@@ -37,6 +37,10 @@ def make_cache(d):
     clip = (np.sin(np.linspace(0, 200, 16000)) * np.hanning(16000)).astype(np.float32)
     with open(os.path.join(d, "speech_cmds_by_label.pkl"), "wb") as f:
         pickle.dump({"dog": [clip.tobytes()], "happy": [clip.tobytes()]}, f)
+    seqs = [{"item": "film1", "title": "Film One", "description": "a moving scene from the film 'Film One'",
+             "start_s": 0.0, "frames": [bytes([i]) * (32 * 32 * 3) for i in range(8)]} for _ in range(3)]
+    with open(os.path.join(d, "video_sequences.pkl"), "wb") as f:
+        pickle.dump(seqs, f)
 
 
 with tempfile.TemporaryDirectory() as d:
@@ -75,7 +79,31 @@ with tempfile.TemporaryDirectory() as d:
     expect(sp is not None and len(sp[0]) == 512 and sp[1] == "dog", "speech window")
     expect(max(abs(x) for x in sp[0]) > 0.1, "speech window is the loud part")
     expect(bank.get_speech("silent night") is None, "no speech word -> None")
+
+    # motion sequences: queue plays frames in order through pop_frame
+    seq = bank.get_sequence()
+    expect(seq is not None and len(seq["frames"]) == 8 and "moving scene" in seq["description"], "sequence")
+    bank.queue_frames(seq["frames"])
+    popped = [bank.pop_frame() for _ in range(9)]
+    expect(all(p is not None for p in popped[:8]) and popped[8] is None, "queue drains in order then None")
+    expect(popped[0][0] == seq["frames"][0] and popped[7][0] == seq["frames"][7] and popped[0][4] == "video",
+           "frames come out in order with the video label")
+    expect("motion sequences: 1 (3 available)" in bank.stats_str(), f"stats mention sequences: {bank.stats_str()}")
     print(bank.stats_str())
+
+# builder chunking: cuts split sequences, static runs are dropped
+from build_video_cache import chunk_frames  # noqa: E402
+rng = np.random.RandomState(1)
+moving = [np.clip(np.full((32, 32, 3), 100, np.uint8).astype(np.int16) + rng.randint(-6, 7, (32, 32, 3)), 0, 255).astype(np.uint8)
+          for _ in range(16)]
+static = [np.full((32, 32, 3), 50, np.uint8) for _ in range(16)]
+cut = [np.full((32, 32, 3), 250, np.uint8).astype(np.int16) + rng.randint(-6, 7, (32, 32, 3)) for _ in range(8)]
+cut = [np.clip(c, 0, 255).astype(np.uint8) for c in cut]
+seqs = chunk_frames(moving + static + cut, seq_len=8)
+expect(len(seqs) >= 2, f"moving + cut segment yield sequences ({len(seqs)})")
+expect(all(len(s) == 8 and all(len(f) == 32 * 32 * 3 for f in s) for s in seqs), "sequence shape")
+expect(len(chunk_frames(static, seq_len=8)) == 0, "static run dropped")
+expect(len(chunk_frames(moving[:5], seq_len=8)) == 0, "too short -> none")
 
 # synonym table sanity: every value label is a plausible CIFAR name
 for k, v in SYNONYMS.items():

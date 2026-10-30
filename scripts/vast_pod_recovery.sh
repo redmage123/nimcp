@@ -281,10 +281,33 @@ EOF
         # --partial-dir, not --partial: an interrupted pull must not leave a
         # fragment under the final name (the local-canonical check above
         # would then skip the restore on the next run).
+        # Pull with a rate guard: the pod's inbound from Hetzner has collapsed
+        # to 25-200 KB/s on several occasions (2026-10-27/29), which turns a
+        # 21 GB restore into days. Measure the first minutes; below
+        # RESTORE_MIN_KBPS abort with relay instructions instead of stalling.
+        RESTORE_MIN_KBPS="${RESTORE_MIN_KBPS:-300}"
         rsync -a --partial-dir=.rsync-partial \
             -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
             "$HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK*" \
-            "$LOCAL_CKPT_DIR/" 2>&1 | tail -3 | tee -a "$LOG_FILE"
+            "$LOCAL_CKPT_DIR/" > /tmp/restore_rsync.log 2>&1 &
+        _rs_pid=$!
+        _t0=$(date +%s); _b0=$(du -sb "$LOCAL_CKPT_DIR" | cut -f1)
+        while kill -0 "$_rs_pid" 2>/dev/null; do
+            sleep 30
+            _el=$(( $(date +%s) - _t0 )); _b1=$(du -sb "$LOCAL_CKPT_DIR" | cut -f1)
+            _kbps=$(( (_b1 - _b0) / (_el + 1) / 1024 ))
+            if [ "$_el" -ge 180 ] && [ "$_kbps" -lt "$RESTORE_MIN_KBPS" ]; then
+                kill "$_rs_pid" 2>/dev/null
+                log "FATAL: restore pull averaging ${_kbps} KB/s after ${_el}s (< ${RESTORE_MIN_KBPS} KB/s)."
+                log "       The Hetzner->pod link is stalled. Relay instead (from a laptop with good"
+                log "       bandwidth to both): rsync -a --partial-dir=.rsync-partial"
+                log "       $HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK* ./ ; then rsync the files to"
+                log "       root@<pod>:$LOCAL_CKPT_DIR/ and run: bash /root/finalize_restore.sh $PICK"
+                exit 2
+            fi
+            [ $((_el % 300)) -lt 30 ] && log "  restore: $(( (_b1 - _b0) / 1048576 )) MB at ${_kbps} KB/s"
+        done
+        wait "$_rs_pid"; tail -3 /tmp/restore_rsync.log | tee -a "$LOG_FILE"
 
         # Canonical symlinks for the main file and every sidecar it shipped with.
         (

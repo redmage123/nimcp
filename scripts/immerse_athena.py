@@ -477,6 +477,7 @@ _SOMATO_KW = frozenset(["touch", "feel", "rough", "smooth", "soft", "hard",
 
 _REAL_SENSORY = None          # RealSensoryBank or False once probed
 STAGE0_VIEWS_PER_OBJECT = 2   # successive augmented views of a real image
+STAGE0_VIDEO_RATE = 0.15      # fraction of stage-0 items that are motion sequences (when cached)
 
 
 def _get_real_sensory():
@@ -566,10 +567,13 @@ def submit_multimodal(brain, description, target_word=None):
         # images for (scripts/real_sensory.py: CIFAR-10/100, re-augmented on
         # every presentation); synthetic keyword-seeded frame otherwise.
         _rs = _get_real_sensory()
-        _rf = _rs.get_frame(description) if _rs else None
+        # A queued motion-sequence frame (consecutive frames of one shot
+        # across consecutive steps) takes precedence over photo matching.
+        _qf = _rs.pop_frame() if _rs else None
+        _rf = _qf or (_rs.get_frame(description) if _rs else None)
         if _rf:
             _vf = (_rf[0], _rf[1], _rf[2], _rf[3])
-            _vtag = "V*"
+            _vtag = "Vv" if _qf else "V*"
         else:
             _vf = generate_visual_frame(description)
             _vtag = "V"
@@ -7127,15 +7131,29 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
         if _repeat_left > 0:
             _repeat_left -= 1
         else:
-            if batch_idx >= len(batch):
-                batch = prefetcher.get_batch()
-                batch_idx = 0
-            description, features, target = batch[batch_idx]
-            batch_idx += 1
             _rs0 = _get_real_sensory()
-            if (_rs0 and STAGE0_VIEWS_PER_OBJECT > 1
-                    and _rs0.match_label(description) is not None):
-                _repeat_left = STAGE0_VIEWS_PER_OBJECT - 1
+            _seq = None
+            if _rs0 and STAGE0_VIDEO_RATE > 0 and random.random() < STAGE0_VIDEO_RATE:
+                _seq = _rs0.get_sequence()
+            if _seq:
+                # Real motion: the frames of one shot (public-domain film,
+                # scripts/build_video_cache.py) are presented on consecutive
+                # steps with one consistent description/target, the way an
+                # object persists across a child's successive glances.
+                description = _seq["description"]
+                features = composer.compose(text=description, modality="text")
+                target = make_semantic_target(description)
+                _rs0.queue_frames(_seq["frames"])
+                _repeat_left = len(_seq["frames"]) - 1
+            else:
+                if batch_idx >= len(batch):
+                    batch = prefetcher.get_batch()
+                    batch_idx = 0
+                description, features, target = batch[batch_idx]
+                batch_idx += 1
+                if (_rs0 and STAGE0_VIEWS_PER_OBJECT > 1
+                        and _rs0.match_label(description) is not None):
+                    _repeat_left = STAGE0_VIEWS_PER_OBJECT - 1
 
         # Forward pass for observation — stage sensory data first
         narration = parent._pop_content("_narrations")
@@ -10921,6 +10939,9 @@ def main():
                              "only when the StageGate health criteria pass (see --no-stage-gate)")
     parser.add_argument("--stage0-views-per-object", type=int, default=2,
                         help="Consecutive augmented views of a real image per stage-0 object (1 = off)")
+    parser.add_argument("--stage0-video-rate", type=float, default=0.15,
+                        help="Fraction of stage-0 items presented as real-motion frame sequences "
+                             "(data/multimodal/video_sequences.pkl; 0 = off)")
     parser.add_argument("--no-real-sensory", action="store_true",
                         help="Synthetic frames/speech only (same as NIMCP_REAL_SENSORY=0)")
     parser.add_argument("--stage0-max-stimuli", type=int, default=0,
@@ -11050,7 +11071,8 @@ def main():
     globals().update(STAGE_GATE_ENABLED=not args.no_stage_gate,
                      STAGE0_MAX_STIMULI=args.stage0_max_stimuli,
                      STAGE1_MAX_STIMULI=args.stage1_max_stimuli,
-                     STAGE0_VIEWS_PER_OBJECT=max(1, args.stage0_views_per_object))
+                     STAGE0_VIEWS_PER_OBJECT=max(1, args.stage0_views_per_object),
+                     STAGE0_VIDEO_RATE=max(0.0, min(1.0, args.stage0_video_rate)))
     if args.no_real_sensory:
         os.environ["NIMCP_REAL_SENSORY"] = "0"
 

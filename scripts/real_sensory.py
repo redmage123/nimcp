@@ -125,9 +125,12 @@ class RealSensoryBank:
         self._images: Optional[dict[str, list[bytes]]] = None
         self._heldout: Optional[dict[str, list[bytes]]] = None
         self._speech: Optional[dict[str, list[np.ndarray]]] = None
+        self._sequences: Optional[list[dict]] = None
+        self._queued_frames: list[bytes] = []   # frames to submit on the next presentations
         self.hits = 0
         self.misses = 0
         self.speech_hits = 0
+        self.sequence_hits = 0
         self.last_label: Optional[str] = None
         self.last_hit = False
 
@@ -157,8 +160,39 @@ class RealSensoryBank:
             self._speech = self._load_pkl("speech_cmds_by_label.pkl") or {}
         return self._speech
 
+    @property
+    def sequences(self) -> list[dict]:
+        """Real-motion frame sequences (scripts/build_video_cache.py)."""
+        if self._sequences is None:
+            self._sequences = self._load_pkl("video_sequences.pkl") or []
+        return self._sequences
+
     def available(self) -> bool:
-        return bool(self.images)
+        return bool(self.images) or bool(self.sequences)
+
+    # ---- motion sequences -------------------------------------------------
+    def get_sequence(self) -> Optional[dict]:
+        """A random sequence dict ({"frames": [bytes...], "description", ...})
+        or None when no video cache is present."""
+        seqs = self.sequences
+        if not seqs:
+            return None
+        self.sequence_hits += 1
+        return self.rng.choice(seqs)
+
+    def queue_frames(self, frames: list[bytes]):
+        """Frames to be submitted, in order, by the next presentations
+        (pop_frame). Used to play a sequence across consecutive steps."""
+        self._queued_frames = list(frames)
+
+    def pop_frame(self):
+        """Next queued frame as (bytes, 32, 32, 3, 'video') or None."""
+        if not self._queued_frames:
+            return None
+        raw = self._queued_frames.pop(0)
+        self.last_hit = True
+        self.last_label = "video"
+        return raw, 32, 32, 3, "video"
 
     # ---- matching ----------------------------------------------------------
     def match_label(self, description: str) -> Optional[str]:
@@ -266,4 +300,5 @@ class RealSensoryBank:
         tot = self.hits + self.misses
         rate = (self.hits / tot * 100.0) if tot else 0.0
         return (f"real-images: {self.hits}/{tot} matched ({rate:.0f}%), "
-                f"{len(self.images)} labels; real-speech clips: {self.speech_hits}")
+                f"{len(self.images)} labels; real-speech clips: {self.speech_hits}; "
+                f"motion sequences: {self.sequence_hits} ({len(self.sequences)} available)")
