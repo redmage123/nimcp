@@ -9,8 +9,8 @@
 
 | Stage | Human analogue | Unit of a step | Minimum | Transition probes (floors) |
 |---|---|---|---|---|
-| 4 Why? | 3–5 yr | one 2–6 turn episode | 50,000 | false-belief ≥0.6, causal connectives ≥0.6, counting ≥0.6 |
-| 5 Literacy | 5–7 yr | one episode | 50,000 | spelling ≥0.6, passage comprehension ≥0.3, sentence writing ≥0.6 |
+| 4 Why? | 3–5 yr | one 2–6 turn episode | 100,000 | false-belief ≥0.6, causal connectives ≥0.6, counting ≥0.6 |
+| 5 Literacy | 5–7 yr | one episode | 100,000 | spelling ≥0.6, passage comprehension ≥0.3, sentence writing ≥0.6 |
 | 6 School | 7–12 yr | one episode | 100,000 | arithmetic ≥0.6, logic ≥0.6 |
 | 7 Apprenticeship | 12+ | one episode | none (open-ended) | no transition out |
 
@@ -98,7 +98,7 @@ gives a durable, replayable path that also trains.
 
 ## Command-line
 
-`--stage4-episodes 50000 --stage5-episodes 50000 --stage6-episodes 100000 --stage7-episodes 0`
+`--stage4-episodes 100000 --stage5-episodes 100000 --stage6-episodes 100000 --stage7-episodes 0` (user directive 2026-10-30: every stage minimum is 100,000; stages 1–3 likewise)
 (0 = unbounded), `--stageN-max-episodes` optional safety ceilings (default none),
 `--no-stage-gate` (count-only; not recommended). Resume works through the usual state file
 (`stage`, `step`); stage transitions save `athena_s{N+1}_step0.bin` with `wait=True`.

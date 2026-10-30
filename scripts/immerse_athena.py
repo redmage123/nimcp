@@ -10952,14 +10952,14 @@ def main():
                         help="Transition on stimulus counts alone (NOT recommended — "
                              "the 2026-10-27 stage 0→1 transition happened this way "
                              "with loss plateaued at 1.17)")
-    parser.add_argument("--stage1-stimuli", type=int, default=40000)
-    parser.add_argument("--stage2-stimuli", type=int, default=40000)
-    parser.add_argument("--stage3-interactions", type=int, default=30000)
+    parser.add_argument("--stage1-stimuli", type=int, default=100000)
+    parser.add_argument("--stage2-stimuli", type=int, default=100000)
+    parser.add_argument("--stage3-interactions", type=int, default=100000)
     # Stages 4-7 (docs/claude/curriculum-stages-4-7.md): one step = one
     # multi-turn episode; counts are minimums, the StageGate health criteria +
     # stage probes decide the transition. Stage 7 is open-ended (0 = unbounded).
-    parser.add_argument("--stage4-episodes", type=int, default=50000)
-    parser.add_argument("--stage5-episodes", type=int, default=50000)
+    parser.add_argument("--stage4-episodes", type=int, default=100000)
+    parser.add_argument("--stage5-episodes", type=int, default=100000)
     parser.add_argument("--stage6-episodes", type=int, default=100000)
     parser.add_argument("--stage7-episodes", type=int, default=0)
     for _s in (4, 5, 6, 7):
