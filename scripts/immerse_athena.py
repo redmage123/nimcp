@@ -6114,7 +6114,12 @@ TRAINING_MILESTONES = {
 # Sensory Enrichment (one-time multimodal warm-up for existing brains)
 # ============================================================================
 
-ENRICHMENT_FLAG = os.path.join(CHECKPOINT_DIR, ".sensory_enrichment_done")
+# One-time phase flags live on persistent disk next to the state file, NOT
+# in CHECKPOINT_DIR (/dev/shm tmpfs, wiped by every pod restart): on
+# 2026-10-31 a restart re-ran the ~5 h retroactive cognitive seed because
+# its flag had been on the tmpfs.
+PHASE_FLAG_DIR = os.path.dirname(STATE_FILE) or "."
+ENRICHMENT_FLAG = os.path.join(PHASE_FLAG_DIR, ".sensory_enrichment_done")
 
 
 def run_sensory_enrichment(brain, composer, parent, decoder,
@@ -7144,7 +7149,7 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
     # run all 185 cognitive items through learn_vector() so the 8 modules
     # (ToM, RCOG, Ethics, Imagination, Introspection, Dragonfly, Portia,
     # Collective) catch up with the rest of the network.
-    _cog_seed_flag = os.path.join(CHECKPOINT_DIR, ".cognitive_seeded")
+    _cog_seed_flag = os.path.join(PHASE_FLAG_DIR, ".cognitive_seeded")
     if start_from > 0 and not os.path.exists(_cog_seed_flag):
         base_lr = BASE_LEARNING_RATE
         try:
@@ -11593,7 +11598,7 @@ def main():
     # When resuming from checkpoint, the edge subsystems (sensor hub, watchdog,
     # drone bridges) weren't in the old checkpoint. Initialize them now.
     # These are idempotent — if they already exist they'll fail gracefully.
-    _edge_seed_flag = os.path.join(CHECKPOINT_DIR, ".edge_subsystems_seeded")
+    _edge_seed_flag = os.path.join(PHASE_FLAG_DIR, ".edge_subsystems_seeded")
     if checkpoint_path and os.path.exists(checkpoint_path) and not os.path.exists(_edge_seed_flag):
         print("  [Edge Init] Initializing new edge subsystems on resumed brain...")
         edge_inits = [
@@ -11792,7 +11797,7 @@ def main():
 
     # --- Retroactive memory seeding (resume with past training steps) ---
     # Only run once — skip if already seeded (flag file persists across restarts)
-    _memory_seed_flag = os.path.join(CHECKPOINT_DIR, ".memory_seeded")
+    _memory_seed_flag = os.path.join(PHASE_FLAG_DIR, ".memory_seeded")
     if args.resume and start_step > 0 and not os.path.exists(_memory_seed_flag):
         retroactive_memory_seed(brain, composer, start_step)
         retroactive_tom_seed(brain, composer, start_step)
