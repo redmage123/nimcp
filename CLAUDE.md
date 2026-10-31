@@ -147,6 +147,7 @@
 | Fourier Neural Operators | [modules/fno.md](docs/claude/modules/fno.md) |
 | Swarm Runtime | [modules/swarm-runtime.md](docs/claude/modules/swarm-runtime.md) |
 | Edge Platform | [modules/edge-platform.md](docs/claude/modules/edge-platform.md) |
+| Developmental Curriculum Stages 4–7 | [curriculum-stages-4-7.md](docs/claude/curriculum-stages-4-7.md) |
 
 ---
 

@@ -3191,6 +3191,11 @@ class TargetDiversifier:
 
         # Running mean of recent targets for mean subtraction
         self._mean_buffer = []
+        # diversify() is called concurrently by the StimulusPrefetcher worker
+        # threads and the main loop (motion sequences, interludes); np.mean
+        # over a list another thread is appending to raised "Content of
+        # sequences changed" and killed the trainer on 2026-10-31.
+        self._lock = threading.Lock()
         self._mean_buffer_size = mean_buffer_size
         self._running_mean = np.zeros(embedding_dim, dtype=np.float32)
 
@@ -3236,14 +3241,15 @@ class TargetDiversifier:
         emb = emb + cat_signal
 
         # 3. Mean subtraction — push away from the running centroid
-        if len(self._mean_buffer) > 10:
-            emb = emb - self.mean_sub_strength * self._running_mean
+        with self._lock:
+            if len(self._mean_buffer) > 10:
+                emb = emb - self.mean_sub_strength * self._running_mean
 
-        # Update running mean
-        self._mean_buffer.append(emb.copy())
-        if len(self._mean_buffer) > self._mean_buffer_size:
-            self._mean_buffer.pop(0)
-        self._running_mean = np.mean(self._mean_buffer, axis=0)
+            # Update running mean
+            self._mean_buffer.append(emb.copy())
+            if len(self._mean_buffer) > self._mean_buffer_size:
+                self._mean_buffer.pop(0)
+            self._running_mean = np.mean(self._mean_buffer, axis=0)
 
         # Re-normalize to preserve scale
         orig_norm = np.linalg.norm(embedding)
