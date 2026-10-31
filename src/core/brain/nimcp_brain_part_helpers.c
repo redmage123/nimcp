@@ -263,9 +263,23 @@ static adaptive_spike_params_t build_spike_params(float sparsity_target)
     return params;
 }
 
+/* True when a percept is staged for the next forward pass. The decision
+ * cache is keyed on the feature vector only, so with a percept staged the
+ * same text features can (and should) produce a different decision. */
+static bool has_staged_sensory(brain_t brain)
+{
+    return brain->staged_sensory.visual_frame || brain->staged_sensory.audio_data ||
+           brain->staged_sensory.speech_data || brain->staged_sensory.somato_data;
+}
+
 static bool is_cached_input(brain_t brain, const float* features, uint32_t num_features)
 {
     if (!brain->last_input || !brain->cached_decision) {
+        return false;
+    }
+    /* 2026-10-30: eight different photographs under one prompt returned the
+     * cached decision of the first — vision never reached the network. */
+    if (has_staged_sensory(brain)) {
         return false;
     }
     if (brain->input_size != num_features) {
@@ -294,6 +308,12 @@ static void cache_decision(brain_t brain, const float* features, uint32_t num_fe
 {
     // CRITICAL: This function must only be called while cache_mutex is locked!
     // Caller is responsible for mutex protection.
+
+    // A decision made with a staged percept depends on more than the
+    // features; caching it would serve it back for a later text-only call.
+    if (has_staged_sensory(brain)) {
+        return;
+    }
 
     // Resize input buffer if needed (defensive: handle size changes)
     if (!brain->last_input || brain->input_size != num_features) {
