@@ -1942,8 +1942,12 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             memcpy(blended_features, features, num_features * sizeof(float));
             uint32_t inject_n = (brain->cortex_cnn_fused_dim < num_features)
                               ? brain->cortex_cnn_fused_dim : num_features;
+            /* Scale-matched blend — same rule as perform_forward_pass. */
+            extern float cortex_cnn_fusion_scale(const float*, uint32_t, const float*, uint32_t);
+            float fscale = cortex_cnn_fusion_scale(features, num_features,
+                                                   brain->cortex_cnn_fused_embedding, inject_n);
             for (uint32_t i = 0; i < inject_n; i++) {
-                blended_features[i] += 0.3f * brain->cortex_cnn_fused_embedding[i];
+                blended_features[i] += fscale * brain->cortex_cnn_fused_embedding[i];
             }
             owns_blended = true;
         } else {

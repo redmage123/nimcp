@@ -1368,8 +1368,14 @@ sequential_fallback:
         memcpy(s_blended, features, num_features * sizeof(float));
         uint32_t inject_n = (brain->cortex_cnn_fused_dim < num_features)
                           ? brain->cortex_cnn_fused_dim : num_features;
+        /* Scale-matched blend (see cortex_cnn_fusion_scale): the input is
+         * spike-encoded downstream, so a fixed small coefficient never
+         * reached a spike threshold and vision was invisible to the ANN. */
+        extern float cortex_cnn_fusion_scale(const float*, uint32_t, const float*, uint32_t);
+        float fscale = cortex_cnn_fusion_scale(features, num_features,
+                                               brain->cortex_cnn_fused_embedding, inject_n);
         for (uint32_t i = 0; i < inject_n; i++) {
-            s_blended[i] += 0.3f * brain->cortex_cnn_fused_embedding[i];
+            s_blended[i] += fscale * brain->cortex_cnn_fused_embedding[i];
         }
         fwd_features = s_blended;
     }

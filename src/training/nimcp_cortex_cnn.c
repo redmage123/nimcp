@@ -379,15 +379,48 @@ static void extract_embedding(cortex_cnn_processor_t* proc) {
 
     /* Compute confidence = max of softmax-like values.
      * Use exp(x)/sum(exp(x)) but for efficiency just find max output. */
-    float max_val = -1e30f;
-    float sum_exp = 0.0f;
-    for (uint32_t i = 0; i < copy_dim; i++) {
-        if (out[i] > max_val) max_val = out[i];
+    /* Confidence on the same scale as the FNO path (forward_audio):
+     * sigmoid(||embedding||). The previous 1/sum_exp over the output
+     * (a softmax max-probability) sat at ~1/256 for an untrained head and
+     * made the cross-modal attention weight vision at ~0.05. */
+    float norm = 0.0f;
+    for (uint32_t i = 0; i < copy_dim; i++) norm += out[i] * out[i];
+    proc->confidence = (norm > 0.0f) ? 1.0f / (1.0f + expf(-sqrtf(norm))) : 0.0f;
+}
+
+/* ---------------------------------------------------------------------------
+ * Fusion scale: the adaptive network spike-encodes its input against a fixed
+ * threshold (~0.1), so the fused cortex embedding must be blended at the
+ * text features' magnitude or it never flips a spike — measured 2026-10-30:
+ * responses to 8 different photographs were identical to 5 decimals with the
+ * old fixed 0.3 blend. scale = alpha * rms(features) / rms(fused).
+ * ------------------------------------------------------------------------- */
+static float g_cortex_fusion_alpha = 0.5f;
+
+void cortex_cnn_tune_set_fusion_alpha(float v) {
+    if (v >= 0.0f && v <= 4.0f) g_cortex_fusion_alpha = v;
+}
+float cortex_cnn_tune_get_fusion_alpha(void) { return g_cortex_fusion_alpha; }
+
+float cortex_cnn_fusion_scale(const float* features, uint32_t n_features,
+                              const float* fused, uint32_t n_fused) {
+    if (!features || !fused || n_features == 0 || n_fused == 0 || g_cortex_fusion_alpha <= 0.0f)
+        return 0.0f;
+    double sf = 0.0, su = 0.0;
+    for (uint32_t i = 0; i < n_features; i++) sf += (double)features[i] * features[i];
+    for (uint32_t i = 0; i < n_fused; i++)    su += (double)fused[i] * fused[i];
+    float rms_f = (float)sqrt(sf / n_features);
+    float rms_u = (float)sqrt(su / n_fused);
+    if (rms_u < 1e-6f || rms_f < 1e-6f) return 0.0f;
+    float scale = g_cortex_fusion_alpha * rms_f / rms_u;
+    if (scale > 1000.0f) scale = 1000.0f;
+    static int logged = 0;
+    if (!logged) {
+        logged = 1;
+        NIMCP_LOGGING_INFO("[CORTEX-FUSION] first blend: feat_rms=%.4f fused_rms=%.4f alpha=%.2f scale=%.3f",
+                           rms_f, rms_u, g_cortex_fusion_alpha, scale);
     }
-    for (uint32_t i = 0; i < copy_dim; i++) {
-        sum_exp += expf(out[i] - max_val);
-    }
-    proc->confidence = (sum_exp > 0.0f) ? (1.0f / sum_exp) : 0.0f;
+    return scale;
 }
 
 /**
@@ -1594,6 +1627,16 @@ uint32_t cortex_cnn_fuse(cortex_cnn_processor_t* procs[], uint32_t count,
     if (sum_exp > 0.0f) {
         for (uint32_t i = 0; i < active_count; i++) {
             attention[i] /= sum_exp;
+        }
+    }
+    /* Floor every active modality at half its uniform share (weights still
+     * sum to 1) so a low-confidence modality is attenuated, never starved.
+     * 2026-10-30: visual confidence ~0.006 against FNO confidences near 1
+     * gave vision a weight of ~0.05. */
+    {
+        float floor_w = 0.5f / (float)active_count;
+        for (uint32_t i = 0; i < active_count; i++) {
+            attention[i] = floor_w + 0.5f * attention[i];
         }
     }
 

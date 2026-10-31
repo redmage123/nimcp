@@ -284,6 +284,14 @@ void cortex_cnn_tune_set_thalamic_featuremap_gain_on(float v);
 void cortex_cnn_tune_set_thalamic_burst_dropout_reduce_on(float v);
 
 /* Getters — diagnostic. */
+/* Cross-modal fusion scale (2026-10-30): the adaptive network spike-encodes
+ * its input, so the fused cortex embedding is blended at
+ * alpha * rms(features)/rms(fused) instead of a fixed 0.3 coefficient.
+ * alpha in [0, 4]; 0 disables perceptual grounding of the ANN input. */
+void  cortex_cnn_tune_set_fusion_alpha(float v);
+float cortex_cnn_tune_get_fusion_alpha(void);
+float cortex_cnn_fusion_scale(const float* features, uint32_t n_features,
+                              const float* fused, uint32_t n_fused);
 float cortex_cnn_tune_get_thalamic_enabled(void);
 float cortex_cnn_tune_get_thalamic_featuremap_gain_on(void);
 float cortex_cnn_tune_get_thalamic_burst_dropout_reduce_on(void);
