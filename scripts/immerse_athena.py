@@ -483,6 +483,12 @@ VIDEO_INTERLUDE_EVERY = 40    # stages 1-3: play one real shot (8 brain steps) e
 
 
 VISUAL_DIFFERENTIATION_MAX = 0.95   # stage-0 gate: mean pairwise cosine of responses to 8 held-out photos
+# The responses also carry run-to-run noise (same photo twice: cosine 0.645
+# vs 0.649 across different photos on 2026-10-31), so the gate requires the
+# signal to beat the noise: between-photo cosine (of per-photo mean
+# responses) must sit at least this far below the same-photo cosine.
+VISUAL_SIGNAL_MARGIN = 0.05
+VISUAL_PROBE_REPEATS = 3
 
 
 def _visual_differentiation_probe(brain, composer):
@@ -508,20 +514,8 @@ def _visual_differentiation_probe(brain, composer):
             out = (brain.decide_full(neutral) or {}).get("output_vector")
             return None if out is None else np.array(out, dtype=np.float32)
 
-        first = None
-        for lab in labels:
-            hf = rs.get_heldout_frame(lab, index=0)
-            if not hf:
-                continue
-            raw = _decide_with(hf[0])
-            if raw is None:
-                continue
-            if first is None:
-                first = hf[0]
-            raws.append(raw)
-            embs.append(extract_embedding_from_output(raw))
-        if len(raws) < 3:
-            return None, len(raws)
+        def _cos(a, b):
+            return float(a @ b / max(1e-8, np.linalg.norm(a) * np.linalg.norm(b)))
 
         def _mean_pairwise(vs):
             m = np.array(vs, dtype=np.float32)
@@ -530,25 +524,38 @@ def _visual_differentiation_probe(brain, composer):
             iu = np.triu_indices(len(vs), k=1)
             return float(np.mean(sim[iu]))
 
-        raw_cos = _mean_pairwise(raws)
+        # Each photo is shown VISUAL_PROBE_REPEATS times. Within-photo cosine
+        # measures the network's run-to-run noise; between-photo cosine of the
+        # per-photo MEAN responses measures what the image itself changes.
+        within = []
+        for lab in labels:
+            hf = rs.get_heldout_frame(lab, index=0)
+            if not hf:
+                continue
+            reps = [r for r in (_decide_with(hf[0]) for _ in range(VISUAL_PROBE_REPEATS)) if r is not None]
+            if len(reps) < 2:
+                continue
+            within.append(_mean_pairwise(reps))
+            raws.append(np.mean(reps, axis=0))
+            embs.append(extract_embedding_from_output(raws[-1]))
+        if len(raws) < 3:
+            return None, len(raws)
+
+        between = _mean_pairwise(raws)
+        within_mean = float(np.mean(within))
         emb_cos = _mean_pairwise(embs)
-        # Control: the same photo twice. If this is also < 1 the output has
-        # stochastic variation; if different photos score the same as the
-        # repeat, the visual input is not reaching the output.
-        rep_cos = None
-        if first is not None:
-            a = _decide_with(first); b = _decide_with(first)
-            if a is not None and b is not None:
-                rep_cos = float(a @ b / max(1e-8, np.linalg.norm(a) * np.linalg.norm(b)))
-        print(f"    [VisualDiff] n={len(raws)} raw_output_cos={raw_cos:.5f} "
-              f"embedding_cos={emb_cos:.5f} same_photo_twice_cos="
-              f"{'n/a' if rep_cos is None else f'{rep_cos:.5f}'}", flush=True)
+        signal = within_mean - between          # >0: images move the output beyond noise
+        print(f"    [VisualDiff] n={len(raws)} between_photo_cos={between:.5f} "
+              f"same_photo_cos={within_mean:.5f} signal={signal:+.5f} "
+              f"(need ≥{VISUAL_SIGNAL_MARGIN}) embedding_cos={emb_cos:.5f}", flush=True)
         try:
             _cm = brain.get_cortex_cnn_metrics()
             print(f"    [VisualDiff] cortex metrics: {str(_cm)[:300]}", flush=True)
         except Exception as _me:
             print(f"    [VisualDiff] cortex metrics unavailable: {_me}", flush=True)
-        return emb_cos, len(raws)
+        # Gate value: report the between-photo cosine only when the signal
+        # clears the margin; otherwise report 1.0 (indistinguishable from noise).
+        return (between if signal >= VISUAL_SIGNAL_MARGIN else 1.0), len(raws)
     except Exception as _e:
         print(f"    [VisualDiff] probe failed: {_e}", flush=True)
         return None, 0

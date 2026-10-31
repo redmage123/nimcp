@@ -68,6 +68,8 @@ class StageGate:
     snn_rate_min_hz: float = 0.5          # population mean firing rate band
     snn_rate_max_hz: float = 20.0
     snn_max_hyperactive: int = 1000       # neurons >200 Hz (pathological)
+    snn_rate_median_window: int = 5       # gate on the median of the last N rate readings
+    _rate_history: list = field(default_factory=list)
     # Chat eval is a language-production criterion; it gates the language
     # stages only. Stage 0 (pre-linguistic sensory exposure) sets this False
     # and gates on perceptual health instead (immerse_athena's visual
@@ -165,7 +167,14 @@ class StageGate:
             return GateResult(False, f"snn_stats_failed:{e}", details)
         if not ss:
             return GateResult(False, "snn_stats_empty", details)
-        rate_hz = float(ss.get("mean_firing_rate", ss.get("firing_rate", 0.0)) or 0.0)
+        raw_rate = float(ss.get("mean_firing_rate", ss.get("firing_rate", 0.0)) or 0.0)
+        # The per-window rate swings by orders of magnitude between checks
+        # (0.4 to 157 Hz on 2026-10-31 with nothing else changing); gate on
+        # the median of the last few readings so one window can't decide it.
+        self._rate_history.append(raw_rate)
+        self._rate_history = self._rate_history[-self.snn_rate_median_window:]
+        rate_hz = float(sorted(self._rate_history)[len(self._rate_history) // 2])
+        details["snn_rate_hz_raw"] = raw_rate
         details["snn_mean_rate_hz"] = rate_hz
         details["snn_window_silent_fraction"] = float(ss.get("sparsity", 0.0) or 0.0)
         if not (self.snn_rate_min_hz <= rate_hz <= self.snn_rate_max_hz):
