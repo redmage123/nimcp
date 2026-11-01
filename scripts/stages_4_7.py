@@ -452,14 +452,14 @@ def ep_video_next(B: _Brain, trainer, stage: int, lr: float, ia) -> Optional[Epi
     k = max(2, len(frames) // 2)
     desc = seq["description"]
     for fr in frames[:k]:
-        rs.queue_frames([fr])
+        rs.queue_frames([fr], label=rs.sequence_label(seq))
         feats = B.present(desc)
         B.learn(trainer, desc, label="s4_video", confidence=0.5, lr=lr, features=feats)
     q = "What happens next?"
     qfeats = B.composer.compose(text=q, modality="text")
     pred = (_safe(B.b.decide_full, qfeats, default={}) or {}).get("output_vector")
     resp, _ = B.respond(q)
-    rs.queue_frames([frames[k]])
+    rs.queue_frames([frames[k]], label=rs.sequence_label(seq))
     B.present(desc)
     actual = (_safe(B.b.decide_full, qfeats, default={}) or {}).get("output_vector")
     score = 0.0
@@ -479,7 +479,7 @@ def _play_sequence(B: _Brain, rs, seq: dict, trainer, label: str, lr: float, fra
     the scene description). Returns the description."""
     desc = seq["description"]
     for fr in (frames if frames is not None else seq["frames"]):
-        rs.queue_frames([fr])
+        rs.queue_frames([fr], label=rs.sequence_label(seq))
         feats = B.present(desc)
         B.learn(trainer, desc, label=label, confidence=0.5, lr=lr, features=feats)
     return desc

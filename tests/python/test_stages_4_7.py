@@ -263,7 +263,9 @@ with tempfile.TemporaryDirectory() as d:
         def get_film(self, n=4): return [dict(self.get_sequence(), start_s=float(k)) for k in range(n)]
         @staticmethod
         def sequence_text(seq): return seq.get("summary") or seq["description"]
-        def queue_frames(self, fr): self.q = list(fr)
+        @staticmethod
+        def sequence_label(seq): return "a scene from the film " + seq.get("title", "f")
+        def queue_frames(self, fr, label=None): self.q = list(fr)
         def pop_frame(self): return (self.q.pop(0), 32, 32, 3, "video") if self.q else None
     ia_nov = types.SimpleNamespace(**vars(ia))
     ia_nov._get_real_sensory = lambda: None

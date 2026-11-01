@@ -83,10 +83,10 @@ with tempfile.TemporaryDirectory() as d:
     # motion sequences: queue plays frames in order through pop_frame
     seq = bank.get_sequence()
     expect(seq is not None and len(seq["frames"]) == 8 and "moving scene" in seq["description"], "sequence")
-    bank.queue_frames(seq["frames"])
+    bank.queue_frames(seq["frames"], label=bank.sequence_label(seq))
     popped = [bank.pop_frame() for _ in range(9)]
     expect(all(p is not None for p in popped[:8]) and popped[8] is None, "queue drains in order then None")
-    expect(popped[0][0] == seq["frames"][0] and popped[7][0] == seq["frames"][7] and popped[0][4] == "video",
+    expect(popped[0][0] == seq["frames"][0] and popped[7][0] == seq["frames"][7] and popped[0][4] == "a scene from the film Film One",
            "frames come out in order with the video label")
     expect("motion sequences: 1 (3 available)" in bank.stats_str(), f"stats mention sequences: {bank.stats_str()}")
     print(bank.stats_str())

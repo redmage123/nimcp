@@ -476,6 +476,46 @@ _SOMATO_KW = frozenset(["touch", "feel", "rough", "smooth", "soft", "hard",
                          "ice", "water", "mud", "fabric", "cotton", "wicker"])
 
 
+_VISUAL_TARGET_DIM = 256      # visual cortex output width
+_VISUAL_TARGET_NORM = 3.0     # matches the cortex embedding norm (~3.1 observed)
+_VISUAL_PROJ = None
+
+
+@lru_cache(maxsize=4096)
+def _visual_target_for(text):
+    """Dense training target for the visual cortex: the 1024-d text
+    embedding of WHAT IS IN THE PICTURE (object class, film, or the scene
+    description for synthetic frames), projected to the cortex output width
+    with a fixed seeded Gaussian matrix and scaled to the embedding norm.
+    Vision then learns to land where the word lands (grounding), instead of
+    a one-hot over caption strings (2026-11-01)."""
+    global _VISUAL_PROJ
+    if _VISUAL_PROJ is None:
+        rng = np.random.RandomState(20261101)
+        _VISUAL_PROJ = rng.normal(0.0, 1.0, size=(_VISUAL_TARGET_DIM, 1024)).astype(np.float32)
+        _VISUAL_PROJ /= np.linalg.norm(_VISUAL_PROJ, axis=1, keepdims=True)
+    emb = np.asarray(encode_text(text), dtype=np.float32).reshape(-1)
+    if emb.shape[0] != 1024:
+        emb = np.resize(emb, 1024)
+    v = _VISUAL_PROJ @ emb
+    n = float(np.linalg.norm(v))
+    if n < 1e-8:
+        return None
+    return tuple((v * (_VISUAL_TARGET_NORM / n)).astype(np.float32).tolist())
+
+
+def _set_visual_target(brain, what):
+    """Hand the cortex the semantic target for the percept just staged."""
+    if not what or not hasattr(brain, "set_visual_target"):
+        return
+    try:
+        t = _visual_target_for(str(what).replace("_", " "))
+        if t is not None:
+            brain.set_visual_target(list(t), 0)
+    except Exception:
+        pass
+
+
 _REAL_SENSORY = None          # RealSensoryBank or False once probed
 STAGE0_VIEWS_PER_OBJECT = 2   # successive augmented views of a real image
 STAGE0_VIDEO_RATE = 0.15      # fraction of stage-0 items that are motion sequences (when cached)
@@ -583,7 +623,7 @@ def _video_interlude(brain, composer, parent, stage):
         target = make_semantic_target(desc)
         shown = 0
         for fr in seq["frames"]:
-            rs.queue_frames([fr])
+            rs.queue_frames([fr], label=rs.sequence_label(seq))
             submit_multimodal(brain, desc)
             try:
                 brain.learn_vector(features, target, label=f"video_s{stage}"[:50], confidence=0.6)
@@ -719,6 +759,10 @@ def submit_multimodal(brain, description, target_word=None):
         _pixels = list(_vf[0])  # _vf is (bytes, w, h, ch) tuple
         brain.submit_sensory("visual", _pixels, width=_vf[1], height=_vf[2], channels=_vf[3])
         _sensory_submitted.append(_vtag)
+        # Visual cortex target: what is in THIS picture — the object class
+        # for a real photo, the film for a video frame, the description for
+        # a synthetic frame.
+        _set_visual_target(brain, _rf[4] if _rf else description)
     except Exception as _ve:
         import traceback
         print(f"  [VISUAL-ERR] submit_sensory visual failed: {_ve}", flush=True)
@@ -7293,7 +7337,7 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
                 description = _seq["description"]
                 features = composer.compose(text=description, modality="text")
                 target = make_semantic_target(description)
-                _rs0.queue_frames(_seq["frames"])
+                _rs0.queue_frames(_seq["frames"], label=_rs0.sequence_label(_seq))
                 _repeat_left = len(_seq["frames"]) - 1
             else:
                 if batch_idx >= len(batch):

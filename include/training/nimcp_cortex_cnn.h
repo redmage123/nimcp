@@ -288,6 +288,17 @@ void cortex_cnn_tune_set_thalamic_burst_dropout_reduce_on(float v);
  * its input, so the fused cortex embedding is blended at
  * alpha * rms(features)/rms(fused) instead of a fixed 0.3 coefficient.
  * alpha in [0, 4]; 0 disables perceptual grounding of the ANN input. */
+/* Dense semantic targets for cortex backward (2026-11-01). The trainer sets
+ * a per-modality target (modality index = CORTEX_CNN_VISUAL/AUDIO/...) for
+ * the percept just staged; the next cortex_cnn_backward for that modality
+ * regresses onto it (consumes it) instead of using a one-hot over labels.
+ * target NULL or dim 0 clears. Returns 0 on success, -1 on bad modality. */
+int      cortex_cnn_set_pending_target(uint32_t modality, const float* target, uint32_t dim);
+/* Copy (zero-padded/truncated to dim) and consume the pending target.
+ * Returns true if one was pending. */
+bool     cortex_cnn_take_pending_target(uint32_t modality, float* out, uint32_t dim);
+uint64_t cortex_cnn_get_dense_target_steps(const cortex_cnn_processor_t* proc);
+
 void  cortex_cnn_tune_set_fusion_alpha(float v);
 float cortex_cnn_tune_get_fusion_alpha(void);
 float cortex_cnn_fusion_scale(const float* features, uint32_t n_features,

@@ -200,19 +200,28 @@ class RealSensoryBank:
         s = (seq.get("summary") or "").strip()
         return s if len(s) > 20 else seq.get("description", "a moving scene")
 
-    def queue_frames(self, frames: list[bytes]):
+    def queue_frames(self, frames: list[bytes], label: Optional[str] = None):
         """Frames to be submitted, in order, by the next presentations
-        (pop_frame). Used to play a sequence across consecutive steps."""
+        (pop_frame). Used to play a sequence across consecutive steps.
+        `label` names what the frames show (e.g. the film's title); it
+        becomes the visual cortex's training target for those frames."""
         self._queued_frames = list(frames)
+        self._queued_label = label or "a moving scene"
 
     def pop_frame(self):
-        """Next queued frame as (bytes, 32, 32, 3, 'video') or None."""
+        """Next queued frame as (bytes, 32, 32, 3, label) or None."""
         if not self._queued_frames:
             return None
         raw = self._queued_frames.pop(0)
         self.last_hit = True
-        self.last_label = "video"
-        return raw, 32, 32, 3, "video"
+        self.last_label = getattr(self, "_queued_label", "a moving scene")
+        return raw, 32, 32, 3, self.last_label
+
+    @staticmethod
+    def sequence_label(seq: dict) -> str:
+        """What a sequence shows, as a short phrase for the visual target."""
+        t = (seq.get("title") or "").strip()
+        return f"a scene from the film {t}" if t else "a moving scene"
 
     # ---- matching ----------------------------------------------------------
     def match_label(self, description: str) -> Optional[str]:

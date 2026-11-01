@@ -11065,6 +11065,36 @@ static PyObject* Brain_utm_set_early_stopping_enabled(BrainObject* self, PyObjec
     Py_RETURN_NONE;
 }
 
+/* set_visual_target(target, modality=0): dense semantic target for the next
+ * cortex CNN backward of that modality (0 visual, 1 audio, 2 speech,
+ * 3 somato). Pass None or [] to clear. Consumed by the backward. */
+static PyObject* Brain_set_visual_target(BrainObject* self, PyObject* args, PyObject* kwargs) {
+    (void)self;
+    static char* kwlist[] = {"target", "modality", NULL};
+    PyObject* obj = NULL;
+    unsigned int modality = 0;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|I", kwlist, &obj, &modality)) return NULL;
+    if (obj == Py_None) {
+        cortex_cnn_set_pending_target(modality, NULL, 0);
+        Py_RETURN_NONE;
+    }
+    PyObject* seq = PySequence_Fast(obj, "target must be a sequence of floats");
+    if (!seq) return NULL;
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+    if (n > 1024) n = 1024;
+    float buf[1024];
+    for (Py_ssize_t i = 0; i < n; i++) {
+        buf[i] = (float)PyFloat_AsDouble(PySequence_Fast_GET_ITEM(seq, i));
+    }
+    Py_DECREF(seq);
+    if (PyErr_Occurred()) return NULL;
+    if (cortex_cnn_set_pending_target(modality, n > 0 ? buf : NULL, (uint32_t)n) != 0) {
+        PyErr_SetString(PyExc_ValueError, "modality must be 0..3");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyObject* Brain_utm_reset_early_stopping(BrainObject* self, PyObject* Py_UNUSED(args)) {
     nimcp_unified_training_manager_t* mgr = UTM_FROM_BRAIN(self);
     if (!mgr) { PyErr_SetString(PyExc_RuntimeError, "UTM not initialized"); return NULL; }
@@ -13696,6 +13726,9 @@ static PyMethodDef Brain_methods[] = {
      "Get DFA-based training health: -> dict{health, health_name, dfa_exponent, gradients_healthy, early_stopped}"},
     {"utm_set_early_stopping_enabled", (PyCFunction)Brain_utm_set_early_stopping_enabled, METH_VARARGS,
      "Enable/disable UTM early stopping at runtime: utm_set_early_stopping_enabled(bool)"},
+    {"set_visual_target", (PyCFunction)Brain_set_visual_target, METH_VARARGS | METH_KEYWORDS,
+     "set_visual_target(target, modality=0): dense semantic target for the next cortex CNN "
+     "backward of that modality (consumed). None clears."},
     {"utm_reset_early_stopping", (PyCFunction)Brain_utm_reset_early_stopping, METH_NOARGS,
      "Clear an already-tripped early-stop flag and reset counter/best_loss"},
     {"utm_forward_only", (PyCFunction)Brain_utm_forward_only, METH_VARARGS,

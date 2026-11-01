@@ -9,6 +9,7 @@
  */
 
 #include "training/nimcp_cortex_cnn.h"
+#include <pthread.h>
 #include "training/nimcp_cnn_training.h"
 #include "training/nimcp_fno_layer.h"
 #include "training/nimcp_unified_training.h"
@@ -140,6 +141,7 @@ struct cortex_cnn_processor {
     char** labels;
     uint32_t num_labels;
     uint32_t max_labels;
+    uint64_t dense_target_steps;   /* backward steps that used a dense semantic target */
 
     /* Metrics */
     float last_loss;
@@ -396,6 +398,54 @@ static void extract_embedding(cortex_cnn_processor_t* proc) {
  * old fixed 0.3 blend. scale = alpha * rms(features) / rms(fused).
  * ------------------------------------------------------------------------- */
 static float g_cortex_fusion_alpha = 0.5f;
+
+/* ---------------------------------------------------------------------------
+ * Pending dense targets (2026-11-01). The trainer sets, per modality, the
+ * semantic target for the percept it just staged — the text embedding of
+ * what is actually in the picture (object class / film / description),
+ * projected to the cortex output width — and the next cortex backward for
+ * that modality regresses onto it instead of a one-hot over label strings
+ * (which made the visual cortex learn caption identity, not image content).
+ * Single brain per process: module-level slots are sufficient.
+ * ------------------------------------------------------------------------- */
+#define CORTEX_PENDING_MAX_DIM 1024
+static float    g_pending_target[CORTEX_CNN_COUNT][CORTEX_PENDING_MAX_DIM];
+static uint32_t g_pending_dim[CORTEX_CNN_COUNT];
+static pthread_mutex_t g_pending_mu = PTHREAD_MUTEX_INITIALIZER;
+
+int cortex_cnn_set_pending_target(uint32_t modality, const float* target, uint32_t dim) {
+    if (modality >= CORTEX_CNN_COUNT) return -1;
+    pthread_mutex_lock(&g_pending_mu);
+    if (!target || dim == 0) {
+        g_pending_dim[modality] = 0;           /* clear */
+    } else {
+        if (dim > CORTEX_PENDING_MAX_DIM) dim = CORTEX_PENDING_MAX_DIM;
+        memcpy(g_pending_target[modality], target, dim * sizeof(float));
+        g_pending_dim[modality] = dim;
+    }
+    pthread_mutex_unlock(&g_pending_mu);
+    return 0;
+}
+
+bool cortex_cnn_take_pending_target(uint32_t modality, float* out, uint32_t dim) {
+    if (modality >= CORTEX_CNN_COUNT || !out || dim == 0) return false;
+    bool ok = false;
+    pthread_mutex_lock(&g_pending_mu);
+    uint32_t have = g_pending_dim[modality];
+    if (have > 0) {
+        uint32_t n = have < dim ? have : dim;
+        memcpy(out, g_pending_target[modality], n * sizeof(float));
+        if (n < dim) memset(out + n, 0, (dim - n) * sizeof(float));
+        g_pending_dim[modality] = 0;           /* consumed */
+        ok = true;
+    }
+    pthread_mutex_unlock(&g_pending_mu);
+    return ok;
+}
+
+uint64_t cortex_cnn_get_dense_target_steps(const cortex_cnn_processor_t* proc) {
+    return proc ? proc->dense_target_steps : 0;
+}
 
 void cortex_cnn_tune_set_fusion_alpha(float v) {
     if (v >= 0.0f && v <= 4.0f) g_cortex_fusion_alpha = v;
@@ -1427,17 +1477,29 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
     CB_START();
     uint32_t label_idx = cortex_get_or_create_label(proc, label);
 
-    /* Build one-hot target */
-    uint32_t target_dim = num_outputs;
+    /* Target over the cortex's OWN output width. Before 2026-11-01 the
+     * target was num_outputs (4096, the brain's output size) wide while the
+     * cortex emits embedding_dim (256) values: any label index >= 256 put
+     * the 1.0 outside the visible outputs, so those steps trained the cortex
+     * toward silence. */
+    (void)num_outputs;
+    uint32_t target_dim = proc->embedding_dim ? proc->embedding_dim : 256;
     uint32_t target_dims[1] = {target_dim};
     nimcp_tensor_t* target = nimcp_tensor_create(target_dims, 1, NIMCP_DTYPE_F32);
     if (!target) return -1.0f;
 
     float* target_data = (float*)nimcp_tensor_data(target);
     memset(target_data, 0, target_dim * sizeof(float));
-    if (label_idx < target_dim) {
+    /* Dense semantic target (set by the trainer from the text embedding of
+     * what is actually in the percept) takes precedence over the label
+     * one-hot; consumed by this backward. */
+    bool used_dense = cortex_cnn_take_pending_target(proc->type, target_data, target_dim);
+    if (!used_dense) {
+        label_idx %= target_dim;
         target_data[label_idx] = 1.0f;
     }
+    float* loss_target = (float*)nimcp_malloc(target_dim * sizeof(float));
+    if (loss_target) memcpy(loss_target, target_data, target_dim * sizeof(float));
     CB_END(0);
 
     /* Backward + step */
@@ -1460,6 +1522,7 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
                                target_dim, label ? label : "(null)",
                                _bwd_fail_count[idx]);
         }
+        nimcp_free(loss_target);
         return -1.0f;
     }
 
@@ -1545,12 +1608,14 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
         size_t numel = nimcp_tensor_numel(proc->last_fwd.output);
         uint32_t n = (target_dim < (uint32_t)numel) ? target_dim : (uint32_t)numel;
         for (uint32_t i = 0; i < n; i++) {
-            float tgt = (i == label_idx) ? 1.0f : 0.0f;
+            float tgt = loss_target ? loss_target[i] : ((i == label_idx) ? 1.0f : 0.0f);
             float diff = out[i] - tgt;
             loss += diff * diff;
         }
         if (n > 0) loss /= (float)n;
     }
+    nimcp_free(loss_target);
+    if (used_dense) proc->dense_target_steps++;
 
     proc->last_loss = loss;
     if (proc->ema_loss < 0.0f) {
