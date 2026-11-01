@@ -66,6 +66,7 @@ set(NIMCP_STANDALONE_LANG_TESTS
     test_fno_fft
     test_cortex_fusion_scale
     test_cortex_dense_target
+    test_snn_window_stats
     test_snn_fno_recording
     test_lang_thalamic_gates
     test_lang_distributional_anticollapse

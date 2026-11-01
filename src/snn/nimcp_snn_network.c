@@ -36,6 +36,7 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <stdint.h>  /* UINT32_MAX (neural_network_add_neuron sentinel) */
 
 /*=============================================================================
@@ -3767,6 +3768,52 @@ int snn_network_step(snn_network_t* network, float dt) {
  * @param total_spikes Total spike count from the run (sum across populations).
  * @param duration_ms  Simulated duration in milliseconds (for Hz conversion).
  */
+/* Per-population snapshot of each neuron's lifetime spike count at the end
+ * of the previous stats window. spike_trains[n].total_spikes and
+ * pop->total_spikes accumulate for the life of the population, so the rate
+ * over THIS run must be (count - previous) / duration. Before 2026-11-01 the
+ * lifetime count was divided by the last run's duration: any neuron with
+ * more than ~20 lifetime spikes read as ">200 Hz hyperactive" (675k flagged
+ * on the pod) and per-population rates grew without bound. Kept in a side
+ * table so snn_population_t's layout (checkpoints, bindings) is unchanged. */
+typedef struct {
+    const void* pop;
+    uint32_t    n;
+    uint64_t*   prev;        /* [n] neuron counts at last window end */
+    uint64_t    prev_pop;    /* pop->total_spikes at last window end */
+} snn_stats_window_t;
+static snn_stats_window_t* g_stats_win = NULL;
+static uint32_t g_stats_win_n = 0, g_stats_win_cap = 0;
+static pthread_mutex_t g_stats_win_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static snn_stats_window_t* snn_stats_window_for(const snn_population_t* pop) {
+    for (uint32_t i = 0; i < g_stats_win_n; i++) {
+        if (g_stats_win[i].pop == pop) {
+            if (g_stats_win[i].n == pop->n_neurons) return &g_stats_win[i];
+            free(g_stats_win[i].prev);              /* resized population */
+            g_stats_win[i].prev = calloc(pop->n_neurons, sizeof(uint64_t));
+            g_stats_win[i].n = g_stats_win[i].prev ? pop->n_neurons : 0;
+            return g_stats_win[i].prev ? &g_stats_win[i] : NULL;
+        }
+    }
+    if (g_stats_win_n == g_stats_win_cap) {
+        uint32_t cap = g_stats_win_cap ? g_stats_win_cap * 2 : 128;
+        snn_stats_window_t* w = realloc(g_stats_win, cap * sizeof(*w));
+        if (!w) return NULL;
+        g_stats_win = w; g_stats_win_cap = cap;
+    }
+    snn_stats_window_t* e = &g_stats_win[g_stats_win_n];
+    e->prev = calloc(pop->n_neurons, sizeof(uint64_t));
+    if (!e->prev) return NULL;
+    e->pop = pop; e->n = pop->n_neurons; e->prev_pop = 0;
+    /* First window: start from the current counts so lifetime history
+     * (e.g. right after a checkpoint load) is not attributed to this run. */
+    for (uint32_t k = 0; k < pop->n_neurons; k++) e->prev[k] = pop->spike_trains[k].total_spikes;
+    e->prev_pop = (uint64_t)pop->total_spikes;
+    g_stats_win_n++;
+    return NULL;   /* no valid window yet for this population */
+}
+
 void snn_network_update_stats(snn_network_t* network, int total_spikes, float duration_ms) {
     if (!network) return;
 
@@ -3774,32 +3821,56 @@ void snn_network_update_stats(snn_network_t* network, int total_spikes, float du
     uint32_t total_neurons = 0;
     uint32_t silent = 0;
     uint32_t hyperactive = 0;
+    uint32_t windowed_neurons = 0;
     float max_rate = 0.0f;
 
+    pthread_mutex_lock(&g_stats_win_mu);
     for (uint32_t p = 0; p < network->n_populations; p++) {
         snn_population_t* pop = network->populations[p];
         if (!pop) continue;
+        total_neurons += pop->n_neurons;
+        if (!pop->spike_trains) continue;
 
-        /* Per-neuron firing rate from spike trains */
+        snn_stats_window_t* w = snn_stats_window_for(pop);
+        if (!w) continue;   /* first sighting: baseline recorded, no rates yet */
+
+        /* Per-neuron firing rate over THIS window */
         for (uint32_t n = 0; n < pop->n_neurons; n++) {
-            float rate = (duration_s > 0.0f) ?
-                (float)pop->spike_trains[n].total_spikes / duration_s : 0.0f;
-            if (rate == 0.0f) silent++;
+            uint64_t cur = pop->spike_trains[n].total_spikes;
+            uint64_t d = cur >= w->prev[n] ? cur - w->prev[n] : cur;   /* reset-safe */
+            w->prev[n] = cur;
+            float rate = (duration_s > 0.0f) ? (float)d / duration_s : 0.0f;
+            if (d == 0) silent++;
             if (rate > 200.0f) hyperactive++;  /* >200 Hz is pathological */
             if (rate > max_rate) max_rate = rate;
         }
+        windowed_neurons += pop->n_neurons;
 
-        /* Population mean rate */
+        /* Population mean rate over this window */
+        uint64_t curp = (uint64_t)pop->total_spikes;
+        uint64_t dp = curp >= w->prev_pop ? curp - w->prev_pop : curp;
+        w->prev_pop = curp;
         pop->mean_rate = (duration_s > 0.0f && pop->n_neurons > 0) ?
-            (float)pop->total_spikes / (float)pop->n_neurons / duration_s : 0.0f;
-        total_neurons += pop->n_neurons;
+            (float)dp / (float)pop->n_neurons / duration_s : 0.0f;
+    }
+    pthread_mutex_unlock(&g_stats_win_mu);
+    if (windowed_neurons == 0) {
+        /* No population had a window yet: keep previous silent/hyperactive. */
+        if (total_neurons > 0) {
+            network->stats.mean_firing_rate = (duration_s > 0.0f) ?
+                (float)total_spikes / (float)total_neurons / duration_s : 0.0f;
+            network->stats.spikes_per_sample = (float)total_spikes / (float)total_neurons;
+        }
+        return;
     }
 
     if (total_neurons > 0) {
         network->stats.mean_firing_rate = (duration_s > 0.0f) ?
             (float)total_spikes / (float)total_neurons / duration_s : 0.0f;
         network->stats.max_firing_rate = max_rate;
-        network->stats.sparsity = (float)silent / (float)total_neurons;
+        /* silent/hyperactive fractions are over the populations that had a
+         * full window this call */
+        network->stats.sparsity = (float)silent / (float)windowed_neurons;
         network->stats.silent_neurons = silent;
         network->stats.hyperactive_neurons = hyperactive;
         network->stats.spikes_per_sample = (float)total_spikes / (float)total_neurons;
