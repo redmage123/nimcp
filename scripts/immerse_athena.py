@@ -39,6 +39,7 @@ import struct
 import sys
 import threading
 import time
+import types
 import random
 
 # CB rescale checkpoint marker — write the sidecar after every save while
@@ -10223,13 +10224,11 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                             # --partial-dir, never bare --partial: an interrupted
                             # transfer must not rename a fragment over a complete
                             # file on Hetzner (see _ship_to_hetzner).
-                            _r = _sp.run(["rsync", "-a", "--partial-dir=.rsync-partial",
-                                          "--timeout=1800", "--remove-source-files",
-                                          "-e", "ssh -i /root/.ssh/id_ed25519_hetzner -o StrictHostKeyChecking=no",
-                                          ] + files + [
-                                          "bbrelin@176.9.99.103:/home/bbrelin/nimcp/checkpoints/athena/"],
-                                         timeout=_ship_budget_s(sum(os.path.getsize(f) for f in files)),
-                                         check=False, capture_output=True)
+                            _ok, _err = _ship_files(
+                                files, "bbrelin@176.9.99.103",
+                                "/home/bbrelin/nimcp/checkpoints/athena", remove_source=True)
+                            _r = types.SimpleNamespace(returncode=0 if _ok else 1,
+                                                       stderr=_err.encode())
                             if _r.returncode != 0:
                                 raise RuntimeError(
                                     "rsync rc=%d: %s" % (_r.returncode,
@@ -10593,6 +10592,49 @@ def _ship_and_remove_previous_snapshot():
         logger.warning("Pre-save ship error: %s", e)
 
 
+PXFER_MIN_BYTES = 1 << 30      # files above this go through parallel_xfer.py
+PXFER_STREAMS = 12
+_HETZNER_SSH_KEY = "/root/.ssh/id_ed25519_hetzner"
+
+
+def _ship_files(files, host, remote_dir, remove_source=False, budget_bytes=None):
+    """Ship files to Hetzner: small ones with rsync, large ones (the 21 GB
+    .snn) with parallel_xfer.py over PXFER_STREAMS ssh streams (a single
+    stream on the pod->Hetzner path is loss-limited; measured 0.07 MB/s
+    cubic, 2.5 MB/s BBR, 15.9 MB/s with 12 streams on 2026-11-01).
+    remove_source deletes each file only after its transfer verified.
+    Returns (ok, error_text)."""
+    import subprocess as _sp
+    small = [f for f in files if os.path.getsize(f) < PXFER_MIN_BYTES]
+    large = [f for f in files if os.path.getsize(f) >= PXFER_MIN_BYTES]
+    budget = _ship_budget_s(budget_bytes if budget_bytes is not None
+                            else sum(os.path.getsize(f) for f in files))
+    if small:
+        cmd = ["rsync", "-a", "--partial-dir=.rsync-partial", "--timeout=1800",
+               "-e", f"ssh -i {_HETZNER_SSH_KEY} -o StrictHostKeyChecking=no -o ConnectTimeout=10"]
+        if remove_source:
+            cmd.append("--remove-source-files")
+        r = _sp.run(cmd + small + [f"{host}:{remote_dir}/"], timeout=budget, capture_output=True)
+        if r.returncode != 0:
+            return False, "rsync rc=%d: %s" % (r.returncode, r.stderr.decode()[:400])
+    pxfer = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parallel_xfer.py")
+    for f in large:
+        r = _sp.run([sys.executable, pxfer, "push", f, f"{host}:{remote_dir}/{os.path.basename(f)}",
+                     "--streams", str(PXFER_STREAMS), "--chunk-mb", "256",
+                     "--ssh", f"-i {_HETZNER_SSH_KEY}"], timeout=budget, capture_output=True)
+        tail = r.stdout.decode(errors="replace").strip().splitlines()[-1:] or [""]
+        if r.returncode != 0:
+            return False, "parallel_xfer rc=%d: %s %s" % (r.returncode, tail[0],
+                                                          r.stderr.decode(errors="replace")[-300:])
+        logger.info("Hetzner pxfer: %s — %s", os.path.basename(f), tail[0])
+        if remove_source:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    return True, ""
+
+
 def _ship_budget_s(nbytes, floor_mb_s=2.0, min_s=3600):
     """Wall-clock budget for one rsync: at least min_s, else enough for the
     transfer at a pessimistic floor_mb_s plus 10 minutes of slack."""
@@ -10706,26 +10748,20 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
         # COPY current symlinked snapshot (no --remove-source-files)
         if copyable:
             copy_bytes = sum(os.path.getsize(f) for f in copyable)
-            cmd = RSYNC_BASE + copyable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
-            # Wall-clock budget scales with size: the pod->Hetzner link has
-            # run as slow as ~5 MB/s (21 GB = 70 min); a fixed 3600 s killed
-            # the copy at 20.06/21.3 GB on 2026-10-27 and left an abandoned
-            # temp on Hetzner. rsync's own --timeout=1800 still catches a
-            # stalled link.
-            r = subprocess.run(cmd, timeout=_ship_budget_s(copy_bytes), capture_output=True)
-            if r.returncode != 0:
-                logger.warning("Hetzner copy failed: %s", r.stderr.decode()[:500])
+            # Small files via rsync, the .snn via parallel streams; the
+            # wall-clock budget scales with size (_ship_budget_s).
+            ok, err = _ship_files(copyable, HETZNER_HOST, HETZNER_DIR)
+            if not ok:
+                logger.warning("Hetzner copy failed: %s", err)
                 return
             logger.info("Hetzner: copied %d current files (%.1f MB)",
                         len(copyable), copy_bytes / 1e6)
 
-        # MOVE older snapshot files (--remove-source-files deletes after success)
+        # MOVE older snapshot files (source removed only after verified transfer)
         if movable:
-            cmd = RSYNC_BASE + ["--remove-source-files"] + movable + [f"{HETZNER_HOST}:{HETZNER_DIR}/"]
-            r = subprocess.run(cmd, timeout=_ship_budget_s(sum(os.path.getsize(f) for f in movable)),
-                               capture_output=True)
-            if r.returncode != 0:
-                logger.warning("Hetzner move failed: %s", r.stderr.decode()[:500])
+            ok, err = _ship_files(movable, HETZNER_HOST, HETZNER_DIR, remove_source=True)
+            if not ok:
+                logger.warning("Hetzner move failed: %s", err)
                 return
             freed = sum(os.path.getsize(f) for f in movable if os.path.exists(f))
             logger.info("Hetzner: moved %d old files (freed %.1f MB)",

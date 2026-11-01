@@ -117,6 +117,10 @@ start_gpu_sampler() {
 # Main watchdog loop
 log_wd "========================================"
 log_wd "Training watchdog starting (stage=$STAGE)"
+# BBR congestion control for the long, lossy pod<->Hetzner path (checkpoint
+# ships). The container setting does not survive restarts, so set it here.
+sysctl -q -w net.ipv4.tcp_congestion_control=bbr 2>/dev/null \
+    && log_wd "TCP congestion control: $(cat /proc/sys/net/ipv4/tcp_congestion_control)"
 log_wd "========================================"
 
 restart_count=0

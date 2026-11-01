@@ -286,10 +286,18 @@ EOF
         # 21 GB restore into days. Measure the first minutes; below
         # RESTORE_MIN_KBPS abort with relay instructions instead of stalling.
         RESTORE_MIN_KBPS="${RESTORE_MIN_KBPS:-300}"
-        rsync -a --partial-dir=.rsync-partial \
-            -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
-            "$HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK*" \
-            "$LOCAL_CKPT_DIR/" > /tmp/restore_rsync.log 2>&1 &
+        # Small files with rsync, then the .snn with parallel streams over
+        # BBR (scripts/parallel_xfer.py; 15.9 MB/s vs 0.07 MB/s for a single
+        # cubic stream on 2026-11-01). The rate guard below still applies.
+        sysctl -q -w net.ipv4.tcp_congestion_control=bbr 2>/dev/null || true
+        (
+            rsync -a --partial-dir=.rsync-partial --exclude="*.snn" \
+                -e "ssh -i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no" \
+                "$HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK*" "$LOCAL_CKPT_DIR/" &&
+            python3 "$NIMCP_DIR/scripts/parallel_xfer.py" pull \
+                "$HETZNER_HOST:$HETZNER_CKPT_DIR/$PICK.snn" "$LOCAL_CKPT_DIR/$PICK.snn" \
+                --streams 12 --chunk-mb 256 --ssh "-i $HETZNER_SSH_KEY"
+        ) > /tmp/restore_rsync.log 2>&1 &
         _rs_pid=$!
         _t0=$(date +%s); _b0=$(du -sb "$LOCAL_CKPT_DIR" | cut -f1)
         while kill -0 "$_rs_pid" 2>/dev/null; do
