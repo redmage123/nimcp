@@ -568,7 +568,12 @@ def _visual_differentiation_probe(brain, composer):
         # Each photo is shown VISUAL_PROBE_REPEATS times. Within-photo cosine
         # measures the network's run-to-run noise; between-photo cosine of the
         # per-photo MEAN responses measures what the image itself changes.
-        within = []
+        # Like-for-like: single responses only. within = cosine between
+        # repeats of the SAME photo; between = cosine between single
+        # responses to DIFFERENT photos. (2026-11-01: comparing per-photo
+        # MEANS across photos against single repeats within a photo is
+        # biased — averaging removes noise, so means always look alike.)
+        per_photo = []
         for lab in labels:
             hf = rs.get_heldout_frame(lab, index=0)
             if not hf:
@@ -576,14 +581,23 @@ def _visual_differentiation_probe(brain, composer):
             reps = [r for r in (_decide_with(hf[0]) for _ in range(VISUAL_PROBE_REPEATS)) if r is not None]
             if len(reps) < 2:
                 continue
-            within.append(_mean_pairwise(reps))
+            per_photo.append(reps)
             raws.append(np.mean(reps, axis=0))
             embs.append(extract_embedding_from_output(raws[-1]))
-        if len(raws) < 3:
-            return None, len(raws)
+        if len(per_photo) < 3:
+            return None, len(per_photo)
 
-        between = _mean_pairwise(raws)
-        within_mean = float(np.mean(within))
+        within_pairs, between_pairs = [], []
+        for pi, reps in enumerate(per_photo):
+            for a_i in range(len(reps)):
+                for b_i in range(a_i + 1, len(reps)):
+                    within_pairs.append(_cos(reps[a_i], reps[b_i]))
+            for pj in range(pi + 1, len(per_photo)):
+                for ra in reps:
+                    for rb in per_photo[pj]:
+                        between_pairs.append(_cos(ra, rb))
+        within_mean = float(np.mean(within_pairs))
+        between = float(np.mean(between_pairs))
         emb_cos = _mean_pairwise(embs)
         signal = within_mean - between          # >0: images move the output beyond noise
         print(f"    [VisualDiff] n={len(raws)} between_photo_cos={between:.5f} "
