@@ -20,6 +20,11 @@ scripts/video_allowlist.txt is the default for the curriculum: a
 popularity-ranked pull (the old default) included adult reels, propaganda
 and graphic footage.
 
+Two caches feed the acuity schedule (real_sensory.STAGE_ACUITY):
+    stage 0:   --size 32 --fps 2 --seq-len 8                  -> video_sequences.pkl
+    stage 1+:  --size 128 --fps 4 --seq-len 16 --jpeg 90
+               --out-name video_sequences_hires.pkl           (same 4 s shots, sharper)
+
 Usage (run on a host with good bandwidth; the pod's inbound is slow):
     python3 build_video_cache.py --out DIR [--allowlist scripts/video_allowlist.txt]
                                  [--films 60] [--seq-len 8] [--fps 2]
@@ -34,8 +39,7 @@ import time
 
 import numpy as np
 
-W = H = 32
-FRAME_BYTES = W * H * 3
+W = H = 32          # default frame side (stage 0); --size overrides
 
 
 def chunk_frames(frames, seq_len=8, cut_thresh=40.0, min_motion=1.5, stride=None):
@@ -67,15 +71,28 @@ def chunk_frames(frames, seq_len=8, cut_thresh=40.0, min_motion=1.5, stride=None
     return out
 
 
-def extract_frames(path, fps=2.0, max_seconds=1800):
-    """Decode `path` with ffmpeg into a (N, 32, 32, 3) uint8 array."""
+def extract_frames(path, fps=2.0, max_seconds=1800, size=W):
+    """Decode `path` with ffmpeg into a (N, size, size, 3) uint8 array.
+    Area scaling, so downsized frames are averaged rather than aliased."""
     cmd = ["ffmpeg", "-v", "error", "-i", path, "-t", str(max_seconds),
-           "-vf", f"fps={fps},scale={W}:{H}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+           "-vf", f"fps={fps},scale={size}:{size}:flags=area", "-f", "rawvideo",
+           "-pix_fmt", "rgb24", "-"]
     raw = subprocess.run(cmd, capture_output=True, timeout=1800).stdout
-    n = len(raw) // FRAME_BYTES
+    frame_bytes = size * size * 3
+    n = len(raw) // frame_bytes
     if n == 0:
-        return np.zeros((0, H, W, 3), dtype=np.uint8)
-    return np.frombuffer(raw[:n * FRAME_BYTES], dtype=np.uint8).reshape(n, H, W, 3)
+        return np.zeros((0, size, size, 3), dtype=np.uint8)
+    return np.frombuffer(raw[:n * frame_bytes], dtype=np.uint8).reshape(n, size, size, 3)
+
+
+def encode_jpeg(frame_bytes, size, quality=90):
+    """Raw RGB bytes of a size x size frame -> JPEG bytes."""
+    import io
+    from PIL import Image
+    img = Image.fromarray(np.frombuffer(frame_bytes, dtype=np.uint8).reshape(size, size, 3))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
 
 
 def list_films(rows, session):
@@ -148,6 +165,12 @@ def main():
     ap.add_argument("--films", type=int, default=60)
     ap.add_argument("--seq-len", type=int, default=8)
     ap.add_argument("--fps", type=float, default=2.0)
+    ap.add_argument("--size", type=int, default=W,
+                    help="frame side in pixels (32 for stage 0; 128 for the stage 1+ cache)")
+    ap.add_argument("--jpeg", type=int, default=0, metavar="QUALITY",
+                    help="store frames as JPEG at this quality (0 = raw RGB bytes)")
+    ap.add_argument("--out-name", default="video_sequences.pkl",
+                    help="output file name (video_sequences_hires.pkl for the stage 1+ cache)")
     ap.add_argument("--max-seq-per-film", type=int, default=150)
     ap.add_argument("--workdir", default="/tmp/ia_films")
     ap.add_argument("--keep-videos", action="store_true")
@@ -177,7 +200,7 @@ def main():
                     with open(local, "wb") as fh:
                         for chunk in r.iter_content(1 << 20):
                             fh.write(chunk)
-            frames = extract_frames(local, fps=a.fps)
+            frames = extract_frames(local, fps=a.fps, size=a.size)
             seqs = chunk_frames(frames, seq_len=a.seq_len)
             if len(seqs) > a.max_seq_per_film:
                 idx = np.linspace(0, len(seqs) - 1, a.max_seq_per_film).astype(int)
@@ -187,11 +210,15 @@ def main():
             if isinstance(doc.get("description"), list):
                 desc = " ".join(doc["description"])
             desc = desc.replace("\n", " ")[:200]
+            if a.jpeg:
+                seqs = [[encode_jpeg(f, a.size, a.jpeg) for f in sq] for sq in seqs]
             for j, fr in enumerate(seqs):
                 sequences.append({"item": ident, "title": title,
                                   "description": f"a moving scene from the film '{title}'",
                                   "summary": desc,   # the archive's own synopsis of the film
                                   "start_s": float(j * a.seq_len / a.fps), "frames": fr,
+                                  "fps": a.fps, "size": a.size,
+                                  "encoding": "jpeg" if a.jpeg else "rgb",
                                   # fallback only: the trainer reads levels from the allowlist
                                   "maturity": int(doc.get("maturity", 2))})
             print(f"[{k}/{len(films)}] {ident}: {len(frames)} frames -> {len(seqs)} sequences "
@@ -200,7 +227,7 @@ def main():
                 os.remove(local)
         except Exception as e:
             print(f"[{k}/{len(films)}] {ident}: failed: {e}", flush=True)
-    out = os.path.join(a.out, "video_sequences.pkl")
+    out = os.path.join(a.out, a.out_name)
     with open(out, "wb") as fh:
         pickle.dump(sequences, fh, protocol=4)
     print(f"{out}: {len(sequences)} sequences from {len({q['item'] for q in sequences})} films, "

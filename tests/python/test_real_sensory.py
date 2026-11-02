@@ -122,6 +122,78 @@ with tempfile.TemporaryDirectory() as d:
     expect(bank.set_stage(0) == 0 and films(bank) == {"film1"}, "cap tightens again on a lower stage")
     expect(bank.set_stage(99) == max(RealSensoryBank.STAGE_MAX_MATURITY.values()), "unknown stage -> highest defined cap")
 
+    # ---- visual acuity schedule ------------------------------------------
+    import io
+    from PIL import Image
+
+    def jpeg(color, side=128):
+        buf = io.BytesIO()
+        Image.new("RGB", (side, side), color).save(buf, format="JPEG", quality=95)
+        return buf.getvalue()
+
+    with open(os.path.join(d, "photos_hires_by_label.pkl"), "wb") as f:
+        pickle.dump({"dog": [jpeg((250, 0, 0))], "giraffe": [jpeg((0, 250, 0))]}, f)
+    with open(os.path.join(d, "photos_hires_heldout_by_label.pkl"), "wb") as f:
+        pickle.dump({"dog": [jpeg((0, 0, 250))]}, f)
+    hires = [{"item": "film1", "title": "Film One", "description": "a moving scene", "start_s": 0.0,
+              "fps": 4.0, "size": 128, "encoding": "jpeg",
+              "frames": [jpeg((i * 15, 0, 0)) for i in range(16)]}]
+    with open(os.path.join(d, "video_sequences_hires.pkl"), "wb") as f:
+        pickle.dump(hires, f)
+
+    ac = RealSensoryBank(d, seed=3, augment=False)
+    ac.ALLOWLIST_PATH = os.path.join(d, "allowlist.txt")
+    expect((ac.resolution, ac.video_fps) == (32, 2.0), "stage 0 acuity is 32x32 @ 2 fps")
+    f0 = ac.get_frame("a dog")
+    expect(f0 is not None and f0[1:4] == (32, 32, 3) and len(f0[0]) == 32 * 32 * 3, "stage 0 photo is CIFAR 32x32")
+    expect(ac.get_frame("a giraffe") is None, "hires-only labels unused at stage 0")
+    s0 = ac.get_sequence()
+    expect(s0 is not None and len(s0["frames"]) == 8 and s0.get("fps", 2.0) == 2.0, "stage 0 plays the 32x32 cache")
+    ac.queue_frames(s0["frames"][:1])
+    expect(ac.pop_frame()[0] == s0["frames"][0], "stage 0 frames pass through byte-identical")
+
+    ac.set_stage(1)
+    expect((ac.resolution, ac.video_fps) == (64, 4.0), f"stage 1 acuity: {ac.resolution} @ {ac.video_fps}")
+    f1 = ac.get_frame("a dog")
+    px = np.frombuffer(f1[0], dtype=np.uint8).reshape(64, 64, 3)
+    expect(f1[1:4] == (64, 64, 3) and px[..., 0].mean() > 200 and px[..., 1].mean() < 30,
+           "stage 1 prefers the sharp photo, resized to 64x64")
+    expect(ac.get_frame("a giraffe") is not None, "hires-only label reachable from stage 1")
+    s1 = ac.get_sequence()
+    expect(s1 is not None and len(s1["frames"]) == 16 and s1["frames"][0][:2] == b"\xff\xd8",
+           "stage 1 plays the high-resolution cache (16 frames @ 4 fps)")
+    ac.queue_frames(s1["frames"][:2], label="x")
+    p1 = ac.pop_frame()
+    expect(p1[1:4] == (64, 64, 3) and len(p1[0]) == 64 * 64 * 3, "queued JPEG frame decoded to 64x64")
+    ho = ac.get_heldout_frame("dog", index=0)
+    hpx = np.frombuffer(ho[0], dtype=np.uint8).reshape(64, 64, 3)
+    expect(ho[1] == 64 and hpx[..., 2].mean() > 200, "held-out prefers the sharp held-out photo")
+    ho_c = ac.get_heldout_frame("sea", index=0)
+    expect(ho_c is not None and ho_c[1:4] == (64, 64, 3), "CIFAR-only held-out label upscaled to 64x64")
+    expect("acuity 64x64 @ 4 fps" in ac.stats_str(), f"stats show acuity: {ac.stats_str()}")
+
+    ac.set_stage(3)
+    expect(ac.resolution == 128, "stage 3 acuity is 128x128")
+    ac.queue_frames(s1["frames"][:1])
+    expect(len(ac.pop_frame()[0]) == 128 * 128 * 3, "stage 3 frames at 128x128")
+    expect(len(ac.to_stage_frame(s0["frames"][0])) == 128 * 128 * 3, "32x32 raw frame upscaled at stage 3")
+
+    # frame rate: a 4 fps shot played at 2 fps keeps every other frame
+    ac.video_fps = 2.0
+    v = ac._fps_view(hires[0])
+    expect(len(v["frames"]) == 8 and v["frames"][1] == hires[0]["frames"][2] and v["fps"] == 2.0,
+           "4 fps source played at 2 fps drops alternate frames")
+    expect(len(hires[0]["frames"]) == 16, "fps view does not modify the cached shot")
+    ac.video_fps = 4.0
+
+    big = ac.augment_image(ac.to_stage_frame(jpeg((90, 90, 90))), 128, 128, 3)
+    expect(len(big) == 128 * 128 * 3, "augmentation keeps the frame size at 128x128")
+
+    ac.set_stage(0)
+    s0b = ac.get_sequence()
+    expect(ac.resolution == 32 and s0b is not None and len(s0b["frames"]) == 8,
+           "returning to stage 0 restores 32x32 and the 32x32 cache")
+
     # without an allowlist the pkl field is used; a missing field is the most restrictive level
     fb = RealSensoryBank(d, seed=1)
     fb.ALLOWLIST_PATH = os.path.join(d, "missing.txt")

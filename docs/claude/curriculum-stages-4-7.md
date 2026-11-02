@@ -172,6 +172,34 @@ sensitivity, motion sensitivity and determinism.
 | 6 | `video_explain`: explain what is happening and why, scored against the synopsis | 0.10 |
 | 7 | `watch_film`: four consecutive shots of one film, teach it back | 0.10 |
 
+## Visual acuity schedule (2026-11-02)
+
+Vision sharpens with the stages, like an infant's (newborn acuity is about 1/20 of adult;
+networks trained blurry-then-sharp learn more robust features, Vogelsang et al., PNAS 2018).
+`RealSensoryBank.STAGE_ACUITY` sets it and `_set_video_stage(n)` applies it before each stage:
+
+| Stage | Frame | Video | Photo source | Video source |
+|---|---|---|---|---|
+| 0 | 32×32 | 2 fps, 8-frame shots | CIFAR (native) | `video_sequences.pkl` |
+| 1–2 | 64×64 | 4 fps, 16-frame shots | Caltech-256 when the label exists, else CIFAR upscaled | `video_sequences_hires.pkl` |
+| 3–7 | 128×128 | 4 fps, 16-frame shots | same | same |
+
+Every frame the bank returns is at the stage's resolution: photos, queued video frames,
+held-out probe photos, and (via `_to_acuity`) frames from `multimodal_data.py`. The synthetic
+fallback frame is generated at that size too. Shots last 4 s at every stage.
+
+- **Network.** The visual cortex CNN ends in global average pooling, so one set of weights
+  serves every size (`tests/unit/test_cortex_visual_sizes.c`, which also prints the cost).
+  Measured per visual step relative to 32×32: about ×3 at 64×64 and ×15 at 128×128. On the
+  pod (~3 s per training step, ~75 ms visual at 32×32) that is roughly +5% step time at
+  stages 1–2 and +35% from stage 3.
+- **Caches.** `build_hires_photos.py` (Caltech-256, CC BY 4.0, centre-cropped, 128×128 JPEG,
+  weapons excluded, 10% held out) and `build_video_cache.py --size 128 --fps 4 --seq-len 16
+  --jpeg 90 --out-name video_sequences_hires.pkl` (same allowlist). Without the high-resolution
+  caches the bank upscales the 32×32 sources.
+- **Guard.** `Brain.submit_sensory("visual", ...)` rejects a frame whose length is not
+  width × height × channels (ValueError) instead of letting the cortex read past it.
+
 ## Not done / follow-ups
 
 - Episode content is template-based; richer generators (COCO captions, children's-story corpora,

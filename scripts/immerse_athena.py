@@ -587,10 +587,10 @@ def _visual_differentiation_probe_inner(brain, composer, ci):
         neutral = composer.compose(text="look at this", modality="text")
         raws, embs = [], []
 
-        def _decide_with(frame_bytes):
+        def _decide_with(frame_bytes, side):
             ci.reset()
             try:
-                brain.submit_sensory("visual", list(frame_bytes), width=32, height=32, channels=3)
+                brain.submit_sensory("visual", list(frame_bytes), width=side, height=side, channels=3)
             except Exception:
                 pass
             out = (brain.decide_full(neutral) or {}).get("output_vector")
@@ -619,7 +619,7 @@ def _visual_differentiation_probe_inner(brain, composer, ci):
             hf = rs.get_heldout_frame(lab, index=0)
             if not hf:
                 continue
-            reps = [r for r in (_decide_with(hf[0]) for _ in range(VISUAL_PROBE_REPEATS)) if r is not None]
+            reps = [r for r in (_decide_with(hf[0], hf[1]) for _ in range(VISUAL_PROBE_REPEATS)) if r is not None]
             if len(reps) < 2:
                 continue
             per_photo.append(reps)
@@ -689,9 +689,10 @@ def _video_temporal_probe(brain, composer, n_shots=VIDEO_PROBE_SHOTS, seed=0):
     def _play(frames, ci):
         ci.reset()
         out = None
+        side = rs.resolution
         for fr in frames:
             try:
-                brain.submit_sensory("visual", list(fr), width=32, height=32, channels=3)
+                brain.submit_sensory("visual", list(rs.to_stage_frame(fr)), width=side, height=side, channels=3)
             except Exception:
                 pass
             o = (brain.decide_full(neutral) or {}).get("output_vector")
@@ -813,7 +814,7 @@ def _noise_diagnostic(brain, composer):
                     continue
                 try:
                     brain.reset_inference_state()
-                    brain.submit_sensory("visual", list(hf[0]), width=32, height=32, channels=3)
+                    brain.submit_sensory("visual", list(hf[0]), width=hf[1], height=hf[2], channels=3)
                 except Exception:
                     pass
                 v = _out(neutral)
@@ -828,7 +829,7 @@ def _noise_diagnostic(brain, composer):
                 sv = []
                 for _ in range(3):
                     brain.reset_inference_state()
-                    brain.submit_sensory("visual", list(hf[0]), width=32, height=32, channels=3)
+                    brain.submit_sensory("visual", list(hf[0]), width=hf[1], height=hf[2], channels=3)
                     v = _out(neutral)
                     if v is not None:
                         sv.append(v)
@@ -913,15 +914,30 @@ _VIDEO_STAGE = 0   # curriculum stage whose film-maturity cap the bank applies
 
 
 def _set_video_stage(stage):
-    """Cap film maturity for `stage` (RealSensoryBank.STAGE_MAX_MATURITY).
-    Called before each stage runs; a bank built later picks it up too."""
+    """Apply `stage`'s film-maturity cap and visual acuity
+    (RealSensoryBank.STAGE_MAX_MATURITY / STAGE_ACUITY). Called before each
+    stage runs; a bank built later picks it up too."""
     global _VIDEO_STAGE
     _VIDEO_STAGE = int(stage)
     rs = _REAL_SENSORY or None
     if rs is not None:
         cap = rs.set_stage(_VIDEO_STAGE)
         print(f"  [RealSensory] stage {_VIDEO_STAGE}: films up to maturity level {cap} "
-              f"({len(rs.sequences)} sequences)", flush=True)
+              f"({len(rs.sequences)} sequences); visual acuity {rs.resolution}x{rs.resolution} "
+              f"@ {rs.video_fps:g} fps", flush=True)
+
+
+def _to_acuity(raw_bytes, w, h, ch):
+    """A square RGB frame resized to the current stage's visual acuity
+    (RealSensoryBank.STAGE_ACUITY). Other shapes, or no bank, pass through."""
+    rs = _REAL_SENSORY or None
+    try:
+        if rs is None or w != h or ch != 3 or w == rs.resolution:
+            return raw_bytes, w, h, ch
+        side = rs.resolution
+        return rs.to_stage_frame(bytes(raw_bytes)), side, side, ch
+    except Exception:
+        return raw_bytes, w, h, ch
 
 
 def _get_real_sensory():
@@ -1022,7 +1038,8 @@ def submit_multimodal(brain, description, target_word=None):
             _vf = (_rf[0], _rf[1], _rf[2], _rf[3])
             _vtag = "Vv" if _qf else "V*"
         else:
-            _vf = generate_visual_frame(description)
+            _side = _rs.resolution if _rs else 32
+            _vf = generate_visual_frame(description, width=_side, height=_side)
             _vtag = "V"
         _pixels = list(_vf[0])  # _vf is (bytes, w, h, ch) tuple
         brain.submit_sensory("visual", _pixels, width=_vf[1], height=_vf[2], channels=_vf[3])
@@ -5294,6 +5311,7 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
             return None
 
         raw_bytes, w, h, ch, label, desc = sample
+        raw_bytes, w, h, ch = _to_acuity(raw_bytes, w, h, ch)
 
         # Submit real pixels to the visual SNN bridge
         try:
@@ -5376,6 +5394,7 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
         # Submit visual
         if visual:
             raw_bytes, w, h, ch, _, _ = visual
+            raw_bytes, w, h, ch = _to_acuity(raw_bytes, w, h, ch)
             try:
                 brain.submit_sensory("visual", raw_bytes, width=w, height=h,
                                      channels=ch)
@@ -5807,6 +5826,7 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
             real = self.multimodal.get_visual(name)
             if real:
                 raw_bytes, w, h, ch, _, _ = real
+                raw_bytes, w, h, ch = _to_acuity(raw_bytes, w, h, ch)
                 try:
                     brain.submit_sensory("visual", raw_bytes, width=w,
                                          height=h, channels=ch)
@@ -5892,6 +5912,7 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
             real = self.multimodal.get_visual(concept)
             if real:
                 raw_bytes, w, h, ch, _, _ = real
+                raw_bytes, w, h, ch = _to_acuity(raw_bytes, w, h, ch)
                 try:
                     brain.submit_sensory("visual", raw_bytes, width=w,
                                          height=h, channels=ch)
@@ -6657,6 +6678,7 @@ def run_sensory_enrichment(brain, composer, parent, decoder,
         present_v = present_a = present_s = False
         if vis_sample:
             raw_bytes, w, h, ch, _, _desc_v = vis_sample
+            raw_bytes, w, h, ch = _to_acuity(raw_bytes, w, h, ch)
             try:
                 brain.submit_sensory("visual", raw_bytes, width=w, height=h, channels=ch)
                 present_v = True
@@ -10051,7 +10073,7 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                     continue
                 _ci.reset()
                 try:
-                    brain.submit_sensory("visual", list(_hf[0]), width=32, height=32, channels=3)
+                    brain.submit_sensory("visual", list(_hf[0]), width=_hf[1], height=_hf[2], channels=3)
                 except Exception:
                     pass
                 _vres = brain.decide_full(_neutral)

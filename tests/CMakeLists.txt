@@ -65,6 +65,7 @@ set(NIMCP_STANDALONE_LANG_TESTS
     test_gl_fno_audio_guard
     test_fno_fft
     test_cortex_fusion_scale
+    test_cortex_visual_sizes
     test_cortex_dense_target
     test_snn_window_stats
     test_snn_fno_recording

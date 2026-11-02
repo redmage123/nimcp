@@ -8973,6 +8973,19 @@ static PyObject* Brain_submit_sensory(BrainObject* self, PyObject* args, PyObjec
         ib->staged_sensory.somato_data = data;  /* Transfer ownership */
         ib->staged_sensory.somato_segments = (n_segments > 0) ? n_segments : (uint32_t)num_elements;
     } else if (strcmp(modality, "visual") == 0) {
+        /* The cortex reads exactly w*h*ch pixels from the staged frame, and
+         * frame sizes now vary with the stage's visual acuity (32/64/128):
+         * a mismatch would read past the buffer, so reject it here. */
+        uint64_t vw = (width > 0) ? width : 32, vh = (height > 0) ? height : 32;
+        uint64_t vc = (channels > 0) ? channels : 3;
+        if (vw * vh * vc != (uint64_t)num_elements) {
+            nimcp_free(data);
+            PyErr_Format(PyExc_ValueError,
+                         "visual frame has %zd values but %llux%llux%llu = %llu were declared",
+                         num_elements, (unsigned long long)vw, (unsigned long long)vh,
+                         (unsigned long long)vc, (unsigned long long)(vw * vh * vc));
+            return NULL;
+        }
         /* Stage visual data */
         if (ib->staged_sensory.visual_frame) {
             nimcp_free(ib->staged_sensory.visual_frame);

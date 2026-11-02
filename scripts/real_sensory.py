@@ -11,6 +11,15 @@ Data (built by scripts/build_sensory_caches.py from the original archives):
     <data_dir>/cifar_by_label.pkl          {label: [32x32x3 uint8 bytes, ...]}  train split
     <data_dir>/cifar_heldout_by_label.pkl  same layout, test split (evaluation only)
     <data_dir>/speech_cmds_by_label.pkl    {word: [float32 16 kHz samples, ...]}
+    <data_dir>/video_sequences.pkl         32x32 film shots at 2 fps (stage 0)
+    <data_dir>/video_sequences_hires.pkl   128x128 JPEG film shots at 4 fps (stage 1+)
+    <data_dir>/photos_hires_by_label.pkl   {label: [128x128 JPEG bytes, ...]}  (stage 1+)
+    <data_dir>/photos_hires_heldout_by_label.pkl  same layout, evaluation only
+
+Visual acuity grows with the stages (STAGE_ACUITY): 32x32 at stage 0, 64x64
+at stages 1-2, 128x128 from stage 3, like an infant's sharpening vision.
+Every frame the bank returns is at the current stage's resolution; sources
+at another size are resized (high-resolution sources first when present).
 
 Sources and licenses: CIFAR-10/100 (Krizhevsky, Toronto; freely redistributed
 for research and widely used commercially), Google Speech Commands v0.02
@@ -113,6 +122,37 @@ def _candidate_words(description: str) -> list[str]:
     return out
 
 
+def _decode_frame(raw) -> np.ndarray:
+    """HxWx3 uint8 array from a stored frame: JPEG bytes or raw square RGB."""
+    if isinstance(raw, (bytes, bytearray)) and raw[:2] == b"\xff\xd8":
+        import io
+        from PIL import Image
+        return np.asarray(Image.open(io.BytesIO(raw)).convert("RGB"), dtype=np.uint8)
+    arr = np.frombuffer(raw, dtype=np.uint8)
+    side = int(round((arr.size // 3) ** 0.5))
+    if side * side * 3 != arr.size:
+        raise ValueError(f"frame of {arr.size} bytes is not a square RGB image")
+    return arr.reshape(side, side, 3)
+
+
+def _resize(img: np.ndarray, size: int) -> np.ndarray:
+    """Square resize: area averaging down, bilinear up (PIL); numpy fallback."""
+    h, w = img.shape[:2]
+    if h == size and w == size:
+        return img
+    try:
+        from PIL import Image
+        resample = Image.BOX if size < min(h, w) else Image.BILINEAR
+        return np.asarray(Image.fromarray(img).resize((size, size), resample), dtype=np.uint8)
+    except ImportError:
+        if h % size == 0 and w % size == 0:
+            fy, fx = h // size, w // size
+            return img.reshape(size, fy, size, fx, 3).mean(axis=(1, 3)).astype(np.uint8)
+        ys = (np.arange(size) * h // size).astype(int)
+        xs = (np.arange(size) * w // size).astype(int)
+        return img[ys][:, xs]
+
+
 def read_allowlist_levels(path: str) -> dict:
     """{identifier: maturity level} from a film allowlist.
 
@@ -152,6 +192,10 @@ class RealSensoryBank:
         self._sequences: Optional[list[dict]] = None
         self._all_sequences: Optional[list[dict]] = None
         self.max_maturity = 0               # highest film maturity level played (set_stage)
+        self.stage = 0
+        self.resolution, self.video_fps = self.STAGE_ACUITY[0]
+        self._hires_images: Optional[dict] = None
+        self._hires_heldout: Optional[dict] = None
         self._queued_frames: list[bytes] = []   # frames to submit on the next presentations
         self.hits = 0
         self.misses = 0
@@ -225,18 +269,77 @@ class RealSensoryBank:
     ALLOWLIST_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                   "video_allowlist.txt")
 
+    # Visual acuity per stage: (frame side in pixels, video frames per second).
+    # Newborn acuity is ~1/20 of adult and sharpens over the first year;
+    # networks trained blurry-then-sharp learn more robust features
+    # (Vogelsang et al., PNAS 2018). Stage 0 keeps the original 32x32 / 2 fps.
+    STAGE_ACUITY = {0: (32, 2.0), 1: (64, 4.0), 2: (64, 4.0), 3: (128, 4.0),
+                    4: (128, 4.0), 5: (128, 4.0), 6: (128, 4.0), 7: (128, 4.0)}
+    BASE_RESOLUTION = 32                # CIFAR and the stage-0 video cache
+
     def set_stage(self, stage: int) -> int:
-        """Cap film maturity for a curriculum stage; returns the new cap."""
-        cap = self.STAGE_MAX_MATURITY.get(int(stage), max(self.STAGE_MAX_MATURITY.values()))
+        """Apply a curriculum stage's film-maturity cap and visual acuity.
+        Returns the maturity cap."""
+        stage = int(stage)
+        self.stage = stage
+        cap = self.STAGE_MAX_MATURITY.get(stage, max(self.STAGE_MAX_MATURITY.values()))
+        acuity = self.STAGE_ACUITY.get(stage, self.STAGE_ACUITY[max(self.STAGE_ACUITY)])
         if cap != self.max_maturity:
             self.max_maturity = cap
             self._sequences = None      # re-filter on next access
+        if acuity != (self.resolution, self.video_fps):
+            old_src = self._video_cache_name()
+            self.resolution, self.video_fps = acuity
+            if self._video_cache_name() != old_src:
+                self._all_sequences = None   # switch video source
+            self._sequences = None
         return cap
+
+    # ---- acuity ------------------------------------------------------------
+    @property
+    def hires_images(self) -> dict:
+        if self._hires_images is None:
+            self._hires_images = self._load_pkl("photos_hires_by_label.pkl") or {}
+        return self._hires_images
+
+    @property
+    def hires_heldout(self) -> dict:
+        if self._hires_heldout is None:
+            self._hires_heldout = self._load_pkl("photos_hires_heldout_by_label.pkl") or {}
+        return self._hires_heldout
+
+    def _video_cache_name(self) -> str:
+        """Video source for the current acuity: the high-resolution cache once
+        acuity exceeds 32x32 (when it exists), else the 32x32 cache."""
+        if self.resolution > self.BASE_RESOLUTION and \
+                os.path.exists(os.path.join(self.data_dir, "video_sequences_hires.pkl")):
+            return "video_sequences_hires.pkl"
+        return "video_sequences.pkl"
+
+    def to_stage_frame(self, raw) -> bytes:
+        """A stored frame (JPEG or raw RGB, any size) as raw RGB bytes at the
+        current resolution. Raw frames already at that size pass through."""
+        n = self.resolution * self.resolution * 3
+        if isinstance(raw, (bytes, bytearray)) and len(raw) == n and raw[:2] != b"\xff\xd8":
+            return bytes(raw)
+        return _resize(_decode_frame(raw), self.resolution).tobytes()
+
+    def _fps_view(self, seq: dict) -> dict:
+        """A sequence at the current frame rate: frames dropped evenly when
+        the source was recorded faster (shallow copy; frames are shared)."""
+        src_fps = float(seq.get("fps", 2.0))
+        step = int(round(src_fps / self.video_fps)) if self.video_fps > 0 else 1
+        if step <= 1:
+            return seq
+        view = dict(seq)
+        view["frames"] = list(seq["frames"])[::step]
+        view["fps"] = src_fps / step
+        return view
 
     def _load_all_sequences(self):
         if self._all_sequences is not None:
             return
-        allseq = [q for q in (self._load_pkl("video_sequences.pkl") or [])
+        allseq = [q for q in (self._load_pkl(self._video_cache_name()) or [])
                   if q.get("item") not in self.EXCLUDED_FILMS]
         levels = read_allowlist_levels(self.ALLOWLIST_PATH)
         if levels:
@@ -256,6 +359,7 @@ class RealSensoryBank:
             allseq = self._all_sequences
             present = {q.get("item") for q in allseq}
             playable = [q for q in allseq if q.get("maturity", self.UNTAGGED_MATURITY) <= self.max_maturity]
+            playable = [self._fps_view(q) for q in playable]
             self._sequences = [q for q in playable if not self._is_heldout_film(q.get("item"), present)]
             self._heldout_sequences = [q for q in playable if self._is_heldout_film(q.get("item"), present)]
 
@@ -314,13 +418,14 @@ class RealSensoryBank:
         self._queued_label = label or "a moving scene"
 
     def pop_frame(self):
-        """Next queued frame as (bytes, 32, 32, 3, label) or None."""
+        """Next queued frame as (bytes, res, res, 3, label) at the current
+        acuity, or None."""
         if not self._queued_frames:
             return None
-        raw = self._queued_frames.pop(0)
+        raw = self.to_stage_frame(self._queued_frames.pop(0))
         self.last_hit = True
         self.last_label = getattr(self, "_queued_label", "a moving scene")
-        return raw, 32, 32, 3, self.last_label
+        return raw, self.resolution, self.resolution, 3, self.last_label
 
     @staticmethod
     def sequence_label(seq: dict) -> str:
@@ -333,6 +438,8 @@ class RealSensoryBank:
         """First vocabulary word in the description with images; random
         candidate label among its synonyms."""
         imgs = self.images
+        if self.resolution > self.BASE_RESOLUTION and self.hires_images:
+            imgs = {**imgs, **self.hires_images}
         if not imgs:
             return None
         for w in _candidate_words(description):
@@ -352,8 +459,8 @@ class RealSensoryBank:
         r = self.nrng
         if r.rand() < 0.5:
             img = img[:, ::-1, :]
-        # random shift up to 4 px with reflect padding (random crop)
-        pad = 4
+        # random shift up to 1/8 of the side with reflect padding (random crop)
+        pad = max(1, w // 8)
         dy, dx = r.randint(-pad, pad + 1), r.randint(-pad, pad + 1)
         padded = np.pad(img, ((pad, pad), (pad, pad), (0, 0)), mode="reflect")
         img = padded[pad + dy:pad + dy + h, pad + dx:pad + dx + w, :]
@@ -375,28 +482,38 @@ class RealSensoryBank:
         if label is None:
             self.misses += 1
             return None
-        raw = self.rng.choice(self.images[label])
+        res = self.resolution
+        if res > self.BASE_RESOLUTION and self.hires_images.get(label):
+            raw = self.rng.choice(self.hires_images[label])     # sharp source
+        else:
+            raw = self.rng.choice(self.images[label])
+        raw = self.to_stage_frame(raw)
         if self.augment:
-            raw = self.augment_image(raw)
+            raw = self.augment_image(raw, res, res, 3)
         self.hits += 1
-        return raw, 32, 32, 3, label
+        return raw, res, res, 3, label
 
     def get_heldout_frame(self, label_or_word: str, index: Optional[int] = None):
         """Un-augmented held-out (test split) image for evaluation, or None."""
-        ho = self.heldout
-        if not ho:
-            return None
-        label = label_or_word if label_or_word in ho else None
-        if label is None:
-            for c in SYNONYMS.get(label_or_word, []):
-                if c in ho:
-                    label = c
-                    break
-        if label is None:
-            return None
-        clips = ho[label]
-        raw = clips[index % len(clips)] if index is not None else self.rng.choice(clips)
-        return raw, 32, 32, 3, label
+        sources = [self.heldout]
+        if self.resolution > self.BASE_RESOLUTION and self.hires_heldout:
+            sources.insert(0, self.hires_heldout)              # sharp source first
+        for ho in sources:
+            if not ho:
+                continue
+            label = label_or_word if label_or_word in ho else None
+            if label is None:
+                for c in SYNONYMS.get(label_or_word, []):
+                    if c in ho:
+                        label = c
+                        break
+            if label is None:
+                continue
+            clips = ho[label]
+            raw = clips[index % len(clips)] if index is not None else self.rng.choice(clips)
+            res = self.resolution
+            return self.to_stage_frame(raw), res, res, 3, label
+        return None
 
     def heldout_labels(self) -> list[str]:
         return sorted(self.heldout.keys())
@@ -435,4 +552,5 @@ class RealSensoryBank:
         rate = (self.hits / tot * 100.0) if tot else 0.0
         return (f"real-images: {self.hits}/{tot} matched ({rate:.0f}%), "
                 f"{len(self.images)} labels; real-speech clips: {self.speech_hits}; "
-                f"motion sequences: {self.sequence_hits} ({len(self.sequences)} available)")
+                f"motion sequences: {self.sequence_hits} ({len(self.sequences)} available); "
+                f"acuity {self.resolution}x{self.resolution} @ {self.video_fps:g} fps")
