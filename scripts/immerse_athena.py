@@ -532,7 +532,47 @@ VISUAL_SIGNAL_MARGIN = 0.05
 VISUAL_PROBE_REPEATS = 3
 
 
+class _ControlledInference:
+    """Measure the input->output mapping, not the network's ongoing noise:
+    zero SNN Poisson noise for the duration and let callers reset inference
+    state before each probe decision (2026-11-02 diagnostic: under these
+    conditions repeats are exact, so differences come from the input).
+    Training itself keeps noise and carried state."""
+
+    def __init__(self, brain):
+        self.brain = brain
+        self.old = None
+
+    def __enter__(self):
+        try:
+            self.old = float((self.brain.snn_tune_get() or {}).get("noise_rate_hz", 0.0) or 0.0)
+            self.brain.snn_tune("noise_rate_hz", 0.0)
+        except Exception:
+            self.old = None
+        return self
+
+    def reset(self):
+        try:
+            self.brain.reset_inference_state()
+        except Exception:
+            pass
+
+    def __exit__(self, *exc):
+        if self.old is not None:
+            try:
+                self.brain.snn_tune("noise_rate_hz", self.old)
+            except Exception:
+                pass
+        self.reset()
+        return False
+
+
 def _visual_differentiation_probe(brain, composer):
+    with _ControlledInference(brain) as ci:
+        return _visual_differentiation_probe_inner(brain, composer, ci)
+
+
+def _visual_differentiation_probe_inner(brain, composer, ci):
     """Stage-0 perceptual health probe: responses to eight different held-out
     photographs (same neutral prompt) must not collapse onto one point.
     Returns (mean_pairwise_cosine, n_photos) or (None, 0) when unavailable.
@@ -548,6 +588,7 @@ def _visual_differentiation_probe(brain, composer):
         raws, embs = [], []
 
         def _decide_with(frame_bytes):
+            ci.reset()
             try:
                 brain.submit_sensory("visual", list(frame_bytes), width=32, height=32, channels=3)
             except Exception:
@@ -9904,11 +9945,13 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                                     "apple", "truck") if l in _rs_eval.heldout]
             _neutral = composer.compose(text="look at this", modality="text")
             _vhits = 0
-            print(f"\n  Visual-only probes (held-out photos, prompt 'look at this'):")
+            print(f"\n  Visual-only probes (held-out photos, prompt 'look at this'; controlled inference):")
+            _ci = _ControlledInference(brain).__enter__()
             for _vl in _vlabels:
                 _hf = _rs_eval.get_heldout_frame(_vl, index=step // 500)
                 if not _hf:
                     continue
+                _ci.reset()
                 try:
                     brain.submit_sensory("visual", list(_hf[0]), width=32, height=32, channels=3)
                 except Exception:
@@ -9928,6 +9971,7 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                 _vhits += int(_hit)
                 print(f"    {_vl:8s} → {', '.join(t[:20] for t in _top) or '[no match]'}"
                       f"{'  ✓' if _hit else ''}")
+            _ci.__exit__(None, None, None)
             if _vlabels:
                 print(f"    [VisualProbe] {_vhits}/{len(_vlabels)} labels recognised in top-3")
         except Exception as _vpe:

@@ -397,7 +397,11 @@ static void extract_embedding(cortex_cnn_processor_t* proc) {
  * responses to 8 different photographs were identical to 5 decimals with the
  * old fixed 0.3 blend. scale = alpha * rms(features) / rms(fused).
  * ------------------------------------------------------------------------- */
-static float g_cortex_fusion_alpha = 0.5f;
+/* 2.0 since 2026-11-02: at 0.5 different photos moved the decision output
+ * by ~1% of what different text did (diagnostic: cos 0.994 vs 0.705).
+ * NIMCP_CORTEX_FUSION_ALPHA overrides at first use. */
+static float g_cortex_fusion_alpha = 2.0f;
+static int   g_cortex_fusion_alpha_env_read = 0;
 
 /* ---------------------------------------------------------------------------
  * Pending dense targets (2026-11-01). The trainer sets, per modality, the
@@ -454,6 +458,11 @@ float cortex_cnn_tune_get_fusion_alpha(void) { return g_cortex_fusion_alpha; }
 
 float cortex_cnn_fusion_scale(const float* features, uint32_t n_features,
                               const float* fused, uint32_t n_fused) {
+    if (!g_cortex_fusion_alpha_env_read) {
+        g_cortex_fusion_alpha_env_read = 1;
+        const char* e = getenv("NIMCP_CORTEX_FUSION_ALPHA");
+        if (e && *e) cortex_cnn_tune_set_fusion_alpha((float)atof(e));
+    }
     if (!features || !fused || n_features == 0 || n_fused == 0 || g_cortex_fusion_alpha <= 0.0f)
         return 0.0f;
     double sf = 0.0, su = 0.0;

@@ -29,7 +29,8 @@ int main(void) {
     for (int i = 0; i < 16; i++) feat[i] = 2.0f;     /* rms 2 */
     for (int i = 0; i < 8; i++)  fused[i] = 0.01f;   /* rms 0.01 */
 
-    EXPECT(fabsf(cortex_cnn_tune_get_fusion_alpha() - 0.5f) < 1e-6f, "default alpha %f",
+    cortex_cnn_tune_set_fusion_alpha(0.5f);
+    EXPECT(fabsf(cortex_cnn_tune_get_fusion_alpha() - 0.5f) < 1e-6f, "alpha settable %f",
            cortex_cnn_tune_get_fusion_alpha());
 
     float s = cortex_cnn_fusion_scale(feat, 16, fused, 8);

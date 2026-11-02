@@ -1479,7 +1479,10 @@ sequential_fallback:
                     float sum = 0.0f;
                     uint32_t start = i * stride;
                     uint32_t end = (i + 1 < snn_in) ? (i + 1) * stride : num_features;
-                    for (uint32_t j = start; j < end; j++) sum += features[j];
+                    /* fwd_features = text + scale-matched cortex embedding. Pooling
+                     * the raw `features` (before 2026-11-02) meant vision never
+                     * reached the SNN. */
+                    for (uint32_t j = start; j < end; j++) sum += fwd_features[j];
                     snn_input[i] = sum / (float)(end - start);
                     if (snn_input[i] < pool_min) pool_min = snn_input[i];
                     if (snn_input[i] > pool_max) pool_max = snn_input[i];
