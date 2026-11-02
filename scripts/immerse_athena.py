@@ -616,6 +616,126 @@ def _visual_differentiation_probe(brain, composer):
         return None, 0
 
 
+NOISE_PROBE_FLAG = "/tmp/athena_noise_probe"
+
+
+def _noise_diagnostic(brain, composer):
+    """One-shot decision-noise diagnostic (2026-11-02), run from the training
+    loop when NOISE_PROBE_FLAG exists. Measures, for repeated decisions:
+      A  as-is (state carried between calls, SNN Poisson noise on)
+      B  inference state reset before every call (removes state carry)
+      C  reset + SNN noise_rate_hz = 0 (should be deterministic)
+    then, under C, whether different TEXT prompts and different PHOTOS move
+    the output beyond the remaining noise. Prints [NoiseProbe] lines and
+    restores the noise rate. Read-only apart from the state resets."""
+    def _out(feats):
+        o = (brain.decide_full(feats) or {}).get("output_vector")
+        return None if o is None else np.array(o, dtype=np.float32)
+
+    def _cos(a, b):
+        return float(a @ b / max(1e-8, np.linalg.norm(a) * np.linalg.norm(b)))
+
+    def _pairs(vs):
+        return [_cos(vs[i], vs[j]) for i in range(len(vs)) for j in range(i + 1, len(vs))]
+
+    def _repeat(feats, n, reset):
+        vs = []
+        for _ in range(n):
+            if reset:
+                try:
+                    brain.reset_inference_state()
+                except Exception:
+                    pass
+            v = _out(feats)
+            if v is not None:
+                vs.append(v)
+        return vs
+
+    prompts = ["A friendly dog with soft fur", "The vast blue ocean with waves",
+               "A red apple on the table", "The bright warm sun in the sky",
+               "A loving mother holding her child", "A big truck on the road"]
+    try:
+        old_noise = float((brain.snn_tune_get() or {}).get("noise_rate_hz", 0.0) or 0.0)
+    except Exception:
+        old_noise = None
+    print(f"\n  [NoiseProbe] start (snn noise_rate_hz={old_noise})", flush=True)
+    try:
+        f0 = composer.compose(text=prompts[0], modality="text")
+        a = _repeat(f0, 4, reset=False)
+        b = _repeat(f0, 4, reset=True)
+        try:
+            brain.snn_tune("noise_rate_hz", 0.0)
+        except Exception as e:
+            print(f"  [NoiseProbe] cannot zero SNN noise: {e}", flush=True)
+        c = _repeat(f0, 4, reset=True)
+        for name, vs in (("A as-is", a), ("B reset", b), ("C reset+noise0", c)):
+            ps = _pairs(vs)
+            print(f"  [NoiseProbe] same prompt x{len(vs)} {name}: cos mean={np.mean(ps):.4f} "
+                  f"min={np.min(ps):.4f}" if ps else f"  [NoiseProbe] {name}: no outputs", flush=True)
+
+        # Text discrimination under C: one response per prompt
+        tv = []
+        for p in prompts:
+            try:
+                brain.reset_inference_state()
+            except Exception:
+                pass
+            v = _out(composer.compose(text=p, modality="text"))
+            if v is not None:
+                tv.append(v)
+        tp = _pairs(tv)
+        print(f"  [NoiseProbe] different prompts (C): cos mean={np.mean(tp):.4f} "
+              f"min={np.min(tp):.4f} max={np.max(tp):.4f}", flush=True)
+
+        # Photo discrimination under C: neutral prompt, different held-out photos
+        rs = _get_real_sensory()
+        if rs and rs.heldout:
+            neutral = composer.compose(text="look at this", modality="text")
+            pv = []
+            for lab in ("dog", "cat", "bird", "horse", "sea", "house", "apple", "truck"):
+                hf = rs.get_heldout_frame(lab, index=0)
+                if not hf:
+                    continue
+                try:
+                    brain.reset_inference_state()
+                    brain.submit_sensory("visual", list(hf[0]), width=32, height=32, channels=3)
+                except Exception:
+                    pass
+                v = _out(neutral)
+                if v is not None:
+                    pv.append(v)
+            pp = _pairs(pv)
+            print(f"  [NoiseProbe] different photos (C): cos mean={np.mean(pp):.4f} "
+                  f"min={np.min(pp):.4f} n={len(pv)}", flush=True)
+            # Same photo twice under C: residual noise for the visual path
+            hf = rs.get_heldout_frame("dog", index=0)
+            if hf:
+                sv = []
+                for _ in range(3):
+                    brain.reset_inference_state()
+                    brain.submit_sensory("visual", list(hf[0]), width=32, height=32, channels=3)
+                    v = _out(neutral)
+                    if v is not None:
+                        sv.append(v)
+                sp = _pairs(sv)
+                if sp:
+                    print(f"  [NoiseProbe] same photo x{len(sv)} (C): cos mean={np.mean(sp):.4f}",
+                          flush=True)
+    except Exception as e:
+        print(f"  [NoiseProbe] failed: {e}", flush=True)
+    finally:
+        if old_noise is not None:
+            try:
+                brain.snn_tune("noise_rate_hz", old_noise)
+            except Exception:
+                pass
+        try:
+            brain.reset_inference_state()
+        except Exception:
+            pass
+        print(f"  [NoiseProbe] done (noise_rate_hz restored to {old_noise})", flush=True)
+
+
 def _video_interlude(brain, composer, parent, stage):
     """Stages 1-3: one real-motion shot played frame by frame on consecutive
     brain steps (each frame → learn_vector against the scene's description),
@@ -7661,6 +7781,15 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
                 if gate is None:
                     break
                 print("    (ignored — the StageGate governs the transition)")
+
+        # One-shot decision-noise diagnostic on demand (main thread, so it
+        # never races learn_vector): touch /tmp/athena_noise_probe.
+        if (i + 1) % 10 == 0 and os.path.exists(NOISE_PROBE_FLAG):
+            try:
+                os.remove(NOISE_PROBE_FLAG)
+            except OSError:
+                pass
+            _noise_diagnostic(brain, composer)
 
         # Stage gate check every plateau window; the transition itself happens
         # at the top of the loop once i >= num_stimuli and the gate has passed.
