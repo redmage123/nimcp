@@ -89,26 +89,46 @@ def list_films(rows, session):
 
 
 def read_allowlist(path):
-    """Identifiers from an allowlist file, in order, without duplicates."""
+    """Identifiers from an allowlist file, in order, without duplicates.
+    Lines are `identifier [maturity level]  # comment`; the level is read by
+    real_sensory.read_allowlist_levels."""
     out = []
     with open(path) as fh:
         for line in fh:
-            ident = line.split("#", 1)[0].strip()
-            if ident and ident not in out:
-                out.append(ident)
+            parts = line.split("#", 1)[0].split()
+            if parts and parts[0] not in out:
+                out.append(parts[0])
     return out
+
+
+def read_allowlist_maturity(path):
+    """{identifier: maturity level} (second column; missing or bad -> 2, the
+    most restrictive level, matching real_sensory.read_allowlist_levels)."""
+    levels = {}
+    with open(path) as fh:
+        for line in fh:
+            parts = line.split("#", 1)[0].split()
+            if parts and parts[0] not in levels:
+                try:
+                    lvl = int(parts[1]) if len(parts) > 1 else 2
+                except ValueError:
+                    lvl = 2
+                levels[parts[0]] = lvl if lvl in (0, 1, 2) else 2
+    return levels
 
 
 def allowlisted_films(path, session):
     """Metadata docs for the allowlisted identifiers that are public domain."""
     films = []
+    levels = read_allowlist_maturity(path)
     for ident in read_allowlist(path):
         md = session.get(f"https://archive.org/metadata/{ident}", timeout=60).json().get("metadata", {})
         if "publicdomain" not in str(md.get("licenseurl", "")).lower():
             print(f"{ident}: skipped, not marked public domain ({md.get('licenseurl')})")
             continue
         films.append({"identifier": ident, "title": md.get("title", ident),
-                      "description": md.get("description", "")})
+                      "description": md.get("description", ""),
+                      "maturity": levels.get(ident, 2)})
     return films
 
 
@@ -171,7 +191,9 @@ def main():
                 sequences.append({"item": ident, "title": title,
                                   "description": f"a moving scene from the film '{title}'",
                                   "summary": desc,   # the archive's own synopsis of the film
-                                  "start_s": float(j * a.seq_len / a.fps), "frames": fr})
+                                  "start_s": float(j * a.seq_len / a.fps), "frames": fr,
+                                  # fallback only: the trainer reads levels from the allowlist
+                                  "maturity": int(doc.get("maturity", 2))})
             print(f"[{k}/{len(films)}] {ident}: {len(frames)} frames -> {len(seqs)} sequences "
                   f"({os.path.getsize(local) / 1e6:.0f} MB, {time.time() - t0:.0f}s)", flush=True)
             if not a.keep_videos:

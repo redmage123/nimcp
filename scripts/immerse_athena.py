@@ -909,6 +909,21 @@ def _video_interlude(brain, composer, parent, stage):
         return 0
 
 
+_VIDEO_STAGE = 0   # curriculum stage whose film-maturity cap the bank applies
+
+
+def _set_video_stage(stage):
+    """Cap film maturity for `stage` (RealSensoryBank.STAGE_MAX_MATURITY).
+    Called before each stage runs; a bank built later picks it up too."""
+    global _VIDEO_STAGE
+    _VIDEO_STAGE = int(stage)
+    rs = _REAL_SENSORY or None
+    if rs is not None:
+        cap = rs.set_stage(_VIDEO_STAGE)
+        print(f"  [RealSensory] stage {_VIDEO_STAGE}: films up to maturity level {cap} "
+              f"({len(rs.sequences)} sequences)", flush=True)
+
+
 def _get_real_sensory():
     """Lazily construct the real-image/speech bank (scripts/real_sensory.py).
 
@@ -924,11 +939,14 @@ def _get_real_sensory():
                 _dd = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    "..", "data", "multimodal")
                 _bank = RealSensoryBank(_dd)
+                _bank.set_stage(_VIDEO_STAGE)
                 if _bank.available():
                     _REAL_SENSORY = _bank
                     print(f"  [RealSensory] enabled — {len(_bank.images)} image labels, "
                           f"{len(_bank.speech)} spoken words, {len(_bank.heldout)} held-out labels "
-                          f"(views/object={STAGE0_VIEWS_PER_OBJECT})", flush=True)
+                          f"(views/object={STAGE0_VIEWS_PER_OBJECT}); stage {_VIDEO_STAGE} films "
+                          f"up to maturity {_bank.max_maturity}: {len(_bank.sequences)} sequences",
+                          flush=True)
                 else:
                     print(f"  [RealSensory] caches not found in {_dd} — synthetic frames only",
                           flush=True)
@@ -12191,6 +12209,7 @@ def main():
         training_progress[0] = 0
         if _training_integration is not None:
             _training_integration.begin_stage(0)
+        _set_video_stage(0)
         run_stage_0(brain, composer, parent, clock, source, decoder,
                     num_stimuli=args.stage0_stimuli,
                     start_from=start_step if start_stage == 0 else 0)
@@ -12225,6 +12244,7 @@ def main():
                     max_chunks_per_call=(_STREAMING_CFG.get("max_chunks_per_stage") or None),
                     checkpoint_dir=CHECKPOINT_DIR)
         _run_extra_corpora_priming(brain, stage=1, checkpoint_dir=CHECKPOINT_DIR)
+        _set_video_stage(1)
         run_stage_1(brain, composer, parent, clock, source, decoder,
                     num_stimuli=args.stage1_stimuli,
                     start_from=start_step if start_stage == 1 else 0)
@@ -12260,6 +12280,7 @@ def main():
                     max_chunks_per_call=(_STREAMING_CFG.get("max_chunks_per_stage") or None),
                     checkpoint_dir=CHECKPOINT_DIR)
         _run_extra_corpora_priming(brain, stage=2, checkpoint_dir=CHECKPOINT_DIR)
+        _set_video_stage(2)
         stage2_losses = run_stage_2(
             brain, composer, parent, clock, source, decoder,
             num_stimuli=args.stage2_stimuli,
@@ -12299,6 +12320,7 @@ def main():
                     max_chunks_per_call=(_STREAMING_CFG.get("max_chunks_per_stage") or None),
                     checkpoint_dir=CHECKPOINT_DIR)
         _run_extra_corpora_priming(brain, stage=3, checkpoint_dir=CHECKPOINT_DIR)
+        _set_video_stage(3)
         run_stage_3(brain, composer, parent, clock, source, decoder,
                     num_interactions=args.stage3_interactions,
                     start_from=start_step if start_stage == 3 else 0)
@@ -12318,6 +12340,7 @@ def main():
     for _st, _run, _n_eps, _max_eps in _later_stages:
         if start_stage <= _st:
             training_progress[0], training_progress[1] = _st, (start_step if start_stage == _st else 0)
+            _set_video_stage(_st)
             _run(_ia_module, brain, composer, parent, clock, source, decoder,
                  num_episodes=_n_eps,
                  start_from=start_step if start_stage == _st else 0,

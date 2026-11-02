@@ -113,6 +113,30 @@ def _candidate_words(description: str) -> list[str]:
     return out
 
 
+def read_allowlist_levels(path: str) -> dict:
+    """{identifier: maturity level} from a film allowlist.
+
+    Line format: `identifier [level]  # comment`. A missing or unparsable
+    level gets RealSensoryBank.UNTAGGED_MATURITY. Returns {} when the file
+    is absent."""
+    levels = {}
+    if not os.path.exists(path):
+        return levels
+    with open(path) as fh:
+        for line in fh:
+            parts = line.split("#", 1)[0].split()
+            if not parts or parts[0] in levels:
+                continue
+            try:
+                lvl = int(parts[1]) if len(parts) > 1 else RealSensoryBank.UNTAGGED_MATURITY
+            except ValueError:
+                lvl = RealSensoryBank.UNTAGGED_MATURITY
+            if lvl not in RealSensoryBank.MATURITY_LEVELS:
+                lvl = RealSensoryBank.UNTAGGED_MATURITY
+            levels[parts[0]] = lvl
+    return levels
+
+
 class RealSensoryBank:
     """Lazy-loading bank of real images and speech clips keyed by label."""
 
@@ -126,6 +150,8 @@ class RealSensoryBank:
         self._heldout: Optional[dict[str, list[bytes]]] = None
         self._speech: Optional[dict[str, list[np.ndarray]]] = None
         self._sequences: Optional[list[dict]] = None
+        self._all_sequences: Optional[list[dict]] = None
+        self.max_maturity = 0               # highest film maturity level played (set_stage)
         self._queued_frames: list[bytes] = []   # frames to submit on the next presentations
         self.hits = 0
         self.misses = 0
@@ -183,13 +209,55 @@ class RealSensoryBank:
         import zlib
         return zlib.crc32(str(item).encode()) % self.HELDOUT_FILM_MOD == 0
 
+    # Film maturity levels: the second column of scripts/video_allowlist.txt.
+    # Each stage plays films up to its cap (STAGE_MAX_MATURITY). Explicit
+    # sexual content has no level: it is never listed and EXCLUDED_FILMS
+    # backstops the old popularity cache.
+    MATURITY_LEVELS = {
+        0: "everyday life: animals, nature, farms, transport, towns, play",
+        1: "real-world complexity: work and industry, illness, natural hazards",
+        2: "difficult history: war, propaganda, disasters (needs framing episodes)",
+    }
+    UNTAGGED_MATURITY = 2            # a film listed without a level unlocks last
+    # Level 2 stays locked until stages 6-7 have episodes that frame such
+    # films (bias, harm, context); raise those caps to 2 when they exist.
+    STAGE_MAX_MATURITY = {0: 0, 1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1, 7: 1}
+    ALLOWLIST_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "video_allowlist.txt")
+
+    def set_stage(self, stage: int) -> int:
+        """Cap film maturity for a curriculum stage; returns the new cap."""
+        cap = self.STAGE_MAX_MATURITY.get(int(stage), max(self.STAGE_MAX_MATURITY.values()))
+        if cap != self.max_maturity:
+            self.max_maturity = cap
+            self._sequences = None      # re-filter on next access
+        return cap
+
+    def _load_all_sequences(self):
+        if self._all_sequences is not None:
+            return
+        allseq = [q for q in (self._load_pkl("video_sequences.pkl") or [])
+                  if q.get("item") not in self.EXCLUDED_FILMS]
+        levels = read_allowlist_levels(self.ALLOWLIST_PATH)
+        if levels:
+            # The allowlist is authoritative: unlisted films never play, and
+            # a film's level comes from the list, so retagging needs no rebuild.
+            allseq = [q for q in allseq if q.get("item") in levels]
+            for q in allseq:
+                q["maturity"] = levels[q["item"]]
+        else:
+            for q in allseq:
+                q.setdefault("maturity", self.UNTAGGED_MATURITY)
+        self._all_sequences = allseq
+
     def _split_sequences(self):
         if self._sequences is None:
-            allseq = [s for s in (self._load_pkl("video_sequences.pkl") or [])
-                      if s.get("item") not in self.EXCLUDED_FILMS]
-            present = {s.get("item") for s in allseq}
-            self._sequences = [s for s in allseq if not self._is_heldout_film(s.get("item"), present)]
-            self._heldout_sequences = [s for s in allseq if self._is_heldout_film(s.get("item"), present)]
+            self._load_all_sequences()
+            allseq = self._all_sequences
+            present = {q.get("item") for q in allseq}
+            playable = [q for q in allseq if q.get("maturity", self.UNTAGGED_MATURITY) <= self.max_maturity]
+            self._sequences = [q for q in playable if not self._is_heldout_film(q.get("item"), present)]
+            self._heldout_sequences = [q for q in playable if self._is_heldout_film(q.get("item"), present)]
 
     @property
     def sequences(self) -> list[dict]:

@@ -142,6 +142,20 @@ propaganda and graphic footage, so never select films by popularity. Build with:
 
     python3 scripts/build_video_cache.py --out OUT --allowlist scripts/video_allowlist.txt
 
+Each film in the allowlist carries a maturity level, which each stage caps
+(`RealSensoryBank.STAGE_MAX_MATURITY`):
+
+| Level | Content | Plays from |
+|---|---|---|
+| 0 | Everyday life: animals, nature, farms, transport, towns, play | stage 0 |
+| 1 | Real-world complexity: work and industry, illness, natural hazards | stage 4 |
+| 2 | Difficult history: war, propaganda, disasters | locked; stages 6–7 once framing episodes exist |
+
+A film listed without a level counts as level 2. Explicit sexual content has no level and
+is never listed. The trainer reads levels from the allowlist at startup and calls
+`_set_video_stage(n)` before each stage, so retagging a film needs no cache rebuild. All 62
+current films are level 0.
+
 Three films are held out of training for the `[VideoProbe]` temporal probe
 (`RealSensoryBank.HELDOUT_FILMS`). Every 1000 stage-0 steps the probe plays held-out shots
 in order, shuffled and as a still frame, under controlled inference, and reports order

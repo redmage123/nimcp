@@ -1,82 +1,91 @@
 # Curated Prelinger Archives films for the developmental video curriculum
 # (2026-11-02). Everyday life with clear motion: animals, nature, farms,
-# transport, towns and children at play. Left out on purpose: war, weapons,
-# hunting, meat processing, disasters, accidents, psychiatry, crime, sex
-# education, propaganda and advertising (incl. sponsor reels such as
-# Garden Wise, A Ride for Cinderella, The Golden Years). Held out for the video probe
+# transport, towns and children at play. Not listed: weapons, hunting, meat
+# processing, psychiatry, crime, sex education and advertising (incl. sponsor
+# reels such as Garden Wise, A Ride for Cinderella, The Golden Years). War,
+# propaganda, disasters and accidents may be added later at levels 1-2 below.
+# Held out for the video probe
 # (see scripts/real_sensory.py HELDOUT_FILMS): PrivateL1947, TexasFar1952,
 # ParkCons1938.
 #
-# One archive.org identifier per line; text after '#' is a comment.
+# One film per line: `identifier level  # comment`. The level is the film's
+# maturity (RealSensoryBank.MATURITY_LEVELS in scripts/real_sensory.py):
+#   0  everyday life: animals, nature, farms, transport, towns, play  (stage 0+)
+#   1  real-world complexity: work and industry, illness, natural hazards (stage 4+)
+#   2  difficult history: war, propaganda, disasters (locked until stages 6-7
+#      have framing episodes)
+# A film without a level is treated as 2. Explicit sexual content is never
+# listed at any level. The trainer reads levels from this file at startup,
+# so retagging a film needs no cache rebuild; adding a film does.
 
 # Animals and nature
-PrivateL1947                     # Private Life of a Cat (held out)
-ThreeLit1938                     # Three Little Kittens
-BeeCity1951                      # Bee City
-ant_city                         # Ant City
-insect_zoo                       # Insect Zoo
-SpringCo1952                     # Spring Comes to a Pond
-Dayatthe1928                     # A Day at the River
-Billieth1956                     # Billie, the Buffalo Baby
-MotherMa1952                     # Mother Mack Trains Her Seven Puppies
-MotherMa1953                     # Mother Mack's Puppies Find Happy Homes
-Chinooks1940                     # Chinook's Children
-DogCart1947                      # Dog Cart
-Internat1950                     # International Frog Jump at Angels Camp
-animals_in_the_service_of_man_1  # Animals in the Service of Man (I)
-animals_in_the_service_of_man_2  # Animals in the Service of Man (II)
-Hareandt1947                     # The Hare and the Tortoise
-Adventur1948                     # The Adventures of Junior Raindrop
-Journeyt1967                     # Journey through a Day
+PrivateL1947                     0  # Private Life of a Cat (held out)
+ThreeLit1938                     0  # Three Little Kittens
+BeeCity1951                      0  # Bee City
+ant_city                         0  # Ant City
+insect_zoo                       0  # Insect Zoo
+SpringCo1952                     0  # Spring Comes to a Pond
+Dayatthe1928                     0  # A Day at the River
+Billieth1956                     0  # Billie, the Buffalo Baby
+MotherMa1952                     0  # Mother Mack Trains Her Seven Puppies
+MotherMa1953                     0  # Mother Mack's Puppies Find Happy Homes
+Chinooks1940                     0  # Chinook's Children
+DogCart1947                      0  # Dog Cart
+Internat1950                     0  # International Frog Jump at Angels Camp
+animals_in_the_service_of_man_1  0  # Animals in the Service of Man (I)
+animals_in_the_service_of_man_2  0  # Animals in the Service of Man (II)
+Hareandt1947                     0  # The Hare and the Tortoise
+Adventur1948                     0  # The Adventures of Junior Raindrop
+Journeyt1967                     0  # Journey through a Day
 
 # Farms, gardens and food
-TexasFar1952                     # Texas Farm Family (held out)
-Poultryo1937                     # Poultry on the Farm
-UncleJim1963                     # Uncle Jim's Dairy Farm
-TripleGo1948                     # Triple Goodness
-JayCanDoIt                       # Jay Can Do It
-AboutBan1935                     # About Bananas
-DayofTha1951                     # A Day of Thanksgiving
+TexasFar1952                     0  # Texas Farm Family (held out)
+Poultryo1937                     0  # Poultry on the Farm
+UncleJim1963                     0  # Uncle Jim's Dairy Farm
+TripleGo1948                     0  # Triple Goodness
+JayCanDoIt                       0  # Jay Can Do It
+AboutBan1935                     0  # About Bananas
+DayofTha1951                     0  # A Day of Thanksgiving
 
 # Landscapes, parks and rivers
-ParkCons1938                     # Park Conscious (held out)
-yellowstone_national_park        # Yellowstone National Park
-NaturesC1930                     # Nature's Cameo: Bryce Canyon
-Heritage1963                     # Heritage of Splendor
-MightyCo1947                     # The Mighty Columbia River
-Wherethe1959                     # Where the Mountains Meet the Sea (I)
-Wherethe1959_2                   # Where the Mountains Meet the Sea (II)
-PlayInTheSno                     # Play in the Snow
-RedwoodS1940                     # Redwood Saga
+ParkCons1938                     0  # Park Conscious (held out)
+yellowstone_national_park        0  # Yellowstone National Park
+NaturesC1930                     0  # Nature's Cameo: Bryce Canyon
+Heritage1963                     0  # Heritage of Splendor
+MightyCo1947                     0  # The Mighty Columbia River
+Wherethe1959                     0  # Where the Mountains Meet the Sea (I)
+Wherethe1959_2                   0  # Where the Mountains Meet the Sea (II)
+PlayInTheSno                     0  # Play in the Snow
+RedwoodS1940                     0  # Redwood Saga
 
 # Trains, boats and streets
-BigTrain1955                     # Big Trains Rolling
-BigTrain1950                     # The Big Train (I)
-BigTrain1950_2                   # The Big Train (II)
-Passenge1955                     # The Passenger Train
-Mainline1957                     # Mainline U.S.A.
-ThisIsMy1940                     # This Is My Railroad (I)
-ThisIsMy1940_2                   # This Is My Railroad (II)
-GreatRai1942                     # A Great Railroad at Work (I)
-GreatRai1942_2                   # A Great Railroad at Work (II)
-MountTam1917                     # Mount Tamalpais Gravity Railroad
-Boats1938                        # Boats
-ThirdAve1950                     # Third Avenue El
-Arteries1941                     # Arteries of New York City
-ATripDownMarketStreet_HD         # A Trip Down Market Street
-golden_gate_city                 # Golden Gate City
+BigTrain1955                     0  # Big Trains Rolling
+BigTrain1950                     0  # The Big Train (I)
+BigTrain1950_2                   0  # The Big Train (II)
+Passenge1955                     0  # The Passenger Train
+Mainline1957                     0  # Mainline U.S.A.
+ThisIsMy1940                     0  # This Is My Railroad (I)
+ThisIsMy1940_2                   0  # This Is My Railroad (II)
+GreatRai1942                     0  # A Great Railroad at Work (I)
+GreatRai1942_2                   0  # A Great Railroad at Work (II)
+MountTam1917                     0  # Mount Tamalpais Gravity Railroad
+Boats1938                        0  # Boats
+ThirdAve1950                     0  # Third Avenue El
+Arteries1941                     0  # Arteries of New York City
+ATripDownMarketStreet_HD         0  # A Trip Down Market Street
+golden_gate_city                 0  # Golden Gate City
 
 # People, towns and play
-ConeyIsl1940                     # Coney Island
-ChicagoW1933                     # Chicago World's Fair
-OaklandW1950                     # Oakland Women's Rowing Club
-AmateurS1950                     # Amateur Skating Champs
-TheyCall1950                     # They Call It All-States
-PlayingT1950                     # Playing Together
-colachi_home_movies_1            # Colaci Home Movies (I)
-colachi_home_movies_2            # Colaci Home Movies (II)
-Martinez1927                     # Martinez, California Scenes
-EnglishC1949                     # English Children: Life in the City
-GoodNeig1943                     # Good Neighbor Family
-LimaFami1944                     # Lima Family
-Exercise1949                     # Exercise and Health
+ConeyIsl1940                     0  # Coney Island
+ChicagoW1933                     0  # Chicago World's Fair
+OaklandW1950                     0  # Oakland Women's Rowing Club
+AmateurS1950                     0  # Amateur Skating Champs
+TheyCall1950                     0  # They Call It All-States
+PlayingT1950                     0  # Playing Together
+colachi_home_movies_1            0  # Colaci Home Movies (I)
+colachi_home_movies_2            0  # Colaci Home Movies (II)
+Martinez1927                     0  # Martinez, California Scenes
+EnglishC1949                     0  # English Children: Life in the City
+GoodNeig1943                     0  # Good Neighbor Family
+LimaFami1944                     0  # Lima Family
+Exercise1949                     0  # Exercise and Health

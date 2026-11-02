@@ -13,7 +13,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "scripts"))
-from real_sensory import RealSensoryBank, SYNONYMS, _candidate_words  # noqa: E402
+from real_sensory import RealSensoryBank, SYNONYMS, _candidate_words, read_allowlist_levels  # noqa: E402
 
 failures = 0
 
@@ -39,13 +39,22 @@ def make_cache(d):
         pickle.dump({"dog": [clip.tobytes()], "happy": [clip.tobytes()]}, f)
     seqs = [{"item": "film1", "title": "Film One", "description": "a moving scene from the film 'Film One'",
              "start_s": 0.0, "frames": [bytes([i]) * (32 * 32 * 3) for i in range(8)]} for _ in range(3)]
+    # maturity fixtures: film2 level 1 (its pkl field says 0; the allowlist wins),
+    # film3 level 2, film4 unlisted, film5 listed without a level
+    def extra(item, n, **kw):
+        return [dict({"item": item, "title": item, "description": "a moving scene", "start_s": float(k),
+                      "frames": [bytes([k]) * (32 * 32 * 3)] * 8}, **kw) for k in range(n)]
+    seqs += extra("film2", 2, maturity=0) + extra("film3", 1) + extra("film4", 1, maturity=0) + extra("film5", 1)
     with open(os.path.join(d, "video_sequences.pkl"), "wb") as f:
         pickle.dump(seqs, f)
+    with open(os.path.join(d, "allowlist.txt"), "w") as f:
+        f.write("# test list\nfilm1 0  # one\nfilm2 1\nfilm3   2 # three\nfilm5\nbadlvl x\nhigh 7\n")
 
 
 with tempfile.TemporaryDirectory() as d:
     make_cache(d)
     bank = RealSensoryBank(d, seed=1)
+    bank.ALLOWLIST_PATH = os.path.join(d, "allowlist.txt")
     expect(bank.available(), "bank should report available")
 
     # matching: direct label, synonym, plural, no match
@@ -96,6 +105,27 @@ with tempfile.TemporaryDirectory() as d:
            "frames come out in order with the video label")
     expect("motion sequences: 1 (3 available)" in bank.stats_str(), f"stats mention sequences: {bank.stats_str()}")
     print(bank.stats_str())
+
+    # maturity: allowlist levels, stage caps, unlisted/untagged films
+    lv = read_allowlist_levels(os.path.join(d, "allowlist.txt"))
+    expect(lv == {"film1": 0, "film2": 1, "film3": 2, "film5": 2, "badlvl": 2, "high": 2},
+           f"allowlist levels parsed (untagged/bad/out-of-range -> 2): {lv}")
+    expect(read_allowlist_levels(os.path.join(d, "missing.txt")) == {}, "missing allowlist -> {}")
+
+    def films(b):
+        return {q["item"] for q in b.sequences} | {q["item"] for q in b.heldout_sequences}
+    expect(bank.max_maturity == 0 and films(bank) == {"film1"}, f"stage 0 plays level 0 only: {films(bank)}")
+    expect(bank.set_stage(4) == 1 and films(bank) == {"film1", "film2"}, f"stage 4 adds level 1: {films(bank)}")
+    expect(bank.set_stage(6) == 1 and "film3" not in films(bank), "level 2 stays locked at stage 6")
+    expect("film4" not in films(bank) and "film5" not in films(bank), "unlisted and untagged films never play here")
+    expect(all(q["maturity"] <= 1 for q in bank.sequences), "every playable sequence within the cap")
+    expect(bank.set_stage(0) == 0 and films(bank) == {"film1"}, "cap tightens again on a lower stage")
+    expect(bank.set_stage(99) == max(RealSensoryBank.STAGE_MAX_MATURITY.values()), "unknown stage -> highest defined cap")
+
+    # without an allowlist the pkl field is used; a missing field is the most restrictive level
+    fb = RealSensoryBank(d, seed=1)
+    fb.ALLOWLIST_PATH = os.path.join(d, "missing.txt")
+    expect(films(fb) == {"film2", "film4"}, f"fallback to pkl maturity at stage 0: {films(fb)}")
 
 # builder chunking: cuts split sequences, static runs are dropped
 from build_video_cache import chunk_frames  # noqa: E402
