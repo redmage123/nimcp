@@ -135,6 +135,18 @@ Source: public-domain Prelinger films from the Internet Archive, built by
 through `RealSensoryBank.queue_frames` / `pop_frame`, so a shot is a genuine temporal
 experience; there is no brain-side video API.
 
+Films come only from the curated list `scripts/video_allowlist.txt` (2026-11-02): 62
+everyday-life films about animals, nature, farms, trains, towns and children at play. The
+first cache took the 60 most-downloaded Prelinger films and pulled in adult reels,
+propaganda and graphic footage, so never select films by popularity. Build with:
+
+    python3 scripts/build_video_cache.py --out OUT --allowlist scripts/video_allowlist.txt
+
+Three films are held out of training for the `[VideoProbe]` temporal probe
+(`RealSensoryBank.HELDOUT_FILMS`). Every 1000 stage-0 steps the probe plays held-out shots
+in order, shuffled and as a still frame, under controlled inference, and reports order
+sensitivity, motion sensitivity and determinism.
+
 | Stage | Use | Cadence / weight |
 |---|---|---|
 | 0 | a shot plays across consecutive steps with one description/target | `--stage0-video-rate` 0.15 of items |

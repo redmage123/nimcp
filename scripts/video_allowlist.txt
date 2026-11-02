@@ -1,0 +1,82 @@
+# Curated Prelinger Archives films for the developmental video curriculum
+# (2026-11-02). Everyday life with clear motion: animals, nature, farms,
+# transport, towns and children at play. Left out on purpose: war, weapons,
+# hunting, meat processing, disasters, accidents, psychiatry, crime, sex
+# education, propaganda and advertising (incl. sponsor reels such as
+# Garden Wise, A Ride for Cinderella, The Golden Years). Held out for the video probe
+# (see scripts/real_sensory.py HELDOUT_FILMS): PrivateL1947, TexasFar1952,
+# ParkCons1938.
+#
+# One archive.org identifier per line; text after '#' is a comment.
+
+# Animals and nature
+PrivateL1947                     # Private Life of a Cat (held out)
+ThreeLit1938                     # Three Little Kittens
+BeeCity1951                      # Bee City
+ant_city                         # Ant City
+insect_zoo                       # Insect Zoo
+SpringCo1952                     # Spring Comes to a Pond
+Dayatthe1928                     # A Day at the River
+Billieth1956                     # Billie, the Buffalo Baby
+MotherMa1952                     # Mother Mack Trains Her Seven Puppies
+MotherMa1953                     # Mother Mack's Puppies Find Happy Homes
+Chinooks1940                     # Chinook's Children
+DogCart1947                      # Dog Cart
+Internat1950                     # International Frog Jump at Angels Camp
+animals_in_the_service_of_man_1  # Animals in the Service of Man (I)
+animals_in_the_service_of_man_2  # Animals in the Service of Man (II)
+Hareandt1947                     # The Hare and the Tortoise
+Adventur1948                     # The Adventures of Junior Raindrop
+Journeyt1967                     # Journey through a Day
+
+# Farms, gardens and food
+TexasFar1952                     # Texas Farm Family (held out)
+Poultryo1937                     # Poultry on the Farm
+UncleJim1963                     # Uncle Jim's Dairy Farm
+TripleGo1948                     # Triple Goodness
+JayCanDoIt                       # Jay Can Do It
+AboutBan1935                     # About Bananas
+DayofTha1951                     # A Day of Thanksgiving
+
+# Landscapes, parks and rivers
+ParkCons1938                     # Park Conscious (held out)
+yellowstone_national_park        # Yellowstone National Park
+NaturesC1930                     # Nature's Cameo: Bryce Canyon
+Heritage1963                     # Heritage of Splendor
+MightyCo1947                     # The Mighty Columbia River
+Wherethe1959                     # Where the Mountains Meet the Sea (I)
+Wherethe1959_2                   # Where the Mountains Meet the Sea (II)
+PlayInTheSno                     # Play in the Snow
+RedwoodS1940                     # Redwood Saga
+
+# Trains, boats and streets
+BigTrain1955                     # Big Trains Rolling
+BigTrain1950                     # The Big Train (I)
+BigTrain1950_2                   # The Big Train (II)
+Passenge1955                     # The Passenger Train
+Mainline1957                     # Mainline U.S.A.
+ThisIsMy1940                     # This Is My Railroad (I)
+ThisIsMy1940_2                   # This Is My Railroad (II)
+GreatRai1942                     # A Great Railroad at Work (I)
+GreatRai1942_2                   # A Great Railroad at Work (II)
+MountTam1917                     # Mount Tamalpais Gravity Railroad
+Boats1938                        # Boats
+ThirdAve1950                     # Third Avenue El
+Arteries1941                     # Arteries of New York City
+ATripDownMarketStreet_HD         # A Trip Down Market Street
+golden_gate_city                 # Golden Gate City
+
+# People, towns and play
+ConeyIsl1940                     # Coney Island
+ChicagoW1933                     # Chicago World's Fair
+OaklandW1950                     # Oakland Women's Rowing Club
+AmateurS1950                     # Amateur Skating Champs
+TheyCall1950                     # They Call It All-States
+PlayingT1950                     # Playing Together
+colachi_home_movies_1            # Colaci Home Movies (I)
+colachi_home_movies_2            # Colaci Home Movies (II)
+Martinez1927                     # Martinez, California Scenes
+EnglishC1949                     # English Children: Life in the City
+GoodNeig1943                     # Good Neighbor Family
+LimaFami1944                     # Lima Family
+Exercise1949                     # Exercise and Health

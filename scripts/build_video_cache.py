@@ -14,8 +14,15 @@ Output: <out>/video_sequences.pkl — list of
      "start_s": float, "frames": [bytes 32*32*3, ...] (len == --seq-len)}
 Sizes: one sequence of 8 frames is ~24 KB; 8,000 sequences ≈ 200 MB.
 
+With --allowlist FILE only the listed identifiers are used (one per line,
+'#' starts a comment), each checked to be public domain. The curated list
+scripts/video_allowlist.txt is the default for the curriculum: a
+popularity-ranked pull (the old default) included adult reels, propaganda
+and graphic footage.
+
 Usage (run on a host with good bandwidth; the pod's inbound is slow):
-    python3 build_video_cache.py --out DIR [--films 60] [--seq-len 8] [--fps 2]
+    python3 build_video_cache.py --out DIR [--allowlist scripts/video_allowlist.txt]
+                                 [--films 60] [--seq-len 8] [--fps 2]
                                  [--max-seq-per-film 150] [--workdir /tmp/ia_films]
 """
 import argparse
@@ -81,6 +88,30 @@ def list_films(rows, session):
     return [d for d in docs if "publicdomain" in str(d.get("licenseurl", "")).lower()]
 
 
+def read_allowlist(path):
+    """Identifiers from an allowlist file, in order, without duplicates."""
+    out = []
+    with open(path) as fh:
+        for line in fh:
+            ident = line.split("#", 1)[0].strip()
+            if ident and ident not in out:
+                out.append(ident)
+    return out
+
+
+def allowlisted_films(path, session):
+    """Metadata docs for the allowlisted identifiers that are public domain."""
+    films = []
+    for ident in read_allowlist(path):
+        md = session.get(f"https://archive.org/metadata/{ident}", timeout=60).json().get("metadata", {})
+        if "publicdomain" not in str(md.get("licenseurl", "")).lower():
+            print(f"{ident}: skipped, not marked public domain ({md.get('licenseurl')})")
+            continue
+        films.append({"identifier": ident, "title": md.get("title", ident),
+                      "description": md.get("description", "")})
+    return films
+
+
 def smallest_video(identifier, session):
     m = session.get(f"https://archive.org/metadata/{identifier}", timeout=60).json()
     files = [(f["name"], int(f.get("size", 0))) for f in m.get("files", [])
@@ -92,6 +123,8 @@ def smallest_video(identifier, session):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
+    ap.add_argument("--allowlist", default=None,
+                    help="file of archive.org identifiers to use instead of the most-downloaded films")
     ap.add_argument("--films", type=int, default=60)
     ap.add_argument("--seq-len", type=int, default=8)
     ap.add_argument("--fps", type=float, default=2.0)
@@ -104,7 +137,10 @@ def main():
     s.headers["User-Agent"] = "nimcp-curriculum-builder/1.0 (public-domain films for research)"
     os.makedirs(a.out, exist_ok=True)
     os.makedirs(a.workdir, exist_ok=True)
-    films = list_films(a.films * 2, s)[:a.films]
+    if a.allowlist:
+        films = allowlisted_films(a.allowlist, s)
+    else:
+        films = list_films(a.films * 2, s)[:a.films]
     print(f"{len(films)} public-domain films selected")
     sequences = []
     t0 = time.time()
