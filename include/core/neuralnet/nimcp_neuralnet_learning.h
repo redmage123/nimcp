@@ -65,20 +65,6 @@ NIMCP_EXPORT void neural_network_update_traces(neural_network_t network, uint32_
 NIMCP_EXPORT float neural_network_get_weight_norm(neural_network_t network, uint32_t neuron_id);
 
 /**
- * @brief Get extended weight statistics for a neuron
- *
- * @param network Neural network
- * @param neuron_id Neuron ID
- * @param mean Output: mean weight
- * @param std_dev Output: standard deviation
- * @param min_weight Output: minimum weight
- * @param max_weight Output: maximum weight
- */
-NIMCP_EXPORT void neural_network_get_weight_statistics_ext(neural_network_t network, uint32_t neuron_id,
-                                                            float* mean, float* std_dev,
-                                                            float* min_weight, float* max_weight);
-
-/**
  * @brief Apply Oja's learning rule to a neuron
  *
  * WHY: PCA-like unsupervised learning with automatic weight normalization
@@ -158,22 +144,6 @@ NIMCP_EXPORT uint32_t neural_network_apply_lateral_inhibition(
     uint32_t output_start,
     uint32_t output_count,
     float inhibition_strength);
-
-/**
- * @brief Synaptogenesis: grow new connections from active neurons to dormant neighbors.
- *
- * WHY: Networks with sparse backbone wiring have millions of dormant neurons
- *      with zero connections. This gradually activates them by sprouting
- *      connections from active neighbors, expanding network capacity over time.
- *
- * @param network Neural network
- * @param max_new_connections Maximum connections to create per call
- * @param activity_threshold Minimum |state| to consider a neuron active
- * @return Number of new connections created
- */
-NIMCP_EXPORT uint32_t neural_network_sprout_connections(neural_network_t network,
-                                                        uint32_t max_new_connections,
-                                                        float activity_threshold);
 
 /**
  * @brief Apply generalized Oja's rule

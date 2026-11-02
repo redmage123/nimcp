@@ -237,9 +237,6 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet.c           # Core lifecycle and neuron updates
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_sparse_synapse.c      # Sparse synapse storage and operations
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_synapse_lifecycle.c   # Synapse lifecycle: pruning, growth, metadata GC
-    # DISABLED: Agent-created files with duplicate functions (originals not cleaned up)
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet_activation.c  # Activation functions (Strategy pattern)
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet_learning.c   # STDP, Oja's rule, weight updates
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet_homeostasis.c # Homeostatic plasticity
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuralnet/nimcp_neuralnet_backprop.c   # Backpropagation for weight gradients
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/neuron_types/nimcp_neuron_types.c
@@ -3393,9 +3390,6 @@ target_compile_definitions(nimcp PRIVATE NIMCP_TESTING)
 
 # Allow insecure crypto fallback when libsodium is not available (dev/training only)
 target_compile_definitions(nimcp PRIVATE NIMCP_ALLOW_INSECURE_FALLBACK)
-
-# DISABLED: Enable separate learning module - guards duplicate functions in nimcp_neuralnet.c
-# target_compile_definitions(nimcp PRIVATE NEURALNET_LEARNING_SEPARATE)
 
 # Explicitly add -fPIC for shared library with thread-local storage.
 #

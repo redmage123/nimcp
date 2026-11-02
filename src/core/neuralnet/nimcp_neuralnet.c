@@ -2370,10 +2370,17 @@ uint32_t neural_network_apply_stdp(neural_network_t network, uint32_t neuron_id,
  */
 static float compute_stdp_update(float dt, const stdp_params_t* params)
 {
+    /* Simultaneous spikes carry no causal order → no update (previously fell
+     * through to full LTD). A zero/garbage time_window (config or
+     * deserialization) would divide by zero → NaN; fall back to 20ms.
+     * Ported from the never-compiled nimcp_neuralnet_learning.c copy. */
+    if (!params || fabsf(dt) < 1e-6f) return 0.0f;
+    float time_window = (params->time_window < 1.0f) ? 20.0f : params->time_window;
+
     // WHAT: Compute exponential decay based on time difference
     // WHY: STDP strength decays with |Δt|
     // HOW: exp(-|Δt| / τ)
-    float time_factor = fast_expf(-fabsf(dt) / params->time_window);
+    float time_factor = fast_expf(-fabsf(dt) / time_window);
 
     // FIX: Corrected STDP logic
     // dt = t_post - t_pre
@@ -2543,8 +2550,12 @@ uint32_t neural_network_apply_reward_learning(neural_network_t network, float re
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "neural_network_apply_reward_learning: network is NULL");
         return 0;
     }
-    if (reward < 0.0F || reward > 1.0F || learning_rate <= 0.0F) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "neural_network_apply_reward_learning: invalid reward or learning_rate");
+    /* Reward is signed: callers deliver punishment as reward < 0 (toxicity
+     * anti-Hebbian, caregiver critic) and the eligibility update
+     * Δw = lr × trace × reward depresses on negative reward. The previous
+     * [0,1] guard silently rejected every punishment. */
+    if (!isfinite(reward) || reward < -1.0F || reward > 1.0F || learning_rate <= 0.0F) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "neural_network_apply_reward_learning: invalid reward=%.3f or lr=%.3f", reward, learning_rate);
         return 0;
     }
 

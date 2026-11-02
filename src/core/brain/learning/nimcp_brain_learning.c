@@ -1282,6 +1282,12 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                                           : tox.fairness_violation;
                         float neg_reward = -0.3f * worst;
                         if (neg_reward < -1.0f) neg_reward = -1.0f;
+                        /* Surface every delivered punishment in the main log so
+                         * false-positive toxic labels can be reviewed. */
+                        LOG_MODULE_WARN("BRAIN",
+                            "[TOX-RSTDP] neg_reward=%.3f cat=%s harm=%.2f fair=%.2f label='%.80s'",
+                            neg_reward, tox.matched_category, tox.predicted_harm,
+                            tox.fairness_violation, label);
                         (void)brain_apply_reward_learning(brain, neg_reward);
                     }
                 }
