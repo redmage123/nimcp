@@ -353,6 +353,21 @@ float snn_tune_get_e_inh_mv(void)             { return g_snn_e_gaba_a_mv; }
 float snn_tune_get_tau_exc_ms(void)           { return g_snn_tau_ampa_ms; }
 float snn_tune_get_tau_inh_ms(void)           { return g_snn_tau_gaba_a_ms; }
 
+/* Language-cortex populations (brain_init_language_pops) carry sparse word /
+ * concept ensembles — ~8 neurons per item in 64K-neuron pools — so a 3%
+ * population rate target is wrong for them. Measured 2026-11-02: rate ≈0.0006
+ * vs 0.03 target, so homeostasis applied the dead-pop ×1.05 every apply
+ * (unbounded weight growth toward w_cap) and the noise rescue drove full
+ * Poisson noise into them every tick — both feed the ambient Wernicke/Broca
+ * activity the generation path has to fight. They stay in R-STDP and the
+ * intrinsic reward; only the population-rate controllers skip them. */
+static inline bool _pop_is_sparse_language(const snn_population_t* pop) {
+    return pop && (strcmp(pop->name, "wernicke_substrate") == 0 ||
+                   strcmp(pop->name, "broca_substrate")    == 0 ||
+                   strcmp(pop->name, "arcuate_relay")      == 0 ||
+                   strcmp(pop->name, "sensorymotor_ring")  == 0);
+}
+
 /*============================================================================
  * Pop-class target rate selector. Pops with names starting with "input"
  * get the looser input target; everything else gets the default biological
@@ -380,6 +395,7 @@ static inline float _target_rate_for_pop(const snn_population_t* pop) {
  *==========================================================================*/
 float snn_noise_factor_for_pop(const snn_population_t* pop) {
     if (!pop) return 0.0f;
+    if (_pop_is_sparse_language(pop)) return 0.0f;  /* sparse by design: no rescue */
     /* Warmup: firing_rate_ema is not reliable until we have samples.
      * Default to full noise during warmup — pops need it most then. */
     if (pop->rate_samples < 10) return 1.0f;
@@ -1355,6 +1371,15 @@ uint32_t snn_homeostatic_apply(snn_training_ctx_t* ctx, snn_network_t* network) 
         if (!pop || !pop->lightweight || !pop->incoming_csr) continue;
         if (pop->exclude_from_plasticity) continue;  /* Phase-2: don't homeostatically
                                   * rescale the warm-started language projection weights */
+        if (_pop_is_sparse_language(pop)) {
+            /* Not rate-regulated (see _pop_is_sparse_language), but R-STDP still
+             * updates these weights — mirror them to the GPU like a stable pop. */
+            if (pop->incoming_csr->weights_dirty) {
+                jobs[n_jobs++] = (homeo_job_t){ .pop = pop, .scale = 1.0f,
+                                                .target_rate = _target_rate_for_pop(pop) };
+            }
+            continue;
+        }
 
         /* Warm-up gate: don't scale until EMA has enough samples to be
          * trustworthy. Prevents scaling on transient startup activity. */
@@ -1396,17 +1421,11 @@ uint32_t snn_homeostatic_apply(snn_training_ctx_t* ctx, snn_network_t* network) 
         if (cur_rate < g_homeo_dead_threshold * target_rate) {
             max_scale = g_homeo_max_scale_dead;  /* escape velocity for dead pops */
         }
-        /* Reward-coupled aggressiveness: when R-STDP reward is near zero
-         * (saturation collapses the gaussian intrinsic reward to 0), R-STDP
-         * weights don't update and only homeostatic can pull firing back
-         * down. The default 0.98 floor takes ~70 applies to halve weights,
-         * which is far too slow vs. the timescale at which saturation
-         * cascades. Widen the scale-DOWN bound to 0.90 for over-target pops
-         * specifically when R-STDP is stuck. Upper bound is untouched so
-         * dead pops still get their normal escape velocity. */
-        if (ctx->reward < 0.1f && cur_rate > target_rate * 1.5f) {
-            min_scale = 0.90f;
-        }
+        /* No reward-coupled 0.90 scale-down floor. It was added in 1a495f51d
+         * (2026-04-21) and re-created the bang-bang oscillation the tight
+         * [0.98, 1.02] bounds exist to prevent (see header comment): with
+         * R-STDP reward almost always < 0.1 it engaged on nearly every pop
+         * every apply, compounding ×0.90 against a lagging rate EMA. */
 
         n_total_eligible++;
 

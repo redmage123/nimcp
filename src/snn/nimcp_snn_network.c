@@ -1006,6 +1006,19 @@ struct neural_substrate* snn_network_get_substrate(snn_network_t* net) {
     return net ? net->substrate : NULL;
 }
 
+/* Record one step into the reset-proof activity counters (see
+ * snn_network_s::lifetime_spikes). Called from every step path. */
+static inline void snn_activity_record_step(snn_network_t* network, int step_spikes) {
+    uint32_t n = step_spikes > 0 ? (uint32_t)step_spikes : 0u;
+    __atomic_fetch_add(&network->lifetime_spikes, (uint64_t)n, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&network->lifetime_steps, 1ull, __ATOMIC_RELAXED);
+    uint32_t cur = __atomic_load_n(&network->window_peak_step_spikes, __ATOMIC_RELAXED);
+    while (n > cur &&
+           !__atomic_compare_exchange_n(&network->window_peak_step_spikes, &cur, n,
+                                        true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    }
+}
+
 int snn_network_reset(snn_network_t* network) {
     if (!network) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_reset: null network pointer");
@@ -1037,6 +1050,14 @@ int snn_network_reset(snn_network_t* network) {
 
         pop->total_spikes = 0;
         pop->mean_rate = 0.0f;
+
+        /* Conductance-based PSC state decays across steps (τ up to 150ms),
+         * so it carries the previous run's drive just like i_syn. */
+        const size_t gbytes = pop->n_neurons * sizeof(float);
+        if (pop->g_ampa)   memset(pop->g_ampa,   0, gbytes);
+        if (pop->g_nmda)   memset(pop->g_nmda,   0, gbytes);
+        if (pop->g_gaba_a) memset(pop->g_gaba_a, 0, gbytes);
+        if (pop->g_gaba_b) memset(pop->g_gaba_b, 0, gbytes);
     }
 
     /* Reset the GPU LIF membrane too. The per-pop host membrane_v reset above
@@ -1044,17 +1065,27 @@ int snn_network_reset(snn_network_t* network) {
      * integrates, so without this the previous run's charged neurons bleed
      * across a reset — validated as GPU cross-seed contamination in language
      * generation (seeding concept B still fired concept A's word ensemble
-     * because its neurons stayed charged on-device). Resetting v to v_rest is
-     * the dominant carry-over; i_syn/spikes are recomputed/overwritten each
-     * step. No-op when running CPU-only (gpu_lif_state NULL). */
+     * because its neurons stayed charged on-device).
+     *
+     * i_syn must be cleared as well: kernel_lif_forward integrates
+     * i = i_syn*alpha_syn + input, so synaptic current has memory and is NOT
+     * recomputed each step. Leaving it set made every "reset" BPTT forward
+     * inherit the previous forward's drive — on the 2026-11-02 Vast run the
+     * whole L4 layer (359.6K neurons) fired en bloc on tick 1 after any hot
+     * forward, chaining bursts across up to 31 consecutive forwards. The CB
+     * conductance arrays decay the same way. No-op when running CPU-only
+     * (gpu_lif_state NULL). nimcp_gpu_snn_reset_state is a plain fill. */
     if (network->gpu_lif_state && network->gpu_manager && network->gpu_manager->contexts[0]) {
         nimcp_lif_state_t* lif = (nimcp_lif_state_t*)network->gpu_lif_state;
-        if (lif->v) {
-            snn_gpu_ensure_device(network->gpu_manager, 0);
-            (void)nimcp_gpu_snn_reset_state(
-                (nimcp_gpu_context_t*)network->gpu_manager->contexts[0],
-                lif->v, network->config.v_rest);
-        }
+        nimcp_gpu_context_t* ctx0 = (nimcp_gpu_context_t*)network->gpu_manager->contexts[0];
+        snn_gpu_ensure_device(network->gpu_manager, 0);
+        if (lif->v)        (void)nimcp_gpu_snn_reset_state(ctx0, lif->v, network->config.v_rest);
+        if (lif->i_syn)    (void)nimcp_gpu_snn_reset_state(ctx0, lif->i_syn,    0.0f);
+        if (lif->spikes)   (void)nimcp_gpu_snn_reset_state(ctx0, lif->spikes,   0.0f);
+        if (lif->g_ampa)   (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_ampa,   0.0f);
+        if (lif->g_nmda)   (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_nmda,   0.0f);
+        if (lif->g_gaba_a) (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_gaba_a, 0.0f);
+        if (lif->g_gaba_b) (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_gaba_b, 0.0f);
     }
 
     /* Reset simulation context */
@@ -3472,6 +3503,7 @@ int snn_network_step(snn_network_t* network, float dt) {
                    + (_step_t1.tv_nsec - _step_t0.tv_nsec) / 1e6;
     network->stats.total_steps = network->sim->step_count;
     network->stats.total_spikes += total_spikes;
+    snn_activity_record_step(network, (int)total_spikes);
     network->stats.total_compute_time_ms += step_ms;
     network->stats.avg_step_time_ms = network->stats.total_compute_time_ms
                                     / (double)network->stats.total_steps;
@@ -4123,6 +4155,7 @@ int snn_network_step_sparse(snn_network_t* network, float dt,
     network->sim->step_count++;
     network->stats.total_steps = network->sim->step_count;
     network->stats.total_spikes += total_spikes;
+    snn_activity_record_step(network, (int)total_spikes);
 
     /* Fill statistics if requested */
     if (stats) {
@@ -4320,6 +4353,7 @@ int snn_network_step_parallel(snn_network_t* network, float dt,
     network->sim->step_count++;
     network->stats.total_steps = network->sim->step_count;
     network->stats.total_spikes += total_spikes;
+    snn_activity_record_step(network, (int)total_spikes);
 
     return total_spikes;
 }
@@ -5417,6 +5451,21 @@ int snn_network_get_stats(snn_network_t* network, snn_stats_t* stats) {
     }
     stats->mean_firing_rate = (total_neurons > 0) ? total_rate / total_neurons : 0.0f;
 
+    return SNN_SUCCESS;
+}
+
+int snn_network_get_activity_window(snn_network_t* network,
+                                    uint64_t* lifetime_spikes,
+                                    uint64_t* lifetime_steps,
+                                    uint32_t* peak_step_spikes) {
+    if (!network) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_get_activity_window: null network pointer");
+        return SNN_ERROR_NULL_POINTER;
+    }
+    if (lifetime_spikes) *lifetime_spikes = __atomic_load_n(&network->lifetime_spikes, __ATOMIC_RELAXED);
+    if (lifetime_steps)  *lifetime_steps  = __atomic_load_n(&network->lifetime_steps, __ATOMIC_RELAXED);
+    uint32_t peak = __atomic_exchange_n(&network->window_peak_step_spikes, 0u, __ATOMIC_RELAXED);
+    if (peak_step_spikes) *peak_step_spikes = peak;
     return SNN_SUCCESS;
 }
 

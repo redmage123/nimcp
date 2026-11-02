@@ -898,6 +898,14 @@ struct snn_network_s {
     float*   fno_v_prev_buf;
     size_t   fno_v_prev_pop_stride;
     bool     fno_recording_enabled;
+
+    /* Activity counters that snn_network_reset does NOT clear. stats.total_spikes
+     * is zeroed by every reset (each BPTT forward), so it cannot be compared
+     * across monitoring windows; these can. Updated atomically on every step
+     * path; read via snn_network_get_activity_window(). */
+    uint64_t lifetime_spikes;          /**< Spikes since creation */
+    uint64_t lifetime_steps;           /**< Steps since creation */
+    uint32_t window_peak_step_spikes;  /**< Max single-step spikes since last window read */
 };
 
 //=============================================================================

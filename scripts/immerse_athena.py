@@ -971,6 +971,45 @@ def _get_real_sensory():
     return _REAL_SENSORY or None
 
 
+_SUMMARY_WINDOW = {}
+
+
+def _summary_window(brain, site, n_steps=50):
+    """Per-window timing + SNN activity for the every-50-steps trainer line.
+
+    Returns (avg_ms_per_step or None, snn_segment or "").
+
+    The legacy "ms/step" was the duration of only the 50th step, and the
+    legacy SNN fields (total_spikes / Hz / sparsity) are zeroed by every BPTT
+    forward's snn_network_reset and written by two different code paths,
+    so they are not comparable between lines. This diffs the reset-proof
+    lifetime counters instead: mean spikes per SNN step over the window,
+    the single worst step (burst detector), and how many SNN steps ran.
+    """
+    import time as _tm
+    now = _tm.monotonic()
+    prev = _SUMMARY_WINDOW.get(site)
+    avg_ms = ((now - prev["t"]) * 1000.0 / n_steps) if prev else None
+    seg = ""
+    life_spk = life_steps = None
+    try:
+        ss = brain.snn_get_stats()
+        if ss and "lifetime_spikes" in ss:
+            life_spk, life_steps = ss["lifetime_spikes"], ss["lifetime_steps"]
+            peak = ss.get("window_peak_step_spikes", 0)
+            if prev and prev.get("steps") is not None:
+                dsteps = life_steps - prev["steps"]
+                dspk = life_spk - prev["spk"]
+                mean = (dspk / dsteps) if dsteps > 0 else 0.0
+                seg = f"SNNwin:mean={mean:.0f}spk/tick/peak={peak}/ticks={dsteps}"
+            else:
+                seg = f"SNNwin:peak={peak}/warming"
+    except Exception:
+        pass
+    _SUMMARY_WINDOW[site] = {"t": now, "spk": life_spk, "steps": life_steps}
+    return avg_ms, seg
+
+
 def submit_multimodal(brain, description, target_word=None):
     """Submit synthetic sensory data for a description to the brain.
 
@@ -7850,7 +7889,12 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             rl = np.mean(recent) if recent else 0
             nz = sum(1 for x in recent if x > 0.001)
             _total_step_ms = (_t.monotonic() - _loop_t0) * 1000
-            parts = [f"[{i+1}] loss={rl:.4f} ({nz}/{len(recent)} non-zero) {_total_step_ms:.0f}ms/step"]
+            _avg_ms, _snn_win = _summary_window(brain, "loopA")
+            _ms_txt = (f"{_avg_ms:.0f}ms/step avg" if _avg_ms is not None
+                       else f"{_total_step_ms:.0f}ms/step(last)")
+            parts = [f"[{i+1}] loss={rl:.4f} ({nz}/{len(recent)} non-zero) {_ms_txt}"]
+            if _snn_win:
+                parts.append(_snn_win)
             try:
                 ss = brain.snn_get_stats()
                 if ss:
@@ -8434,7 +8478,12 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
             rl = np.mean(recent) if recent else 0
             nz = sum(1 for x in recent if x > 0.001)
             _total_step_ms = (_t.monotonic() - _loop_t0) * 1000
-            parts = [f"[{i+1}] loss={rl:.4f} ({nz}/{len(recent)} non-zero) {_total_step_ms:.0f}ms/step"]
+            _avg_ms, _snn_win = _summary_window(brain, "loopB")
+            _ms_txt = (f"{_avg_ms:.0f}ms/step avg" if _avg_ms is not None
+                       else f"{_total_step_ms:.0f}ms/step(last)")
+            parts = [f"[{i+1}] loss={rl:.4f} ({nz}/{len(recent)} non-zero) {_ms_txt}"]
+            if _snn_win:
+                parts.append(_snn_win)
             try:
                 ss = brain.snn_get_stats()
                 if ss:

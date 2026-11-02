@@ -10123,6 +10123,22 @@ static PyObject* Brain_snn_get_stats(BrainObject* self, PyObject* Py_UNUSED(args
     tmp = PyLong_FromSize_t(stats.memory_usage_bytes);
     PyDict_SetItemString(d, "memory_usage_bytes", tmp); Py_DECREF(tmp);
     #undef stats
+    /* Reset-proof counters: stats.total_spikes is zeroed by every BPTT
+     * forward's snn_network_reset, so windowed monitoring must diff these.
+     * Reading resets window_peak_step_spikes. */
+    {
+        uint64_t life_spk = 0, life_steps = 0;
+        uint32_t peak = 0;
+        if (snn_network_get_activity_window(brain->snn_network,
+                                            &life_spk, &life_steps, &peak) == 0) {
+            tmp = PyLong_FromUnsignedLongLong(life_spk);
+            PyDict_SetItemString(d, "lifetime_spikes", tmp); Py_DECREF(tmp);
+            tmp = PyLong_FromUnsignedLongLong(life_steps);
+            PyDict_SetItemString(d, "lifetime_steps", tmp); Py_DECREF(tmp);
+            tmp = PyLong_FromUnsignedLong(peak);
+            PyDict_SetItemString(d, "window_peak_step_spikes", tmp); Py_DECREF(tmp);
+        }
+    }
     return d;
 }
 

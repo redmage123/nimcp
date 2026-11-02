@@ -762,6 +762,25 @@ extern float snn_tune_get_dendritic_enabled(void);
 int snn_network_get_stats(snn_network_t* network, snn_stats_t* stats);
 
 /**
+ * @brief Read reset-proof activity counters for windowed monitoring
+ *
+ * Returns spikes and steps since network creation (never cleared by
+ * snn_network_reset) and the largest single-step spike count since the
+ * previous call, which this call resets to 0. Callers diff the lifetime
+ * counters between calls to get mean spikes per step over a window.
+ *
+ * @param network SNN network
+ * @param lifetime_spikes Out: spikes since creation (may be NULL)
+ * @param lifetime_steps Out: steps since creation (may be NULL)
+ * @param peak_step_spikes Out: max spikes in one step since last call (may be NULL)
+ * @return SNN_SUCCESS, or SNN_ERROR_NULL_POINTER if network is NULL
+ */
+int snn_network_get_activity_window(snn_network_t* network,
+                                    uint64_t* lifetime_spikes,
+                                    uint64_t* lifetime_steps,
+                                    uint32_t* peak_step_spikes);
+
+/**
  * @brief Check network health
  *
  * WHAT: Detect simulation issues (silence, explosion, NaN)

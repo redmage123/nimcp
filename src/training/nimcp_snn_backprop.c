@@ -38,6 +38,9 @@
 #include <string.h>
 #include <float.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(snn_backprop)
@@ -932,6 +935,61 @@ static int build_synapse_mapping(snn_backprop_ctx_t* ctx) {
 // Forward/Backward Pass Functions
 //=============================================================================
 
+
+/*============================================================================
+ * Ignition instrumentation (2026-11-02).
+ *
+ * On the Vast stage-0 run, ~3% of quiet-start BPTT forwards ran away
+ * exponentially (~2x/tick, 5K -> 314K spikes within 24-39 ticks). To see
+ * which layer leads the runaway, count spikes per layer group (excitatory
+ * vs PV/SOM/VIP inhibitory) for the first SNN_IGN_TICKS ticks of each
+ * forward and log the profile only for forwards that ignite, plus every
+ * SNN_IGN_BASELINE_EVERY-th forward as a quiet baseline.
+ *   NIMCP_SNN_IGNITION_LOG=0      disable
+ *   NIMCP_SNN_IGNITION_THRESH=N   spikes/tick that counts as ignition (300000)
+ *==========================================================================*/
+#define SNN_IGN_TICKS          40u
+#define SNN_IGN_BASELINE_EVERY 50u
+enum { IGN_IN, IGN_L1, IGN_L2, IGN_L3, IGN_L4, IGN_L5, IGN_L6,
+       IGN_L2I, IGN_L3I, IGN_L4I, IGN_L5I, IGN_L6I, IGN_OUT, IGN_LANG, IGN_OTHER,
+       IGN_NGROUPS };
+static const char* const k_ign_names[IGN_NGROUPS] = {
+    "in", "L1", "L2", "L3", "L4", "L5", "L6",
+    "L2i", "L3i", "L4i", "L5i", "L6i", "out", "lang", "oth" };
+
+static bool snn_ign_ends_with(const char* s, const char* suffix) {
+    size_t ls = strlen(s), lx = strlen(suffix);
+    return ls >= lx && strcmp(s + ls - lx, suffix) == 0;
+}
+
+static int snn_ign_group_of(const char* name) {
+    if (!name) return IGN_OTHER;
+    if (strncmp(name, "input", 5) == 0)  return IGN_IN;
+    if (strncmp(name, "output", 6) == 0) return IGN_OUT;
+    if (strcmp(name, "wernicke_substrate") == 0 || strcmp(name, "broca_substrate") == 0 ||
+        strcmp(name, "arcuate_relay") == 0 || strcmp(name, "sensorymotor_ring") == 0)
+        return IGN_LANG;
+    if (name[0] == 'L' && name[1] >= '1' && name[1] <= '6' && name[2] == '_') {
+        int layer = name[1] - '0';
+        bool inhib = snn_ign_ends_with(name, "_PV") || snn_ign_ends_with(name, "_SOM") ||
+                     snn_ign_ends_with(name, "_VIP");
+        if (inhib && layer >= 2) return IGN_L2I + (layer - 2);
+        return IGN_L1 + (layer - 1);
+    }
+    return IGN_OTHER;
+}
+
+static void snn_ign_count_tick(const snn_network_t* net, uint32_t* counts) {
+    for (uint32_t p = 0; p < net->n_populations; p++) {
+        const snn_population_t* pop = net->populations[p];
+        if (!pop || !pop->spike_output) continue;
+        const float* sp = (const float*)nimcp_tensor_data_const(pop->spike_output);
+        if (!sp) continue;
+        uint32_t c = 0;
+        for (uint32_t i = 0; i < pop->n_neurons; i++) c += (sp[i] > 0.5f);
+        counts[snn_ign_group_of(pop->name)] += c;
+    }
+}
 int snn_backprop_forward(
     snn_backprop_ctx_t* ctx,
     const float* inputs,
@@ -1013,9 +1071,33 @@ int snn_backprop_forward(
     /* Simulate n_steps, recording activations at each step.
      * Track cumulative spikes for get_snn_stats visibility into training. */
     int fwd_total_spikes = 0;
+
+    static int s_ign_enabled = -1;
+    static uint32_t s_ign_thresh = 300000u;
+    static uint64_t s_ign_fwd = 0;
+    if (s_ign_enabled < 0) {
+        const char* e = getenv("NIMCP_SNN_IGNITION_LOG");
+        s_ign_enabled = (e && e[0] == '0') ? 0 : 1;
+        const char* th = getenv("NIMCP_SNN_IGNITION_THRESH");
+        if (th && atol(th) > 0) s_ign_thresh = (uint32_t)atol(th);
+    }
+    const uint64_t ign_fwd = ++s_ign_fwd;
+    uint32_t ign_counts[SNN_IGN_TICKS][IGN_NGROUPS];
+    uint32_t ign_total[SNN_IGN_TICKS];
+    uint32_t ign_ticks = 0;
+    bool ign_hit = false;
+
     for (uint32_t t = 0; t < n_steps; t++) {
         int step_spikes = snn_network_step(net, dt);
         if (step_spikes >= 0) fwd_total_spikes += step_spikes;
+
+        if (s_ign_enabled && t < SNN_IGN_TICKS) {
+            memset(ign_counts[t], 0, sizeof(ign_counts[t]));
+            snn_ign_count_tick(net, ign_counts[t]);
+            ign_total[t] = step_spikes > 0 ? (uint32_t)step_spikes : 0u;
+            ign_ticks = t + 1;
+            if (ign_total[t] >= s_ign_thresh) ign_hit = true;
+        }
 
         /* Snapshot membrane_v and spike_output from each population */
         float* v_row = act_v + (size_t)t * N;
@@ -1039,6 +1121,21 @@ int snn_backprop_forward(
                 if (pop_v) v_row[flat] = pop_v[i];
                 if (pop_s) s_row[flat] = pop_s[i];
             }
+        }
+    }
+
+    if (s_ign_enabled && ign_ticks > 0 &&
+        (ign_hit || (ign_fwd % SNN_IGN_BASELINE_EVERY) == 0)) {
+        const char* tag = ign_hit ? "SNN-IGNITION" : "SNN-IGNITION-BASE";
+        for (uint32_t t = 0; t < ign_ticks; t++) {
+            char line[512];
+            int off = snprintf(line, sizeof(line), "[%s] fwd=%llu t=%02u tot=%u",
+                               tag, (unsigned long long)ign_fwd, t + 1, ign_total[t]);
+            for (int g = 0; g < IGN_NGROUPS && off > 0 && (size_t)off < sizeof(line); g++) {
+                off += snprintf(line + off, sizeof(line) - (size_t)off, " %s=%u",
+                                k_ign_names[g], ign_counts[t][g]);
+            }
+            NIMCP_LOGGING_INFO("%s", line);
         }
     }
 
