@@ -35,9 +35,10 @@ import zlib
 # Weapons, and categories that are not objects a young learner should be
 # shown by name (clutter is the dataset's background class).
 EXCLUDED = {
-    "ak47", "sword", "tomahawk", "rifle", "revolver-101", "grenade", "cannon",
-    "chopsticks-like-weapon", "fighter-jet", "tank", "skull", "syringe", "smokestack",
-    "beer-mug", "wine-bottle", "cigarette", "clutter",
+    "ak47", "sword", "rifle", "revolver-101", "cannon", "fighter-jet", "knife",  # weapons
+    "coffin", "tombstone", "human-skeleton",                                    # death imagery
+    "syringe", "beer-mug", "wine-bottle", "roulette-wheel", "smokestack",       # adult habits
+    "clutter",                                                                  # background class
 }
 
 # Caltech-256 category -> label used by real_sensory (CIFAR names where the
@@ -63,7 +64,7 @@ TO_LABEL = {
     "waterfall": "waterfall", "galaxy": "galaxy", "mars": "planet", "saturn": "planet",
     "skyscraper": "skyscraper", "lighthouse": "lighthouse", "windmill": "windmill",
     "bridge": "bridge", "covered-wagon": "wagon", "teddy-bear": "teddy_bear",
-    "grapes": "grapes", "watermelon": "watermelon", "strawberry": "strawberry",
+    "faces-easy-101": "face", "grapes": "grapes", "watermelon": "watermelon", "strawberry": "strawberry",
     "pineapple": "pineapple", "banana": "banana", "tomato": "tomato",
 }
 

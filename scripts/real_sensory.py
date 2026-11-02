@@ -103,6 +103,14 @@ SYNONYMS: dict[str, list[str]] = {
     "phone": ["telephone"], "television": ["television"], "tv": ["television"],
     "keyboard": ["keyboard"], "bottle": ["bottle"], "bowl": ["bowl"], "cup": ["cup"],
     "mug": ["cup"], "plate": ["plate"], "can": ["can"],
+    # Caltech-256 labels (high-resolution photos, stage 1+; absent at stage 0,
+    # where these words fall through to the next match as before)
+    "teddy": ["teddy_bear"], "balloon": ["hot_air_balloon"], "piano": ["grand_piano"],
+    "guitar": ["electric_guitar"], "pram": ["pram"], "stroller": ["pram"],
+    "egg": ["fried_egg"], "icecream": ["ice_cream_cone"], "hat": ["cowboy_hat", "top_hat"],
+    "ball": ["soccer_ball", "tennis_ball", "golf_ball"], "face": ["face"],
+    "shoe": ["sneaker", "tennis_shoes"], "goat": ["goat"], "llama": ["llama"],
+    "zebra": ["zebra"], "giraffe": ["giraffe"], "octopus": ["octopus"], "starfish": ["starfish"],
 }
 
 _WORD_RE = re.compile(r"[a-z]+")
