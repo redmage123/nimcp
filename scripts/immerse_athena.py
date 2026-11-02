@@ -657,6 +657,80 @@ def _visual_differentiation_probe_inner(brain, composer, ci):
         return None, 0
 
 
+VIDEO_PROBE_EVERY = 1000   # stage-0 steps between video (temporal) probes
+VIDEO_PROBE_SHOTS = 4
+
+
+def _video_temporal_probe(brain, composer, n_shots=VIDEO_PROBE_SHOTS, seed=0):
+    """Does Athena's response depend on temporal structure? (2026-11-02)
+
+    For held-out film shots, under controlled inference (SNN noise off;
+    state reset once at the start of each run and then CARRIED through the
+    frames), play each shot:
+        ordered  — real order
+        shuffled — the other frames in random order, ending on the same
+                   last frame (so the final percept is identical)
+        static   — the last frame held for the same number of steps
+        ordered2 — real order again (determinism check)
+    and compare the response after the last frame.
+        temporal = 1 - cos(ordered, shuffled)   sensitivity to frame ORDER
+        motion   = 1 - cos(ordered, static)     sensitivity to MOVEMENT
+        determinism = cos(ordered, ordered2)    should be 1.0
+    Returns a dict (empty without held-out footage). Reported, not gating."""
+    rs = _get_real_sensory()
+    shots = list(rs.heldout_sequences) if rs else []
+    if not shots:
+        return {}
+    rng = random.Random(seed)
+    rng.shuffle(shots)
+    shots = shots[:n_shots]
+    neutral = composer.compose(text="look at this", modality="text")
+
+    def _play(frames, ci):
+        ci.reset()
+        out = None
+        for fr in frames:
+            try:
+                brain.submit_sensory("visual", list(fr), width=32, height=32, channels=3)
+            except Exception:
+                pass
+            o = (brain.decide_full(neutral) or {}).get("output_vector")
+            out = None if o is None else np.array(o, dtype=np.float32)
+        return out
+
+    def _cos(a, b):
+        return float(a @ b / max(1e-8, np.linalg.norm(a) * np.linalg.norm(b)))
+
+    temporal, motion, determ = [], [], []
+    with _ControlledInference(brain) as ci:
+        for s in shots:
+            fr = list(s["frames"])
+            if len(fr) < 3:
+                continue
+            body = fr[:-1]
+            shuf = body[:]
+            for _ in range(10):
+                rng.shuffle(shuf)
+                if shuf != body:
+                    break
+            o1 = _play(fr, ci)
+            o2 = _play(shuf + [fr[-1]], ci)
+            o3 = _play([fr[-1]] * len(fr), ci)
+            o4 = _play(fr, ci)
+            if any(o is None for o in (o1, o2, o3, o4)):
+                continue
+            temporal.append(1.0 - _cos(o1, o2))
+            motion.append(1.0 - _cos(o1, o3))
+            determ.append(_cos(o1, o4))
+    if not temporal:
+        return {}
+    res = {"temporal": float(np.mean(temporal)), "motion": float(np.mean(motion)),
+           "determinism": float(np.mean(determ)), "n": len(temporal)}
+    print(f"    [VideoProbe] n={res['n']} held-out shots | temporal(order)={res['temporal']:.4f} "
+          f"motion(vs still)={res['motion']:.4f} determinism={res['determinism']:.4f}", flush=True)
+    return res
+
+
 NOISE_PROBE_FLAG = "/tmp/athena_noise_probe"
 
 
@@ -7825,6 +7899,12 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
 
         # One-shot decision-noise diagnostic on demand (main thread, so it
         # never races learn_vector): touch /tmp/athena_noise_probe.
+        if VIDEO_PROBE_EVERY and (i + 1) % VIDEO_PROBE_EVERY == 0:
+            try:
+                _video_temporal_probe(brain, composer, seed=0)   # same shots every time: comparable trend
+            except Exception as _vpe:
+                print(f"    [VideoProbe] failed: {_vpe}", flush=True)
+
         if (i + 1) % 10 == 0 and os.path.exists(NOISE_PROBE_FLAG):
             try:
                 os.remove(NOISE_PROBE_FLAG)

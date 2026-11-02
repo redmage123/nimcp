@@ -80,6 +80,12 @@ with tempfile.TemporaryDirectory() as d:
     expect(max(abs(x) for x in sp[0]) > 0.1, "speech window is the loud part")
     expect(bank.get_speech("silent night") is None, "no speech word -> None")
 
+    # held-out split: disjoint, covers everything, stable
+    expect(len(bank.sequences) + len(bank.heldout_sequences) == 3, 'split covers all sequences')
+    expect(not ({s['item'] for s in bank.sequences} & {s['item'] for s in bank.heldout_sequences}), 'films disjoint')
+    import zlib
+    expect(all(zlib.crc32(s['item'].encode()) % 20 == 0 for s in bank.heldout_sequences), 'held-out rule (fallback when no named films present)')
+
     # motion sequences: queue plays frames in order through pop_frame
     seq = bank.get_sequence()
     expect(seq is not None and len(seq["frames"]) == 8 and "moving scene" in seq["description"], "sequence")

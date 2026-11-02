@@ -160,12 +160,49 @@ class RealSensoryBank:
             self._speech = self._load_pkl("speech_cmds_by_label.pkl") or {}
         return self._speech
 
+    # Films held out of training for the video probe: neutral everyday-life
+    # footage, named explicitly (a hash split picked one unsuitable film).
+    # If none of these are in the cache, fall back to ~1 in 20 by crc32.
+    HELDOUT_FILMS = {"PrivateL1947", "TexasFar1952", "ParkCons1938"}
+    HELDOUT_FILM_MOD = 20
+    # Excluded from training and probes (2026-11-02): the popularity-ranked
+    # Prelinger pull included adult/burlesque reels, propaganda and graphic
+    # material unsuitable for a developmental curriculum. Interim list until
+    # the cache is rebuilt from a curated allowlist.
+    EXCLUDED_FILMS = {
+        "stripper_variety_girls", "CherryKnight", "MalibuMermai",       # adult / pin-up
+        "boys_beware", "Japanese1943", "Communis1952", "DontBeaS1947",  # propaganda
+        "Experime1940", "AtomBomb1946", "hindenberg_explodes",          # graphic / disturbing
+        "DuckandC1951", "Physical1953", "naturally_a_girl",
+        "DatingDo1949",
+    }
+
+    def _is_heldout_film(self, item, present) -> bool:
+        if present & self.HELDOUT_FILMS:
+            return item in self.HELDOUT_FILMS
+        import zlib
+        return zlib.crc32(str(item).encode()) % self.HELDOUT_FILM_MOD == 0
+
+    def _split_sequences(self):
+        if self._sequences is None:
+            allseq = [s for s in (self._load_pkl("video_sequences.pkl") or [])
+                      if s.get("item") not in self.EXCLUDED_FILMS]
+            present = {s.get("item") for s in allseq}
+            self._sequences = [s for s in allseq if not self._is_heldout_film(s.get("item"), present)]
+            self._heldout_sequences = [s for s in allseq if self._is_heldout_film(s.get("item"), present)]
+
     @property
     def sequences(self) -> list[dict]:
-        """Real-motion frame sequences (scripts/build_video_cache.py)."""
-        if self._sequences is None:
-            self._sequences = self._load_pkl("video_sequences.pkl") or []
+        """Training motion sequences (scripts/build_video_cache.py), held-out
+        films excluded."""
+        self._split_sequences()
         return self._sequences
+
+    @property
+    def heldout_sequences(self) -> list[dict]:
+        """Sequences from held-out films (never used for training)."""
+        self._split_sequences()
+        return self._heldout_sequences
 
     def available(self) -> bool:
         return bool(self.images) or bool(self.sequences)
