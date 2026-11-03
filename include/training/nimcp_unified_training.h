@@ -200,6 +200,18 @@ typedef struct nimcp_trainable_network_ops {
      */
     int (*sync_params)(void* ctx);
 
+    /**
+     * @brief Optional: report this step's target dimension to the adapter.
+     *
+     * Called by nimcp_utm_step before get_output_dim, so an adapter with a
+     * learned readout (LNN, 2026-11-03) can size its output to the target.
+     * NULL is valid (adapter output dim is fixed).
+     *
+     * @param ctx        Network-specific adapter context
+     * @param target_dim Dimension of the training target for this step
+     */
+    void (*set_target_dim)(void* ctx, uint32_t target_dim);
+
 } nimcp_trainable_network_ops_t;
 
 /**

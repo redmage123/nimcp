@@ -113,6 +113,29 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_lnn_layer.cpp)
 endif()
 
 # ============================================================================
+# LNN learned linear readout (2026-11-03)
+# ============================================================================
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_lnn_readout.cpp)
+    add_executable(unit_lnn_test_lnn_readout
+        test_lnn_readout.cpp
+    )
+    target_link_libraries(unit_lnn_test_lnn_readout
+        PRIVATE ${LNN_TEST_LIBS}
+    )
+    target_include_directories(unit_lnn_test_lnn_readout
+        PRIVATE ${LNN_TEST_INCLUDES}
+    )
+    target_compile_features(unit_lnn_test_lnn_readout PRIVATE cxx_std_17)
+    gtest_discover_tests(unit_lnn_test_lnn_readout
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        PROPERTIES
+            LABELS "unit;lnn;readout"
+            TIMEOUT 120
+    )
+    message(STATUS "  Added LNN unit test: test_lnn_readout")
+endif()
+
+# ============================================================================
 # Test 4: LNN Sleep Bridge
 # ============================================================================
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_lnn_sleep_bridge.cpp)

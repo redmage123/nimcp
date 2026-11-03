@@ -1003,6 +1003,11 @@ int nimcp_utm_step(nimcp_unified_training_manager_t* mgr,
     /* Pre-allocate output buffers and prepare input adaptation for all networks */
     for (uint32_t i = 0; i < mgr->num_networks; i++) {
         if (!mgr->networks[i].enabled) continue;
+        /* Let adapters with a learned readout size their output to the
+         * target before the output buffer is allocated (2026-11-03). */
+        if (mgr->networks[i].ops->set_target_dim) {
+            mgr->networks[i].ops->set_target_dim(mgr->networks[i].ctx, target_dim);
+        }
         uint32_t out_dim = mgr->networks[i].ops->get_output_dim(mgr->networks[i].ctx);
         if (out_dim == 0) {
             NIMCP_LOGGING_WARN("utm_step: Network '%s' has output_dim=0, skipping",

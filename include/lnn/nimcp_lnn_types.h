@@ -435,6 +435,18 @@ struct lnn_network_s {
      * Channel pointer is owned; created at lnn_network_attach_thalamic_router
      * and destroyed at lnn_network_destroy. Null when not attached. */
     struct thalamic_channel_s*   thalamic_channel;
+
+    /* Learned linear readout (2026-11-03). Maps the last layer's state
+     * x [n_outputs] to the training target: y = readout_W·x + readout_b.
+     * Without it the UTM scored the raw ODE state (|x| up to ±10, natural
+     * scale ~tau) against the first n_outputs dims of a 4096-dim target
+     * whose rms is ~0.03, which pinned LNN MSE at ~24. NULL / 0 = no
+     * readout (pre-2026-11-03 behavior). Persisted by lnn_network_save v3. */
+    nimcp_tensor_t* readout_W;       /**< [readout_dim × n_outputs], row-major */
+    nimcp_tensor_t* readout_b;       /**< [readout_dim] */
+    nimcp_tensor_t* readout_grad_W;  /**< Accumulated dL/dW, same shape */
+    nimcp_tensor_t* readout_grad_b;  /**< Accumulated dL/db */
+    uint32_t        readout_dim;     /**< 0 = readout disabled */
 };
 
 /**

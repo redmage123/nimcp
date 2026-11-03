@@ -589,6 +589,69 @@ int lnn_network_get_gradients(
 int lnn_network_zero_gradients(lnn_network_t* network);
 
 /*=============================================================================
+ * Learned Linear Readout (2026-11-03)
+ *===========================================================================*/
+
+/**
+ * @brief Create (or re-create) the readout y = W·x + b.
+ *
+ * WHAT: Allocates readout_W [readout_dim × n_outputs], readout_b and their
+ *       gradients. W ~ N(0, (init_scale / sqrt(n_outputs))²), b = 0.
+ * WHY:  The raw last-layer state is on the wrong scale and dimension for
+ *       the training target; a learned readout maps it there.
+ * HOW:  No-op if a readout of the same dim already exists (keeps learned
+ *       weights, e.g. after checkpoint load). Deterministic for a seed.
+ *
+ * @param network     LNN network
+ * @param readout_dim Output dimension (> 0)
+ * @param init_scale  Weight scale; expected |y| ≈ init_scale × rms(x)
+ * @param seed        RNG seed for the initial weights
+ * @return 0 on success, negative on error
+ */
+int lnn_network_readout_init(lnn_network_t* network, uint32_t readout_dim,
+                             float init_scale, uint64_t seed);
+
+/**
+ * @brief Free the readout (readout_dim becomes 0). NULL-safe.
+ */
+void lnn_network_readout_free(lnn_network_t* network);
+
+/**
+ * @brief Zero the readout gradients. NULL-safe.
+ *
+ * Separate from lnn_network_zero_gradients, which the adjoint backward
+ * calls internally (via lnn_gradient_reset) and must not wipe the readout
+ * gradient accumulated earlier in the same step.
+ */
+void lnn_network_readout_zero_grad(lnn_network_t* network);
+
+/**
+ * @brief y = readout_W·x + readout_b.
+ *
+ * @param network LNN network with a readout
+ * @param x       Input [n_outputs]
+ * @param y       Output [readout_dim]
+ * @return 0 on success, negative on error (no readout / NULL args)
+ */
+int lnn_network_readout_forward(const lnn_network_t* network,
+                                const float* x, float* y);
+
+/**
+ * @brief Backprop through the readout.
+ *
+ * Accumulates readout_grad_W += dl_dy ⊗ x and readout_grad_b += dl_dy, and
+ * writes dl_dx = readout_Wᵀ·dl_dy (computed with the pre-update weights).
+ *
+ * @param network LNN network with a readout
+ * @param x       Forward input [n_outputs]
+ * @param dl_dy   Loss gradient w.r.t. readout output [readout_dim]
+ * @param dl_dx   Output gradient w.r.t. x [n_outputs] (may be NULL)
+ * @return 0 on success, negative on error
+ */
+int lnn_network_readout_backward(lnn_network_t* network, const float* x,
+                                 const float* dl_dy, float* dl_dx);
+
+/*=============================================================================
  * Serialization
  *===========================================================================*/
 

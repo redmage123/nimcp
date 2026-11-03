@@ -317,6 +317,8 @@ void lnn_network_destroy(lnn_network_t* network) {
         network->thalamic_channel = NULL;
     }
 
+    lnn_network_readout_free(network);
+
     // Destroy GPU LNN layers before CPU layers
     if (network->layers) {
         for (uint32_t i = 0; i < network->n_layers; i++) {
@@ -1707,6 +1709,144 @@ int lnn_network_zero_gradients(lnn_network_t* network) {
         if (layer->grad_tau_base) nimcp_tensor_zero_grad(layer->grad_tau_base);
     }
 
+    /* Readout gradients are NOT zeroed here: lnn_gradient_reset calls this
+     * inside the adjoint backward, after the adapter has already
+     * accumulated this step's readout gradient. Use
+     * lnn_network_readout_zero_grad at the start of each training step. */
+    return LNN_SUCCESS;
+}
+
+/*=============================================================================
+ * Learned Linear Readout (2026-11-03)
+ *===========================================================================*/
+
+void lnn_network_readout_free(lnn_network_t* network) {
+    if (!network) return;
+    if (network->readout_W)      nimcp_tensor_destroy(network->readout_W);
+    if (network->readout_b)      nimcp_tensor_destroy(network->readout_b);
+    if (network->readout_grad_W) nimcp_tensor_destroy(network->readout_grad_W);
+    if (network->readout_grad_b) nimcp_tensor_destroy(network->readout_grad_b);
+    network->readout_W = NULL;
+    network->readout_b = NULL;
+    network->readout_grad_W = NULL;
+    network->readout_grad_b = NULL;
+    network->readout_dim = 0;
+}
+
+/* splitmix64 → uniform (0,1); deterministic per seed. */
+static double readout_rand_uniform(uint64_t* state) {
+    uint64_t z = (*state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z ^= z >> 31;
+    return ((double)(z >> 11) + 0.5) * (1.0 / 9007199254740992.0);
+}
+
+/* Allocate a zeroed F32 tensor of n elements. */
+static nimcp_tensor_t* readout_tensor_zeros(size_t n) {
+    uint32_t dims[1] = { (uint32_t)n };
+    nimcp_tensor_t* t = nimcp_tensor_create(dims, 1, NIMCP_DTYPE_F32);
+    if (t) {
+        float* d = (float*)nimcp_tensor_data(t);
+        if (d) memset(d, 0, n * sizeof(float));
+    }
+    return t;
+}
+
+int lnn_network_readout_init(lnn_network_t* network, uint32_t readout_dim,
+                             float init_scale, uint64_t seed) {
+    if (!network) return LNN_ERROR_NULL_POINTER;
+    if (readout_dim == 0 || network->n_outputs == 0) return LNN_ERROR_INVALID_PARAM;
+    if (network->readout_dim == readout_dim && network->readout_W
+        && network->readout_b && network->readout_grad_W && network->readout_grad_b) {
+        return LNN_SUCCESS;   /* keep learned weights */
+    }
+    lnn_network_readout_free(network);
+
+    const size_t n_in = network->n_outputs;
+    const size_t n_w  = (size_t)readout_dim * n_in;
+    network->readout_W      = readout_tensor_zeros(n_w);
+    network->readout_b      = readout_tensor_zeros(readout_dim);
+    network->readout_grad_W = readout_tensor_zeros(n_w);
+    network->readout_grad_b = readout_tensor_zeros(readout_dim);
+    if (!network->readout_W || !network->readout_b
+        || !network->readout_grad_W || !network->readout_grad_b) {
+        lnn_network_readout_free(network);
+        NIMCP_LOGGING_ERROR("lnn_network_readout_init: alloc failed (%u x %zu)",
+                            readout_dim, n_in);
+        return LNN_ERROR_OUT_OF_MEMORY;
+    }
+
+    /* W ~ N(0, sigma²), sigma = init_scale / sqrt(n_in) (Box-Muller). */
+    float* W = (float*)nimcp_tensor_data(network->readout_W);
+    const double sigma = (double)init_scale / sqrt((double)n_in);
+    uint64_t rs = seed ? seed : 0x5EEDULL;
+    for (size_t i = 0; i < n_w; i += 2) {
+        double u1 = readout_rand_uniform(&rs);
+        double u2 = readout_rand_uniform(&rs);
+        double r = sqrt(-2.0 * log(u1));
+        W[i] = (float)(sigma * r * cos(2.0 * M_PI * u2));
+        if (i + 1 < n_w) W[i + 1] = (float)(sigma * r * sin(2.0 * M_PI * u2));
+    }
+    network->readout_dim = readout_dim;
+    NIMCP_LOGGING_INFO("LNN readout created: %u x %zu (init sigma %.2e)",
+                       readout_dim, n_in, sigma);
+    return LNN_SUCCESS;
+}
+
+void lnn_network_readout_zero_grad(lnn_network_t* network) {
+    if (!network) return;
+    if (network->readout_grad_W) {
+        memset(nimcp_tensor_data(network->readout_grad_W), 0,
+               nimcp_tensor_numel(network->readout_grad_W) * sizeof(float));
+    }
+    if (network->readout_grad_b) {
+        memset(nimcp_tensor_data(network->readout_grad_b), 0,
+               nimcp_tensor_numel(network->readout_grad_b) * sizeof(float));
+    }
+}
+
+int lnn_network_readout_forward(const lnn_network_t* network,
+                                const float* x, float* y) {
+    if (!network || !x || !y) return LNN_ERROR_NULL_POINTER;
+    if (network->readout_dim == 0 || !network->readout_W || !network->readout_b) {
+        return LNN_ERROR_INVALID_STATE;
+    }
+    const uint32_t n_in = network->n_outputs;
+    const float* W = (const float*)nimcp_tensor_data_const(network->readout_W);
+    const float* b = (const float*)nimcp_tensor_data_const(network->readout_b);
+    for (uint32_t o = 0; o < network->readout_dim; o++) {
+        const float* row = W + (size_t)o * n_in;
+        float acc = b[o];
+        for (uint32_t k = 0; k < n_in; k++) acc += row[k] * x[k];
+        y[o] = acc;
+    }
+    return LNN_SUCCESS;
+}
+
+int lnn_network_readout_backward(lnn_network_t* network, const float* x,
+                                 const float* dl_dy, float* dl_dx) {
+    if (!network || !x || !dl_dy) return LNN_ERROR_NULL_POINTER;
+    if (network->readout_dim == 0 || !network->readout_W
+        || !network->readout_grad_W || !network->readout_grad_b) {
+        return LNN_ERROR_INVALID_STATE;
+    }
+    const uint32_t n_in = network->n_outputs;
+    const float* W = (const float*)nimcp_tensor_data_const(network->readout_W);
+    float* gW = (float*)nimcp_tensor_data(network->readout_grad_W);
+    float* gb = (float*)nimcp_tensor_data(network->readout_grad_b);
+    if (dl_dx) memset(dl_dx, 0, n_in * sizeof(float));
+    for (uint32_t o = 0; o < network->readout_dim; o++) {
+        const float g = dl_dy[o];
+        if (g == 0.0f) continue;
+        const float* row = W + (size_t)o * n_in;
+        float* grow = gW + (size_t)o * n_in;
+        gb[o] += g;
+        for (uint32_t k = 0; k < n_in; k++) {
+            grow[k] += g * x[k];
+            if (dl_dx) dl_dx[k] += row[k] * g;
+        }
+    }
     return LNN_SUCCESS;
 }
 
@@ -1748,7 +1888,8 @@ int lnn_network_save(const lnn_network_t* network, const char* path) {
 
     /* Header */
     uint32_t magic = 0x4C4E4E53; /* "LNNS" */
-    uint32_t version = 2;  /* v2: adds layer->p (momentum) + use_hamiltonian */
+    uint32_t version = 3;  /* v2: adds layer->p (momentum) + use_hamiltonian;
+                            * v3: trailing learned-readout block */
     LNN_FWRITE(&magic, sizeof(uint32_t), 1);
     LNN_FWRITE(&version, sizeof(uint32_t), 1);
 
@@ -1787,6 +1928,19 @@ int lnn_network_save(const lnn_network_t* network, const char* path) {
         /* Save Hamiltonian momentum (NULL-safe: nimcp_tensor_save writes 0 for NULL) */
         nimcp_tensor_save(layer->p, f);
         LNN_FWRITE(&layer->use_hamiltonian, sizeof(bool), 1);
+    }
+
+    /* v3: learned readout block — readout_dim, n_outputs, then W and b
+     * when readout_dim > 0. */
+    {
+        uint32_t rd = (network->readout_W && network->readout_b)
+                      ? network->readout_dim : 0;
+        LNN_FWRITE(&rd, sizeof(uint32_t), 1);
+        LNN_FWRITE(&network->n_outputs, sizeof(uint32_t), 1);
+        if (rd > 0) {
+            nimcp_tensor_save(network->readout_W, f);
+            nimcp_tensor_save(network->readout_b, f);
+        }
     }
 
     #undef LNN_FWRITE
@@ -1839,7 +1993,7 @@ lnn_network_t* lnn_network_load(const char* path) {
         fclose(f);
         return NULL;
     }
-    if (fread(&version, sizeof(uint32_t), 1, f) != 1 || version > 2) {
+    if (fread(&version, sizeof(uint32_t), 1, f) != 1 || version > 3) {
         NIMCP_LOGGING_ERROR("lnn_network_load: unsupported version %u", version);
         fclose(f); return NULL;
     }
@@ -1870,6 +2024,7 @@ lnn_network_t* lnn_network_load(const char* path) {
 
     /* Restore per-layer weights from file */
     uint32_t restore_layers = (n_layers < net->n_layers) ? n_layers : net->n_layers;
+    bool layers_truncated = false;  /* v3 readout block only follows a complete layer list */
     for (uint32_t i = 0; i < n_layers; i++) {
         uint32_t n_neurons = 0;
         uint32_t ode_method = 0;
@@ -1879,6 +2034,7 @@ lnn_network_t* lnn_network_load(const char* path) {
 
         if (fread(&n_neurons, sizeof(uint32_t), 1, f) != 1) {
             NIMCP_LOGGING_WARN("lnn_network_load: truncated at layer %u", i);
+            layers_truncated = true;
             break;
         }
         if (n_neurons == 0) continue;
@@ -1888,6 +2044,7 @@ lnn_network_t* lnn_network_load(const char* path) {
             fread(&use_layer_norm, sizeof(bool), 1, f) != 1 ||
             fread(&layer_norm_eps, sizeof(float), 1, f) != 1) {
             NIMCP_LOGGING_WARN("lnn_network_load: truncated layer %u config", i);
+            layers_truncated = true;
             break;
         }
 
@@ -2101,6 +2258,42 @@ lnn_network_t* lnn_network_load(const char* path) {
         nimcp_tensor_destroy(tau_base);
         nimcp_tensor_destroy(x);
         nimcp_tensor_destroy(tau);
+    }
+
+    /* v3: learned readout block. A missing/mismatched block just leaves the
+     * network without a readout; the trainer re-creates it on first use. */
+    if (version >= 3 && !layers_truncated) {
+        uint32_t rd = 0, saved_n_out = 0;
+        if (fread(&rd, sizeof(uint32_t), 1, f) == 1 &&
+            fread(&saved_n_out, sizeof(uint32_t), 1, f) == 1 && rd > 0) {
+            nimcp_tensor_t* rW = nimcp_tensor_load(f);
+            nimcp_tensor_t* rb = nimcp_tensor_load(f);
+            const bool shape_ok = rW && rb && saved_n_out == net->n_outputs
+                && nimcp_tensor_numel(rW) == (size_t)rd * net->n_outputs
+                && nimcp_tensor_numel(rb) == rd;
+            if (shape_ok && lnn_network_readout_init(net, rd, 0.0f, 1) == LNN_SUCCESS) {
+                float* dW = (float*)nimcp_tensor_data(net->readout_W);
+                float* db = (float*)nimcp_tensor_data(net->readout_b);
+                const float* sW = (const float*)nimcp_tensor_data_const(rW);
+                const float* sb = (const float*)nimcp_tensor_data_const(rb);
+                size_t bad = 0;
+                for (size_t k = 0; k < (size_t)rd * net->n_outputs; k++) {
+                    dW[k] = isfinite(sW[k]) ? sW[k] : (bad++, 0.0f);
+                }
+                for (uint32_t k = 0; k < rd; k++) {
+                    db[k] = isfinite(sb[k]) ? sb[k] : (bad++, 0.0f);
+                }
+                NIMCP_LOGGING_INFO("lnn_network_load: readout restored (%u x %u)%s",
+                                   rd, net->n_outputs,
+                                   bad ? " — NaN/Inf entries reset to 0" : "");
+            } else {
+                NIMCP_LOGGING_WARN("lnn_network_load: readout block shape mismatch "
+                                   "(%u x %u vs n_outputs %u) — ignored",
+                                   rd, saved_n_out, net->n_outputs);
+            }
+            nimcp_tensor_destroy(rW);
+            nimcp_tensor_destroy(rb);
+        }
     }
 
     net->is_training = is_training;
