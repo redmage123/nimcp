@@ -1206,6 +1206,8 @@ int snn_network_reset(snn_network_t* network) {
         if (lif->v)        (void)nimcp_gpu_snn_reset_state(ctx0, lif->v, network->config.v_rest);
         if (lif->i_syn)    (void)nimcp_gpu_snn_reset_state(ctx0, lif->i_syn,    0.0f);
         if (lif->spikes)   (void)nimcp_gpu_snn_reset_state(ctx0, lif->spikes,   0.0f);
+        if (lif->refractory_timer)
+            (void)nimcp_gpu_snn_reset_state(ctx0, lif->refractory_timer, 0.0f);
         if (lif->g_ampa)   (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_ampa,   0.0f);
         if (lif->g_nmda)   (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_nmda,   0.0f);
         if (lif->g_gaba_a) (void)nimcp_gpu_snn_reset_state(ctx0, lif->g_gaba_a, 0.0f);
@@ -1668,6 +1670,176 @@ static void snn_cb_post_spike_pop(snn_population_t* pop, float dt_ms,
             }
         }
     }
+}
+
+/* =========================================================================
+ * GPU homeostasis parity (2026-11-03)
+ *
+ * The current-based GPU step (the production path on Vast) skipped every
+ * per-neuron stabilizer the CPU step runs: absolute refractory period,
+ * AHP / Na-K pump hyperpolarization, basket feed-forward inhibition,
+ * intrinsic-plasticity threshold offset, and short-term synaptic
+ * depression. With none of them, strongly driven pops ran away: the
+ * [SNN-IGNITION] traces showed all 348K L4 neurons firing on every tick
+ * for 12+ consecutive ticks, which the 2 ms refractory period alone makes
+ * impossible on CPU.
+ *
+ * The helpers below reuse the CPU logic (snn_adaptation_compute_hyperpol,
+ * snn_basket_pool_mean_rate, snn_cb_post_spike_pop) so the two paths share
+ * one implementation. Refractoriness and the threshold offset are applied
+ * inside the LIF kernel; depression rides on the uploaded spike vector.
+ *
+ * Kill switches (default ON):
+ *   NIMCP_SNN_GPU_REFRACTORY=0   — no refractory period on GPU
+ *   NIMCP_SNN_GPU_HOMEOSTASIS=0  — no AHP/pump/basket/IP/depression on GPU
+ * ========================================================================= */
+
+static int snn_env_flag_default_on(const char* name) {
+    const char* e = getenv(name);
+    return !(e && e[0] == '0');
+}
+
+static int snn_gpu_refractory_enabled(void) {
+    static int cached = -1;
+    if (cached < 0) cached = snn_env_flag_default_on("NIMCP_SNN_GPU_REFRACTORY");
+    return cached;
+}
+
+static int snn_gpu_homeostasis_enabled(void) {
+    static int cached = -1;
+    if (cached < 0) cached = snn_env_flag_default_on("NIMCP_SNN_GPU_HOMEOSTASIS");
+    return cached;
+}
+
+/** Per-pop state carried from the pre-LIF fold-in to the post-spike pass. */
+typedef struct {
+    float* ahp_hyp;     /* owned until handed to snn_cb_post_spike_pop */
+    float* pump_hyp;    /* owned until handed to snn_cb_post_spike_pop */
+    bool   ahp_on;
+    bool   pump_on;
+    bool   basket_on;
+    bool   active;      /* lightweight CSR pop that gets homeostasis */
+} snn_gpu_homeo_pop_t;
+
+static bool snn_gpu_homeo_pop_eligible(const snn_population_t* pop) {
+    return pop && pop->lightweight && pop->incoming_csr
+        && pop->incoming_csr->finalized;
+}
+
+/**
+ * @brief Pre-LIF homeostasis for the current-based GPU step.
+ *
+ * Folds AHP + pump hyperpolarization and basket inhibition into h_input
+ * (same terms the CPU current-mode path adds to I_syn) and uploads the
+ * per-neuron intrinsic-plasticity threshold offsets to the LIF state.
+ *
+ * @return Per-pop array [n_populations] to pass to
+ *         snn_gpu_homeostasis_post(), or NULL if homeostasis is off or
+ *         allocation failed (the step then runs without it).
+ */
+static snn_gpu_homeo_pop_t* snn_gpu_homeostasis_pre(
+    snn_network_t* network, nimcp_gpu_context_t* gpu,
+    nimcp_lif_state_t* lif_state, float* h_input,
+    size_t total_neurons, float dt_ms)
+{
+    if (!snn_gpu_homeostasis_enabled() || !h_input || total_neurons == 0) {
+        return NULL;
+    }
+    snn_gpu_homeo_pop_t* hp = (snn_gpu_homeo_pop_t*)nimcp_calloc(
+        network->n_populations, sizeof(snn_gpu_homeo_pop_t));
+    if (!hp) return NULL;
+
+    /* ATP coupling for AHP/pump gain, identical to the CPU path. */
+    float pump_factor = 1.0f;
+    if (network->substrate && snn_tune_get_substrate_enabled() != 0.0f
+        && snn_tune_get_ahp_pump_substrate_coupling() != 0.0f) {
+        pump_factor = network->cached_axon_effects.pump_activity;
+        if (pump_factor < 0.1f) pump_factor = 0.1f;
+        if (pump_factor > 1.0f) pump_factor = 1.0f;
+    }
+
+    float* h_off = (float*)nimcp_calloc(total_neurons, sizeof(float));
+
+    size_t off = 0;
+    for (uint32_t p = 0; p < network->n_populations; p++) {
+        snn_population_t* pop = network->populations[p];
+        if (!pop) continue;
+        if (snn_gpu_homeo_pop_eligible(pop)) {
+            snn_gpu_homeo_pop_t* h = &hp[p];
+            h->active    = true;
+            h->ahp_on    = (pop->ahp  && snn_tune_get_ahp_enabled()    != 0.0f);
+            h->pump_on   = (pop->pump && snn_tune_get_pump_enabled()   != 0.0f);
+            h->basket_on = (pop->basket && snn_tune_get_basket_enabled() != 0.0f);
+            if (h->ahp_on) {
+                h->ahp_hyp = (float*)nimcp_calloc(pop->n_neurons, sizeof(float));
+                if (h->ahp_hyp) snn_adaptation_compute_hyperpol(pop->ahp, h->ahp_hyp, dt_ms);
+            }
+            if (h->pump_on) {
+                h->pump_hyp = (float*)nimcp_calloc(pop->n_neurons, sizeof(float));
+                if (h->pump_hyp) snn_adaptation_compute_hyperpol(pop->pump, h->pump_hyp, dt_ms);
+            }
+            /* Basket inhibition is uniform across the parent pop and is
+             * already negative-signed (see snn_cb_deposit_neuron). */
+            const float basket_contrib = h->basket_on
+                ? pop->basket->gain_inhib_to_parent
+                  * snn_basket_pool_mean_rate(pop->basket)
+                : 0.0f;
+
+            float* in = h_input + off;
+            for (uint32_t n = 0; n < pop->n_neurons; n++) {
+                float hyp = 0.0f;
+                if (h->ahp_hyp)  hyp += h->ahp_hyp[n];
+                if (h->pump_hyp) hyp += h->pump_hyp[n];
+                in[n] += basket_contrib - hyp * pump_factor;
+            }
+            if (h_off && pop->threshold_offset) {
+                memcpy(h_off + off, pop->threshold_offset,
+                       pop->n_neurons * sizeof(float));
+            }
+        }
+        off += pop->n_neurons;
+    }
+
+    if (h_off) {
+        if (!nimcp_gpu_lif_state_upload_thresh_offset(gpu, lif_state, h_off,
+                                                      total_neurons)) {
+            NIMCP_LOGGING_WARN("snn_gpu_homeostasis_pre: threshold offset "
+                               "upload failed — kernel uses the base threshold");
+        }
+        nimcp_free(h_off);
+    }
+    return hp;
+}
+
+/**
+ * @brief Post-spike adaptation for the current-based GPU step.
+ *
+ * When @p spikes_valid, runs snn_cb_post_spike_pop on each eligible pop
+ * (advances AHP/pump state, basket pool, intrinsic-plasticity threshold
+ * offset, short-term depression) using this step's spike_output. Always
+ * frees @p hp and any hyperpolarization arrays it still owns.
+ */
+static void snn_gpu_homeostasis_post(snn_network_t* network,
+                                     snn_gpu_homeo_pop_t* hp,
+                                     float dt_ms, bool spikes_valid)
+{
+    if (!hp) return;
+    for (uint32_t p = 0; p < network->n_populations; p++) {
+        snn_gpu_homeo_pop_t* h = &hp[p];
+        if (!h->active) continue;
+        snn_population_t* pop = network->populations[p];
+        if (spikes_valid && pop) {
+            /* Takes ownership of ahp_hyp / pump_hyp and frees them. */
+            snn_cb_post_spike_pop(pop, dt_ms, h->ahp_on, h->pump_on,
+                                  h->basket_on, h->ahp_hyp, h->pump_hyp);
+        } else {
+            if (h->ahp_hyp)  nimcp_free(h->ahp_hyp);
+            if (h->pump_hyp) nimcp_free(h->pump_hyp);
+        }
+        h->ahp_hyp = NULL;
+        h->pump_hyp = NULL;
+    }
+    nimcp_free(hp);
 }
 
 /**
@@ -2271,7 +2443,7 @@ int snn_network_step(snn_network_t* network, float dt) {
     int total_spikes = 0;
     bool gpu_executed = false;
     struct timespec _step_t0, _step_t1, _phase_t0, _phase_t1;
-    double _isyn_ms = 0, _lif_ms = 0, _readback_ms = 0;
+    double _isyn_ms = 0, _lif_ms = 0, _readback_ms = 0, _homeo_ms = 0;
     /* CB-GPU-7 instrumentation: time the post-step GPU-path phases so we
      * can see where the 2.7s/step is actually spent (deposit pass and
      * kernel both report 0ms — the cost is somewhere in post-step work). */
@@ -2373,6 +2545,10 @@ int snn_network_step(snn_network_t* network, float dt) {
         if (lif_state->per_neuron_params_dirty && total_neurons > 0) {
             float* h_tau  = (float*)nimcp_calloc(total_neurons, sizeof(float));
             float* h_vthr = (float*)nimcp_calloc(total_neurons, sizeof(float));
+            /* GPU refractory (2026-11-03): per-neuron t_ref carries the
+             * subclass profile (PV 1 ms, SOM 4 ms, default 2 ms). */
+            float* h_tref = snn_gpu_refractory_enabled()
+                ? (float*)nimcp_calloc(total_neurons, sizeof(float)) : NULL;
             if (h_tau && h_vthr) {
                 size_t neuron_idx = 0;
                 for (uint32_t p = 0; p < network->n_populations; p++) {
@@ -2383,11 +2559,25 @@ int snn_network_step(snn_network_t* network, float dt) {
                             pop, n, &network->config);
                         h_tau[neuron_idx]  = lp.tau_mem;
                         h_vthr[neuron_idx] = lp.v_thresh;
+                        if (h_tref) h_tref[neuron_idx] = lp.t_ref;
                         neuron_idx++;
                     }
                 }
                 bool ok = nimcp_gpu_lif_state_upload_per_neuron_params(
                     gpu, lif_state, h_tau, h_vthr, total_neurons);
+                if (ok && h_tref) {
+                    if (nimcp_gpu_lif_state_upload_t_ref(
+                            gpu, lif_state, h_tref, total_neurons)) {
+                        NIMCP_LOGGING_INFO(
+                            "snn_network_step: GPU refractory period enabled "
+                            "for %zu neurons (NIMCP_SNN_GPU_REFRACTORY=0 "
+                            "disables)", total_neurons);
+                    } else {
+                        NIMCP_LOGGING_WARN(
+                            "snn_network_step: GPU t_ref upload failed — "
+                            "running without a refractory period");
+                    }
+                }
                 if (ok) {
                     lif_state->per_neuron_params_dirty = false;
                     NIMCP_LOGGING_DEBUG(
@@ -2405,6 +2595,7 @@ int snn_network_step(snn_network_t* network, float dt) {
             }
             if (h_tau)  nimcp_free(h_tau);
             if (h_vthr) nimcp_free(h_vthr);
+            if (h_tref) nimcp_free(h_tref);
         }
 
         /* Build input current vector for LIF kernel.
@@ -2434,6 +2625,19 @@ int snn_network_step(snn_network_t* network, float dt) {
                         if (!pop) continue;
                         float* sd = (float*)nimcp_tensor_data(pop->spike_output);
                         if (sd) memcpy(h_spk_flat + off, sd, pop->n_neurons * sizeof(float));
+                        /* Short-term depression (2026-11-03): a spiking
+                         * source carries (1 - depression), which the isyn
+                         * kernel multiplies into the synaptic weight —
+                         * same as the CPU deposit's weight*(1-dep). */
+                        if (sd && pop->depression && snn_gpu_homeostasis_enabled()) {
+                            float* hs = h_spk_flat + off;
+                            for (uint32_t n = 0; n < pop->n_neurons; n++) {
+                                if (hs[n] > 0.5f) {
+                                    float f = 1.0f - pop->depression[n];
+                                    hs[n] = (f > 0.0f) ? f : 0.0f;
+                                }
+                            }
+                        }
                         off += pop->n_neurons;
                     }
 
@@ -2785,6 +2989,16 @@ int snn_network_step(snn_network_t* network, float dt) {
                 }
             }
 
+            /* GPU homeostasis parity (2026-11-03): AHP/pump/basket into
+             * h_input + threshold offset upload. */
+            clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
+            snn_gpu_homeo_pop_t* gpu_homeo = snn_gpu_homeostasis_pre(
+                network, gpu, lif_state, h_input, total_neurons, dt_ms);
+            clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
+            _homeo_ms += (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
+                       + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
+            bool gpu_spikes_valid = false;
+
             /* Upload input to GPU tensor */
             clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
             size_t dims[1] = { total_neurons };
@@ -2875,6 +3089,7 @@ int snn_network_step(snn_network_t* network, float dt) {
                         }
                         nimcp_free(h_spikes);
                         gpu_executed = true;
+                        gpu_spikes_valid = true;
                     }
                 } else if (!gpu_ok) {
                     NIMCP_LOGGING_WARN("snn_network_step: GPU LIF forward failed, falling back to CPU");
@@ -2885,6 +3100,16 @@ int snn_network_step(snn_network_t* network, float dt) {
             clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
             _lif_ms = (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
                     + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
+
+            /* Post-spike adaptation (AHP/pump/basket/IP/depression). Runs
+             * only when this step's GPU spikes were distributed; otherwise
+             * the CPU fallback below does its own adaptation. */
+            clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
+            snn_gpu_homeostasis_post(network, gpu_homeo, dt_ms, gpu_spikes_valid);
+            gpu_homeo = NULL;
+            clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
+            _homeo_ms += (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
+                       + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
             nimcp_free(h_input);
         }
 
@@ -3725,13 +3950,13 @@ int snn_network_step(snn_network_t* network, float dt) {
     /* Log timing breakdown every step for profiling */
     {
         double post_total_ms = _prof_ema_ms + _prof_stats_ms + _prof_kg_ms + _prof_fno_ms + _prof_debug_ms;
-        double unaccounted_ms = step_ms - _cbgpu_ms - _isyn_ms - _lif_ms - _substrate_debit_ms - post_total_ms;
+        double unaccounted_ms = step_ms - _cbgpu_ms - _isyn_ms - _lif_ms - _homeo_ms - _substrate_debit_ms - post_total_ms;
 
         NIMCP_LOGGING_INFO("SNN step %llu: total=%.1fms (isyn=%.1fms lif+readback=%.1fms "
-                           "cbgpu=%.1fms substrate_debit=%.1fms ema_ring=%.1fms) "
+                           "homeo=%.1fms cbgpu=%.1fms substrate_debit=%.1fms ema_ring=%.1fms) "
                            "spikes=%d gpu=%s avg=%.1fms",
                            (unsigned long long)network->stats.total_steps,
-                           step_ms, _isyn_ms, _lif_ms,
+                           step_ms, _isyn_ms, _lif_ms, _homeo_ms,
                            _cbgpu_ms, _substrate_debit_ms, _ema_ring_ms,
                            total_spikes, gpu_executed ? "yes" : "no",
                            network->stats.avg_step_time_ms);

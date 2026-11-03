@@ -132,23 +132,41 @@ bool nimcp_gpu_lif_forward(
     float tau_mem = p->tau_mem;
     float tau_syn = p->tau_syn;
 
+    /* GPU homeostasis parity (2026-11-03): optional refractory timer and
+     * intrinsic-plasticity threshold offset (NULL = feature off). */
+    float* refrac = (state->refractory_timer && state->t_ref_per_neuron)
+        ? (float*)state->refractory_timer->data : NULL;
+    const float* t_ref = refrac ? (const float*)state->t_ref_per_neuron->data : NULL;
+    const float* thr_off = state->thresh_offset
+        ? (const float*)state->thresh_offset->data : NULL;
+
     for (size_t i = 0; i < n; i++) {
         /* Update synaptic current: exponential decay + input */
         i_syn[i] = i_syn[i] * (1.0f - dt / tau_syn) + inp[i];
+
+        /* Absolute refractory period: membrane held, no spike. */
+        if (refrac && refrac[i] > 0.0f) {
+            refrac[i] -= dt;
+            spikes_out[i] = 0.0f;
+            continue;
+        }
 
         /* Update membrane potential: dv/dt = -(v - v_rest)/tau_mem + I_syn/tau_mem */
         float dv = (-(v[i] - p->v_rest) + i_syn[i]) * (dt / tau_mem);
         v[i] += dv;
 
+        float thresh = p->v_thresh + (thr_off ? thr_off[i] : 0.0f);
+
         /* Spike detection */
-        if (v[i] >= p->v_thresh) {
+        if (v[i] >= thresh) {
             spikes_out[i] = 1.0f;
             if (p->hard_reset) {
                 v[i] = p->v_reset;
             } else {
                 /* Soft reset: subtract threshold */
-                v[i] -= (p->v_thresh - p->v_reset);
+                v[i] -= (thresh - p->v_reset);
             }
+            if (refrac) refrac[i] = t_ref[i];
         } else {
             spikes_out[i] = 0.0f;
         }

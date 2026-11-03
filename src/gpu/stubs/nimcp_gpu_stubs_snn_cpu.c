@@ -128,6 +128,9 @@ void nimcp_lif_state_destroy(nimcp_lif_state_t* state) {
     cpu_tensor_destroy(state->spikes);
     cpu_tensor_destroy(state->tau_mem_per_neuron);
     cpu_tensor_destroy(state->v_thresh_per_neuron);
+    cpu_tensor_destroy(state->refractory_timer);
+    cpu_tensor_destroy(state->t_ref_per_neuron);
+    cpu_tensor_destroy(state->thresh_offset);
     cpu_tensor_destroy(state->g_ampa);
     cpu_tensor_destroy(state->g_nmda);
     cpu_tensor_destroy(state->g_gaba_a);
@@ -174,6 +177,55 @@ bool nimcp_gpu_lif_state_upload_per_neuron_params(
     }
 
     state->per_neuron_params_dirty = false;
+    return true;
+}
+
+bool nimcp_gpu_lif_state_upload_t_ref(
+    nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state,
+    const float* t_ref_host,
+    size_t n_neurons)
+{
+    (void)ctx;
+    if (!state || !state->v || n_neurons != state->v->numel) return false;
+    if (!t_ref_host) {
+        cpu_tensor_destroy(state->t_ref_per_neuron);
+        state->t_ref_per_neuron = NULL;
+        cpu_tensor_destroy(state->refractory_timer);
+        state->refractory_timer = NULL;
+        return true;
+    }
+    if (!state->refractory_timer) {
+        state->refractory_timer = cpu_tensor_create(n_neurons);
+        if (!state->refractory_timer) return false;
+        memset(state->refractory_timer->data, 0, n_neurons * sizeof(float));
+    }
+    if (!state->t_ref_per_neuron) {
+        state->t_ref_per_neuron = cpu_tensor_create(n_neurons);
+        if (!state->t_ref_per_neuron) return false;
+    }
+    memcpy(state->t_ref_per_neuron->data, t_ref_host, n_neurons * sizeof(float));
+    return true;
+}
+
+bool nimcp_gpu_lif_state_upload_thresh_offset(
+    nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state,
+    const float* offset_host,
+    size_t n_neurons)
+{
+    (void)ctx;
+    if (!state || !state->v || n_neurons != state->v->numel) return false;
+    if (!offset_host) {
+        cpu_tensor_destroy(state->thresh_offset);
+        state->thresh_offset = NULL;
+        return true;
+    }
+    if (!state->thresh_offset) {
+        state->thresh_offset = cpu_tensor_create(n_neurons);
+        if (!state->thresh_offset) return false;
+    }
+    memcpy(state->thresh_offset->data, offset_host, n_neurons * sizeof(float));
     return true;
 }
 
@@ -393,8 +445,10 @@ bool nimcp_gpu_snn_isyn_csr(
 
         for (unsigned int j = row_start; j < row_end; j++) {
             unsigned int pre_idx = d_col_indices[j];
-            if (d_spike_vector[pre_idx] > 0.5f) {
-                isyn += d_weights[j];
+            /* Spiked sources carry (1 - depression); see CUDA kernel. */
+            const float s = d_spike_vector[pre_idx];
+            if (s > 0.0f) {
+                isyn += d_weights[j] * s;
             }
         }
 

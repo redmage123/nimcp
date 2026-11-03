@@ -240,6 +240,14 @@ typedef struct {
     nimcp_gpu_tensor_t* g_gaba_a;   /**< Optional [n] GABA_A conductance, NULL when CB OFF */
     nimcp_gpu_tensor_t* g_gaba_b;   /**< Optional [n] GABA_B conductance, NULL when CB OFF */
     bool cb_arrays_dirty;           /**< Host-side dirty flag — re-upload g_* before next step */
+
+    /* GPU homeostasis parity (2026-11-03). The current-based GPU step had
+     * no refractory period and ignored the intrinsic-plasticity threshold
+     * offset, so strongly driven pops (L4: 348K neurons) fired on every
+     * tick. All three arrays are optional; NULL keeps the old behavior. */
+    nimcp_gpu_tensor_t* refractory_timer;  /**< Optional [n] ms left in refractory */
+    nimcp_gpu_tensor_t* t_ref_per_neuron;  /**< Optional [n] refractory period (ms) */
+    nimcp_gpu_tensor_t* thresh_offset;     /**< Optional [n] threshold offset (mV) */
 } nimcp_lif_state_t;
 
 /**
@@ -309,6 +317,48 @@ NIMCP_EXPORT bool nimcp_gpu_lif_state_upload_per_neuron_params(
     nimcp_lif_state_t* state,
     const float* tau_mem_host,
     const float* v_thresh_host,
+    size_t n_neurons
+);
+
+/**
+ * @brief Upload per-neuron refractory periods and enable refractoriness.
+ *
+ * Allocates `refractory_timer` (zeroed) and `t_ref_per_neuron` on first
+ * use. After this call the LIF kernels hold a neuron that just spiked at
+ * reset for t_ref ms (timer counts down by dt each step), matching the
+ * CPU step path. NULL `t_ref_host` frees both arrays (refractoriness off,
+ * pre-2026-11-03 behavior).
+ *
+ * @param ctx        GPU context (NOT NULL).
+ * @param state      LIF state (NOT NULL).
+ * @param t_ref_host Host array [n_neurons] of t_ref (ms), or NULL.
+ * @param n_neurons  Must match `state->v->numel`.
+ * @return true on success.
+ */
+NIMCP_EXPORT bool nimcp_gpu_lif_state_upload_t_ref(
+    nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state,
+    const float* t_ref_host,
+    size_t n_neurons
+);
+
+/**
+ * @brief Upload the per-neuron intrinsic-plasticity threshold offset.
+ *
+ * The host updates snn_population_t::threshold_offset every step; the
+ * LIF kernels add it to the per-neuron threshold. NULL frees the array
+ * (offset treated as 0).
+ *
+ * @param ctx         GPU context (NOT NULL).
+ * @param state       LIF state (NOT NULL).
+ * @param offset_host Host array [n_neurons] of offsets (mV), or NULL.
+ * @param n_neurons   Must match `state->v->numel`.
+ * @return true on success.
+ */
+NIMCP_EXPORT bool nimcp_gpu_lif_state_upload_thresh_offset(
+    nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state,
+    const float* offset_host,
     size_t n_neurons
 );
 

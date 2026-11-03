@@ -89,6 +89,10 @@ void nimcp_lif_state_destroy(nimcp_lif_state_t* state)
     // Wave G GPU sync (v17): optional per-neuron arrays.
     if (state->tau_mem_per_neuron)  nimcp_gpu_tensor_destroy(state->tau_mem_per_neuron);
     if (state->v_thresh_per_neuron) nimcp_gpu_tensor_destroy(state->v_thresh_per_neuron);
+    // GPU homeostasis parity (2026-11-03).
+    if (state->refractory_timer) nimcp_gpu_tensor_destroy(state->refractory_timer);
+    if (state->t_ref_per_neuron) nimcp_gpu_tensor_destroy(state->t_ref_per_neuron);
+    if (state->thresh_offset)    nimcp_gpu_tensor_destroy(state->thresh_offset);
     // CB Phase 5 (GPU port): per-receptor conductance arrays.
     if (state->g_ampa)   nimcp_gpu_tensor_destroy(state->g_ampa);
     if (state->g_nmda)   nimcp_gpu_tensor_destroy(state->g_nmda);
@@ -295,6 +299,95 @@ bool nimcp_gpu_lif_state_upload_per_neuron_params(
     return true;
 }
 
+/* Shared helper: allocate-if-needed then upload a per-neuron array. */
+static bool lif_state_upload_array(nimcp_gpu_context_t* ctx,
+                                   nimcp_gpu_tensor_t** slot,
+                                   const float* host, size_t n_neurons,
+                                   const char* what)
+{
+    size_t dims[1] = { n_neurons };
+    if (!*slot) {
+        *slot = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_FP32);
+        if (!*slot) {
+            LOG_ERROR("lif_state upload: %s tensor create failed", what);
+            return false;
+        }
+    }
+    if (!nimcp_gpu_tensor_upload(*slot, host)) {
+        LOG_ERROR("lif_state upload: %s upload failed", what);
+        return false;
+    }
+    return true;
+}
+
+bool nimcp_gpu_lif_state_upload_t_ref(
+    nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state,
+    const float* t_ref_host,
+    size_t n_neurons)
+{
+    if (!ctx || !state || !state->v) {
+        LOG_ERROR("nimcp_gpu_lif_state_upload_t_ref: invalid args");
+        return false;
+    }
+    if (state->v->numel != n_neurons) {
+        LOG_ERROR("nimcp_gpu_lif_state_upload_t_ref: n_neurons (%zu) does "
+                  "not match state->v->numel (%zu)",
+                  n_neurons, (size_t)state->v->numel);
+        return false;
+    }
+    if (t_ref_host == NULL) {
+        if (state->t_ref_per_neuron) {
+            nimcp_gpu_tensor_destroy(state->t_ref_per_neuron);
+            state->t_ref_per_neuron = NULL;
+        }
+        if (state->refractory_timer) {
+            nimcp_gpu_tensor_destroy(state->refractory_timer);
+            state->refractory_timer = NULL;
+        }
+        return true;
+    }
+    if (!state->refractory_timer) {
+        size_t dims[1] = { n_neurons };
+        state->refractory_timer = nimcp_gpu_tensor_create(
+            ctx, dims, 1, NIMCP_GPU_PRECISION_FP32);
+        if (!state->refractory_timer) {
+            LOG_ERROR("upload_t_ref: refractory timer create failed");
+            return false;
+        }
+        nimcp_gpu_zeros(ctx, state->refractory_timer);
+    }
+    return lif_state_upload_array(ctx, &state->t_ref_per_neuron,
+                                  t_ref_host, n_neurons, "t_ref");
+}
+
+bool nimcp_gpu_lif_state_upload_thresh_offset(
+    nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state,
+    const float* offset_host,
+    size_t n_neurons)
+{
+    if (!ctx || !state || !state->v) {
+        LOG_ERROR("nimcp_gpu_lif_state_upload_thresh_offset: invalid args");
+        return false;
+    }
+    if (state->v->numel != n_neurons) {
+        LOG_ERROR("nimcp_gpu_lif_state_upload_thresh_offset: n_neurons (%zu) "
+                  "does not match state->v->numel (%zu)",
+                  n_neurons, (size_t)state->v->numel);
+        return false;
+    }
+    if (offset_host == NULL) {
+        if (state->thresh_offset) {
+            nimcp_gpu_tensor_destroy(state->thresh_offset);
+            state->thresh_offset = NULL;
+        }
+        return true;
+    }
+    return lif_state_upload_array(ctx, &state->thresh_offset,
+                                  offset_host, n_neurons, "thresh_offset");
+}
+
 //=============================================================================
 // LIF Forward Kernel
 //=============================================================================
@@ -331,10 +424,14 @@ __global__ void kernel_snn_isyn_csr(
     unsigned int start = row_ptr[n];
     unsigned int end   = row_ptr[n + 1];
 
+    // spike_vector holds 0 for silent sources and (1 - short-term
+    // depression) for sources that spiked (exactly 1.0 when depression is
+    // off), so a binary vector gives the same result as before.
     for (unsigned int j = start; j < end; j++) {
         unsigned int src_idx = col_indices[j];
-        if (spike_vector[src_idx] > 0.5f) {
-            i_syn += weights[j];
+        const float s = spike_vector[src_idx];
+        if (s > 0.0f) {
+            i_syn += weights[j] * s;
         }
     }
 
@@ -588,7 +685,10 @@ __global__ void kernel_lif_forward(
     float tau_mem, float tau_syn, float v_thresh, float v_reset, float v_rest,
     float dt, bool hard_reset, size_t n,
     const float* __restrict__ tau_mem_per_neuron,
-    const float* __restrict__ v_thresh_per_neuron)
+    const float* __restrict__ v_thresh_per_neuron,
+    float* __restrict__ refrac_timer,
+    const float* __restrict__ t_ref_per_neuron,
+    const float* __restrict__ thresh_offset)
 {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n) return;
@@ -596,15 +696,26 @@ __global__ void kernel_lif_forward(
     // Per-neuron resolution — NULL pointer collapses to scalar (no extra
     // global memory traffic in the homogeneous case).
     const float tau_mem_n  = tau_mem_per_neuron  ? tau_mem_per_neuron[idx]  : tau_mem;
-    const float v_thresh_n = v_thresh_per_neuron ? v_thresh_per_neuron[idx] : v_thresh;
+    float v_thresh_n = v_thresh_per_neuron ? v_thresh_per_neuron[idx] : v_thresh;
+    if (thresh_offset) v_thresh_n += thresh_offset[idx];
 
     // Decay factors
     float alpha_mem = expf(-dt / tau_mem_n);
     float alpha_syn = expf(-dt / tau_syn);
 
-    // Update synaptic current
+    // Update synaptic current. It keeps integrating during the refractory
+    // period (presynaptic release does not stop because the cell fired).
     float i = i_syn[idx] * alpha_syn + input[idx];
     i_syn[idx] = i;
+
+    // Absolute refractory period: membrane held at reset, no spike. Same
+    // countdown as the CPU step path (ref -= dt while ref > 0).
+    const bool refrac_on = (refrac_timer != nullptr && t_ref_per_neuron != nullptr);
+    if (refrac_on && refrac_timer[idx] > 0.0f) {
+        refrac_timer[idx] -= dt;
+        spikes[idx] = 0.0f;
+        return;
+    }
 
     // Update membrane potential
     float membrane = v[idx];
@@ -619,6 +730,7 @@ __global__ void kernel_lif_forward(
         } else {
             membrane = membrane - (v_thresh_n - v_reset);
         }
+        if (refrac_on) refrac_timer[idx] = t_ref_per_neuron[idx];
     }
 
     v[idx] = membrane;
@@ -636,14 +748,26 @@ __global__ void kernel_lif_forward_simple(
     float tau_mem, float v_thresh, float v_reset, float v_rest,
     float dt, bool hard_reset, size_t n,
     const float* __restrict__ tau_mem_per_neuron,
-    const float* __restrict__ v_thresh_per_neuron)
+    const float* __restrict__ v_thresh_per_neuron,
+    float* __restrict__ refrac_timer,
+    const float* __restrict__ t_ref_per_neuron,
+    const float* __restrict__ thresh_offset)
 {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n) return;
 
     // Per-neuron resolution — see kernel_lif_forward for rationale.
     const float tau_mem_n  = tau_mem_per_neuron  ? tau_mem_per_neuron[idx]  : tau_mem;
-    const float v_thresh_n = v_thresh_per_neuron ? v_thresh_per_neuron[idx] : v_thresh;
+    float v_thresh_n = v_thresh_per_neuron ? v_thresh_per_neuron[idx] : v_thresh;
+    if (thresh_offset) v_thresh_n += thresh_offset[idx];
+
+    // Absolute refractory period — see kernel_lif_forward.
+    const bool refrac_on = (refrac_timer != nullptr && t_ref_per_neuron != nullptr);
+    if (refrac_on && refrac_timer[idx] > 0.0f) {
+        refrac_timer[idx] -= dt;
+        spikes[idx] = 0.0f;
+        return;
+    }
 
     // Decay factor for membrane
     float alpha_mem = expf(-dt / tau_mem_n);
@@ -661,6 +785,7 @@ __global__ void kernel_lif_forward_simple(
         } else {
             membrane = membrane - (v_thresh_n - v_reset);
         }
+        if (refrac_on) refrac_timer[idx] = t_ref_per_neuron[idx];
     }
 
     v[idx] = membrane;
@@ -693,6 +818,16 @@ bool nimcp_gpu_lif_forward(
             ? (const float*)state->v_thresh_per_neuron->data
             : NULL;
 
+    // GPU homeostasis parity (2026-11-03): optional refractory timer +
+    // per-neuron t_ref, and intrinsic-plasticity threshold offset. A NULL
+    // array disables that feature (pre-2026-11-03 behavior).
+    const bool refrac_ready = state->refractory_timer && state->t_ref_per_neuron;
+    float* d_refrac = refrac_ready ? (float*)state->refractory_timer->data : NULL;
+    const float* d_tref = refrac_ready
+        ? (const float*)state->t_ref_per_neuron->data : NULL;
+    const float* d_thr_off = state->thresh_offset
+        ? (const float*)state->thresh_offset->data : NULL;
+
     if (state->i_syn != NULL) {
         // Full LIF with synaptic current integration
         kernel_lif_forward<<<GRID_SIZE(n), BLOCK_SIZE>>>(
@@ -700,7 +835,8 @@ bool nimcp_gpu_lif_forward(
             (float*)state->spikes->data, (const float*)input->data,
             p->tau_mem, p->tau_syn, p->v_thresh, p->v_reset, p->v_rest,
             p->dt, p->hard_reset, n,
-            d_tau_per_neuron, d_vthr_per_neuron);
+            d_tau_per_neuron, d_vthr_per_neuron,
+            d_refrac, d_tref, d_thr_off);
     } else {
         // Simplified LIF without synaptic current (input used directly)
         kernel_lif_forward_simple<<<GRID_SIZE(n), BLOCK_SIZE>>>(
@@ -708,7 +844,8 @@ bool nimcp_gpu_lif_forward(
             (const float*)input->data,
             p->tau_mem, p->v_thresh, p->v_reset, p->v_rest,
             p->dt, p->hard_reset, n,
-            d_tau_per_neuron, d_vthr_per_neuron);
+            d_tau_per_neuron, d_vthr_per_neuron,
+            d_refrac, d_tref, d_thr_off);
     }
 
     NIMCP_CUDA_RECOVER_LAST(GPU_ERROR_KERNEL_LAUNCH);
@@ -2491,6 +2628,20 @@ void nimcp_lif_state_destroy(nimcp_lif_state_t* state)
 bool nimcp_gpu_lif_forward(nimcp_gpu_context_t* ctx, nimcp_lif_state_t* state,
     const nimcp_gpu_tensor_t* input)
 {
+    return false;
+}
+
+bool nimcp_gpu_lif_state_upload_t_ref(nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state, const float* t_ref_host, size_t n_neurons)
+{
+    (void)ctx; (void)state; (void)t_ref_host; (void)n_neurons;
+    return false;
+}
+
+bool nimcp_gpu_lif_state_upload_thresh_offset(nimcp_gpu_context_t* ctx,
+    nimcp_lif_state_t* state, const float* offset_host, size_t n_neurons)
+{
+    (void)ctx; (void)state; (void)offset_host; (void)n_neurons;
     return false;
 }
 
