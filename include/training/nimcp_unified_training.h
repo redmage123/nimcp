@@ -99,6 +99,10 @@ typedef struct nimcp_utm_param_group {
     float lr_scale;             /**< LR multiplier relative to base (1.0 = default) */
     float weight_decay;         /**< Group-specific weight decay (0 = use global) */
     const char* name;           /**< Human-readable name (e.g. "lnn_tau", "cnn_dense_0") */
+    bool adam_only;             /**< Skip natural-gradient / Riemannian paths (their
+                                 *   Fisher/metric state is per network and O(n²);
+                                 *   a second qualifying group in the same network
+                                 *   hung the trainer on 2026-11-03). */
 } nimcp_utm_param_group_t;
 
 //=============================================================================

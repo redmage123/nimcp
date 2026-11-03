@@ -1960,6 +1960,7 @@ int nimcp_utm_step(nimcp_unified_training_manager_t* mgr,
 
                     /* Feature 7: Natural gradient optimizer for small param groups */
                     bool use_ng = mgr->natural_gradient_enabled &&
+                                  !groups[g].adam_only &&
                                   groups[g].count <= mgr->natural_grad_max_params &&
                                   groups[g].count > 0;
 
@@ -2011,6 +2012,7 @@ int nimcp_utm_step(nimcp_unified_training_manager_t* mgr,
                                 (uint32_t)groups[g].count);
                         }
                     } else if (mgr->riemannian_enabled &&
+                               !groups[g].adam_only &&
                                groups[g].count <= mgr->riemannian_max_params &&
                                groups[g].count > 0) {
                         /* Riemannian SGD: precondition gradients with metric tensor.

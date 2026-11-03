@@ -231,6 +231,7 @@ static int lnn_adapter_get_param_groups(void* ctx,
                             g[ng].lr_scale = 1.0f;
                             g[ng].weight_decay = 0.0f;
                             g[ng].name = "lnn_readout_W";
+                            g[ng].adam_only = true;
                             ng++;
                             g[ng].params = (float*)nimcp_tensor_data(net->readout_b);
                             g[ng].gradients = (float*)nimcp_tensor_data(net->readout_grad_b);
@@ -238,6 +239,7 @@ static int lnn_adapter_get_param_groups(void* ctx,
                             g[ng].lr_scale = 1.0f;
                             g[ng].weight_decay = 0.0f;
                             g[ng].name = "lnn_readout_b";
+                            g[ng].adam_only = true;
                             ng++;
                         }
                         *groups = g;
