@@ -781,6 +781,20 @@ int snn_network_get_activity_window(snn_network_t* network,
                                     uint32_t* peak_step_spikes);
 
 /**
+ * Layer groups used by the ignition (burst) instrumentation, in this order:
+ * in, L1, L2, L3, L4, L5, L6, L2i, L3i, L4i, L5i, L6i, out, lang, oth.
+ * "LNi" is the PV/SOM/VIP inhibitory populations of layer N; "lang" is the
+ * sparse language populations.
+ */
+#define SNN_IGN_NGROUPS 15
+
+/** @brief Map a population name to its ignition layer group (0..SNN_IGN_NGROUPS-1). */
+int snn_ignition_group_of(const char* pop_name);
+
+/** @brief Short name of an ignition layer group ("L4i", "out", ...). */
+const char* snn_ignition_group_name(int group);
+
+/**
  * @brief Check network health
  *
  * WHAT: Detect simulation issues (silence, explosion, NaN)

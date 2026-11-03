@@ -1255,6 +1255,28 @@ int nimcp_utm_step(nimcp_unified_training_manager_t* mgr,
         }
 
         float net_loss = loss_val + aux;
+
+        /* Loss diagnostics (2026-11-03): the Vast LNN sits at MSE ~24 for
+         * 24K+ steps. Log output vs target scale and direction every 50
+         * steps so a magnitude mismatch can be told apart from a network
+         * that is not learning the mapping. */
+        if ((mgr->step_count % 50) == 0) {
+            double so = 0.0, st = 0.0, sot = 0.0, mo = 0.0, mt = 0.0;
+            float omax = 0.0f;
+            for (uint32_t j = 0; j < cmp_dim; j++) {
+                double o = net_outputs[i][j], t = target[j];
+                so += o * o; st += t * t; sot += o * t; mo += o; mt += t;
+                if (fabsf(net_outputs[i][j]) > omax) omax = fabsf(net_outputs[i][j]);
+            }
+            double cosv = (so > 0.0 && st > 0.0) ? sot / (sqrt(so) * sqrt(st)) : 0.0;
+            NIMCP_LOGGING_INFO("[UTM-LOSS-DIAG] step=%llu net=%s dim=%u/%u loss=%.4f aux=%.4f "
+                               "out_rms=%.4f out_mean=%.4f out_max=%.4f "
+                               "tgt_rms=%.4f tgt_mean=%.4f cos=%.4f",
+                               (unsigned long long)mgr->step_count, net->ops->name,
+                               cmp_dim, target_dim, loss_val, aux,
+                               sqrt(so / n), mo / n, omax,
+                               sqrt(st / n), mt / n, cosv);
+        }
         /* Guard against NaN/inf from individual networks (e.g. gradient explosion) */
         if (!isfinite(net_loss) || net_loss < 0.0f) {
             net_loss = 0.0f;

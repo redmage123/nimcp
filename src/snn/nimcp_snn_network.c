@@ -1019,6 +1019,130 @@ static inline void snn_activity_record_step(snn_network_t* network, int step_spi
     }
 }
 
+/*==========================================================================
+ * Main-step ignition logging (2026-11-03).
+ *
+ * The BPTT-forward instrumentation never fired on the Vast run because the
+ * SNN is not trained through BPTT there; the bursts (0.4-1.4M spikes in one
+ * tick) happen in the regular step path. When a step crosses the threshold,
+ * read the per-population spike_count_history ring (already maintained by
+ * the step for lightweight pops) and log the last SNN_IGN_TRAJ_TICKS ticks
+ * per layer group, so the layer that leads the runaway is visible.
+ * At most one event per network every SNN_IGN_MIN_INTERVAL_S seconds.
+ *   NIMCP_SNN_IGNITION_LOG=0      disable
+ *   NIMCP_SNN_IGNITION_THRESH=N   spikes/step that counts as ignition (300000)
+ *==========================================================================*/
+#define SNN_IGN_TRAJ_TICKS     12u
+#define SNN_IGN_MIN_INTERVAL_S 30.0
+#define SNN_IGN_MAX_NETS       8u
+
+static const char* const k_snn_ign_group_names[SNN_IGN_NGROUPS] = {
+    "in", "L1", "L2", "L3", "L4", "L5", "L6",
+    "L2i", "L3i", "L4i", "L5i", "L6i", "out", "lang", "oth" };
+
+static bool snn_ign_name_ends_with(const char* s, const char* suffix) {
+    size_t ls = strlen(s), lx = strlen(suffix);
+    return ls >= lx && strcmp(s + ls - lx, suffix) == 0;
+}
+
+int snn_ignition_group_of(const char* name) {
+    enum { G_IN = 0, G_L1 = 1, G_L2I = 7, G_OUT = 12, G_LANG = 13, G_OTHER = 14 };
+    if (!name) return G_OTHER;
+    if (strncmp(name, "input", 5) == 0)  return G_IN;
+    if (strncmp(name, "output", 6) == 0) return G_OUT;
+    if (strcmp(name, "wernicke_substrate") == 0 || strcmp(name, "broca_substrate") == 0 ||
+        strcmp(name, "arcuate_relay") == 0 || strcmp(name, "sensorymotor_ring") == 0)
+        return G_LANG;
+    if (name[0] == 'L' && name[1] >= '1' && name[1] <= '6' && name[2] == '_') {
+        int layer = name[1] - '0';
+        bool inhib = snn_ign_name_ends_with(name, "_PV") ||
+                     snn_ign_name_ends_with(name, "_SOM") ||
+                     snn_ign_name_ends_with(name, "_VIP");
+        if (inhib && layer >= 2) return G_L2I + (layer - 2);
+        return G_L1 + (layer - 1);
+    }
+    return G_OTHER;
+}
+
+const char* snn_ignition_group_name(int group) {
+    if (group < 0 || group >= SNN_IGN_NGROUPS) return "?";
+    return k_snn_ign_group_names[group];
+}
+
+static void snn_ignition_maybe_log(snn_network_t* network, uint32_t step_spikes) {
+    static int s_enabled = -1;
+    static uint32_t s_thresh = 300000u;
+    if (s_enabled < 0) {
+        const char* e = getenv("NIMCP_SNN_IGNITION_LOG");
+        const char* th = getenv("NIMCP_SNN_IGNITION_THRESH");
+        if (th && atol(th) > 0) s_thresh = (uint32_t)atol(th);
+        s_enabled = (e && e[0] == '0') ? 0 : 1;
+    }
+    if (!s_enabled || step_spikes < s_thresh) return;
+
+    /* Per-network rate limit. Races between threads stepping different
+     * networks can at worst duplicate or drop one event; acceptable for
+     * diagnostics. */
+    static const snn_network_t* s_nets[SNN_IGN_MAX_NETS];
+    static double s_last[SNN_IGN_MAX_NETS];
+    static uint64_t s_suppressed[SNN_IGN_MAX_NETS];
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+    uint32_t slot = SNN_IGN_MAX_NETS;
+    for (uint32_t i = 0; i < SNN_IGN_MAX_NETS; i++) {
+        if (s_nets[i] == network) { slot = i; break; }
+        if (!s_nets[i]) { s_nets[i] = network; s_last[i] = -1e9; slot = i; break; }
+    }
+    if (slot == SNN_IGN_MAX_NETS) return;
+    if (now - s_last[slot] < SNN_IGN_MIN_INTERVAL_S) { s_suppressed[slot]++; return; }
+    s_last[slot] = now;
+    uint64_t suppressed = s_suppressed[slot];
+    s_suppressed[slot] = 0;
+
+    uint32_t counts[SNN_IGN_TRAJ_TICKS][SNN_IGN_NGROUPS];
+    uint32_t totals[SNN_IGN_TRAJ_TICKS];
+    memset(counts, 0, sizeof(counts));
+    memset(totals, 0, sizeof(totals));
+    uint64_t total_neurons = 0;
+    uint32_t ticks = SNN_IGN_TRAJ_TICKS;
+    for (uint32_t p = 0; p < network->n_populations; p++) {
+        const snn_population_t* pop = network->populations[p];
+        if (!pop) continue;
+        total_neurons += pop->n_neurons;
+        if (!pop->lightweight) continue;
+        if (pop->history_total_steps < ticks) ticks = (uint32_t)pop->history_total_steps;
+        int g = snn_ignition_group_of(pop->name);
+        for (uint32_t k = 0; k < SNN_IGN_TRAJ_TICKS; k++) {
+            /* k = 0 is the most recent recorded step */
+            uint32_t idx = (pop->history_write_idx + SNN_POP_HISTORY_LEN - 1u - k)
+                           % SNN_POP_HISTORY_LEN;
+            uint32_t c = pop->spike_count_history[idx];
+            counts[k][g] += c;
+            totals[k] += c;
+        }
+    }
+
+    NIMCP_LOGGING_WARN("[SNN-IGNITION] net=%p pops=%u neurons=%llu step=%llu "
+                       "spikes=%u (%.1f%%) thresh=%u suppressed_since_last=%llu",
+                       (void*)network, network->n_populations,
+                       (unsigned long long)total_neurons,
+                       (unsigned long long)network->stats.total_steps,
+                       step_spikes,
+                       total_neurons ? 100.0 * step_spikes / (double)total_neurons : 0.0,
+                       s_thresh, (unsigned long long)suppressed);
+    for (int k = (int)ticks - 1; k >= 0; k--) {
+        char line[512];
+        int off = snprintf(line, sizeof(line), "t-%02d tot=%u", k, totals[k]);
+        for (int g = 0; g < SNN_IGN_NGROUPS && off > 0 && off < (int)sizeof(line); g++) {
+            if (counts[k][g] == 0) continue;
+            off += snprintf(line + off, sizeof(line) - (size_t)off, " %s=%u",
+                            k_snn_ign_group_names[g], counts[k][g]);
+        }
+        NIMCP_LOGGING_WARN("[SNN-IGNITION] net=%p %s", (void*)network, line);
+    }
+}
+
 int snn_network_reset(snn_network_t* network) {
     if (!network) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_reset: null network pointer");
@@ -3504,6 +3628,7 @@ int snn_network_step(snn_network_t* network, float dt) {
     network->stats.total_steps = network->sim->step_count;
     network->stats.total_spikes += total_spikes;
     snn_activity_record_step(network, (int)total_spikes);
+    snn_ignition_maybe_log(network, total_spikes > 0 ? (uint32_t)total_spikes : 0u);
     network->stats.total_compute_time_ms += step_ms;
     network->stats.avg_step_time_ms = network->stats.total_compute_time_ms
                                     / (double)network->stats.total_steps;
@@ -4156,6 +4281,7 @@ int snn_network_step_sparse(snn_network_t* network, float dt,
     network->stats.total_steps = network->sim->step_count;
     network->stats.total_spikes += total_spikes;
     snn_activity_record_step(network, (int)total_spikes);
+    snn_ignition_maybe_log(network, total_spikes > 0 ? (uint32_t)total_spikes : 0u);
 
     /* Fill statistics if requested */
     if (stats) {
@@ -4354,6 +4480,7 @@ int snn_network_step_parallel(snn_network_t* network, float dt,
     network->stats.total_steps = network->sim->step_count;
     network->stats.total_spikes += total_spikes;
     snn_activity_record_step(network, (int)total_spikes);
+    snn_ignition_maybe_log(network, total_spikes > 0 ? (uint32_t)total_spikes : 0u);
 
     return total_spikes;
 }
