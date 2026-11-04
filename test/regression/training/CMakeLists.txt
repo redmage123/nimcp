@@ -568,3 +568,25 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_hamiltonian_fno_unit.cpp")
         PROPERTIES TIMEOUT 120
     )
 endif()
+
+# Target-aware, task-bounded diversity loss (2026-11-04)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_diversity_targeted.cpp)
+    add_executable(regression_training_diversity_targeted
+        test_diversity_targeted.cpp
+    )
+    target_include_directories(regression_training_diversity_targeted PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/src
+    )
+    target_compile_features(regression_training_diversity_targeted PRIVATE cxx_std_20)
+    target_link_libraries(regression_training_diversity_targeted PRIVATE
+        GTest::gtest GTest::gtest_main nimcp_middleware nimcp Threads::Threads m
+    )
+    add_test(NAME regression_training_diversity_targeted
+             COMMAND regression_training_diversity_targeted
+             WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(regression_training_diversity_targeted
+        PROPERTIES
+            LABELS "regression;training;anti-collapse"
+            TIMEOUT 60)
+endif()

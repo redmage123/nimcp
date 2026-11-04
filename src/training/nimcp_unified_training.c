@@ -617,6 +617,34 @@ typedef struct {
     float* dl_dout_override; /**< If non-NULL, use this instead of computing loss gradient */
 } utm_backward_task_t;
 
+/* Diversity gradient for a UTM network. Default: target-aware and bounded by
+ * the task gradient (see nimcp_anti_collapse_diversity_loss_targeted).
+ * NIMCP_UTM_DIVERSITY_LEGACY=1 restores the old unbounded cosine push, which
+ * outweighs the MSE gradient ~1000x and inflates output norms (2026-11-04). */
+static bool utm_diversity_legacy(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        const char* e = getenv("NIMCP_UTM_DIVERSITY_LEGACY");
+        cached = (e && e[0] == '1') ? 1 : 0;
+        if (cached) {
+            NIMCP_LOGGING_WARN("UTM: legacy unbounded diversity gradient enabled "
+                               "(NIMCP_UTM_DIVERSITY_LEGACY=1)");
+        }
+    }
+    return cached == 1;
+}
+
+static float utm_diversity_loss(nimcp_anti_collapse_state_t* ac,
+                                const float* output, const float* target,
+                                uint32_t target_dim, float* dl_dout,
+                                uint32_t out_dim) {
+    if (utm_diversity_legacy()) {
+        return nimcp_anti_collapse_diversity_loss(ac, output, dl_dout, out_dim);
+    }
+    return nimcp_anti_collapse_diversity_loss_targeted(ac, output, target,
+                                                       target_dim, dl_dout, out_dim);
+}
+
 /** @brief Thread pool task: compute loss gradient + diversity + backward for one network */
 static void utm_backward_task_fn(void* arg) {
     utm_backward_task_t* t = (utm_backward_task_t*)arg;
@@ -659,8 +687,9 @@ static void utm_backward_task_fn(void* arg) {
 
         /* Diversity loss gradient (only when computing from scratch) */
         if (t->anti_collapse) {
-            t->div_loss = nimcp_anti_collapse_diversity_loss(
-                t->anti_collapse, t->net_output, dl_dout, t->out_dim);
+            t->div_loss = utm_diversity_loss(
+                t->anti_collapse, t->net_output, t->target, t->target_dim,
+                dl_dout, t->out_dim);
         }
     }
 
@@ -1547,8 +1576,9 @@ int nimcp_utm_step(nimcp_unified_training_manager_t* mgr,
                 }
             }
 
-            float div_loss = nimcp_anti_collapse_diversity_loss(
-                &mgr->anti_collapse[i], net_outputs[i], dl_dout, out_dim);
+            float div_loss = utm_diversity_loss(
+                &mgr->anti_collapse[i], net_outputs[i], target, target_dim,
+                dl_dout, out_dim);
             local_result.diversity_loss += div_loss;
 
             bridged_dl_dout[i] = dl_dout;

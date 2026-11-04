@@ -55,6 +55,9 @@ void nimcp_anti_collapse_destroy(nimcp_anti_collapse_state_t* state) {
     if (!state) return;
     nimcp_free(state->diversity_buffer);
     state->diversity_buffer = NULL;
+    nimcp_free(state->target_buffer);
+    state->target_buffer = NULL;
+    state->target_dim = 0;
     state->buffer_pos = 0;
     state->buffer_count = 0;
     state->output_dim = 0;
@@ -138,6 +141,123 @@ float nimcp_anti_collapse_diversity_loss(nimcp_anti_collapse_state_t* state,
     }
 
     return diversity_loss;
+}
+
+/* Cosine similarity of a and b; 0 when either is (near) zero. */
+static float ac_cosine(const float* a, const float* b, uint32_t n) {
+    double dot = 0.0, na = 0.0, nb = 0.0;
+    for (uint32_t j = 0; j < n; j++) {
+        dot += (double)a[j] * b[j];
+        na  += (double)a[j] * a[j];
+        nb  += (double)b[j] * b[j];
+    }
+    double den = sqrt(na) * sqrt(nb);
+    return (den > 1e-12) ? (float)(dot / den) : 0.0f;
+}
+
+float nimcp_anti_collapse_diversity_loss_targeted(nimcp_anti_collapse_state_t* state,
+                                                  const float* output,
+                                                  const float* target,
+                                                  uint32_t target_dim,
+                                                  float* grad_output,
+                                                  uint32_t dim) {
+    if (!state || !output || dim == 0) return 0.0f;
+    if (state->config.diversity_loss_weight <= 0.0f) return 0.0f;
+    const bool have_target = (target != NULL && target_dim > 0);
+    const uint32_t buf_size = state->config.diversity_buffer_size;
+
+    /* Lazy-init or resize; output and target slots must stay paired, so a
+     * change to either dimension restarts both buffers. */
+    bool reset = (!state->diversity_buffer || state->output_dim != dim);
+    if (have_target && (!state->target_buffer || state->target_dim != target_dim)) {
+        reset = true;
+    }
+    if (reset) {
+        nimcp_free(state->diversity_buffer);
+        nimcp_free(state->target_buffer);
+        state->target_buffer = NULL;
+        state->target_dim = 0;
+        state->diversity_buffer = (float*)nimcp_calloc((size_t)buf_size * dim, sizeof(float));
+        if (!state->diversity_buffer) {
+            NIMCP_LOGGING_WARN("anti_collapse: Failed to allocate diversity buffer");
+            return 0.0f;
+        }
+        if (have_target) {
+            state->target_buffer = (float*)nimcp_calloc((size_t)buf_size * target_dim,
+                                                       sizeof(float));
+            if (state->target_buffer) state->target_dim = target_dim;
+        }
+        state->buffer_pos = 0;
+        state->buffer_count = 0;
+        state->output_dim = dim;
+    }
+    const bool use_hinge = have_target && state->target_buffer
+                           && state->target_dim == target_dim;
+
+    const float weight = state->config.diversity_loss_weight;
+    float loss = 0.0f;
+
+    if (state->buffer_count > 0 && grad_output) {
+        float* dgrad = (float*)nimcp_calloc(dim, sizeof(float));
+        if (dgrad) {
+            const uint32_t count = state->buffer_count;
+            double norm_cur_sq = 0.0;
+            for (uint32_t j = 0; j < dim; j++) norm_cur_sq += (double)output[j] * output[j];
+            const float norm_cur = (float)sqrt(norm_cur_sq);
+            float excess_sum = 0.0f;
+            bool any = false;
+
+            for (uint32_t b = 0; b < count && norm_cur > 1e-8f; b++) {
+                const float* prev = &state->diversity_buffer[(size_t)b * dim];
+                double pn = 0.0;
+                for (uint32_t j = 0; j < dim; j++) pn += (double)prev[j] * prev[j];
+                const float norm_prev = (float)sqrt(pn);
+                if (norm_prev <= 1e-8f) continue;
+                const float sim = ac_cosine(output, prev, dim);
+                const float ref = use_hinge
+                    ? ac_cosine(target, &state->target_buffer[(size_t)b * target_dim], target_dim)
+                    : 0.0f;
+                const float excess = use_hinge ? (sim - ref) : sim;
+                if (use_hinge && excess <= 0.0f) continue;
+                excess_sum += excess;
+                any = true;
+                const float inv_nc = 1.0f / norm_cur, inv_np = 1.0f / norm_prev;
+                for (uint32_t j = 0; j < dim; j++) {
+                    dgrad[j] += (prev[j] * inv_nc * inv_np - sim * output[j] * inv_nc * inv_nc)
+                                / (float)count;
+                }
+            }
+            loss = weight * excess_sum / (float)count;
+
+            if (any) {
+                double gn = 0.0, dn = 0.0;
+                for (uint32_t j = 0; j < dim; j++) {
+                    gn += (double)grad_output[j] * grad_output[j];
+                    dn += (double)dgrad[j] * dgrad[j];
+                }
+                gn = sqrt(gn);
+                dn = sqrt(dn);
+                /* ||added|| = weight * min(||d||, ||task||) */
+                if (gn > 0.0 && dn > 0.0) {
+                    const float s = weight * (float)((dn > gn) ? (gn / dn) : 1.0);
+                    for (uint32_t j = 0; j < dim; j++) grad_output[j] += s * dgrad[j];
+                }
+            }
+            nimcp_free(dgrad);
+        }
+    }
+
+    /* Store current output (and its target) in the paired ring slots */
+    memcpy(&state->diversity_buffer[(size_t)state->buffer_pos * dim],
+           output, (size_t)dim * sizeof(float));
+    if (use_hinge) {
+        memcpy(&state->target_buffer[(size_t)state->buffer_pos * target_dim],
+               target, (size_t)target_dim * sizeof(float));
+    }
+    state->buffer_pos = (state->buffer_pos + 1) % buf_size;
+    if (state->buffer_count < buf_size) state->buffer_count++;
+
+    return loss;
 }
 
 //=============================================================================

@@ -468,6 +468,10 @@ typedef struct nimcp_anti_collapse_state {
     nimcp_anti_collapse_config_t config;
     float ema_gradient_norm;            /**< EMA of gradient norms for adaptive target */
     float ema_alpha;                    /**< EMA smoothing factor (default: 0.01) */
+    /* Targeted diversity (2026-11-04): targets paired with diversity_buffer
+     * slots, so output similarity is judged against the targets' own. */
+    float* target_buffer;               /**< [buffer_size × target_dim] */
+    uint32_t target_dim;
 } nimcp_anti_collapse_state_t;
 
 //=============================================================================
@@ -853,6 +857,35 @@ float nimcp_anti_collapse_diversity_loss(nimcp_anti_collapse_state_t* state,
                                          const float* output,
                                          float* grad_output,
                                          uint32_t dim);
+
+/**
+ * @brief Target-aware, task-bounded diversity loss
+ *
+ * Like nimcp_anti_collapse_diversity_loss(), but:
+ *  - Hinge: an output is only pushed away from a recent output when their
+ *    cosine similarity exceeds the cosine similarity of the corresponding
+ *    targets (collapse = outputs more alike than the targets are).
+ *  - Bounded: the added gradient's L2 norm is at most
+ *    diversity_loss_weight × ||grad_output|| (the task gradient as passed
+ *    in), so diversity can never outweigh the task. A zero task gradient
+ *    adds nothing.
+ * The cosine gradient is scale-invariant and orthogonal to the output, so
+ * unbounded it inflates the output norm without limit; both rules stop that.
+ *
+ * @param state       Anti-collapse state (ring buffers updated)
+ * @param output      Current network output [dim]
+ * @param target      Training target [target_dim]; NULL = no hinge (bound only)
+ * @param target_dim  Target dimensionality (ignored when target is NULL)
+ * @param grad_output [in/out] Task gradient; bounded diversity gradient ADDED
+ * @param dim         Output dimensionality
+ * @return Mean hinge excess similarity × weight (0 when no collapse)
+ */
+float nimcp_anti_collapse_diversity_loss_targeted(nimcp_anti_collapse_state_t* state,
+                                                  const float* output,
+                                                  const float* target,
+                                                  uint32_t target_dim,
+                                                  float* grad_output,
+                                                  uint32_t dim);
 
 /**
  * @brief Apply gradient normalization or clipping
