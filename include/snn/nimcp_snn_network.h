@@ -357,6 +357,36 @@ int snn_network_forward(snn_network_t* network,
                         uint32_t n_outputs,
                         float duration_ms);
 
+/**
+ * @brief Forward pass that CARRIES network state (no reset)
+ *
+ * WHAT: set_inputs, run, get_outputs, continuing from the current membrane
+ *       potentials, refractory state, spike history and simulation clock.
+ * WHY:  snn_network_forward resets the whole network first, so a decision
+ *       could not depend on anything seen before it (2026-11-02: the video
+ *       probe measured zero sensitivity to frame order). A brain should
+ *       perceive the present in the context of the immediate past. Callers
+ *       that need a clean start (probes) reset explicitly.
+ * HOW:  Identical to snn_network_forward minus the reset.
+ *
+ * @return SNN_SUCCESS on success, negative SNN error otherwise
+ */
+int snn_network_forward_carry(snn_network_t* network,
+                              const float* inputs,
+                              uint32_t n_inputs,
+                              float* outputs,
+                              uint32_t n_outputs,
+                              float duration_ms);
+
+/* Decision-path tunables (2026-11-02), process-wide.
+ * decide_carry_state: 1 = brain decisions use snn_network_forward_carry
+ *                     (default), 0 = legacy reset-every-decision.
+ * decide_window_ms:   simulated time per decision, [1, 1000] ms. */
+void  snn_tune_set_decide_carry_state(float v);
+float snn_tune_get_decide_carry_state(void);
+void  snn_tune_set_decide_window_ms(float v);
+float snn_tune_get_decide_window_ms(void);
+
 //=============================================================================
 // Training
 //=============================================================================

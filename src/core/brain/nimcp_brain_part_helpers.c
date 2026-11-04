@@ -933,6 +933,22 @@ static void forward_cnn_task(void* arg)
 /**
  * @brief SNN forward task (thread pool worker)
  */
+/* SNN forward for a brain decision (2026-11-02). Carries membrane potentials,
+ * refractory state and spike history from the previous decision (and from
+ * training steps) unless decide_carry_state is 0, in which case the network
+ * is reset first as before. Simulated time per decision: decide_window_ms.
+ * Before this, every decision reset the SNN, so its share of the output
+ * could not depend on anything seen earlier, and each decision also wiped
+ * the state training had built up. */
+static int brain_snn_decide_forward(snn_network_t* snn, const float* in, uint32_t n_in,
+                                    float* out, uint32_t n_out)
+{
+    float window = snn_tune_get_decide_window_ms();
+    if (snn_tune_get_decide_carry_state() != 0.0f)
+        return snn_network_forward_carry(snn, in, n_in, out, n_out, window);
+    return snn_network_forward(snn, in, n_in, out, n_out, window);
+}
+
 static void forward_snn_task(void* arg)
 {
     forward_task_ctx_t* ctx = (forward_task_ctx_t*)arg;
@@ -996,8 +1012,8 @@ static void forward_snn_task(void* arg)
     /* Simulate for 100ms — LIF neurons with tau_mem=20ms need ~61ms to spike
      * from v_rest=-70mV to v_thresh=-50mV with input I=21mV (feature 0.3 * scale 70).
      * At dt=0.1ms this is 1000 steps. Stronger inputs spike faster. */
-    int rc = snn_network_forward(ctx->brain->snn_network, input_ptr, input_dim,
-                                  ctx->snn_output, out_dim, 100.0f);
+    int rc = brain_snn_decide_forward(ctx->brain->snn_network, input_ptr, input_dim,
+                                      ctx->snn_output, out_dim);
     nimcp_free(snn_input);
     if (rc != 0) return;
 
@@ -1508,8 +1524,8 @@ sequential_fallback:
 
         uint32_t snn_out_dim = (decision->output_size < snn_out) ? decision->output_size : snn_out;
         if (snn_output) {
-            int rc = snn_network_forward(brain->snn_network, snn_input_ptr, snn_input_dim,
-                                         snn_output, snn_out_dim, 100.0f);
+            int rc = brain_snn_decide_forward(brain->snn_network, snn_input_ptr, snn_input_dim,
+                                              snn_output, snn_out_dim);
             if (rc == 0) {
                 /* Blend adaptive + SNN outputs */
                 float w_adapt = 0.7f, w_snn = 0.3f;

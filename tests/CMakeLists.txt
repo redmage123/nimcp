@@ -68,6 +68,7 @@ set(NIMCP_STANDALONE_LANG_TESTS
     test_cortex_visual_sizes
     test_cortex_dense_target
     test_snn_window_stats
+    test_snn_forward_carry
     test_snn_fno_recording
     test_lang_thalamic_gates
     test_lang_distributional_anticollapse

@@ -4922,6 +4922,46 @@ int snn_network_forward(snn_network_t* network,
     return snn_network_get_outputs(network, outputs, n_outputs);
 }
 
+/* Decision-path tunables (2026-11-02). See nimcp_snn_network.h. */
+static float g_snn_decide_carry_state = 1.0f;
+static float g_snn_decide_window_ms = 100.0f;
+
+void  snn_tune_set_decide_carry_state(float v) { g_snn_decide_carry_state = (v != 0.0f) ? 1.0f : 0.0f; }
+float snn_tune_get_decide_carry_state(void)    { return g_snn_decide_carry_state; }
+void  snn_tune_set_decide_window_ms(float v)   { if (v >= 1.0f && v <= 1000.0f) g_snn_decide_window_ms = v; }
+float snn_tune_get_decide_window_ms(void)      { return g_snn_decide_window_ms; }
+
+int snn_network_forward_carry(snn_network_t* network,
+                              const float* inputs,
+                              uint32_t n_inputs,
+                              float* outputs,
+                              uint32_t n_outputs,
+                              float duration_ms) {
+    if (!network) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_forward_carry: null network pointer");
+        return SNN_ERROR_NULL_POINTER;
+    }
+    if (!inputs) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_forward_carry: null inputs pointer");
+        return SNN_ERROR_NULL_POINTER;
+    }
+    if (!outputs) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_forward_carry: null outputs pointer");
+        return SNN_ERROR_NULL_POINTER;
+    }
+
+    snn_network_heartbeat("snn_forward_carry", 0.0f);
+
+    /* No reset: the network continues from its current state. */
+    int result = snn_network_set_inputs(network, inputs, n_inputs);
+    if (result != SNN_SUCCESS) return result;
+
+    result = snn_network_run(network, duration_ms);
+    if (result < 0) return result;
+
+    return snn_network_get_outputs(network, outputs, n_outputs);
+}
+
 //=============================================================================
 // Training
 //=============================================================================

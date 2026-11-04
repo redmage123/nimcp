@@ -1848,6 +1848,8 @@ static PyObject* Brain_snn_tune(BrainObject* self, PyObject* args) {
     extern void snn_tune_set_dead_threshold(float);
     extern void snn_tune_set_metabolic_cap(float);
     extern void snn_tune_set_noise_rate_hz(float);
+    extern void snn_tune_set_decide_carry_state(float);
+    extern void snn_tune_set_decide_window_ms(float);
     extern void snn_tune_set_noise_pulse_mv(float);
     extern void snn_tune_set_intrinsic_alpha(float);
     extern void snn_tune_set_target_rate_input(float);
@@ -1893,6 +1895,8 @@ static PyObject* Brain_snn_tune(BrainObject* self, PyObject* args) {
     else if (strcmp(name, "dead_threshold") == 0)       snn_tune_set_dead_threshold(v);
     else if (strcmp(name, "metabolic_cap") == 0)        snn_tune_set_metabolic_cap(v);
     else if (strcmp(name, "noise_rate_hz") == 0)        snn_tune_set_noise_rate_hz(v);
+    else if (strcmp(name, "decide_carry_state") == 0)   snn_tune_set_decide_carry_state(v);
+    else if (strcmp(name, "decide_window_ms") == 0)     snn_tune_set_decide_window_ms(v);
     else if (strcmp(name, "noise_pulse_mv") == 0)       snn_tune_set_noise_pulse_mv(v);
     else if (strcmp(name, "intrinsic_alpha") == 0)      snn_tune_set_intrinsic_alpha(v);
     /* Anti-reward */
@@ -1948,6 +1952,8 @@ static PyObject* Brain_snn_tune_get(BrainObject* self, PyObject* Py_UNUSED(a)) {
     extern float snn_tune_get_dead_threshold(void);
     extern float snn_tune_get_metabolic_cap(void);
     extern float snn_tune_get_noise_rate_hz(void);
+    extern float snn_tune_get_decide_carry_state(void);
+    extern float snn_tune_get_decide_window_ms(void);
     extern float snn_tune_get_noise_pulse_mv(void);
     extern float snn_tune_get_intrinsic_alpha(void);
     extern float snn_tune_get_target_rate_input(void);
@@ -1997,6 +2003,8 @@ static PyObject* Brain_snn_tune_get(BrainObject* self, PyObject* Py_UNUSED(a)) {
     F("dead_threshold",         snn_tune_get_dead_threshold());
     F("metabolic_cap",          snn_tune_get_metabolic_cap());
     F("noise_rate_hz",          snn_tune_get_noise_rate_hz());
+    F("decide_carry_state",     snn_tune_get_decide_carry_state());
+    F("decide_window_ms",       snn_tune_get_decide_window_ms());
     F("noise_pulse_mv",         snn_tune_get_noise_pulse_mv());
     F("intrinsic_alpha",        snn_tune_get_intrinsic_alpha());
     /* Anti-reward */
