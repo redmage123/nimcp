@@ -75,6 +75,26 @@ float lnn_tune_get_substrate_enabled(void)        { return g_lnn_substrate_enabl
 float lnn_tune_get_substrate_update_period(void)  { return g_lnn_substrate_update_period; }
 float lnn_tune_get_substrate_tau_compose_on(void) { return g_lnn_substrate_tau_compose_on; }
 
+/* Decision-path tunables (2026-11-04). The readout is trained on states
+ * produced at dt = 1.0 (UTM adapter), so decisions step at the same dt.
+ * Out-of-range weight / dt are ignored. */
+static float g_lnn_decide_readout = 1.0f;
+static float g_lnn_decide_weight  = 0.1f;
+static float g_lnn_decide_dt      = 1.0f;
+
+void lnn_tune_set_decide_readout(float v) {
+    g_lnn_decide_readout = (v != 0.0f) ? 1.0f : 0.0f;
+}
+void lnn_tune_set_decide_weight(float v) {
+    if (v >= 0.0f && v <= 1.0f) g_lnn_decide_weight = v;
+}
+void lnn_tune_set_decide_dt(float v) {
+    if (v > 0.0f && v <= 10.0f) g_lnn_decide_dt = v;
+}
+float lnn_tune_get_decide_readout(void) { return g_lnn_decide_readout; }
+float lnn_tune_get_decide_weight(void)  { return g_lnn_decide_weight; }
+float lnn_tune_get_decide_dt(void)      { return g_lnn_decide_dt; }
+
 static float compute_step_schedule_lr(
     float base_lr,
     uint64_t step,

@@ -637,6 +637,28 @@ int lnn_network_readout_forward(const lnn_network_t* network,
                                 const float* x, float* y);
 
 /**
+ * @brief Blend the readout into a decision: out = (1-w)·out + w·(W·x + b).
+ *
+ * WHAT: Applies the readout across the whole of out (readout_dim floats);
+ *       non-finite readout values leave that output unchanged.
+ * WHY:  Brain decisions gated only out[0:n_outputs] with the raw state, so
+ *       the LNN's temporal context moved a 4096-dim decision by ~1e-6.
+ *       The readout is trained against the full target (2026-11-04).
+ * HOW:  Row by row, no allocation.
+ *
+ * @param network  LNN network with a readout
+ * @param x        LNN state [n_outputs]
+ * @param out      Decision vector, modified in place [out_size]
+ * @param out_size Must equal readout_dim
+ * @param weight   Blend weight in [0, 1]
+ * @return 0 on success; LNN_ERROR_INVALID_STATE if there is no readout or
+ *         its dim differs from out_size (caller falls back); other negative
+ *         on bad arguments
+ */
+int lnn_network_readout_blend(const lnn_network_t* network, const float* x,
+                              float* out, uint32_t out_size, float weight);
+
+/**
  * @brief Backprop through the readout.
  *
  * Accumulates readout_grad_W += dl_dy ⊗ x and readout_grad_b += dl_dy, and

@@ -720,6 +720,23 @@ float lnn_tune_get_thalamic_enabled(void);
 float lnn_tune_get_thalamic_input_gain_on(void);
 float lnn_tune_get_thalamic_burst_tau_clamp_on(void);
 
+/*=============================================================================
+ * Decision-path tunables (2026-11-04). Brain decisions blend the LNN's
+ * learned readout across the whole output instead of sigmoid-gating the
+ * first n_outputs dims with the raw state.
+ *   decide_readout: 1 = readout blend (falls back to the gate when there is
+ *                   no readout of the decision's size), 0 = legacy gate
+ *   decide_weight:  blend weight in [0, 1] (fusion mode uses fusion_weights[3])
+ *   decide_dt:      ODE step for decisions, (0, 10]; 1.0 matches training
+ *===========================================================================*/
+void  lnn_tune_set_decide_readout(float v);
+void  lnn_tune_set_decide_weight(float v);
+void  lnn_tune_set_decide_dt(float v);
+
+float lnn_tune_get_decide_readout(void);
+float lnn_tune_get_decide_weight(void);
+float lnn_tune_get_decide_dt(void);
+
 #ifdef __cplusplus
 }
 #endif

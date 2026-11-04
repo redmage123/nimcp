@@ -1640,8 +1640,25 @@ lnn_gating:
                     brain->module_activity.hnn_fallback_invocations++;
                 }
             }
-            int rc = lnn_forward_step(brain->lnn_network, lnn_input, lnn_output, 0.01f);
-            if (rc == 0) {
+            /* dt matches the UTM adapter's training forward (1.0) so the
+             * readout sees states like the ones it was trained on. */
+            int rc = lnn_forward_step(brain->lnn_network, lnn_input, lnn_output,
+                                      lnn_tune_get_decide_dt());
+            bool lnn_blended = false;
+            if (rc == 0 && lnn_tune_get_decide_readout() != 0.0f) {
+                /* Learned readout across the whole decision: the LNN's
+                 * temporal context reaches every output, not just [0:64]. */
+                const float* lo_data = (const float*)nimcp_tensor_data(lnn_output);
+                float w_lnn = (brain->enable_fusion && brain->fusion_weights[3] > 0.0f)
+                            ? brain->fusion_weights[3] : lnn_tune_get_decide_weight();
+                if (lo_data && w_lnn <= 1.0f) {
+                    lnn_blended = lnn_network_readout_blend(brain->lnn_network, lo_data,
+                                                            decision->output_vector,
+                                                            decision->output_size,
+                                                            w_lnn) == LNN_SUCCESS;
+                }
+            }
+            if (rc == 0 && !lnn_blended) {
                 const float* lo_data = (const float*)nimcp_tensor_data(lnn_output);
                 if (lo_data) {
                     /* LNN gating on first lnn_out_size outputs */

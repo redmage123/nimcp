@@ -2062,6 +2062,10 @@ static PyObject* Brain_lnn_tune(BrainObject* self, PyObject* args) {
     extern void lnn_tune_set_thalamic_enabled(float);
     extern void lnn_tune_set_thalamic_input_gain_on(float);
     extern void lnn_tune_set_thalamic_burst_tau_clamp_on(float);
+    /* Decision-path readout blend (2026-11-04) */
+    extern void lnn_tune_set_decide_readout(float);
+    extern void lnn_tune_set_decide_weight(float);
+    extern void lnn_tune_set_decide_dt(float);
 
     float v = (float)value;
     if      (strcmp(name, "substrate_enabled") == 0)           lnn_tune_set_substrate_enabled(v);
@@ -2070,6 +2074,9 @@ static PyObject* Brain_lnn_tune(BrainObject* self, PyObject* args) {
     else if (strcmp(name, "thalamic_enabled") == 0)            lnn_tune_set_thalamic_enabled(v);
     else if (strcmp(name, "thalamic_input_gain_on") == 0)      lnn_tune_set_thalamic_input_gain_on(v);
     else if (strcmp(name, "thalamic_burst_tau_clamp_on") == 0) lnn_tune_set_thalamic_burst_tau_clamp_on(v);
+    else if (strcmp(name, "decide_readout") == 0)              lnn_tune_set_decide_readout(v);
+    else if (strcmp(name, "decide_weight") == 0)               lnn_tune_set_decide_weight(v);
+    else if (strcmp(name, "decide_dt") == 0)                   lnn_tune_set_decide_dt(v);
     else {
         PyErr_Format(PyExc_ValueError, "unknown LNN tunable: %s", name);
         return NULL;
@@ -2085,6 +2092,9 @@ static PyObject* Brain_lnn_tune_get(BrainObject* self, PyObject* Py_UNUSED(a)) {
     extern float lnn_tune_get_thalamic_enabled(void);
     extern float lnn_tune_get_thalamic_input_gain_on(void);
     extern float lnn_tune_get_thalamic_burst_tau_clamp_on(void);
+    extern float lnn_tune_get_decide_readout(void);
+    extern float lnn_tune_get_decide_weight(void);
+    extern float lnn_tune_get_decide_dt(void);
 
     PyObject* d = PyDict_New();
     if (!d) return NULL;
@@ -2099,6 +2109,10 @@ static PyObject* Brain_lnn_tune_get(BrainObject* self, PyObject* Py_UNUSED(a)) {
     F("thalamic_enabled",           lnn_tune_get_thalamic_enabled());
     F("thalamic_input_gain_on",     lnn_tune_get_thalamic_input_gain_on());
     F("thalamic_burst_tau_clamp_on",lnn_tune_get_thalamic_burst_tau_clamp_on());
+    /* Decision path */
+    F("decide_readout",             lnn_tune_get_decide_readout());
+    F("decide_weight",              lnn_tune_get_decide_weight());
+    F("decide_dt",                  lnn_tune_get_decide_dt());
 #undef F
     return d;
 }

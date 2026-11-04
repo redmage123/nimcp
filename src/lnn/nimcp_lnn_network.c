@@ -1824,6 +1824,26 @@ int lnn_network_readout_forward(const lnn_network_t* network,
     return LNN_SUCCESS;
 }
 
+int lnn_network_readout_blend(const lnn_network_t* network, const float* x,
+                              float* out, uint32_t out_size, float weight) {
+    if (!network || !x || !out) return LNN_ERROR_NULL_POINTER;
+    if (!(weight >= 0.0f && weight <= 1.0f)) return LNN_ERROR_INVALID_PARAM;
+    if (network->readout_dim == 0 || !network->readout_W || !network->readout_b
+        || network->readout_dim != out_size) {
+        return LNN_ERROR_INVALID_STATE;
+    }
+    const uint32_t n_in = network->n_outputs;
+    const float* W = (const float*)nimcp_tensor_data_const(network->readout_W);
+    const float* b = (const float*)nimcp_tensor_data_const(network->readout_b);
+    for (uint32_t o = 0; o < out_size; o++) {
+        const float* row = W + (size_t)o * n_in;
+        float acc = b[o];
+        for (uint32_t k = 0; k < n_in; k++) acc += row[k] * x[k];
+        if (isfinite(acc)) out[o] = (1.0f - weight) * out[o] + weight * acc;
+    }
+    return LNN_SUCCESS;
+}
+
 int lnn_network_readout_backward(lnn_network_t* network, const float* x,
                                  const float* dl_dy, float* dl_dx) {
     if (!network || !x || !dl_dy) return LNN_ERROR_NULL_POINTER;
