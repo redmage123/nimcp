@@ -1197,6 +1197,90 @@ static void fuse_forward_outputs(const forward_task_ctx_t* ctx,
 }
 
 /**
+ * @brief Run each cortex CNN forward on its staged sensory data and refresh
+ *        brain->cortex_cnn_fused_embedding.
+ *
+ * Shared by the decision path and brain_learn_vector (2026-11-05): training
+ * previously fed the unified training step raw text features while decisions
+ * fed the same networks features blended with this embedding, so the ANN and
+ * LNN were never trained on what the brain sees.
+ *
+ * @return Bitmask of cortexes (bit ci) whose forward returned an embedding
+ *         this call; cortex_cnn_backward may follow for those.
+ */
+uint32_t brain_cortex_forward_and_fuse(brain_t brain)
+{
+    extern const float* cortex_cnn_forward_visual(struct cortex_cnn_processor* proc,
+        const uint8_t* pixels, uint32_t w, uint32_t h, uint32_t ch);
+    extern const float* cortex_cnn_forward_audio(struct cortex_cnn_processor* proc,
+        const float* mel, uint32_t mel_size);
+    extern const float* cortex_cnn_forward_speech(struct cortex_cnn_processor* proc,
+        const float* phonemes, uint32_t size);
+    extern const float* cortex_cnn_forward_somato(struct cortex_cnn_processor* proc,
+        const float* segments, uint32_t n_segments);
+    extern uint32_t cortex_cnn_fuse(struct cortex_cnn_processor* procs[], uint32_t count,
+        float* fused_out, uint32_t max_dim);
+
+    uint32_t ran = 0;
+    if (!brain) return 0;
+    bool has_cortex = false;
+    for (int ci = 0; ci < 4; ci++) {
+        if (brain->cortex_cnns[ci]) { has_cortex = true; break; }
+    }
+    if (!has_cortex) return 0;
+
+    if (brain->cortex_cnns[0] && brain->staged_sensory.visual_frame) {
+        if (cortex_cnn_forward_visual(brain->cortex_cnns[0],
+                brain->staged_sensory.visual_frame,
+                brain->staged_sensory.visual_width,
+                brain->staged_sensory.visual_height,
+                brain->staged_sensory.visual_channels)) ran |= 1u << 0;
+    }
+    if (brain->cortex_cnns[1] && brain->staged_sensory.audio_data) {
+        if (cortex_cnn_forward_audio(brain->cortex_cnns[1],
+                brain->staged_sensory.audio_data,
+                brain->staged_sensory.audio_size)) ran |= 1u << 1;
+    }
+    if (brain->cortex_cnns[2] && brain->staged_sensory.speech_data) {
+        if (cortex_cnn_forward_speech(brain->cortex_cnns[2],
+                brain->staged_sensory.speech_data,
+                brain->staged_sensory.speech_size)) ran |= 1u << 2;
+    }
+    if (brain->cortex_cnns[3] && brain->staged_sensory.somato_data) {
+        if (cortex_cnn_forward_somato(brain->cortex_cnns[3],
+                brain->staged_sensory.somato_data,
+                brain->staged_sensory.somato_segments)) ran |= 1u << 3;
+    }
+
+    /* Fuse embeddings via cross-modal attention.
+     * Sum actual embedding dims from active cortex CNNs.
+     * SNN-primary: visual/audio=256, speech/somato=128 → total 768. */
+    uint32_t max_fused = 0;
+    for (int ci = 0; ci < 4; ci++) {
+        if (brain->cortex_cnns[ci]) {
+            cortex_cnn_metrics_t m;
+            if (cortex_cnn_get_metrics(
+                    (cortex_cnn_processor_t*)brain->cortex_cnns[ci], &m) == 0) {
+                max_fused += m.embedding_dim;
+            }
+        }
+    }
+    #define CORTEX_CNN_MAX_FUSED_EMBED_DIM  768  /* 256+256+128+128 */
+    if (max_fused == 0) max_fused = CORTEX_CNN_MAX_FUSED_EMBED_DIM;
+    if (!brain->cortex_cnn_fused_embedding ||
+        brain->cortex_cnn_fused_dim < max_fused) {
+        nimcp_free(brain->cortex_cnn_fused_embedding);
+        brain->cortex_cnn_fused_embedding = (float*)nimcp_calloc(max_fused, sizeof(float));
+    }
+    if (brain->cortex_cnn_fused_embedding) {
+        brain->cortex_cnn_fused_dim = cortex_cnn_fuse(
+            (struct cortex_cnn_processor**)brain->cortex_cnns, 4,
+            brain->cortex_cnn_fused_embedding, max_fused);
+    }
+    return ran;
+}
+
+/**
  * @brief Perform forward pass through network
  *
  * COMPLEXITY: O(s*n) where s = sparsity
@@ -1324,75 +1408,7 @@ sequential_fallback:
     /* 0.5. Per-cortex CNN feature extraction — run before adaptive to augment features.
      * Each cortex CNN processes its modality's staged sensory data independently,
      * then embeddings are fused via cross-modal attention and prepended to features. */
-    {
-        extern const float* cortex_cnn_forward_visual(struct cortex_cnn_processor* proc,
-            const uint8_t* pixels, uint32_t w, uint32_t h, uint32_t ch);
-        extern const float* cortex_cnn_forward_audio(struct cortex_cnn_processor* proc,
-            const float* mel, uint32_t mel_size);
-        extern const float* cortex_cnn_forward_speech(struct cortex_cnn_processor* proc,
-            const float* phonemes, uint32_t size);
-        extern const float* cortex_cnn_forward_somato(struct cortex_cnn_processor* proc,
-            const float* segments, uint32_t n_segments);
-        extern uint32_t cortex_cnn_fuse(struct cortex_cnn_processor* procs[], uint32_t count,
-            float* fused_out, uint32_t max_dim);
-
-        bool has_cortex = false;
-        for (int ci = 0; ci < 4; ci++) {
-            if (brain->cortex_cnns[ci]) { has_cortex = true; break; }
-        }
-
-        if (has_cortex) {
-            /* Run forward on each cortex with available sensory data */
-            if (brain->cortex_cnns[0] && brain->staged_sensory.visual_frame) {
-                cortex_cnn_forward_visual(brain->cortex_cnns[0],
-                    brain->staged_sensory.visual_frame,
-                    brain->staged_sensory.visual_width,
-                    brain->staged_sensory.visual_height,
-                    brain->staged_sensory.visual_channels);
-            }
-            if (brain->cortex_cnns[1] && brain->staged_sensory.audio_data) {
-                cortex_cnn_forward_audio(brain->cortex_cnns[1],
-                    brain->staged_sensory.audio_data,
-                    brain->staged_sensory.audio_size);
-            }
-            if (brain->cortex_cnns[2] && brain->staged_sensory.speech_data) {
-                cortex_cnn_forward_speech(brain->cortex_cnns[2],
-                    brain->staged_sensory.speech_data,
-                    brain->staged_sensory.speech_size);
-            }
-            if (brain->cortex_cnns[3] && brain->staged_sensory.somato_data) {
-                cortex_cnn_forward_somato(brain->cortex_cnns[3],
-                    brain->staged_sensory.somato_data,
-                    brain->staged_sensory.somato_segments);
-            }
-
-            /* Fuse embeddings via cross-modal attention.
-             * Sum actual embedding dims from active cortex CNNs.
-             * SNN-primary: visual/audio=256, speech/somato=128 → total 768. */
-            uint32_t max_fused = 0;
-            for (int ci = 0; ci < 4; ci++) {
-                if (brain->cortex_cnns[ci]) {
-                    cortex_cnn_metrics_t m;
-                    if (cortex_cnn_get_metrics(
-                            (cortex_cnn_processor_t*)brain->cortex_cnns[ci], &m) == 0) {
-                        max_fused += m.embedding_dim;
-                    }
-                }
-            }
-            #define CORTEX_CNN_MAX_FUSED_EMBED_DIM  768  /* 256+256+128+128 */
-            if (max_fused == 0) max_fused = CORTEX_CNN_MAX_FUSED_EMBED_DIM;
-            if (!brain->cortex_cnn_fused_embedding ||
-                brain->cortex_cnn_fused_dim < max_fused) {
-                nimcp_free(brain->cortex_cnn_fused_embedding);
-                brain->cortex_cnn_fused_embedding = (float*)nimcp_calloc(max_fused, sizeof(float));
-            }
-            if (brain->cortex_cnn_fused_embedding) {
-                brain->cortex_cnn_fused_dim = cortex_cnn_fuse(
-                    (struct cortex_cnn_processor**)brain->cortex_cnns, 4,
-                    brain->cortex_cnn_fused_embedding, max_fused);
-            }
-        }
-    }
+    (void)brain_cortex_forward_and_fuse(brain);
 
     /* Blend cortex CNN fused embedding into features for perceptual grounding.
      * Uses thread-local static buffer to avoid malloc (which caused SIGSEGV

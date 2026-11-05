@@ -2501,6 +2501,64 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             }
         }
 
+        /* Perception into training (2026-11-05): run the cortex CNN forwards
+         * on this step's staged sensory data BEFORE the UTM step and give
+         * the UTM the same cortex-blended features the decision path uses.
+         * Previously the UTM trained the ANN/LNN on raw text features (the
+         * cortex forward ran after it), so they never learned from vision
+         * while decisions fed them vision. The backward below reuses these
+         * forwards (cortex_fwd_mask). */
+        uint32_t cortex_fwd_mask = 0;
+        const float* utm_features = features;
+        float* utm_blended = NULL;
+        if (label && label[0]) {
+            extern struct cortex_cnn_processor* cortex_cnn_create(uint32_t type, uint32_t embed_dim);
+            extern uint32_t brain_cortex_forward_and_fuse(brain_t brain);
+            extern float cortex_cnn_fusion_scale(const float*, uint32_t, const float*, uint32_t);
+
+            /* Lazy creation: create cortex CNN when sensory data first arrives */
+            bool cortex_lazy_created_this_step = false;
+            if (brain->staged_sensory.visual_frame && !brain->cortex_cnns[0]) {
+                brain->cortex_cnns[0] = cortex_cnn_create(0, 0);
+                cortex_lazy_created_this_step |= (brain->cortex_cnns[0] != NULL);
+            }
+            if (brain->staged_sensory.audio_data && !brain->cortex_cnns[1]) {
+                brain->cortex_cnns[1] = cortex_cnn_create(1, 0);
+                cortex_lazy_created_this_step |= (brain->cortex_cnns[1] != NULL);
+            }
+            if (brain->staged_sensory.speech_data && !brain->cortex_cnns[2]) {
+                brain->cortex_cnns[2] = cortex_cnn_create(2, 0);
+                cortex_lazy_created_this_step |= (brain->cortex_cnns[2] != NULL);
+            }
+            if (brain->staged_sensory.somato_data && !brain->cortex_cnns[3]) {
+                brain->cortex_cnns[3] = cortex_cnn_create(3, 0);
+                cortex_lazy_created_this_step |= (brain->cortex_cnns[3] != NULL);
+            }
+            /* Wire substrate + thalamic router into any freshly-created cortex
+             * CNNs. Idempotent; safe to call even if nothing new was created. */
+            if (cortex_lazy_created_this_step) {
+                nimcp_brain_attach_substrate_thalamic(brain);
+            }
+
+            cortex_fwd_mask = brain_cortex_forward_and_fuse(brain);
+            if (cortex_fwd_mask && brain->cortex_cnn_fused_embedding
+                && brain->cortex_cnn_fused_dim > 0) {
+                utm_blended = (float*)nimcp_malloc(num_features * sizeof(float));
+                if (utm_blended) {
+                    memcpy(utm_blended, features, num_features * sizeof(float));
+                    uint32_t inject_n = (brain->cortex_cnn_fused_dim < num_features)
+                                      ? brain->cortex_cnn_fused_dim : num_features;
+                    float fscale = cortex_cnn_fusion_scale(features, num_features,
+                                                           brain->cortex_cnn_fused_embedding,
+                                                           inject_n);
+                    for (uint32_t i = 0; i < inject_n; i++) {
+                        utm_blended[i] += fscale * brain->cortex_cnn_fused_embedding[i];
+                    }
+                    utm_features = utm_blended;
+                }
+            }
+        }
+
         struct timespec _blv_utm_t0;
         clock_gettime(CLOCK_MONOTONIC, &_blv_utm_t0);  /* Always profile */
         if (_blv_step_tracker % 10 == 0) {
@@ -2509,9 +2567,14 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         }
         nimcp_utm_step_result_t utm_result = {0};
         int utm_rc = nimcp_utm_step(brain->unified_training,
-                                    features, num_features,
+                                    utm_features, num_features,
                                     target, target_size,
                                     &utm_result);
+        if (utm_blended) {
+            nimcp_free(utm_blended);
+            utm_blended = NULL;
+            utm_features = features;
+        }
 
         /* Profile: detailed per-network breakdown */
         struct timespec _blv_utm_t1;
@@ -2722,30 +2785,8 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             extern const float* cortex_cnn_forward_somato(struct cortex_cnn_processor* proc,
                 const float* segments, uint32_t n_segments);
             uint32_t num_out = brain->config.num_outputs;
-
-            /* Lazy creation: create cortex CNN when sensory data first arrives */
-            bool cortex_lazy_created_this_step = false;
-            if (brain->staged_sensory.visual_frame && !brain->cortex_cnns[0]) {
-                brain->cortex_cnns[0] = cortex_cnn_create(0, 0);
-                cortex_lazy_created_this_step |= (brain->cortex_cnns[0] != NULL);
-            }
-            if (brain->staged_sensory.audio_data && !brain->cortex_cnns[1]) {
-                brain->cortex_cnns[1] = cortex_cnn_create(1, 0);
-                cortex_lazy_created_this_step |= (brain->cortex_cnns[1] != NULL);
-            }
-            if (brain->staged_sensory.speech_data && !brain->cortex_cnns[2]) {
-                brain->cortex_cnns[2] = cortex_cnn_create(2, 0);
-                cortex_lazy_created_this_step |= (brain->cortex_cnns[2] != NULL);
-            }
-            if (brain->staged_sensory.somato_data && !brain->cortex_cnns[3]) {
-                brain->cortex_cnns[3] = cortex_cnn_create(3, 0);
-                cortex_lazy_created_this_step |= (brain->cortex_cnns[3] != NULL);
-            }
-            /* Wire substrate + thalamic router into any freshly-created cortex
-             * CNNs. Idempotent; safe to call even if nothing new was created. */
-            if (cortex_lazy_created_this_step) {
-                nimcp_brain_attach_substrate_thalamic(brain);
-            }
+            /* Lazy creation and the forwards ran before the UTM step
+             * (brain_cortex_forward_and_fuse); only the backwards run here. */
 
             /* Cortex CNN training gate: frozen if train_cnn is false OR if
              * in SNN-only recovery mode. Forward pass still runs (for any
@@ -2779,47 +2820,13 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
 #define CT_END(slot) do { clock_gettime(CLOCK_MONOTONIC, &_ct1); \
                 _ct_ms[slot] += (_ct1.tv_sec - _ct0.tv_sec) * 1000.0 + \
                                 (_ct1.tv_nsec - _ct0.tv_nsec) / 1.0e6; } while (0)
-            if (brain->cortex_cnns[0] && brain->staged_sensory.visual_frame) {
+            /* Forward times (slots 0/2/4/6) are now spent before the UTM
+             * step and are not split out here. */
+            for (int ci = 0; ci < 4; ci++) {
+                if (!brain->cortex_cnns[ci] || !(cortex_fwd_mask & (1u << ci))) continue;
                 CT_START();
-                const float* emb = cortex_cnn_forward_visual(brain->cortex_cnns[0],
-                    brain->staged_sensory.visual_frame,
-                    brain->staged_sensory.visual_width,
-                    brain->staged_sensory.visual_height,
-                    brain->staged_sensory.visual_channels);
-                CT_END(0);
-                CT_START();
-                if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[0], label, num_out);
-                CT_END(1);
-            }
-            if (brain->cortex_cnns[1] && brain->staged_sensory.audio_data) {
-                CT_START();
-                const float* emb = cortex_cnn_forward_audio(brain->cortex_cnns[1],
-                    brain->staged_sensory.audio_data,
-                    brain->staged_sensory.audio_size);
-                CT_END(2);
-                CT_START();
-                if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[1], label, num_out);
-                CT_END(3);
-            }
-            if (brain->cortex_cnns[2] && brain->staged_sensory.speech_data) {
-                CT_START();
-                const float* emb = cortex_cnn_forward_speech(brain->cortex_cnns[2],
-                    brain->staged_sensory.speech_data,
-                    brain->staged_sensory.speech_size);
-                CT_END(4);
-                CT_START();
-                if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[2], label, num_out);
-                CT_END(5);
-            }
-            if (brain->cortex_cnns[3] && brain->staged_sensory.somato_data) {
-                CT_START();
-                const float* emb = cortex_cnn_forward_somato(brain->cortex_cnns[3],
-                    brain->staged_sensory.somato_data,
-                    brain->staged_sensory.somato_segments);
-                CT_END(6);
-                CT_START();
-                if (emb && !cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[3], label, num_out);
-                CT_END(7);
+                if (!cortex_cnn_freeze) cortex_cnn_backward(brain->cortex_cnns[ci], label, num_out);
+                CT_END(2 * ci + 1);
             }
 #undef CT_START
 #undef CT_END

@@ -71,6 +71,7 @@ set(NIMCP_STANDALONE_LANG_TESTS
     test_snn_forward_carry
     test_lnn_decide_readout
     test_snn_homeo_gpu
+    test_lnn_adjoint_history_order
     test_snn_fno_recording
     test_lang_thalamic_gates
     test_lang_distributional_anticollapse

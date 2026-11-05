@@ -2,6 +2,20 @@
 // Part of nimcp_lnn_gradient.c (SRP #include-based split)
 // DO NOT compile separately - #included from nimcp_lnn_gradient.c
 
+/* Chronological access to the state history ring buffer: step 0 is the
+ * oldest stored state, history_len - 1 the newest. The buffer wraps once
+ * history_len reaches capacity, so a raw state_history[step] read is out of
+ * time order (2026-11-05; same mapping as lnn_network_get_history). */
+static inline nimcp_tensor_t* lnn_history_at(const lnn_network_t* network, uint32_t step) {
+    if (!network->state_history || network->history_capacity == 0
+        || step >= network->history_len) {
+        return NULL;
+    }
+    const uint32_t idx = (network->history_write_idx + network->history_capacity
+                          - network->history_len + step) % network->history_capacity;
+    return network->state_history[idx];
+}
+
 
 /*=============================================================================
  * Gradient Computation Functions
@@ -111,7 +125,7 @@ int lnn_gradient_compute_adjoint(
         float t = step * network->config->default_dt;
 
         // Get state at this time step
-        nimcp_tensor_t* x_current = network->state_history[step];
+        nimcp_tensor_t* x_current = lnn_history_at(network, (uint32_t)step);
         if (!x_current) {
             NIMCP_LOGGING_ERROR("Missing state at step %d", step);
             NIMCP_THROW_BRAIN(NIMCP_ERROR_BACKWARD_PASS, network->id, "LNN",
@@ -355,7 +369,7 @@ int lnn_gradient_compute_bptt(
     // Backward loop from T-1 to 0
     for (int t = (int)seq_len - 1; t >= 0; t--) {
         // Get state at time t
-        nimcp_tensor_t* x_t = network->state_history[t];
+        nimcp_tensor_t* x_t = lnn_history_at(network, (uint32_t)t);
         if (!x_t) {
             NIMCP_LOGGING_ERROR("Missing state at step %d in BPTT", t);
             nimcp_tensor_destroy(delta_current);
