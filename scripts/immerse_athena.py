@@ -537,11 +537,20 @@ class _ControlledInference:
     zero SNN Poisson noise for the duration and let callers reset inference
     state before each probe decision (2026-11-02 diagnostic: under these
     conditions repeats are exact, so differences come from the input).
-    Training itself keeps noise and carried state."""
+    Training itself keeps noise and carried state.
+
+    The LNN substrate and thalamic adapters are frozen too (2026-11-05):
+    reset_inference_state does not reset them (substrate refresh counter,
+    evolving tau modulation, thalamic gate), and at the training dt of 1.0
+    their drift made identical runs differ by 1-cos ~2e-4 — above the
+    history signal the video probe measures."""
+
+    LNN_FROZEN = ("substrate_enabled", "thalamic_enabled")
 
     def __init__(self, brain):
         self.brain = brain
         self.old = None
+        self.old_lnn = {}
 
     def __enter__(self):
         try:
@@ -549,6 +558,14 @@ class _ControlledInference:
             self.brain.snn_tune("noise_rate_hz", 0.0)
         except Exception:
             self.old = None
+        try:
+            cur = self.brain.lnn_tune_get() or {}
+            for k in self.LNN_FROZEN:
+                if k in cur:
+                    self.old_lnn[k] = float(cur[k])
+                    self.brain.lnn_tune(k, 0.0)
+        except Exception:
+            pass
         return self
 
     def reset(self):
@@ -561,6 +578,11 @@ class _ControlledInference:
         if self.old is not None:
             try:
                 self.brain.snn_tune("noise_rate_hz", self.old)
+            except Exception:
+                pass
+        for k, v in self.old_lnn.items():
+            try:
+                self.brain.lnn_tune(k, v)
             except Exception:
                 pass
         self.reset()
