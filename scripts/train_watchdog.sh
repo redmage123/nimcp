@@ -174,9 +174,14 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     PYTORCH_CUDA_LIBS="/usr/local/lib/python3.12/dist-packages/nvidia/cuda_runtime/lib"
     export LD_LIBRARY_PATH="${PYTORCH_CUDA_LIBS}:${LD_LIBRARY_PATH}"
 
-    python3 scripts/immerse_athena.py --stage "$STAGE" --resume > "$TRAINING_LOG" 2>&1 &
+    # Extra trainer flags (2026-11-05, e.g. "--video-phase --stage0-video-rate 0.7"):
+    # $TRAIN_EXTRA_ARGS, else the first line of /root/train_extra_args, which
+    # survives watchdog restarts that do not carry the environment.
+    extra_args="${TRAIN_EXTRA_ARGS:-$(head -n1 /root/train_extra_args 2>/dev/null)}"
+    # shellcheck disable=SC2086  # word-split the flag list on purpose
+    python3 scripts/immerse_athena.py --stage "$STAGE" --resume $extra_args > "$TRAINING_LOG" 2>&1 &
     train_pid=$!
-    log_wd "Training started with PID $train_pid"
+    log_wd "Training started with PID $train_pid${extra_args:+ (extra args: $extra_args)}"
     sampler_pid=$(start_gpu_sampler)
 
     # Monitor training

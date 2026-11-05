@@ -7784,9 +7784,16 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
     for i in _it.count(start_from):
         TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 0, i
         if i >= num_stimuli:
-            if gate is None or gate_passed:
+            if VIDEO_PHASE:
+                # Video phase replaces moving on to stage 1 for now (user,
+                # 2026-11-05): hold stage 0 until the phase is switched off.
+                if (i - num_stimuli) % 1000 == 0:
+                    print(f"  [VideoPhase] holding stage 0 at step {i} "
+                          f"(gate passed: {gate_passed}); run without --video-phase "
+                          "to let the StageGate advance", flush=True)
+            elif gate is None or gate_passed:
                 break
-            if STAGE0_MAX_STIMULI and i >= STAGE0_MAX_STIMULI:
+            elif STAGE0_MAX_STIMULI and i >= STAGE0_MAX_STIMULI:
                 print(f"  [StageGate 0] SAFETY CEILING {STAGE0_MAX_STIMULI} reached at step {i} "
                       "— advancing WITHOUT a gate pass", flush=True)
                 break
