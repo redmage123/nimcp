@@ -39,18 +39,20 @@ class Bank:
 class Brain:
     """Records the order of calls and what each learn step saw."""
 
-    def __init__(self, embed_ok=True):
+    def __init__(self, embed_ok=True, blank_frames=()):
         self.calls = []
         self.staged = None
         self.learned = []          # (staged frame, target)
         self.embed_ok = embed_ok
+        self.blank_frames = set(blank_frames)   # frames whose embedding is all zero
 
     def cortex_embed_visual(self, pixels, width, height, channels=3):
         self.calls.append(("embed", pixels[0]))
         if not self.embed_ok:
             return None
         v = np.zeros(256, dtype=np.float32)
-        v[pixels[0] % 256] = 1.0   # frame identity -> distinct embedding
+        if pixels[0] not in self.blank_frames:
+            v[pixels[0] % 256] = 1.0   # frame identity -> distinct embedding
         return list(v)
 
     def submit_sensory(self, modality, pixels, width, height, channels):
@@ -146,6 +148,18 @@ def test_no_embedding_stops():
     expect(ia._VIDEO_PHASE_STATS["no_embed"] == before + 1, "embed miss counted")
 
 
+def test_blank_next_frame_skips_pair():
+    ia.VIDEO_TARGET_FULL_PROB = 0.0
+    before = ia._VIDEO_PHASE_STATS["blank"]
+    b = Brain(blank_frames={12})          # frame 12 fades to black
+    losses = ia._learn_video_shot(b, Bank(), SEQ, Composer(), 0.01)
+    expect([s for s, _ in b.learned] == [10, 12, 13],
+           f"pair (11 -> 12) skipped, the shot continues: {[s for s, _ in b.learned]}")
+    expect(len(losses) == 3, "three frames learned")
+    expect(ia._VIDEO_PHASE_STATS["blank"] == before + 1, "blank next frame counted")
+    ia.VIDEO_TARGET_FULL_PROB = 0.3
+
+
 def test_short_shot():
     b = Brain()
     expect(ia._learn_video_shot(b, Bank(), dict(SEQ, frames=[frame(1)]), Composer(), 0.01) == [],
@@ -158,6 +172,7 @@ if __name__ == "__main__":
     test_full_targets()
     test_mix_probability()
     test_no_embedding_stops()
+    test_blank_next_frame_skips_pair()
     test_short_shot()
     if failures:
         print(f"test_video_phase: {failures} failure(s)")

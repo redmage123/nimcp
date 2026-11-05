@@ -537,7 +537,10 @@ VIDEO_INTERLUDE_EVERY = 40    # stages 1-3: play one real shot (8 brain steps) e
 VIDEO_PHASE = False
 VIDEO_TARGET_FULL_PROB = 0.3
 _NEXT_FRAME_PROJ = None       # fixed 1024 x D projection of cortex embeddings
-_VIDEO_PHASE_STATS = {"shots": 0, "frames": 0, "full": 0, "loss_sum": 0.0, "no_embed": 0}
+# no_embed: the cortex returned no embedding (shot abandoned); blank: frame
+# t+1's embedding was all zero, e.g. a fade to black (that pair skipped).
+_VIDEO_PHASE_STATS = {"shots": 0, "frames": 0, "full": 0, "loss_sum": 0.0,
+                      "no_embed": 0, "blank": 0}
 
 
 def _next_frame_tile(emb, tile_rms):
@@ -576,10 +579,15 @@ def _learn_video_shot(brain, rs, seq, composer, lr):
         # Embed frame t+1 first: the forward replaces the cortex's cached
         # result, and learn_vector below runs its own forward on frame t.
         emb = brain.cortex_embed_visual(staged[t + 1], side, side, 3)
-        nxt = _next_frame_tile(emb, tile_rms) if emb else None
-        if nxt is None:
+        if not emb:
+            # No visual cortex / forward failed: every later frame would too.
             _VIDEO_PHASE_STATS["no_embed"] += 1
             break
+        nxt = _next_frame_tile(emb, tile_rms)
+        if nxt is None:
+            # Blank next frame (all-zero embedding): skip this pair only.
+            _VIDEO_PHASE_STATS["blank"] += 1
+            continue
         if random.random() < VIDEO_TARGET_FULL_PROB:
             target = np.tile(nxt, 4)
             _VIDEO_PHASE_STATS["full"] += 1
@@ -7770,6 +7778,9 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
     # (loss < 1.0, plateau, non-zero outputs, SNN sparsity, chat eval). The
     # stimulus stream comes from the prefetcher, not an index, so running
     # past num_stimuli is safe.
+    if VIDEO_PHASE:
+        print(f"  [VideoPhase] on: video rate {STAGE0_VIDEO_RATE:.2f}, full next-frame "
+              f"target probability {VIDEO_TARGET_FULL_PROB:.2f}; stage 0 is held", flush=True)
     gate = None
     gate_passed = False
     if STAGE_GATE_ENABLED:
@@ -7839,8 +7850,11 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
                 _vs = _VIDEO_PHASE_STATS
                 if _vs["shots"] % 50 == 0 and _vs["frames"]:
                     print(f"  [VideoPhase] {_vs['shots']} shots, {_vs['frames']} frames learned "
-                          f"({_vs['full']} full next-frame targets), mean loss "
-                          f"{_vs['loss_sum'] / _vs['frames']:.4f}, embed misses {_vs['no_embed']}",
+                          f"({_vs['full']} full next-frame targets = "
+                          f"{_vs['full'] / _vs['frames']:.2f}, configured "
+                          f"{VIDEO_TARGET_FULL_PROB:.2f}), mean loss "
+                          f"{_vs['loss_sum'] / _vs['frames']:.4f}, blank next frames "
+                          f"skipped {_vs['blank']}, shots without embedding {_vs['no_embed']}",
                           flush=True)
             elif _seq:
                 # Real motion: the frames of one shot (public-domain film,
