@@ -362,6 +362,116 @@ NIMCP_EXPORT bool nimcp_gpu_lif_state_upload_thresh_offset(
     size_t n_neurons
 );
 
+//=============================================================================
+// Device-resident per-neuron homeostasis (2026-11-05)
+//
+// AHP / Na-K pump hyperpolarization, basket inhibition, intrinsic-plasticity
+// threshold offset and short-term depression for the current-based GPU step.
+// The 2026-11-03 parity fix ran these as host loops over every neuron each
+// 1 ms step (~150-200 ms/step at 3.25M neurons); here they are two kernels
+// around nimcp_gpu_lif_forward. The threshold offset lives in the LIF state's
+// thresh_offset tensor, which the LIF kernel already reads.
+//
+// Semantics match the host reference (snn_adaptation_update, the inline
+// IP/depression loop of snn_cb_post_spike_pop). Basket pools stay on the
+// host: post returns per-pop spike counts for snn_basket_pool_step.
+//=============================================================================
+
+#define NIMCP_SNN_HOMEO_ACTIVE 1u  /**< pop gets homeostasis */
+#define NIMCP_SNN_HOMEO_AHP    2u  /**< AHP hyperpolarization + update */
+#define NIMCP_SNN_HOMEO_PUMP   4u  /**< Na/K pump hyperpolarization + update */
+#define NIMCP_SNN_HOMEO_IP     8u  /**< IP threshold, rate EMA, depression */
+
+/** Per-population parameters, rebuilt on the host every step. */
+typedef struct {
+    float    basket;      /**< Added to each neuron's input (already negative) */
+    float    ahp_gain;    /**< mV per unit AHP variable */
+    float    ahp_decay;   /**< exp(-dt / tau_ahp) */
+    float    ahp_bump;    /**< AHP increment on spike */
+    float    pump_gain;   /**< mV per unit pump variable */
+    float    pump_decay;  /**< exp(-dt / tau_pump) */
+    float    pump_bump;   /**< Pump increment on spike */
+    uint32_t flags;       /**< NIMCP_SNN_HOMEO_* bits */
+} nimcp_snn_homeo_pop_params_t;
+
+/** Network-wide parameters for one step. */
+typedef struct {
+    float pump_factor;    /**< ATP coupling on AHP + pump hyperpolarization */
+    float ip_alpha;       /**< Rate EMA coefficient */
+    float ip_gain;        /**< Threshold offset gain per unit rate error */
+    float ip_target;      /**< Target per-step firing probability */
+    float ip_cap;         /**< |threshold offset| cap (mV) */
+    float dep_decay;      /**< exp(-dt / tau_depression) */
+    float dep_inc;        /**< Depression increment on spike */
+    float dep_cap;        /**< Depression cap */
+} nimcp_snn_homeo_globals_t;
+
+typedef struct nimcp_snn_homeo_gpu_s nimcp_snn_homeo_gpu_t;
+
+/**
+ * @brief Create device homeostasis state for a LIF state.
+ *
+ * @param ctx         GPU context the LIF state lives on
+ * @param lif         LIF state; its thresh_offset is allocated (zeroed) if absent
+ * @param pop_offsets [n_pops + 1] prefix sums of population sizes; the last
+ *                    entry must equal lif->v->numel (empty pops allowed)
+ * @param n_pops      Number of populations (> 0)
+ * @return Handle with all state zeroed, or NULL on failure
+ */
+NIMCP_EXPORT nimcp_snn_homeo_gpu_t* nimcp_snn_homeo_gpu_create(
+    nimcp_gpu_context_t* ctx, nimcp_lif_state_t* lif,
+    const uint32_t* pop_offsets, uint32_t n_pops);
+
+/** @brief Free device state. NULL-safe. Does not touch the LIF state. */
+NIMCP_EXPORT void nimcp_snn_homeo_gpu_destroy(nimcp_snn_homeo_gpu_t* h);
+
+/**
+ * @brief True if @p h was created for this LIF state, neuron count and
+ *        population count (callers recreate it otherwise).
+ */
+NIMCP_EXPORT bool nimcp_snn_homeo_gpu_matches(const nimcp_snn_homeo_gpu_t* h,
+    const nimcp_lif_state_t* lif, size_t n_neurons, uint32_t n_pops);
+
+/**
+ * @brief Copy one population's host state to the device. Each array is
+ *        [pop size]; NULL leaves that device array unchanged.
+ */
+NIMCP_EXPORT bool nimcp_snn_homeo_gpu_upload_pop(nimcp_snn_homeo_gpu_t* h,
+    uint32_t pop, const float* ahp_var, const float* pump_var,
+    const float* rate_ema, const float* depression, const float* thresh_offset);
+
+/**
+ * @brief Copy one population's device state to the host. Each array is
+ *        [pop size]; NULL skips that array.
+ */
+NIMCP_EXPORT bool nimcp_snn_homeo_gpu_download_pop(const nimcp_snn_homeo_gpu_t* h,
+    uint32_t pop, float* ahp_var, float* pump_var,
+    float* rate_ema, float* depression, float* thresh_offset);
+
+/**
+ * @brief Set this step's parameters.
+ * @param pops [n_pops] per-population parameters
+ */
+NIMCP_EXPORT bool nimcp_snn_homeo_gpu_set_params(nimcp_snn_homeo_gpu_t* h,
+    const nimcp_snn_homeo_pop_params_t* pops,
+    const nimcp_snn_homeo_globals_t* globals);
+
+/**
+ * @brief Before LIF: input[i] += basket - (ahp_gain·ahp[i] + pump_gain·pump[i])
+ *        × pump_factor for neurons of active pops.
+ * @param input Device input current [n_neurons], modified in place
+ */
+NIMCP_EXPORT bool nimcp_snn_homeo_gpu_pre(nimcp_snn_homeo_gpu_t* h,
+    nimcp_gpu_tensor_t* input);
+
+/**
+ * @brief After LIF: advance AHP / pump / rate EMA / threshold offset /
+ *        depression from the LIF state's spikes.
+ * @param spike_counts Host [n_pops] spikes per pop this step, or NULL
+ */
+NIMCP_EXPORT bool nimcp_snn_homeo_gpu_post(nimcp_snn_homeo_gpu_t* h,
+    uint32_t* spike_counts);
+
 /**
  * @brief LIF forward pass
  *

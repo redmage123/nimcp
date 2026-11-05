@@ -552,3 +552,162 @@ bool nimcp_gpu_gradient_flush(nimcp_gpu_context_t* ctx) {
     (void)ctx;
     return true;  // No-op for CPU
 }
+
+//=============================================================================
+// Device-resident homeostasis — CPU emulation (2026-11-05)
+//
+// Same semantics as the CUDA kernels in nimcp_snn_kernels.cu; both use the
+// per-neuron math in gpu/snn/nimcp_snn_homeo_math.h.
+//=============================================================================
+
+#include "gpu/snn/nimcp_snn_homeo_math.h"
+
+struct nimcp_snn_homeo_gpu_s {
+    nimcp_lif_state_t* lif;
+    size_t   n_neurons;
+    uint32_t n_pops;
+    uint32_t* pop_offsets;   /* [n_pops + 1] */
+    float* ahp_var;
+    float* pump_var;
+    float* rate_ema;
+    float* depression;
+    nimcp_snn_homeo_pop_params_t* params;
+    nimcp_snn_homeo_globals_t globals;
+    bool params_set;
+};
+
+void nimcp_snn_homeo_gpu_destroy(nimcp_snn_homeo_gpu_t* h) {
+    if (!h) return;
+    nimcp_free(h->pop_offsets);
+    nimcp_free(h->ahp_var);
+    nimcp_free(h->pump_var);
+    nimcp_free(h->rate_ema);
+    nimcp_free(h->depression);
+    nimcp_free(h->params);
+    nimcp_free(h);
+}
+
+nimcp_snn_homeo_gpu_t* nimcp_snn_homeo_gpu_create(
+    nimcp_gpu_context_t* ctx, nimcp_lif_state_t* lif,
+    const uint32_t* pop_offsets, uint32_t n_pops)
+{
+    if (!lif || !lif->v || !pop_offsets || n_pops == 0) return NULL;
+    const size_t n = lif->v->numel;
+    if (pop_offsets[0] != 0 || pop_offsets[n_pops] != n) return NULL;
+    for (uint32_t p = 0; p < n_pops; p++) {
+        if (pop_offsets[p + 1] < pop_offsets[p]) return NULL;
+    }
+    if (!lif->thresh_offset) {
+        float* zeros = (float*)nimcp_calloc(n, sizeof(float));
+        if (!zeros) return NULL;
+        const bool ok = nimcp_gpu_lif_state_upload_thresh_offset(ctx, lif, zeros, n);
+        nimcp_free(zeros);
+        if (!ok) return NULL;
+    }
+    nimcp_snn_homeo_gpu_t* h = (nimcp_snn_homeo_gpu_t*)nimcp_calloc(1, sizeof(*h));
+    if (!h) return NULL;
+    h->lif = lif;
+    h->n_neurons = n;
+    h->n_pops = n_pops;
+    h->pop_offsets = (uint32_t*)nimcp_malloc((n_pops + 1) * sizeof(uint32_t));
+    h->ahp_var    = (float*)nimcp_calloc(n, sizeof(float));
+    h->pump_var   = (float*)nimcp_calloc(n, sizeof(float));
+    h->rate_ema   = (float*)nimcp_calloc(n, sizeof(float));
+    h->depression = (float*)nimcp_calloc(n, sizeof(float));
+    h->params = (nimcp_snn_homeo_pop_params_t*)nimcp_calloc(n_pops, sizeof(*h->params));
+    if (!h->pop_offsets || !h->ahp_var || !h->pump_var || !h->rate_ema
+        || !h->depression || !h->params) {
+        nimcp_snn_homeo_gpu_destroy(h);
+        return NULL;
+    }
+    memcpy(h->pop_offsets, pop_offsets, (n_pops + 1) * sizeof(uint32_t));
+    return h;
+}
+
+bool nimcp_snn_homeo_gpu_matches(const nimcp_snn_homeo_gpu_t* h,
+    const nimcp_lif_state_t* lif, size_t n_neurons, uint32_t n_pops)
+{
+    return h && h->lif == lif && h->n_neurons == n_neurons && h->n_pops == n_pops
+        && lif && lif->thresh_offset;
+}
+
+static void homeo_cpu_copy(float* dst, const float* src, size_t n) {
+    if (dst && src && n) memcpy(dst, src, n * sizeof(float));
+}
+
+bool nimcp_snn_homeo_gpu_upload_pop(nimcp_snn_homeo_gpu_t* h,
+    uint32_t pop, const float* ahp_var, const float* pump_var,
+    const float* rate_ema, const float* depression, const float* thresh_offset)
+{
+    if (!h || pop >= h->n_pops || !h->lif->thresh_offset) return false;
+    const size_t off = h->pop_offsets[pop];
+    const size_t n = h->pop_offsets[pop + 1] - off;
+    homeo_cpu_copy(h->ahp_var + off, ahp_var, n);
+    homeo_cpu_copy(h->pump_var + off, pump_var, n);
+    homeo_cpu_copy(h->rate_ema + off, rate_ema, n);
+    homeo_cpu_copy(h->depression + off, depression, n);
+    homeo_cpu_copy((float*)h->lif->thresh_offset->data + off, thresh_offset, n);
+    return true;
+}
+
+bool nimcp_snn_homeo_gpu_download_pop(const nimcp_snn_homeo_gpu_t* h,
+    uint32_t pop, float* ahp_var, float* pump_var,
+    float* rate_ema, float* depression, float* thresh_offset)
+{
+    if (!h || pop >= h->n_pops || !h->lif->thresh_offset) return false;
+    const size_t off = h->pop_offsets[pop];
+    const size_t n = h->pop_offsets[pop + 1] - off;
+    homeo_cpu_copy(ahp_var, h->ahp_var + off, n);
+    homeo_cpu_copy(pump_var, h->pump_var + off, n);
+    homeo_cpu_copy(rate_ema, h->rate_ema + off, n);
+    homeo_cpu_copy(depression, h->depression + off, n);
+    homeo_cpu_copy(thresh_offset, (const float*)h->lif->thresh_offset->data + off, n);
+    return true;
+}
+
+bool nimcp_snn_homeo_gpu_set_params(nimcp_snn_homeo_gpu_t* h,
+    const nimcp_snn_homeo_pop_params_t* pops,
+    const nimcp_snn_homeo_globals_t* globals)
+{
+    if (!h || !pops || !globals) return false;
+    memcpy(h->params, pops, h->n_pops * sizeof(*pops));
+    h->globals = *globals;
+    h->params_set = true;
+    return true;
+}
+
+bool nimcp_snn_homeo_gpu_pre(nimcp_snn_homeo_gpu_t* h, nimcp_gpu_tensor_t* input)
+{
+    if (!h || !h->params_set || !input || input->numel != h->n_neurons) return false;
+    float* in = (float*)input->data;
+    for (uint32_t p = 0; p < h->n_pops; p++) {
+        const nimcp_snn_homeo_pop_params_t* pp = &h->params[p];
+        if (!(pp->flags & NIMCP_SNN_HOMEO_ACTIVE)) continue;
+        for (uint32_t i = h->pop_offsets[p]; i < h->pop_offsets[p + 1]; i++) {
+            in[i] += nimcp_snn_homeo_input_delta(pp, h->ahp_var[i], h->pump_var[i],
+                                                 h->globals.pump_factor);
+        }
+    }
+    return true;
+}
+
+bool nimcp_snn_homeo_gpu_post(nimcp_snn_homeo_gpu_t* h, uint32_t* spike_counts)
+{
+    if (!h || !h->params_set || !h->lif->spikes || !h->lif->thresh_offset) return false;
+    const float* spikes = (const float*)h->lif->spikes->data;
+    float* thr = (float*)h->lif->thresh_offset->data;
+    for (uint32_t p = 0; p < h->n_pops; p++) {
+        const nimcp_snn_homeo_pop_params_t* pp = &h->params[p];
+        uint32_t count = 0;
+        for (uint32_t i = h->pop_offsets[p]; i < h->pop_offsets[p + 1]; i++) {
+            const bool fired = spikes[i] > 0.5f;
+            if (fired) count++;
+            if (!(pp->flags & NIMCP_SNN_HOMEO_ACTIVE)) continue;
+            nimcp_snn_homeo_post_neuron(pp, &h->globals, fired,
+                                        &h->ahp_var[i], &h->pump_var[i],
+                                        &h->rate_ema[i], &thr[i], &h->depression[i]);
+        }
+        if (spike_counts) spike_counts[p] = count;
+    }
+    return true;
+}

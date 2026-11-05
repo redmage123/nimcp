@@ -906,6 +906,14 @@ struct snn_network_s {
     uint64_t lifetime_spikes;          /**< Spikes since creation */
     uint64_t lifetime_steps;           /**< Steps since creation */
     uint32_t window_peak_step_spikes;  /**< Max single-step spikes since last window read */
+
+    /* Device-resident homeostasis for the current-based GPU step
+     * (2026-11-05). The device copy of AHP / pump / rate EMA / threshold
+     * offset / depression is authoritative while that path runs and is
+     * mirrored to the per-pop host arrays every step; host_dirty forces a
+     * host→device upload after a host path changed them. */
+    void* gpu_homeo;                   /**< nimcp_snn_homeo_gpu_t*, owned */
+    bool  gpu_homeo_host_dirty;
 };
 
 //=============================================================================

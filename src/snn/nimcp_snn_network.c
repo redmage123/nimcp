@@ -954,7 +954,9 @@ void snn_network_destroy(snn_network_t* network) {
         }
     }
 
-    /* Destroy GPU LIF state */
+    /* Destroy device homeostasis state, then the GPU LIF state it uses */
+    nimcp_snn_homeo_gpu_destroy((nimcp_snn_homeo_gpu_t*)network->gpu_homeo);
+    network->gpu_homeo = NULL;
     if (network->gpu_lif_state) {
         nimcp_lif_state_destroy((nimcp_lif_state_t*)network->gpu_lif_state);
         network->gpu_lif_state = NULL;
@@ -1580,6 +1582,13 @@ static int snn_cb_integrate_neuron(
  * Thread safety: caller must hold the network mutex (or otherwise
  * serialize against trainer/inference RPC).
  */
+/* Intrinsic-plasticity constants, shared by the host post-spike pass and
+ * the device homeostasis path. */
+#define SNN_IP_TARGET_RATE 0.03f
+#define SNN_IP_ALPHA       0.01f
+#define SNN_IP_GAIN        0.5f
+#define SNN_IP_CAP         10.0f
+
 static void snn_cb_post_spike_pop(snn_population_t* pop, float dt_ms,
                                   bool ahp_on, bool pump_on, bool basket_on,
                                   float* ahp_hyp, float* pump_hyp) {
@@ -1612,10 +1621,10 @@ static void snn_cb_post_spike_pop(snn_population_t* pop, float dt_ms,
      * target_neuron_rate; depression factor exponentially decays to 0
      * with tau ~50 ms and jumps by dep_inc on firing. */
     if (pop->threshold_offset && pop->neuron_rate_ema && pop->depression) {
-        const float target_neuron_rate = 0.03f;
-        const float ip_alpha = 0.01f;
-        const float ip_gain  = 0.5f;
-        const float ip_cap   = 10.0f;
+        const float target_neuron_rate = SNN_IP_TARGET_RATE;
+        const float ip_alpha = SNN_IP_ALPHA;
+        const float ip_gain  = SNN_IP_GAIN;
+        const float ip_cap   = SNN_IP_CAP;
         extern float snn_tune_get_depression_inc(void);
         extern float snn_tune_get_depression_tau_ms(void);
         extern float snn_tune_get_depression_cap(void);
@@ -1832,6 +1841,7 @@ static void snn_gpu_homeostasis_post(snn_network_t* network,
             /* Takes ownership of ahp_hyp / pump_hyp and frees them. */
             snn_cb_post_spike_pop(pop, dt_ms, h->ahp_on, h->pump_on,
                                   h->basket_on, h->ahp_hyp, h->pump_hyp);
+            network->gpu_homeo_host_dirty = true;
         } else {
             if (h->ahp_hyp)  nimcp_free(h->ahp_hyp);
             if (h->pump_hyp) nimcp_free(h->pump_hyp);
@@ -1840,6 +1850,200 @@ static void snn_gpu_homeostasis_post(snn_network_t* network,
         h->pump_hyp = NULL;
     }
     nimcp_free(hp);
+}
+
+/* =========================================================================
+ * Device-resident homeostasis (2026-11-05)
+ *
+ * The host pre/post above loop over every neuron each 1 ms step (~150-200
+ * ms/step at 3.25M neurons, most of a brain decision's 100-step window).
+ * When available, the same updates run as two kernels around the LIF kernel
+ * (nimcp_snn_homeo_gpu_*). The device copy is authoritative while this path
+ * runs and is mirrored into the per-pop host arrays after every step, so
+ * checkpoints, the CPU / CB paths and other readers see current values.
+ * Host paths that change the state set gpu_homeo_host_dirty, which uploads
+ * the host arrays before the next device step. Basket pools stay on the host
+ * (one scalar per pop) and advance from the per-pop spike counts.
+ *
+ * Kill switch: NIMCP_SNN_GPU_HOMEO_DEVICE=0 keeps the host loops.
+ * The batch-safe IP variant (nimcp_snn_batch_safe) is host-only.
+ * ========================================================================= */
+
+static int snn_gpu_homeo_device_enabled(void) {
+    static int cached = -1;
+    if (cached < 0) cached = snn_env_flag_default_on("NIMCP_SNN_GPU_HOMEO_DEVICE");
+    return cached;
+}
+
+/* Set after a device failure: the host loops take over for the rest of the run. */
+static bool g_snn_gpu_homeo_device_failed = false;
+
+static void snn_gpu_homeo_device_fail(snn_network_t* network, const char* what) {
+    NIMCP_LOGGING_ERROR("snn device homeostasis: %s failed — falling back to "
+                        "the host loops for the rest of this run", what);
+    g_snn_gpu_homeo_device_failed = true;
+    nimcp_snn_homeo_gpu_destroy((nimcp_snn_homeo_gpu_t*)network->gpu_homeo);
+    network->gpu_homeo = NULL;
+}
+
+static bool snn_gpu_homeo_pop_basket_on(const snn_population_t* pop) {
+    return pop->basket && snn_tune_get_basket_enabled() != 0.0f;
+}
+
+/**
+ * @brief Make the device homeostasis state ready for this step: (re)create
+ *        it for the current LIF state, upload host state if dirty, and set
+ *        this step's parameters.
+ * @return true if this step uses the device path; false = use host loops.
+ */
+static bool snn_gpu_homeo_device_prepare(snn_network_t* network,
+                                         nimcp_gpu_context_t* gpu,
+                                         nimcp_lif_state_t* lif_state,
+                                         size_t total_neurons, float dt_ms)
+{
+    extern bool nimcp_snn_batch_safe_is_enabled(void);
+    if (!snn_gpu_homeostasis_enabled() || !snn_gpu_homeo_device_enabled()
+        || g_snn_gpu_homeo_device_failed || nimcp_snn_batch_safe_is_enabled()
+        || total_neurons == 0 || total_neurons > UINT32_MAX) {
+        return false;
+    }
+    const uint32_t n_pops = network->n_populations;
+    if (n_pops == 0) return false;
+
+    nimcp_snn_homeo_gpu_t* h = (nimcp_snn_homeo_gpu_t*)network->gpu_homeo;
+    if (!nimcp_snn_homeo_gpu_matches(h, lif_state, total_neurons, n_pops)) {
+        nimcp_snn_homeo_gpu_destroy(h);
+        network->gpu_homeo = NULL;
+        uint32_t* offsets = (uint32_t*)nimcp_malloc((n_pops + 1) * sizeof(uint32_t));
+        if (!offsets) return false;
+        uint32_t acc = 0;
+        for (uint32_t p = 0; p < n_pops; p++) {
+            offsets[p] = acc;
+            if (network->populations[p]) acc += network->populations[p]->n_neurons;
+        }
+        offsets[n_pops] = acc;
+        h = nimcp_snn_homeo_gpu_create(gpu, lif_state, offsets, n_pops);
+        nimcp_free(offsets);
+        if (!h) {
+            snn_gpu_homeo_device_fail(network, "create");
+            return false;
+        }
+        network->gpu_homeo = h;
+        network->gpu_homeo_host_dirty = true;
+        NIMCP_LOGGING_INFO("snn device homeostasis: %zu neurons in %u pops on GPU "
+                           "(NIMCP_SNN_GPU_HOMEO_DEVICE=0 disables)",
+                           total_neurons, n_pops);
+    }
+
+    if (network->gpu_homeo_host_dirty) {
+        for (uint32_t p = 0; p < n_pops; p++) {
+            snn_population_t* pop = network->populations[p];
+            if (!pop || !snn_gpu_homeo_pop_eligible(pop)) continue;
+            if (!nimcp_snn_homeo_gpu_upload_pop(h, p,
+                    pop->ahp  ? pop->ahp->adapt_var  : NULL,
+                    pop->pump ? pop->pump->adapt_var : NULL,
+                    pop->neuron_rate_ema, pop->depression, pop->threshold_offset)) {
+                snn_gpu_homeo_device_fail(network, "host→device upload");
+                return false;
+            }
+        }
+        network->gpu_homeo_host_dirty = false;
+    }
+
+    nimcp_snn_homeo_pop_params_t* pp = (nimcp_snn_homeo_pop_params_t*)nimcp_calloc(
+        n_pops, sizeof(nimcp_snn_homeo_pop_params_t));
+    if (!pp) return false;
+    for (uint32_t p = 0; p < n_pops; p++) {
+        snn_population_t* pop = network->populations[p];
+        if (!pop || !snn_gpu_homeo_pop_eligible(pop)) continue;
+        uint32_t flags = NIMCP_SNN_HOMEO_ACTIVE;
+        if (pop->ahp && snn_tune_get_ahp_enabled() != 0.0f) {
+            flags |= NIMCP_SNN_HOMEO_AHP;
+            pp[p].ahp_gain  = pop->ahp->gain_mv;
+            pp[p].ahp_decay = expf(-dt_ms / pop->ahp->tau_ms);
+            pp[p].ahp_bump  = pop->ahp->spike_bump;
+        }
+        if (pop->pump && snn_tune_get_pump_enabled() != 0.0f) {
+            flags |= NIMCP_SNN_HOMEO_PUMP;
+            pp[p].pump_gain  = pop->pump->gain_mv;
+            pp[p].pump_decay = expf(-dt_ms / pop->pump->tau_ms);
+            pp[p].pump_bump  = pop->pump->spike_bump;
+        }
+        if (pop->threshold_offset && pop->neuron_rate_ema && pop->depression) {
+            flags |= NIMCP_SNN_HOMEO_IP;
+        }
+        if (snn_gpu_homeo_pop_basket_on(pop)) {
+            pp[p].basket = pop->basket->gain_inhib_to_parent
+                         * snn_basket_pool_mean_rate(pop->basket);
+        }
+        pp[p].flags = flags;
+    }
+
+    /* ATP coupling for AHP/pump gain, identical to the host path. */
+    float pump_factor = 1.0f;
+    if (network->substrate && snn_tune_get_substrate_enabled() != 0.0f
+        && snn_tune_get_ahp_pump_substrate_coupling() != 0.0f) {
+        pump_factor = network->cached_axon_effects.pump_activity;
+        if (pump_factor < 0.1f) pump_factor = 0.1f;
+        if (pump_factor > 1.0f) pump_factor = 1.0f;
+    }
+    extern float snn_tune_get_depression_inc(void);
+    extern float snn_tune_get_depression_tau_ms(void);
+    extern float snn_tune_get_depression_cap(void);
+    nimcp_snn_homeo_globals_t g;
+    g.pump_factor = pump_factor;
+    g.ip_alpha    = SNN_IP_ALPHA;
+    g.ip_gain     = SNN_IP_GAIN;
+    g.ip_target   = SNN_IP_TARGET_RATE;
+    g.ip_cap      = SNN_IP_CAP;
+    g.dep_decay   = expf(-dt_ms / snn_tune_get_depression_tau_ms());
+    g.dep_inc     = snn_tune_get_depression_inc();
+    g.dep_cap     = snn_tune_get_depression_cap();
+
+    const bool ok = nimcp_snn_homeo_gpu_set_params(h, pp, &g);
+    nimcp_free(pp);
+    if (!ok) {
+        snn_gpu_homeo_device_fail(network, "set params");
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief After the LIF kernel: advance device state, step the basket pools
+ *        from per-pop spike counts, and mirror the state into the host arrays.
+ */
+static void snn_gpu_homeo_device_finish(snn_network_t* network, float dt_ms,
+                                        bool spikes_valid)
+{
+    nimcp_snn_homeo_gpu_t* h = (nimcp_snn_homeo_gpu_t*)network->gpu_homeo;
+    if (!h || !spikes_valid) return;
+    const uint32_t n_pops = network->n_populations;
+    uint32_t* counts = (uint32_t*)nimcp_calloc(n_pops, sizeof(uint32_t));
+    if (!counts) return;
+    if (!nimcp_snn_homeo_gpu_post(h, counts)) {
+        nimcp_free(counts);
+        snn_gpu_homeo_device_fail(network, "post kernel");
+        return;
+    }
+    for (uint32_t p = 0; p < n_pops; p++) {
+        snn_population_t* pop = network->populations[p];
+        if (!pop || !snn_gpu_homeo_pop_eligible(pop)) continue;
+        if (snn_gpu_homeo_pop_basket_on(pop)) {
+            const float mean_rate = (pop->n_neurons > 0)
+                ? (float)counts[p] / (float)pop->n_neurons : 0.0f;
+            snn_basket_pool_step(pop->basket, mean_rate, dt_ms);
+        }
+        if (!nimcp_snn_homeo_gpu_download_pop(h, p,
+                pop->ahp  ? pop->ahp->adapt_var  : NULL,
+                pop->pump ? pop->pump->adapt_var : NULL,
+                pop->neuron_rate_ema, pop->depression, pop->threshold_offset)) {
+            nimcp_free(counts);
+            snn_gpu_homeo_device_fail(network, "device→host mirror");
+            return;
+        }
+    }
+    nimcp_free(counts);
 }
 
 /**
@@ -2393,6 +2597,7 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         const bool basket_on = (pop->basket && snn_tune_get_basket_enabled() != 0.0f);
         snn_cb_post_spike_pop(pop, dt_ms, ahp_on, pump_on, basket_on,
                               ahp_hyp_per_pop[p], pump_hyp_per_pop[p]);
+        network->gpu_homeo_host_dirty = true;  /* host state now newer than device */
         if (pop->external_current) {
             memset(pop->external_current, 0, pop->n_neurons * sizeof(float));
         }
@@ -2989,11 +3194,16 @@ int snn_network_step(snn_network_t* network, float dt) {
                 }
             }
 
-            /* GPU homeostasis parity (2026-11-03): AHP/pump/basket into
-             * h_input + threshold offset upload. */
+            /* GPU homeostasis: device-resident kernels when available
+             * (2026-11-05), else the 2026-11-03 host loops (AHP/pump/basket
+             * into h_input + threshold offset upload). */
             clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
-            snn_gpu_homeo_pop_t* gpu_homeo = snn_gpu_homeostasis_pre(
-                network, gpu, lif_state, h_input, total_neurons, dt_ms);
+            snn_gpu_ensure_device(network->gpu_manager, 0);
+            const bool homeo_on_device = snn_gpu_homeo_device_prepare(
+                network, gpu, lif_state, total_neurons, dt_ms);
+            snn_gpu_homeo_pop_t* gpu_homeo = homeo_on_device ? NULL
+                : snn_gpu_homeostasis_pre(network, gpu, lif_state, h_input,
+                                          total_neurons, dt_ms);
             clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
             _homeo_ms += (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
                        + (_phase_t1.tv_nsec - _phase_t0.tv_nsec) / 1e6;
@@ -3006,6 +3216,18 @@ int snn_network_step(snn_network_t* network, float dt) {
                 gpu, h_input, dims, 1, NIMCP_GPU_PRECISION_FP32);
 
             if (input_tensor) {
+                if (homeo_on_device) {
+                    struct timespec _hp0, _hp1;
+                    clock_gettime(CLOCK_MONOTONIC, &_hp0);
+                    if (!nimcp_snn_homeo_gpu_pre(
+                            (nimcp_snn_homeo_gpu_t*)network->gpu_homeo, input_tensor)) {
+                        snn_gpu_homeo_device_fail(network, "pre kernel");
+                    }
+                    clock_gettime(CLOCK_MONOTONIC, &_hp1);
+                    _homeo_ms += (_hp1.tv_sec - _hp0.tv_sec) * 1000.0
+                               + (_hp1.tv_nsec - _hp0.tv_nsec) / 1e6;
+                }
+
                 /* Run GPU LIF forward pass */
                 bool gpu_ok = nimcp_gpu_lif_forward(gpu, lif_state, input_tensor);
 
@@ -3105,7 +3327,12 @@ int snn_network_step(snn_network_t* network, float dt) {
              * only when this step's GPU spikes were distributed; otherwise
              * the CPU fallback below does its own adaptation. */
             clock_gettime(CLOCK_MONOTONIC, &_phase_t0);
-            snn_gpu_homeostasis_post(network, gpu_homeo, dt_ms, gpu_spikes_valid);
+            if (homeo_on_device) {
+                snn_gpu_ensure_device(network->gpu_manager, 0);
+                snn_gpu_homeo_device_finish(network, dt_ms, gpu_spikes_valid);
+            } else {
+                snn_gpu_homeostasis_post(network, gpu_homeo, dt_ms, gpu_spikes_valid);
+            }
             gpu_homeo = NULL;
             clock_gettime(CLOCK_MONOTONIC, &_phase_t1);
             _homeo_ms += (_phase_t1.tv_sec - _phase_t0.tv_sec) * 1000.0
@@ -3518,6 +3745,7 @@ int snn_network_step(snn_network_t* network, float dt) {
                                   ahp_hyp, pump_hyp);
             ahp_hyp = NULL;
             pump_hyp = NULL;
+            network->gpu_homeo_host_dirty = true;  /* host state now newer than device */
 
             /* Clear external_current for next step (input is per-step) */
             if (pop->external_current) {
@@ -5424,7 +5652,11 @@ int snn_network_finalize_connections(snn_network_t* network) {
                 total_neurons += network->populations[p]->n_neurons;
         }
 
-        /* Destroy old undersized GPU state */
+        /* Destroy old undersized GPU state (device homeostasis first: it
+         * points into the LIF state; the next GPU step re-creates it and
+         * uploads from the host mirror) */
+        nimcp_snn_homeo_gpu_destroy((nimcp_snn_homeo_gpu_t*)network->gpu_homeo);
+        network->gpu_homeo = NULL;
         if (network->gpu_lif_state) {
             nimcp_lif_state_destroy((nimcp_lif_state_t*)network->gpu_lif_state);
             network->gpu_lif_state = NULL;

@@ -389,6 +389,235 @@ bool nimcp_gpu_lif_state_upload_thresh_offset(
 }
 
 //=============================================================================
+// Device-resident homeostasis (2026-11-05)
+//
+// AHP / pump / basket fold-in before the LIF kernel and AHP / pump / IP /
+// depression updates after it, replacing the host loops of the 2026-11-03
+// parity fix. Per-neuron math: gpu/snn/nimcp_snn_homeo_math.h (shared with
+// the CPU emulation in nimcp_gpu_stubs_snn_cpu.c).
+//=============================================================================
+
+#include "gpu/snn/nimcp_snn_homeo_math.h"
+
+struct nimcp_snn_homeo_gpu_s {
+    nimcp_gpu_context_t* ctx;
+    nimcp_lif_state_t* lif;
+    size_t   n_neurons;
+    uint32_t n_pops;
+    uint32_t* h_pop_offsets;  /* host copy [n_pops + 1] */
+    uint32_t* d_pop_offsets;  /* [n_pops + 1] */
+    float* d_ahp_var;
+    float* d_pump_var;
+    float* d_rate_ema;
+    float* d_depression;
+    nimcp_snn_homeo_pop_params_t* d_params;  /* [n_pops] */
+    uint32_t* d_counts;                      /* [n_pops] */
+    nimcp_snn_homeo_globals_t globals;
+    bool params_set;
+};
+
+__global__ void kernel_snn_homeo_pre(
+    float* __restrict__ input,
+    const float* __restrict__ ahp_var, const float* __restrict__ pump_var,
+    const uint32_t* __restrict__ pop_offsets, uint32_t n_pops,
+    const nimcp_snn_homeo_pop_params_t* __restrict__ params,
+    float pump_factor, uint32_t n)
+{
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    const nimcp_snn_homeo_pop_params_t pp =
+        params[nimcp_snn_homeo_pop_of(pop_offsets, n_pops, i)];
+    if (!(pp.flags & NIMCP_SNN_HOMEO_ACTIVE)) return;
+    input[i] += nimcp_snn_homeo_input_delta(&pp, ahp_var[i], pump_var[i], pump_factor);
+}
+
+__global__ void kernel_snn_homeo_post(
+    const float* __restrict__ spikes,
+    float* __restrict__ ahp_var, float* __restrict__ pump_var,
+    float* __restrict__ rate_ema, float* __restrict__ thresh_offset,
+    float* __restrict__ depression,
+    const uint32_t* __restrict__ pop_offsets, uint32_t n_pops,
+    const nimcp_snn_homeo_pop_params_t* __restrict__ params,
+    nimcp_snn_homeo_globals_t g, uint32_t* __restrict__ counts, uint32_t n)
+{
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    const uint32_t p = nimcp_snn_homeo_pop_of(pop_offsets, n_pops, i);
+    const bool fired = spikes[i] > 0.5f;
+    if (fired) atomicAdd(&counts[p], 1u);
+    const nimcp_snn_homeo_pop_params_t pp = params[p];
+    if (!(pp.flags & NIMCP_SNN_HOMEO_ACTIVE)) return;
+    float a = ahp_var[i], pu = pump_var[i], r = rate_ema[i];
+    float t = thresh_offset[i], d = depression[i];
+    nimcp_snn_homeo_post_neuron(&pp, &g, fired, &a, &pu, &r, &t, &d);
+    ahp_var[i] = a; pump_var[i] = pu; rate_ema[i] = r;
+    thresh_offset[i] = t; depression[i] = d;
+}
+
+static bool homeo_cuda_ok(cudaError_t err, const char* what) {
+    if (err == cudaSuccess) return true;
+    LOG_ERROR("snn homeo GPU: %s failed: %s", what, cudaGetErrorString(err));
+    return false;
+}
+
+void nimcp_snn_homeo_gpu_destroy(nimcp_snn_homeo_gpu_t* h) {
+    if (!h) return;
+    if (h->d_pop_offsets) cudaFree(h->d_pop_offsets);
+    if (h->d_ahp_var)     cudaFree(h->d_ahp_var);
+    if (h->d_pump_var)    cudaFree(h->d_pump_var);
+    if (h->d_rate_ema)    cudaFree(h->d_rate_ema);
+    if (h->d_depression)  cudaFree(h->d_depression);
+    if (h->d_params)      cudaFree(h->d_params);
+    if (h->d_counts)      cudaFree(h->d_counts);
+    nimcp_free(h->h_pop_offsets);
+    nimcp_free(h);
+}
+
+nimcp_snn_homeo_gpu_t* nimcp_snn_homeo_gpu_create(
+    nimcp_gpu_context_t* ctx, nimcp_lif_state_t* lif,
+    const uint32_t* pop_offsets, uint32_t n_pops)
+{
+    if (!ctx || !lif || !lif->v || !pop_offsets || n_pops == 0) return NULL;
+    const size_t n = lif->v->numel;
+    if (pop_offsets[0] != 0 || pop_offsets[n_pops] != n) return NULL;
+    for (uint32_t p = 0; p < n_pops; p++) {
+        if (pop_offsets[p + 1] < pop_offsets[p]) return NULL;
+    }
+    if (!lif->thresh_offset) {
+        float* zeros = (float*)nimcp_calloc(n, sizeof(float));
+        if (!zeros) return NULL;
+        const bool ok = nimcp_gpu_lif_state_upload_thresh_offset(ctx, lif, zeros, n);
+        nimcp_free(zeros);
+        if (!ok) return NULL;
+    }
+
+    nimcp_snn_homeo_gpu_t* h = (nimcp_snn_homeo_gpu_t*)nimcp_calloc(1, sizeof(*h));
+    if (!h) return NULL;
+    h->ctx = ctx;
+    h->lif = lif;
+    h->n_neurons = n;
+    h->n_pops = n_pops;
+    h->h_pop_offsets = (uint32_t*)nimcp_malloc((n_pops + 1) * sizeof(uint32_t));
+    const size_t fbytes = n * sizeof(float);
+    bool ok = h->h_pop_offsets != NULL
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_pop_offsets, (n_pops + 1) * sizeof(uint32_t)), "alloc offsets")
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_ahp_var, fbytes), "alloc ahp")
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_pump_var, fbytes), "alloc pump")
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_rate_ema, fbytes), "alloc rate")
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_depression, fbytes), "alloc depression")
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_params, n_pops * sizeof(nimcp_snn_homeo_pop_params_t)), "alloc params")
+        && homeo_cuda_ok(cudaMalloc((void**)&h->d_counts, n_pops * sizeof(uint32_t)), "alloc counts");
+    if (ok) {
+        memcpy(h->h_pop_offsets, pop_offsets, (n_pops + 1) * sizeof(uint32_t));
+        ok = homeo_cuda_ok(cudaMemcpy(h->d_pop_offsets, pop_offsets,
+                                      (n_pops + 1) * sizeof(uint32_t),
+                                      cudaMemcpyHostToDevice), "upload offsets")
+          && homeo_cuda_ok(cudaMemset(h->d_ahp_var, 0, fbytes), "zero ahp")
+          && homeo_cuda_ok(cudaMemset(h->d_pump_var, 0, fbytes), "zero pump")
+          && homeo_cuda_ok(cudaMemset(h->d_rate_ema, 0, fbytes), "zero rate")
+          && homeo_cuda_ok(cudaMemset(h->d_depression, 0, fbytes), "zero depression")
+          && homeo_cuda_ok(cudaMemset(h->d_params, 0, n_pops * sizeof(nimcp_snn_homeo_pop_params_t)), "zero params");
+    }
+    if (!ok) {
+        nimcp_snn_homeo_gpu_destroy(h);
+        return NULL;
+    }
+    return h;
+}
+
+bool nimcp_snn_homeo_gpu_matches(const nimcp_snn_homeo_gpu_t* h,
+    const nimcp_lif_state_t* lif, size_t n_neurons, uint32_t n_pops)
+{
+    return h && h->lif == lif && h->n_neurons == n_neurons && h->n_pops == n_pops
+        && lif && lif->thresh_offset;
+}
+
+static bool homeo_copy(void* dst, const void* src, size_t n_floats,
+                       cudaMemcpyKind kind, const char* what) {
+    if (!dst || !src || n_floats == 0) return true;
+    return homeo_cuda_ok(cudaMemcpy(dst, src, n_floats * sizeof(float), kind), what);
+}
+
+bool nimcp_snn_homeo_gpu_upload_pop(nimcp_snn_homeo_gpu_t* h,
+    uint32_t pop, const float* ahp_var, const float* pump_var,
+    const float* rate_ema, const float* depression, const float* thresh_offset)
+{
+    if (!h || pop >= h->n_pops || !h->lif->thresh_offset) return false;
+    const size_t off = h->h_pop_offsets[pop];
+    const size_t n = h->h_pop_offsets[pop + 1] - off;
+    const cudaMemcpyKind k = cudaMemcpyHostToDevice;
+    return homeo_copy(h->d_ahp_var + off, ahp_var, n, k, "upload ahp")
+        && homeo_copy(h->d_pump_var + off, pump_var, n, k, "upload pump")
+        && homeo_copy(h->d_rate_ema + off, rate_ema, n, k, "upload rate")
+        && homeo_copy(h->d_depression + off, depression, n, k, "upload depression")
+        && homeo_copy((float*)h->lif->thresh_offset->data + off, thresh_offset, n, k,
+                      "upload thresh_offset");
+}
+
+bool nimcp_snn_homeo_gpu_download_pop(const nimcp_snn_homeo_gpu_t* h,
+    uint32_t pop, float* ahp_var, float* pump_var,
+    float* rate_ema, float* depression, float* thresh_offset)
+{
+    if (!h || pop >= h->n_pops || !h->lif->thresh_offset) return false;
+    const size_t off = h->h_pop_offsets[pop];
+    const size_t n = h->h_pop_offsets[pop + 1] - off;
+    const cudaMemcpyKind k = cudaMemcpyDeviceToHost;
+    return homeo_copy(ahp_var, h->d_ahp_var + off, n, k, "download ahp")
+        && homeo_copy(pump_var, h->d_pump_var + off, n, k, "download pump")
+        && homeo_copy(rate_ema, h->d_rate_ema + off, n, k, "download rate")
+        && homeo_copy(depression, h->d_depression + off, n, k, "download depression")
+        && homeo_copy(thresh_offset, (const float*)h->lif->thresh_offset->data + off, n, k,
+                      "download thresh_offset");
+}
+
+bool nimcp_snn_homeo_gpu_set_params(nimcp_snn_homeo_gpu_t* h,
+    const nimcp_snn_homeo_pop_params_t* pops,
+    const nimcp_snn_homeo_globals_t* globals)
+{
+    if (!h || !pops || !globals) return false;
+    if (!homeo_cuda_ok(cudaMemcpy(h->d_params, pops,
+                                  h->n_pops * sizeof(nimcp_snn_homeo_pop_params_t),
+                                  cudaMemcpyHostToDevice), "upload params")) {
+        return false;
+    }
+    h->globals = *globals;
+    h->params_set = true;
+    return true;
+}
+
+bool nimcp_snn_homeo_gpu_pre(nimcp_snn_homeo_gpu_t* h, nimcp_gpu_tensor_t* input)
+{
+    if (!h || !h->params_set || !input || input->numel != h->n_neurons) return false;
+    const uint32_t n = (uint32_t)h->n_neurons;
+    kernel_snn_homeo_pre<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        (float*)input->data, h->d_ahp_var, h->d_pump_var,
+        h->d_pop_offsets, h->n_pops, h->d_params, h->globals.pump_factor, n);
+    return homeo_cuda_ok(cudaGetLastError(), "pre kernel launch");
+}
+
+bool nimcp_snn_homeo_gpu_post(nimcp_snn_homeo_gpu_t* h, uint32_t* spike_counts)
+{
+    if (!h || !h->params_set || !h->lif->spikes || !h->lif->thresh_offset) return false;
+    const uint32_t n = (uint32_t)h->n_neurons;
+    if (!homeo_cuda_ok(cudaMemset(h->d_counts, 0, h->n_pops * sizeof(uint32_t)), "zero counts")) {
+        return false;
+    }
+    kernel_snn_homeo_post<<<GRID_SIZE(n), BLOCK_SIZE>>>(
+        (const float*)h->lif->spikes->data,
+        h->d_ahp_var, h->d_pump_var, h->d_rate_ema,
+        (float*)h->lif->thresh_offset->data, h->d_depression,
+        h->d_pop_offsets, h->n_pops, h->d_params, h->globals, h->d_counts, n);
+    if (!homeo_cuda_ok(cudaGetLastError(), "post kernel launch")) return false;
+    if (spike_counts) {
+        /* Synchronous copy: also orders the host's later reads after the kernel. */
+        return homeo_cuda_ok(cudaMemcpy(spike_counts, h->d_counts,
+                                        h->n_pops * sizeof(uint32_t),
+                                        cudaMemcpyDeviceToHost), "download counts");
+    }
+    return true;
+}
+
+//=============================================================================
 // LIF Forward Kernel
 //=============================================================================
 
