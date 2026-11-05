@@ -11146,6 +11146,59 @@ static PyObject* Brain_set_visual_target(BrainObject* self, PyObject* args, PyOb
     Py_RETURN_NONE;
 }
 
+/* cortex_embed_visual(pixels, width, height, channels=3) -> list | None
+ * Visual cortex CNN embedding of one frame, without training it (2026-11-05:
+ * next-frame targets for video). Pixels as in submit_sensory("visual"):
+ * floats in [0,1] or [0,255]. Runs the cortex forward, which replaces the
+ * cached forward result, so call it BEFORE staging + learning the frame
+ * whose backward should follow. None if the visual cortex does not exist. */
+static PyObject* Brain_cortex_embed_visual(BrainObject* self, PyObject* args, PyObject* kwargs) {
+    static char* kwlist[] = {"pixels", "width", "height", "channels", NULL};
+    PyObject* data_list = NULL;
+    unsigned int width = 0, height = 0, channels = 3;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OII|I", kwlist,
+                                     &data_list, &width, &height, &channels)) return NULL;
+    if (!self->brain) { PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL; }
+    CHECK_INTERNAL_BRAIN(self);
+    brain_t ib = self->brain->internal_brain;
+    if (!ib->cortex_cnns[0]) Py_RETURN_NONE;
+    if (width == 0 || height == 0 || channels == 0) {
+        PyErr_SetString(PyExc_ValueError, "width, height and channels must be > 0");
+        return NULL;
+    }
+    Py_ssize_t num_elements = 0;
+    float* data = py_list_to_float_array(data_list, &num_elements);
+    if (!data) return NULL;
+    if ((uint64_t)width * height * channels != (uint64_t)num_elements) {
+        nimcp_free(data);
+        PyErr_Format(PyExc_ValueError, "visual frame has %zd values but %ux%ux%u were declared",
+                     num_elements, width, height, channels);
+        return NULL;
+    }
+    uint8_t* pixels = (uint8_t*)nimcp_malloc((size_t)num_elements);
+    if (!pixels) { nimcp_free(data); return PyErr_NoMemory(); }
+    for (Py_ssize_t i = 0; i < num_elements; i++) {
+        float v = data[i];
+        if (v <= 1.0f && v >= 0.0f) v *= 255.0f;
+        pixels[i] = (uint8_t)(v > 255.0f ? 255 : (v < 0.0f ? 0 : v));
+    }
+    nimcp_free(data);
+    extern const float* cortex_cnn_forward_visual(struct cortex_cnn_processor* proc,
+        const uint8_t* pixels, uint32_t w, uint32_t h, uint32_t ch);
+    extern const float* cortex_cnn_get_embedding(const struct cortex_cnn_processor* proc, uint32_t* dim);
+    const float* emb = cortex_cnn_forward_visual(ib->cortex_cnns[0], pixels, width, height, channels);
+    nimcp_free(pixels);
+    uint32_t dim = 0;
+    if (emb) emb = cortex_cnn_get_embedding(ib->cortex_cnns[0], &dim);
+    if (!emb || dim == 0) Py_RETURN_NONE;
+    PyObject* out = PyList_New(dim);
+    if (!out) return NULL;
+    for (uint32_t i = 0; i < dim; i++) {
+        PyList_SET_ITEM(out, i, PyFloat_FromDouble((double)emb[i]));
+    }
+    return out;
+}
+
 static PyObject* Brain_utm_reset_early_stopping(BrainObject* self, PyObject* Py_UNUSED(args)) {
     nimcp_unified_training_manager_t* mgr = UTM_FROM_BRAIN(self);
     if (!mgr) { PyErr_SetString(PyExc_RuntimeError, "UTM not initialized"); return NULL; }
@@ -13780,6 +13833,10 @@ static PyMethodDef Brain_methods[] = {
     {"set_visual_target", (PyCFunction)Brain_set_visual_target, METH_VARARGS | METH_KEYWORDS,
      "set_visual_target(target, modality=0): dense semantic target for the next cortex CNN "
      "backward of that modality (consumed). None clears."},
+    {"cortex_embed_visual", (PyCFunction)Brain_cortex_embed_visual, METH_VARARGS | METH_KEYWORDS,
+     "cortex_embed_visual(pixels, width, height, channels=3) -> list | None: visual cortex "
+     "embedding of one frame without training (replaces the cached forward; call before "
+     "staging the frame to learn). None if the visual cortex does not exist yet."},
     {"utm_reset_early_stopping", (PyCFunction)Brain_utm_reset_early_stopping, METH_NOARGS,
      "Clear an already-tripped early-stop flag and reset counter/best_loss"},
     {"utm_forward_only", (PyCFunction)Brain_utm_forward_only, METH_VARARGS,

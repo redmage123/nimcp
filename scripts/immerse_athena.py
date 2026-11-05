@@ -522,6 +522,81 @@ STAGE0_VIEWS_PER_OBJECT = 2   # successive augmented views of a real image
 STAGE0_VIDEO_RATE = 0.15      # fraction of stage-0 items that are motion sequences (when cached)
 VIDEO_INTERLUDE_EVERY = 40    # stages 1-3: play one real shot (8 brain steps) every N steps
 
+# Video phase (2026-11-05, --video-phase): stage-0 shots are learned frame by
+# frame with a NEXT-FRAME target, so the brain is trained to anticipate what
+# it will see — the way infants learn from continuous vision. Each frame t
+# is staged and learned in its own learn_vector call (the old path queued the
+# frames and learned them at a mini-batch flush, all against the last staged
+# frame, with one fixed caption target). Target per frame:
+#   tiled  (default): caption meaning in output tiles 1-3, the projected
+#                     visual-cortex embedding of frame t+1 in tile 4
+#                     (outputs 3072-4095), so meaning is kept
+#   full   (prob VIDEO_TARGET_FULL_PROB): every tile is the next frame
+# The LNN state carries across the frames of a shot, so its learned readout
+# can use what came before to predict what comes next.
+VIDEO_PHASE = False
+VIDEO_TARGET_FULL_PROB = 0.3
+_NEXT_FRAME_PROJ = None       # fixed 1024 x D projection of cortex embeddings
+_VIDEO_PHASE_STATS = {"shots": 0, "frames": 0, "full": 0, "loss_sum": 0.0, "no_embed": 0}
+
+
+def _next_frame_tile(emb, tile_rms):
+    """Project a visual-cortex embedding into one 1024-d output tile, scaled
+    to the RMS of the caption tile it sits beside (fixed seeded projection,
+    like _VISUAL_PROJ in the other direction)."""
+    global _NEXT_FRAME_PROJ
+    e = np.asarray(emb, dtype=np.float32)
+    if _NEXT_FRAME_PROJ is None or _NEXT_FRAME_PROJ.shape[1] != e.size:
+        rng = np.random.default_rng(20261105)
+        _NEXT_FRAME_PROJ = (rng.standard_normal((1024, e.size)) / np.sqrt(e.size)).astype(np.float32)
+    y = _NEXT_FRAME_PROJ @ e
+    rms = float(np.sqrt(np.mean(y * y)))
+    if rms < 1e-12:
+        return None
+    return (y * (tile_rms / rms)).astype(np.float32)
+
+
+def _learn_video_shot(brain, rs, seq, composer, lr):
+    """Learn one shot frame by frame against next-frame targets (see
+    VIDEO_PHASE). Returns the list of learn_vector losses."""
+    frames = list(seq.get("frames") or [])
+    if len(frames) < 2:
+        return []
+    description = seq["description"]
+    features = list(composer.compose(text=description, modality="text"))
+    caption = np.asarray(make_semantic_target(description), dtype=np.float32)
+    if caption.size < 4096:
+        return []
+    tile_rms = float(np.sqrt(np.mean(caption[:1024] ** 2))) or 1e-3
+    label = rs.sequence_label(seq)
+    side = rs.resolution
+    staged = [list(rs.to_stage_frame(f)) for f in frames]
+    losses = []
+    for t in range(len(staged) - 1):
+        # Embed frame t+1 first: the forward replaces the cortex's cached
+        # result, and learn_vector below runs its own forward on frame t.
+        emb = brain.cortex_embed_visual(staged[t + 1], side, side, 3)
+        nxt = _next_frame_tile(emb, tile_rms) if emb else None
+        if nxt is None:
+            _VIDEO_PHASE_STATS["no_embed"] += 1
+            break
+        if random.random() < VIDEO_TARGET_FULL_PROB:
+            target = np.tile(nxt, 4)
+            _VIDEO_PHASE_STATS["full"] += 1
+        else:
+            target = caption.copy()
+            target[3072:4096] = nxt
+        brain.submit_sensory("visual", staged[t], width=side, height=side, channels=3)
+        _set_visual_target(brain, label)
+        loss = brain.learn_vector(features, target.tolist(), label=description[:50],
+                                  confidence=0.5, learning_rate=lr)
+        if loss is not None and np.isfinite(loss):
+            losses.append(float(loss))
+            _VIDEO_PHASE_STATS["loss_sum"] += float(loss)
+        _VIDEO_PHASE_STATS["frames"] += 1
+    _VIDEO_PHASE_STATS["shots"] += 1
+    return losses
+
 
 VISUAL_DIFFERENTIATION_MAX = 0.95   # stage-0 gate: mean pairwise cosine of responses to 8 held-out photos
 # The responses also carry run-to-run noise (same photo twice: cosine 0.645
@@ -7734,6 +7809,7 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
         # for STAGE0_VIEWS_PER_OBJECT consecutive steps — each submit draws a
         # fresh augmentation, so the cortex sees successive views of one
         # object (temporal continuity) instead of one canonical rendering.
+        _video_done = False
         if _repeat_left > 0:
             _repeat_left -= 1
         else:
@@ -7741,7 +7817,25 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             _seq = None
             if _rs0 and STAGE0_VIDEO_RATE > 0 and random.random() < STAGE0_VIDEO_RATE:
                 _seq = _rs0.get_sequence()
-            if _seq:
+            if _seq and VIDEO_PHASE:
+                # Video phase: learn the whole shot now, frame by frame,
+                # against next-frame targets (_learn_video_shot). The rest of
+                # this iteration skips staging and the mini-batch.
+                description = _seq["description"]
+                features = composer.compose(text=description, modality="text")
+                target = make_semantic_target(description)
+                try:
+                    _learn_video_shot(brain, _rs0, _seq, composer, lr_scheduler.get_lr())
+                except Exception as _vpe:
+                    print(f"  [VideoPhase] shot failed: {_vpe}", flush=True)
+                _video_done = True
+                _vs = _VIDEO_PHASE_STATS
+                if _vs["shots"] % 50 == 0 and _vs["frames"]:
+                    print(f"  [VideoPhase] {_vs['shots']} shots, {_vs['frames']} frames learned "
+                          f"({_vs['full']} full next-frame targets), mean loss "
+                          f"{_vs['loss_sum'] / _vs['frames']:.4f}, embed misses {_vs['no_embed']}",
+                          flush=True)
+            elif _seq:
                 # Real motion: the frames of one shot (public-domain film,
                 # scripts/build_video_cache.py) are presented on consecutive
                 # steps with one consistent description/target, the way an
@@ -7767,7 +7861,7 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             print(f"  Parent: {narration}")
         import time as _t
         _loop_t0 = _t.monotonic()
-        sensory_mods = submit_multimodal(brain, description) or []
+        sensory_mods = [] if _video_done else (submit_multimodal(brain, description) or [])
         _smm_ms = (_t.monotonic() - _loop_t0) * 1000
         if sensory_mods and i < 5:
             print(f"  [Sensory] step {i}: {'+'.join(sensory_mods)} for '{description[:60]}'", flush=True)
@@ -7788,12 +7882,13 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
             _out_vec = result.get("output_vector") if result else None
 
         # Held-out check: 20% of items are evaluation-only (no learning)
-        _is_held_out = _held_out_buffer.is_held_out(features)
+        _is_held_out = (not _video_done) and _held_out_buffer.is_held_out(features)
         if _is_held_out:
             _held_out_buffer.add(features, target, domain="stage0_sensory")
 
         # Accumulate into mini-batch (adaptive size) — skip held-out items
-        if not _is_held_out:
+        # and video-phase shots (already learned frame by frame)
+        if not _is_held_out and not _video_done:
             mini_batch_buf.append((features, target, description, _out_vec))
 
         # Inject hard example replays periodically
@@ -11635,6 +11730,12 @@ def main():
     parser.add_argument("--stage0-video-rate", type=float, default=0.15,
                         help="Fraction of stage-0 items presented as real-motion frame sequences "
                              "(data/multimodal/video_sequences.pkl; 0 = off)")
+    parser.add_argument("--video-phase", action="store_true",
+                        help="Stage-0 video phase: learn each shot frame by frame against "
+                             "next-frame targets (pair with a higher --stage0-video-rate)")
+    parser.add_argument("--video-target-full-prob", type=float, default=0.3,
+                        help="Video phase: probability a frame's whole target is the next "
+                             "frame (else caption in tiles 1-3, next frame in tile 4)")
     parser.add_argument("--video-interlude-every", type=int, default=40,
                         help="Stages 1-3: play one real shot (8 brain steps) every N steps (0 = off)")
     parser.add_argument("--no-real-sensory", action="store_true",
@@ -11768,7 +11869,9 @@ def main():
                      STAGE1_MAX_STIMULI=args.stage1_max_stimuli,
                      STAGE0_VIEWS_PER_OBJECT=max(1, args.stage0_views_per_object),
                      STAGE0_VIDEO_RATE=max(0.0, min(1.0, args.stage0_video_rate)),
-                     VIDEO_INTERLUDE_EVERY=max(0, args.video_interlude_every))
+                     VIDEO_INTERLUDE_EVERY=max(0, args.video_interlude_every),
+                     VIDEO_PHASE=bool(args.video_phase),
+                     VIDEO_TARGET_FULL_PROB=max(0.0, min(1.0, args.video_target_full_prob)))
     if args.no_real_sensory:
         os.environ["NIMCP_REAL_SENSORY"] = "0"
 
