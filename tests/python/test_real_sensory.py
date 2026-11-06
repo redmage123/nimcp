@@ -199,6 +199,98 @@ with tempfile.TemporaryDirectory() as d:
     fb.ALLOWLIST_PATH = os.path.join(d, "missing.txt")
     expect(films(fb) == {"film2", "film4"}, f"fallback to pkl maturity at stage 0: {films(fb)}")
 
+# Kubric synthetic physics clips (2026-11-05): own pool, thinned to the stage
+# frame rate, drawn with probability synthetic_weight, never held out.
+import io  # noqa: E402
+from PIL import Image  # noqa: E402
+
+
+def jpeg(v, side=128):
+    buf = io.BytesIO()
+    Image.fromarray(np.full((side, side, 3), v, np.uint8)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+with tempfile.TemporaryDirectory() as d:
+    make_cache(d)
+    kub = [{"item": f"kubric:movi_c:{k}", "title": "Kubric MOVi-C",
+            "description": "a shoe and a cup tumbling and rolling on the ground",
+            "frames": [jpeg(10 * f) for f in range(24)], "fps": 12.0, "size": 128,
+            "encoding": "jpeg", "source": "kubric", "maturity": 0} for k in range(2)]
+    with open(os.path.join(d, "kubric_sequences.pkl"), "wb") as f:
+        pickle.dump(kub, f)
+    kb = RealSensoryBank(d, seed=3)
+    kb.ALLOWLIST_PATH = os.path.join(d, "allowlist.txt")
+    syn = kb.synthetic_sequences
+    expect(len(syn) == 2 and all(len(q["frames"]) == 4 for q in syn),
+           f"stage 0 (2 fps) thins 24 frames at 12 fps to 4: {[len(q['frames']) for q in syn]}")
+    expect(len(kb.to_stage_frame(syn[0]["frames"][0])) == 32 * 32 * 3, "kubric JPEG frames resized to 32x32")
+    expect(all(not str(q.get("item")).startswith("kubric:") for q in kb.heldout_sequences),
+           "kubric clips are never held out")
+    kb.synthetic_weight = 1.0
+    picks = [kb.get_sequence() for _ in range(20)]
+    expect(all(q.get("source") == "kubric" for q in picks), "weight 1.0 always draws kubric")
+    expect(kb.synthetic_hits == 20, f"synthetic hits counted ({kb.synthetic_hits})")
+    expect(RealSensoryBank.sequence_label(picks[0]) == picks[0]["description"],
+           "a kubric clip's visual label is its description, not a film title")
+    kb.synthetic_weight = 0.0
+    expect(all(kb.get_sequence().get("source") != "kubric" for _ in range(20)),
+           "weight 0.0 never draws kubric")
+    kb.set_stage(3)                    # 4 fps
+    expect(all(len(q["frames"]) == 8 for q in kb.synthetic_sequences),
+           "stage 3 (4 fps) re-thins to 8 frames")
+    expect("kubric" in kb.stats_str(), "stats mention kubric")
+
+# Kubric builder: TFRecord + tf.train.Example parsing without TensorFlow
+from build_kubric_cache import tfrecords, parse_example, caption  # noqa: E402
+
+
+def _vint(x):
+    out = bytearray()
+    while True:
+        b = x & 0x7F
+        x >>= 7
+        out.append(b | (0x80 if x else 0))
+        if not x:
+            return bytes(out)
+
+
+def _ld(fn, payload):
+    return _vint((fn << 3) | 2) + _vint(len(payload)) + payload
+
+
+def _example(feats):
+    entries = b""
+    for key, (kind, vals) in feats.items():
+        if kind == "bytes":
+            lst = b"".join(_ld(1, v) for v in vals)
+            feature = _ld(1, lst)
+        else:
+            lst = _ld(1, b"".join(_vint(v) for v in vals))     # packed int64
+            feature = _ld(3, lst)
+        entries += _ld(1, _ld(1, key.encode()) + _ld(2, feature))
+    return _ld(1, entries)
+
+
+ex = _example({"video": ("bytes", [b"png0", b"png1", b"png2"]),
+               "instances/category": ("int", [14, 1, 14, 300]),
+               "metadata/video_name": ("bytes", [b"42"]),
+               "depth": ("bytes", [b"ignored"])})
+rec = bytes(8) + bytes(4) + ex + bytes(4)
+rec = len(ex).to_bytes(8, "little") + bytes(4) + ex + bytes(4)
+parsed = list(tfrecords(rec + rec))
+expect(len(parsed) == 2, f"two records read ({len(parsed)})")
+got = parse_example(parsed[0], {"video", "instances/category", "metadata/video_name"})
+expect(got.get("video") == [b"png0", b"png1", b"png2"], f"video frames parsed: {got.get('video')}")
+expect(got.get("instances/category") == [14, 1, 14, 300], f"categories parsed: {got.get('instances/category')}")
+expect("depth" not in got, "unwanted keys skipped")
+labels = ["Action Figures", "Bag", "Board Games", "Bottles and Cans and Cups", "Camera", "Car Seat",
+          "Consumer Goods", "Hat", "Headphones", "Keyboard", "Legos", "Media Cases", "Mouse", "None",
+          "Shoe", "Stuffed Toys", "Toys"]
+expect(caption([14, 1, 14, 300], labels) == "a shoe, a bag and an object tumbling and rolling on the ground",
+       f"caption: {caption([14, 1, 14, 300], labels)}")
+expect(caption([], labels).startswith("some objects"), "empty categories caption")
+
 # builder chunking: cuts split sequences, static runs are dropped
 from build_video_cache import chunk_frames  # noqa: E402
 rng = np.random.RandomState(1)
