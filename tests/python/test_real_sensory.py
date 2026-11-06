@@ -292,7 +292,15 @@ expect(caption([14, 1, 14, 300], labels) == "a shoe, a bag and an object tumblin
 expect(caption([], labels).startswith("some objects"), "empty categories caption")
 
 # builder chunking: cuts split sequences, static runs are dropped
-from build_video_cache import chunk_frames  # noqa: E402
+from build_video_cache import chunk_frames, usable_licence  # noqa: E402
+# allowlisted films: public domain or plain CC BY; NC / ND / SA rejected
+for url, ok in [("http://creativecommons.org/licenses/publicdomain/", True),
+                ("http://creativecommons.org/licenses/by/3.0/", True),
+                ("http://creativecommons.org/licenses/by-nc-sa/3.0/", False),
+                ("http://creativecommons.org/licenses/by-nc-nd/4.0/", False),
+                ("https://creativecommons.org/licenses/by-sa/4.0/", False),
+                (None, False)]:
+    expect(usable_licence(url) == ok, f"licence {url} -> {ok}")
 rng = np.random.RandomState(1)
 moving = [np.clip(np.full((32, 32, 3), 100, np.uint8).astype(np.int16) + rng.randint(-6, 7, (32, 32, 3)), 0, 255).astype(np.uint8)
           for _ in range(16)]

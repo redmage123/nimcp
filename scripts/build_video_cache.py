@@ -15,7 +15,8 @@ Output: <out>/video_sequences.pkl — list of
 Sizes: one sequence of 8 frames is ~24 KB; 8,000 sequences ≈ 200 MB.
 
 With --allowlist FILE only the listed identifiers are used (one per line,
-'#' starts a comment), each checked to be public domain. The curated list
+'#' starts a comment), each checked to be public domain or CC BY (attribution
+is recorded in the allowlist; NC / ND / SA licences are rejected). The curated list
 scripts/video_allowlist.txt is the default for the curriculum: a
 popularity-ranked pull (the old default) included adult reels, propaganda
 and graphic footage.
@@ -134,18 +135,29 @@ def read_allowlist_maturity(path):
     return levels
 
 
+def usable_licence(url) -> bool:
+    """Public domain, or plain CC BY (2026-11-05: licensed Prelinger home
+    movies). Non-commercial, no-derivatives and share-alike are rejected:
+    training frames are resized derivatives."""
+    u = str(url or "").lower()
+    if "publicdomain" in u:
+        return True
+    return "creativecommons.org/licenses/by/" in u
+
+
 def allowlisted_films(path, session):
-    """Metadata docs for the allowlisted identifiers that are public domain."""
+    """Metadata docs for the allowlisted identifiers with a usable licence."""
     films = []
     levels = read_allowlist_maturity(path)
     for ident in read_allowlist(path):
         md = session.get(f"https://archive.org/metadata/{ident}", timeout=60).json().get("metadata", {})
-        if "publicdomain" not in str(md.get("licenseurl", "")).lower():
-            print(f"{ident}: skipped, not marked public domain ({md.get('licenseurl')})")
+        if not usable_licence(md.get("licenseurl")):
+            print(f"{ident}: skipped, not public domain or CC BY ({md.get('licenseurl')})")
             continue
         films.append({"identifier": ident, "title": md.get("title", ident),
                       "description": md.get("description", ""),
-                      "maturity": levels.get(ident, 2)})
+                      "maturity": levels.get(ident, 2),
+                      "licenseurl": md.get("licenseurl")})
     return films
 
 
