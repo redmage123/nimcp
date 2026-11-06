@@ -2100,8 +2100,28 @@ nimcp_error_t cnn_trainer_backward(cnn_trainer_t* trainer,
                                 }
                             }
                         }
+                    } else if (cfg->type == CNN_POOL_GLOBAL_AVERAGE) {
+                        float inv_area = 1.0f / (float)in_spatial;
+                        for (uint32_t b = 0; b < batch; b++) {
+                            for (uint32_t c = 0; c < channels; c++) {
+                                float g = grad_data[b * channels + c] * inv_area;
+                                float* dst = new_grad_data + b * channels * in_spatial + c * in_spatial;
+                                for (size_t s = 0; s < in_spatial; s++) dst[s] = g;
+                            }
+                        }
+                    } else if (cfg->type == CNN_POOL_GLOBAL_MAX) {
+                        for (uint32_t b = 0; b < batch; b++) {
+                            for (uint32_t c = 0; c < channels; c++) {
+                                size_t base = b * channels * in_spatial + c * in_spatial;
+                                size_t arg = 0;
+                                for (size_t s = 1; s < in_spatial; s++) {
+                                    if (in_data[base + s] > in_data[base + arg]) arg = s;
+                                }
+                                new_grad_data[base + arg] = grad_data[b * channels + c];
+                            }
+                        }
                     } else {
-                        /* Other pooling types (global, stochastic, Lp): simplified pass-through */
+                        /* Other pooling types (stochastic, Lp): simplified pass-through */
                         size_t copy_size = nimcp_tensor_numel(grad) < nimcp_tensor_numel(layer_input)
                                           ? nimcp_tensor_numel(grad) : nimcp_tensor_numel(layer_input);
                         memcpy(new_grad_data, grad_data, copy_size * sizeof(float));
