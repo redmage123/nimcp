@@ -196,7 +196,7 @@ def main():
         films = allowlisted_films(a.allowlist, s)
     else:
         films = list_films(a.films * 2, s)[:a.films]
-    print(f"{len(films)} public-domain films selected")
+    print(f"{len(films)} films selected (public domain or CC BY)")
     sequences = []
     t0 = time.time()
     for k, doc in enumerate(films, 1):
