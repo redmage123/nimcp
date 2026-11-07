@@ -89,7 +89,7 @@ int lnn_gradient_get_stats(
  * HOW:  Use system clock
  */
 static double lnn_gradient_get_time_ms(void) {
-    // Simplified placeholder - should use proper timer
-    // In real implementation, use clock_gettime or QueryPerformanceCounter
-    return 0.0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1.0e6;
 }

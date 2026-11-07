@@ -737,6 +737,27 @@ float lnn_tune_get_decide_readout(void);
 float lnn_tune_get_decide_weight(void);
 float lnn_tune_get_decide_dt(void);
 
+/*============================================================================
+ * GPU forward switch (2026-11-07)
+ *   gpu_forward: 1 = lnn_layer_forward uses the GPU layer when one exists,
+ *                0 (default) = CPU LTC path. The GPU layer's weights are
+ *                uploaded once at network creation and never refreshed, so
+ *                the GPU path ignores training and checkpoint loads.
+ *===========================================================================*/
+void  lnn_tune_set_gpu_forward(float v);
+float lnn_tune_get_gpu_forward(void);
+
+/*   cpu_integrator: 1 (default) = exponential Euler on the CPU LTC path,
+ *                   x' = x·e^(-dt/τ) + τ·(1 - e^(-dt/τ))·f(h), stable for any
+ *                   dt/τ; 0 = explicit Euler (unstable for dt/τ > 2). */
+void  lnn_tune_set_cpu_integrator(float v);
+float lnn_tune_get_cpu_integrator(void);
+
+/*   bptt_steps: most recorded steps one BPTT backward walks through
+ *               (nimcp_lnn_bptt.c); 0 = every recorded step. Default 2. */
+void  lnn_tune_set_bptt_steps(float v);
+float lnn_tune_get_bptt_steps(void);
+
 #ifdef __cplusplus
 }
 #endif

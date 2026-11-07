@@ -268,6 +268,7 @@ int lnn_gradient_compute_adjoint(
      * the optimizer can distinguish large vs small loss slopes. The
      * downstream training loop still applies its own normalization. */
     ctx->gradient_norm = lnn_gradient_norm(ctx);
+    const float raw_norm = ctx->gradient_norm;   /* before the ceiling below */
     const float param_ceiling = 100.0f;
     if (isfinite(ctx->gradient_norm) && ctx->gradient_norm > param_ceiling) {
         float scale = param_ceiling / ctx->gradient_norm;
@@ -285,8 +286,8 @@ int lnn_gradient_compute_adjoint(
         nimcp_mutex_unlock((nimcp_mutex_t*)ctx->mutex);
     }
 
-    NIMCP_LOGGING_INFO("Adjoint computation complete: norm=%f, time=%f ms, steps=%lu",
-                       ctx->gradient_norm, ctx->compute_time_ms, ctx->adjoint_steps);
+    NIMCP_LOGGING_INFO("Adjoint computation complete: norm=%f, raw_norm=%f, time=%f ms, steps=%lu",
+                       ctx->gradient_norm, raw_norm, ctx->compute_time_ms, ctx->adjoint_steps);
 
     return 0;
 }
@@ -1477,6 +1478,13 @@ int lnn_network_backward(lnn_network_t* network, const nimcp_tensor_t* loss_grad
      * so lnn_get_stats() reports a meaningful value — otherwise
      * backward_steps stays 0 forever and dashboards see "LNN not
      * training" even when it is. */
+    /* Exact truncated BPTT through the steps the training adapter recorded
+     * (2026-11-07, nimcp_lnn_bptt.h). The legacy adjoint below used the
+     * current layer state at every history step and gave W_in no gradient. */
+    if (lnn_bptt_trace_len(network) > 0) {
+        return lnn_bptt_backward(network, loss_grad, NULL);
+    }
+
     if (network->grad_ctx) {
         /* Use adjoint method (preferred for LTC networks) */
         int rc = lnn_gradient_compute_adjoint(network->grad_ctx, network, loss_grad);

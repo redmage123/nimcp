@@ -2066,6 +2066,9 @@ static PyObject* Brain_lnn_tune(BrainObject* self, PyObject* args) {
     extern void lnn_tune_set_decide_readout(float);
     extern void lnn_tune_set_decide_weight(float);
     extern void lnn_tune_set_decide_dt(float);
+    extern void lnn_tune_set_gpu_forward(float);
+    extern void lnn_tune_set_cpu_integrator(float);
+    extern void lnn_tune_set_bptt_steps(float);
 
     float v = (float)value;
     if      (strcmp(name, "substrate_enabled") == 0)           lnn_tune_set_substrate_enabled(v);
@@ -2077,6 +2080,9 @@ static PyObject* Brain_lnn_tune(BrainObject* self, PyObject* args) {
     else if (strcmp(name, "decide_readout") == 0)              lnn_tune_set_decide_readout(v);
     else if (strcmp(name, "decide_weight") == 0)               lnn_tune_set_decide_weight(v);
     else if (strcmp(name, "decide_dt") == 0)                   lnn_tune_set_decide_dt(v);
+    else if (strcmp(name, "gpu_forward") == 0)                 lnn_tune_set_gpu_forward(v);
+    else if (strcmp(name, "cpu_integrator") == 0)              lnn_tune_set_cpu_integrator(v);
+    else if (strcmp(name, "bptt_steps") == 0)                  lnn_tune_set_bptt_steps(v);
     else {
         PyErr_Format(PyExc_ValueError, "unknown LNN tunable: %s", name);
         return NULL;
@@ -2095,6 +2101,9 @@ static PyObject* Brain_lnn_tune_get(BrainObject* self, PyObject* Py_UNUSED(a)) {
     extern float lnn_tune_get_decide_readout(void);
     extern float lnn_tune_get_decide_weight(void);
     extern float lnn_tune_get_decide_dt(void);
+    extern float lnn_tune_get_gpu_forward(void);
+    extern float lnn_tune_get_cpu_integrator(void);
+    extern float lnn_tune_get_bptt_steps(void);
 
     PyObject* d = PyDict_New();
     if (!d) return NULL;
@@ -2113,6 +2122,9 @@ static PyObject* Brain_lnn_tune_get(BrainObject* self, PyObject* Py_UNUSED(a)) {
     F("decide_readout",             lnn_tune_get_decide_readout());
     F("decide_weight",              lnn_tune_get_decide_weight());
     F("decide_dt",                  lnn_tune_get_decide_dt());
+    F("gpu_forward",                lnn_tune_get_gpu_forward());
+    F("cpu_integrator",             lnn_tune_get_cpu_integrator());
+    F("bptt_steps",                 lnn_tune_get_bptt_steps());
 #undef F
     return d;
 }

@@ -17,6 +17,7 @@
 #include "lnn/nimcp_lnn_network.h"
 #include "lnn/nimcp_lnn_ode.h"
 #include "gpu/lnn/nimcp_lnn_gpu.h"
+#include "lnn/nimcp_lnn_bptt.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/thread/nimcp_thread.h"
 #include "utils/thread/nimcp_thread_pool.h"
@@ -27,6 +28,7 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <time.h>
 #include "utils/geometry/nimcp_differential_geometry.h"
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 

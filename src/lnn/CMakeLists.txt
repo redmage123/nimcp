@@ -16,6 +16,7 @@ set(LNN_SOURCES
     nimcp_lnn_ode.c
     nimcp_lnn_wiring.c
     nimcp_lnn_gradient.c
+    nimcp_lnn_bptt.c
     nimcp_lnn_training.c
     nimcp_lnn_bio_async.c
     nimcp_lnn_immune.c

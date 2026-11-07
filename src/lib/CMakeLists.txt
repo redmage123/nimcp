@@ -1492,6 +1492,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_ode.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_wiring.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_gradient.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_bptt.c   # exact truncated BPTT (2026-11-07)
     ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_training.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_hamiltonian.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../lnn/nimcp_lnn_bio_async.c

@@ -11,6 +11,7 @@
 #include "lnn/nimcp_lnn.h"
 #include "lnn/nimcp_lnn_network.h"
 #include "lnn/nimcp_lnn_gradient.h"
+#include "lnn/nimcp_lnn_bptt.h"
 #include "middleware/training/nimcp_optimizers.h"
 #include "utils/tensor/nimcp_tensor.h"
 #include "utils/memory/nimcp_unified_memory.h"
@@ -72,7 +73,11 @@ static int lnn_adapter_forward(void* ctx, const float* input, uint32_t input_dim
 
     memcpy(nimcp_tensor_data(in_t), input, input_dim * sizeof(float));
 
+    /* Record this TRAINING step for BPTT (nimcp_lnn_bptt.h); decide forwards
+     * elsewhere never set the flag, so they stay out of the trace. */
+    lnn_network_set_bptt_record(a->lnn_ctx->network, true);
     int rc = lnn_forward_step(a->lnn_ctx->network, in_t, out_t, 1.0f);
+    lnn_network_set_bptt_record(a->lnn_ctx->network, false);
 
     if (rc == 0) {
         const float* out_data = (const float*)nimcp_tensor_data_const(out_t);
@@ -163,7 +168,15 @@ static int lnn_adapter_backward(void* ctx, const float* dl_doutput, uint32_t out
     }
 
     /* Copy real input gradients from LNN adjoint (λ(t=0) = dL/d_input) */
-    if (dl_dinput) {
+    uint32_t bptt_in_n = 0;
+    const float* bptt_in = (rc == 0) ? lnn_bptt_last_input_grad(a->lnn_ctx->network, &bptt_in_n)
+                                     : NULL;
+    if (dl_dinput && bptt_in && bptt_in_n > 0
+        && lnn_bptt_trace_len(a->lnn_ctx->network) > 0) {
+        uint32_t c = (input_dim < bptt_in_n) ? input_dim : bptt_in_n;
+        memcpy(dl_dinput, bptt_in, c * sizeof(float));
+        if (input_dim > c) memset(dl_dinput + c, 0, (input_dim - c) * sizeof(float));
+    } else if (dl_dinput) {
         const nimcp_tensor_t* in_grad = NULL;
         if (a->lnn_ctx->gradient_ctx) {
             in_grad = lnn_gradient_get_input_grad(a->lnn_ctx->gradient_ctx);
