@@ -158,13 +158,15 @@ static void test_matches_host_reference(nimcp_gpu_context_t* ctx) {
     pp[0].ahp_gain = ahp0->gain_mv;   pp[0].ahp_decay = expf(-DT / ahp0->tau_ms);   pp[0].ahp_bump = 1.0f;
     pp[0].pump_gain = pump0->gain_mv; pp[0].pump_decay = expf(-DT / pump0->tau_ms); pp[0].pump_bump = 1.0f;
     pp[0].basket = -0.7f;
+    pp[0].ip_target = 0.03f;
     pp[2].flags = 0;                    /* inactive: must be left alone */
     pp[2].basket = -99.0f;
     pp[3].flags = NIMCP_SNN_HOMEO_ACTIVE | NIMCP_SNN_HOMEO_IP;
     pp[3].basket = -0.3f;
+    pp[3].ip_target = 0.005f;           /* per-pop IP target (2026-11-07) */
     nimcp_snn_homeo_globals_t g;
     g.pump_factor = 0.8f;
-    g.ip_alpha = 0.01f; g.ip_gain = 0.5f; g.ip_target = 0.03f; g.ip_cap = 10.0f;
+    g.ip_alpha = 0.01f; g.ip_gain = 0.5f; g.ip_cap = 10.0f;
     g.dep_decay = expf(-DT / 50.0f); g.dep_inc = 0.2f; g.dep_cap = 0.9f;
     CHECK(nimcp_snn_homeo_gpu_set_params(h, pp, &g), "set params");
 
@@ -217,7 +219,7 @@ static void test_matches_host_reference(nimcp_gpu_context_t* ctx) {
             if (i >= 7 && i < 12) continue;   /* inactive pop */
             const float fired = spikes[i] > 0.5f ? 1.0f : 0.0f;
             rate[i] = (1.0f - g.ip_alpha) * rate[i] + g.ip_alpha * fired;
-            thr[i] += g.ip_gain * (rate[i] - g.ip_target);
+            thr[i] += g.ip_gain * (rate[i] - pp[i < 7 ? 0 : 3].ip_target);
             if (thr[i] > g.ip_cap) thr[i] = g.ip_cap;
             if (thr[i] < -g.ip_cap) thr[i] = -g.ip_cap;
             dep[i] *= g.dep_decay;

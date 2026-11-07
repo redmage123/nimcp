@@ -396,6 +396,10 @@ void  snn_tune_set_ahp_pump_substrate_coupling(float v);
 float snn_tune_get_rstdp_lr(void);
 float snn_tune_get_rstdp_baseline_alpha(void);
 float snn_tune_get_target_rate(void);
+/** Homeostatic + intrinsic-plasticity target (spikes per neuron per step)
+ *  for a population name: input_* pops get target_rate_input, others
+ *  target_rate. */
+float snn_homeo_target_rate_for_name(const char* name);
 float snn_tune_get_homeo_min_scale(void);
 float snn_tune_get_homeo_max_scale(void);
 float snn_tune_get_max_scale_dead(void);

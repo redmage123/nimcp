@@ -63,7 +63,7 @@ NIMCP_HOMEO_HD void nimcp_snn_homeo_post_neuron(const nimcp_snn_homeo_pop_params
         const float f = fired ? 1.0f : 0.0f;
         const float r = (1.0f - g->ip_alpha) * *rate_ema + g->ip_alpha * f;
         *rate_ema = r;
-        float t = *thresh_offset + g->ip_gain * (r - g->ip_target);
+        float t = *thresh_offset + g->ip_gain * (r - pp->ip_target);
         if (t > g->ip_cap)  t = g->ip_cap;
         if (t < -g->ip_cap) t = -g->ip_cap;
         *thresh_offset = t;
