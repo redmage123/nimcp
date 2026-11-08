@@ -950,6 +950,9 @@ wire_connections:
      * the row_ptr index for O(1) per-neuron lookup during stepping. */
     snn_network_finalize_connections(net);
 
+    /* Bring the low-gain PV/SOM wiring up to the target I/E ratio. */
+    (void)snn_network_apply_inhibition_rebalance(net);
+
     LOG_INFO("Hierarchical SNN complete: %u neurons, %u connections "
              "(ff=%u, rec=%u, skip=%u, td=%u, in_fan=%u, out_conv=%u, "
              "trn_in=%u, trn_out=%u)",

@@ -4567,6 +4567,171 @@ int snn_rescale_weights_for_conductance(snn_network_t* network, float factor) {
     return 0;
 }
 
+/* ===========================================================================
+ * Inhibition rebalance (2026-11-08)
+ *
+ * The PV/SOM interneurons were wired "intentionally low-gain" while the
+ * mod-5 GABA recurrence provided the main E/I balance. The Dale fix
+ * (2026-04-27) removed that recurrence and the interneurons were never
+ * retuned: at matched presynaptic rates a pyramidal neuron's inhibitory
+ * input is ~1/8 of its excitatory input, and once a tier passes ~16%
+ * active, excitation exceeds the most inhibition can deliver — the
+ * full-tier bursts. Weights live in the checkpoint CSR, so this runs on
+ * the loaded network rather than through the wiring constants.
+ * =========================================================================== */
+static bool snn_subclass_is_interneuron(neuron_subclass_t sc) {
+    return sc == SNN_NSC_PV || sc == SNN_NSC_SOM || sc == SNN_NSC_VIP || sc == SNN_NSC_TRN;
+}
+
+int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
+                                     float max_scale, snn_inh_rebalance_stats_t* stats) {
+    if (stats) memset(stats, 0, sizeof(*stats));
+    if (!network) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
+            "snn_network_rebalance_inhibition: null network");
+        return SNN_ERROR_NULL_POINTER;
+    }
+    if (!isfinite(target_ratio) || target_ratio <= 0.0f ||
+        !isfinite(max_scale) || max_scale < 1.0f) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
+            "snn_network_rebalance_inhibition: target_ratio must be > 0 and max_scale >= 1");
+        return SNN_ERROR_INVALID_CONFIG;
+    }
+
+    const float w_cap = 10.0f;   /* same per-synapse cap as homeostasis */
+    const float cap_factor = snn_tune_get_metabolic_cap();
+    double ratio_before_sum = 0.0, ratio_after_sum = 0.0;
+    snn_inh_rebalance_stats_t st;
+    memset(&st, 0, sizeof(st));
+
+    for (uint32_t p = 0; p < network->n_populations; p++) {
+        snn_population_t* pop = network->populations[p];
+        if (!pop || !pop->incoming_csr || snn_subclass_is_interneuron(pop->subclass)) continue;
+        snn_csr_storage_t* csr = pop->incoming_csr;
+        if (!csr->finalized || csr->n_synapses == 0 || !csr->entries || !csr->row_ptr) continue;
+
+        /* Pass 1: pop-level sums */
+        double e_sum = 0.0, i_pvsom = 0.0, i_other = 0.0;
+        for (uint32_t e = 0; e < csr->n_synapses; e++) {
+            const snn_csr_synapse_t* syn = &csr->entries[e];
+            const float w = syn->weight;
+            if (w > 0.0f) { e_sum += w; continue; }
+            if (w == 0.0f) continue;
+            const snn_population_t* src = (syn->src_pop < network->n_populations)
+                ? network->populations[syn->src_pop] : NULL;
+            if (src && (src->subclass == SNN_NSC_PV || src->subclass == SNN_NSC_SOM)) {
+                i_pvsom += -w;
+            } else {
+                i_other += -w;
+            }
+        }
+        if (i_pvsom <= 0.0 || e_sum <= 0.0) continue;
+        st.pops_examined++;
+        const double ratio_before = (i_pvsom + i_other) / e_sum;
+        ratio_before_sum += ratio_before;
+
+        double s = ((double)target_ratio * e_sum - i_other) / i_pvsom;
+        if (s > max_scale) s = max_scale;
+        if (s <= 1.0001) {
+            ratio_after_sum += ratio_before;
+            continue;
+        }
+
+        /* Pass 2: per-row scale, held within the metabolic cap */
+        double i_pvsom_after = 0.0;
+        uint64_t n_scaled = 0;
+        for (uint32_t r = 0; r < csr->n_neurons; r++) {
+            const uint32_t rs = csr->row_ptr[r], re = csr->row_ptr[r + 1];
+            if (re <= rs) continue;
+            double sum_abs = 0.0, i_row = 0.0;
+            for (uint32_t e = rs; e < re; e++) {
+                const float w = csr->entries[e].weight;
+                sum_abs += fabsf(w);
+                if (w < 0.0f) {
+                    const uint32_t sp = csr->entries[e].src_pop;
+                    const snn_population_t* src = (sp < network->n_populations)
+                        ? network->populations[sp] : NULL;
+                    if (src && (src->subclass == SNN_NSC_PV || src->subclass == SNN_NSC_SOM)) {
+                        i_row += -w;
+                    }
+                }
+            }
+            if (i_row <= 0.0) continue;
+            double s_row = s;
+            const double cap = (double)cap_factor * (double)(re - rs);
+            if (sum_abs + (s_row - 1.0) * i_row > cap) {
+                s_row = 1.0 + (cap - sum_abs) / i_row;
+                if (s_row < 1.0) s_row = 1.0;
+                st.neurons_capped++;
+            }
+            if (s_row <= 1.0) {
+                i_pvsom_after += i_row;
+                continue;
+            }
+            for (uint32_t e = rs; e < re; e++) {
+                float w = csr->entries[e].weight;
+                if (w >= 0.0f) continue;
+                const uint32_t sp = csr->entries[e].src_pop;
+                const snn_population_t* src = (sp < network->n_populations)
+                    ? network->populations[sp] : NULL;
+                if (!src || (src->subclass != SNN_NSC_PV && src->subclass != SNN_NSC_SOM)) continue;
+                w = (float)(w * s_row);
+                if (w < -w_cap) w = -w_cap;
+                csr->entries[e].weight = w;
+                if (csr->weights) csr->weights[e] = w;
+                i_pvsom_after += -w;
+                n_scaled++;
+            }
+        }
+        if (csr->gpu_resident) snn_csr_sync_weights_to_gpu(csr);
+
+        ratio_after_sum += (i_pvsom_after + i_other) / e_sum;
+        if (n_scaled > 0) {
+            st.pops_scaled++;
+            st.synapses_scaled += n_scaled;
+            if ((float)s > st.max_scale) st.max_scale = (float)s;
+        }
+        NIMCP_LOGGING_INFO("SNN inhibition rebalance: pop '%s' I/E %.3f -> %.3f "
+                           "(scale %.2f, %llu synapses)",
+                           pop->name, ratio_before, (i_pvsom_after + i_other) / e_sum,
+                           s, (unsigned long long)n_scaled);
+    }
+
+    if (st.pops_examined > 0) {
+        st.mean_ratio_before = (float)(ratio_before_sum / st.pops_examined);
+        st.mean_ratio_after  = (float)(ratio_after_sum / st.pops_examined);
+    }
+    if (stats) *stats = st;
+    return 0;
+}
+
+int snn_network_apply_inhibition_rebalance(snn_network_t* network) {
+    if (!network) return SNN_ERROR_NULL_POINTER;
+    const char* en = getenv("NIMCP_SNN_INH_REBALANCE");
+    if (en && en[0] == '0') {
+        NIMCP_LOGGING_INFO("SNN inhibition rebalance disabled (NIMCP_SNN_INH_REBALANCE=0)");
+        return 0;
+    }
+    float target = SNN_INH_REBALANCE_TARGET_RATIO;
+    float max_scale = SNN_INH_REBALANCE_MAX_SCALE;
+    const char* et = getenv("NIMCP_SNN_INH_TARGET_RATIO");
+    const char* em = getenv("NIMCP_SNN_INH_MAX_SCALE");
+    if (et) { float v = strtof(et, NULL); if (isfinite(v) && v > 0.0f) target = v; }
+    if (em) { float v = strtof(em, NULL); if (isfinite(v) && v >= 1.0f) max_scale = v; }
+
+    snn_inh_rebalance_stats_t st;
+    int rc = snn_network_rebalance_inhibition(network, target, max_scale, &st);
+    if (rc != 0) return rc;
+    NIMCP_LOGGING_INFO("SNN inhibition rebalance: %u/%u pyramidal pops scaled, %llu synapses, "
+                       "mean I/E %.3f -> %.3f (target %.2f, max scale %.2f applied, "
+                       "%u neurons held by metabolic cap)",
+                       st.pops_scaled, st.pops_examined,
+                       (unsigned long long)st.synapses_scaled,
+                       st.mean_ratio_before, st.mean_ratio_after, target,
+                       st.max_scale, st.neurons_capped);
+    return 0;
+}
+
 int snn_network_run(snn_network_t* network, float duration_ms) {
     if (!network) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "snn_network_run: null network pointer");
@@ -7252,6 +7417,10 @@ snn_network_t* snn_network_load(const char* path) {
                            "GPU 1: %u pops / %zu neurons",
                            pops_on[0], neurons_on[0], pops_on[1], neurons_on[1]);
     }
+
+    /* Weights come from the checkpoint, so the inhibition rebalance runs on
+     * the loaded network (idempotent: never weakens inhibition). */
+    (void)snn_network_apply_inhibition_rebalance(net);
 
     fclose(f);
     NIMCP_LOGGING_INFO("SNN network loaded from %s (%u neurons restored, v%u)", path, restore_count, version);

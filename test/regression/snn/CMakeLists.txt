@@ -522,3 +522,27 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/exception)
     add_subdirectory(exception)
 endif()
+
+# ============================================================================
+# SNN inhibition rebalance (2026-11-08) — PV/SOM→pyramidal up to target I/E
+# ============================================================================
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_snn_inhibition_rebalance.cpp)
+    add_executable(regression_snn_test_snn_inhibition_rebalance
+        test_snn_inhibition_rebalance.cpp
+    )
+    target_link_libraries(regression_snn_test_snn_inhibition_rebalance
+        PRIVATE ${SNN_REGRESSION_TEST_LIBS}
+    )
+    target_include_directories(regression_snn_test_snn_inhibition_rebalance
+        PRIVATE ${SNN_REGRESSION_TEST_INCLUDES}
+    )
+    target_compile_features(regression_snn_test_snn_inhibition_rebalance
+        PRIVATE cxx_std_17)
+    gtest_discover_tests(regression_snn_test_snn_inhibition_rebalance
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        PROPERTIES
+            LABELS "regression;snn;inhibition"
+            TIMEOUT 60
+    )
+    message(STATUS "  Added SNN regression test: test_snn_inhibition_rebalance")
+endif()

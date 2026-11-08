@@ -190,6 +190,62 @@ void snn_network_update_stats(snn_network_t* network, int total_spikes, float du
 #define SNN_CB_DEFAULT_RESCALE_FACTOR (1.0f / 50.0f)
 int snn_rescale_weights_for_conductance(snn_network_t* network, float factor);
 
+/**
+ * @brief Inhibition rebalance statistics (2026-11-08)
+ *
+ * "E" is the summed positive incoming weight of a pyramidal neuron; "I" is
+ * the summed |weight| of its inhibitory (negative) inputs. Ratios are
+ * averaged over the pyramidal populations that receive PV/SOM input.
+ */
+typedef struct snn_inh_rebalance_stats_s {
+    uint32_t pops_examined;     /**< Pyramidal pops with PV/SOM input */
+    uint32_t pops_scaled;       /**< Pops whose PV/SOM synapses were scaled */
+    uint64_t synapses_scaled;   /**< PV/SOM→pyramidal synapses changed */
+    uint32_t neurons_capped;    /**< Rows held below the full scale by the metabolic cap */
+    float    mean_ratio_before; /**< Mean I/E over examined pops, before */
+    float    mean_ratio_after;  /**< Mean I/E over examined pops, after */
+    float    max_scale;         /**< Largest per-pop scale applied */
+} snn_inh_rebalance_stats_t;
+
+/**
+ * @brief Strengthen PV/SOM→pyramidal inhibition up to a target I/E ratio
+ *
+ * For every finalized pyramidal-family population (any subclass other than
+ * PV/SOM/VIP/TRN) that receives PV or SOM synapses, compute
+ * E = Σ w over positive incoming weights, I_pvsom = Σ|w| over negative
+ * weights from PV/SOM pops, I_other = Σ|w| over other negative weights, and
+ * scale the PV/SOM synapses by s = (target_ratio·E − I_other) / I_pvsom,
+ * clamped to [1, max_scale]. Never weakens inhibition, so re-applying it
+ * to an already-balanced network is a no-op (idempotent by construction).
+ *
+ * Per neuron the scale is further limited so Σ|w| stays within the
+ * homeostatic metabolic cap (snn_tune_get_metabolic_cap() × fan-in), and
+ * each synapse is clamped to |w| ≤ 10. Updates entries[], the flat
+ * weights[] mirror and the GPU copy when resident.
+ *
+ * @param network      SNN network
+ * @param target_ratio Desired I/E (> 0)
+ * @param max_scale    Largest multiplier for any pop (≥ 1)
+ * @param stats        [out] optional statistics
+ * @return 0 on success; SNN_ERROR_NULL_POINTER / SNN_ERROR_INVALID_CONFIG
+ */
+int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
+                                     float max_scale, snn_inh_rebalance_stats_t* stats);
+
+/** Defaults for snn_network_apply_inhibition_rebalance() */
+#define SNN_INH_REBALANCE_TARGET_RATIO 0.5f
+#define SNN_INH_REBALANCE_MAX_SCALE    8.0f
+
+/**
+ * @brief Load/build-time hook: rebalance with env-configured parameters
+ *
+ * NIMCP_SNN_INH_REBALANCE=0 disables. NIMCP_SNN_INH_TARGET_RATIO and
+ * NIMCP_SNN_INH_MAX_SCALE override the defaults above. Logs before/after.
+ *
+ * @return 0 on success or when disabled; negative on error
+ */
+int snn_network_apply_inhibition_rebalance(snn_network_t* network);
+
 //=============================================================================
 // Performance-Optimized Stepping
 //=============================================================================
