@@ -205,6 +205,8 @@ typedef struct snn_inh_rebalance_stats_s {
     float    mean_ratio_before; /**< Mean I/E over examined pops, before */
     float    mean_ratio_after;  /**< Mean I/E over examined pops, after */
     float    max_scale;         /**< Largest per-pop scale applied */
+    uint32_t neurons_renormalized; /**< Rows whose whole input set was scaled down to fit the cap */
+    float    min_exc_scale;     /**< Smallest row renormalization factor applied (1 = none) */
 } snn_inh_rebalance_stats_t;
 
 /**
@@ -218,10 +220,17 @@ typedef struct snn_inh_rebalance_stats_s {
  * clamped to [1, max_scale]. Never weakens inhibition, so re-applying it
  * to an already-balanced network is a no-op (idempotent by construction).
  *
- * Per neuron the scale is further limited so Σ|w| stays within the
- * homeostatic metabolic cap (snn_tune_get_metabolic_cap() × fan-in), and
- * each synapse is clamped to |w| ≤ 10. Updates entries[], the flat
- * weights[] mirror and the GPU copy when resident.
+ * Per neuron Σ|w| must stay within the homeostatic metabolic cap
+ * (snn_tune_get_metabolic_cap() × fan-in). When the scaled-up inhibition
+ * would exceed it, the neuron's whole input set is multiplied by
+ * k = cap / Σ|w| (multiplicative synaptic scaling): the new I/E ratio is
+ * kept and excitation gives up the room. k is floored at
+ * SNN_INH_REBALANCE_MIN_EXC_SCALE; where the floor binds, the inhibitory
+ * scale is reduced instead. Each synapse is clamped to |w| ≤ 10. Updates
+ * entries[], the flat weights[] mirror and the GPU copy when resident.
+ *
+ * A pop clamped by max_scale ends below target, so a later call scales it
+ * again; the ratio converges to the target over successive loads.
  *
  * @param network      SNN network
  * @param target_ratio Desired I/E (> 0)
@@ -232,15 +241,29 @@ typedef struct snn_inh_rebalance_stats_s {
 int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
                                      float max_scale, snn_inh_rebalance_stats_t* stats);
 
+/**
+ * @brief snn_network_rebalance_inhibition with an explicit excitation floor
+ *
+ * @param min_exc_scale Smallest per-row renormalization factor, in (0, 1].
+ *                      1 never shrinks excitation (the cap then limits the
+ *                      inhibitory scale, the pre-2026-11-09 behaviour).
+ * Other parameters and return values as snn_network_rebalance_inhibition.
+ */
+int snn_network_rebalance_inhibition_ex(snn_network_t* network, float target_ratio,
+                                        float max_scale, float min_exc_scale,
+                                        snn_inh_rebalance_stats_t* stats);
+
 /** Defaults for snn_network_apply_inhibition_rebalance() */
 #define SNN_INH_REBALANCE_TARGET_RATIO 0.5f
 #define SNN_INH_REBALANCE_MAX_SCALE    8.0f
+#define SNN_INH_REBALANCE_MIN_EXC_SCALE 0.5f
 
 /**
  * @brief Load/build-time hook: rebalance with env-configured parameters
  *
  * NIMCP_SNN_INH_REBALANCE=0 disables. NIMCP_SNN_INH_TARGET_RATIO and
- * NIMCP_SNN_INH_MAX_SCALE override the defaults above. Logs before/after.
+ * NIMCP_SNN_INH_MAX_SCALE and NIMCP_SNN_INH_MIN_EXC_SCALE override the
+ * defaults above. Logs before/after.
  *
  * @return 0 on success or when disabled; negative on error
  */

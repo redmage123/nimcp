@@ -4585,6 +4585,13 @@ static bool snn_subclass_is_interneuron(neuron_subclass_t sc) {
 
 int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
                                      float max_scale, snn_inh_rebalance_stats_t* stats) {
+    return snn_network_rebalance_inhibition_ex(network, target_ratio, max_scale,
+                                               SNN_INH_REBALANCE_MIN_EXC_SCALE, stats);
+}
+
+int snn_network_rebalance_inhibition_ex(snn_network_t* network, float target_ratio,
+                                        float max_scale, float min_exc_scale,
+                                        snn_inh_rebalance_stats_t* stats) {
     if (stats) memset(stats, 0, sizeof(*stats));
     if (!network) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
@@ -4592,9 +4599,11 @@ int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
         return SNN_ERROR_NULL_POINTER;
     }
     if (!isfinite(target_ratio) || target_ratio <= 0.0f ||
-        !isfinite(max_scale) || max_scale < 1.0f) {
+        !isfinite(max_scale) || max_scale < 1.0f ||
+        !isfinite(min_exc_scale) || min_exc_scale <= 0.0f || min_exc_scale > 1.0f) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
-            "snn_network_rebalance_inhibition: target_ratio must be > 0 and max_scale >= 1");
+            "snn_network_rebalance_inhibition: target_ratio must be > 0, max_scale >= 1 "
+            "and min_exc_scale in (0, 1]");
         return SNN_ERROR_INVALID_CONFIG;
     }
 
@@ -4603,6 +4612,7 @@ int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
     double ratio_before_sum = 0.0, ratio_after_sum = 0.0;
     snn_inh_rebalance_stats_t st;
     memset(&st, 0, sizeof(st));
+    st.min_exc_scale = 1.0f;
 
     for (uint32_t p = 0; p < network->n_populations; p++) {
         snn_population_t* pop = network->populations[p];
@@ -4638,7 +4648,6 @@ int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
         }
 
         /* Pass 2: per-row scale, held within the metabolic cap */
-        double i_pvsom_after = 0.0;
         uint64_t n_scaled = 0;
         for (uint32_t r = 0; r < csr->n_neurons; r++) {
             const uint32_t rs = csr->row_ptr[r], re = csr->row_ptr[r + 1];
@@ -4657,35 +4666,64 @@ int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
                 }
             }
             if (i_row <= 0.0) continue;
+            /* Scaled-up inhibition must fit the metabolic cap. Over it, the
+             * whole row is multiplied by k = cap / Σ|w| (multiplicative
+             * synaptic scaling): the new I/E ratio survives and excitation
+             * gives up the room. k is floored at min_exc_scale; where the
+             * floor binds the inhibitory scale is reduced instead so that
+             * Σ|w| after the floor equals the cap. */
             double s_row = s;
+            double k_row = 1.0;
             const double cap = (double)cap_factor * (double)(re - rs);
-            if (sum_abs + (s_row - 1.0) * i_row > cap) {
-                s_row = 1.0 + (cap - sum_abs) / i_row;
-                if (s_row < 1.0) s_row = 1.0;
+            const double grown = sum_abs + (s_row - 1.0) * i_row;
+            if (grown > cap) {
                 st.neurons_capped++;
+                k_row = cap / grown;
+                if (k_row < (double)min_exc_scale) {
+                    k_row = (double)min_exc_scale;
+                    s_row = 1.0 + (cap / k_row - sum_abs) / i_row;
+                    if (s_row > s) s_row = s;
+                    if (s_row < 1.0) {
+                        /* Row already over cap/min_exc_scale: leave it. */
+                        s_row = 1.0;
+                        k_row = 1.0;
+                    }
+                }
             }
-            if (s_row <= 1.0) {
-                i_pvsom_after += i_row;
-                continue;
-            }
+            if (s_row <= 1.0 && k_row >= 1.0) continue;
             for (uint32_t e = rs; e < re; e++) {
                 float w = csr->entries[e].weight;
-                if (w >= 0.0f) continue;
-                const uint32_t sp = csr->entries[e].src_pop;
-                const snn_population_t* src = (sp < network->n_populations)
-                    ? network->populations[sp] : NULL;
-                if (!src || (src->subclass != SNN_NSC_PV && src->subclass != SNN_NSC_SOM)) continue;
-                w = (float)(w * s_row);
-                if (w < -w_cap) w = -w_cap;
+                bool pvsom = false;
+                if (w < 0.0f) {
+                    const uint32_t sp = csr->entries[e].src_pop;
+                    const snn_population_t* src = (sp < network->n_populations)
+                        ? network->populations[sp] : NULL;
+                    pvsom = src && (src->subclass == SNN_NSC_PV || src->subclass == SNN_NSC_SOM);
+                }
+                if (pvsom && s_row > 1.0) {
+                    w = (float)(w * s_row);
+                    if (w < -w_cap) w = -w_cap;
+                    n_scaled++;
+                }
+                if (k_row < 1.0) w = (float)(w * k_row);
                 csr->entries[e].weight = w;
                 if (csr->weights) csr->weights[e] = w;
-                i_pvsom_after += -w;
-                n_scaled++;
+            }
+            if (k_row < 1.0) {
+                st.neurons_renormalized++;
+                if ((float)k_row < st.min_exc_scale) st.min_exc_scale = (float)k_row;
             }
         }
         if (csr->gpu_resident) snn_csr_sync_weights_to_gpu(csr);
 
-        ratio_after_sum += (i_pvsom_after + i_other) / e_sum;
+        /* Pass 3: after-ratio (renormalization changes E as well as I) */
+        double e_after = 0.0, i_after = 0.0;
+        for (uint32_t e = 0; e < csr->n_synapses; e++) {
+            const float w = csr->entries[e].weight;
+            if (w > 0.0f) e_after += w; else i_after += -w;
+        }
+        const double ratio_after = (e_after > 0.0) ? i_after / e_after : ratio_before;
+        ratio_after_sum += ratio_after;
         if (n_scaled > 0) {
             st.pops_scaled++;
             st.synapses_scaled += n_scaled;
@@ -4693,7 +4731,7 @@ int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
         }
         NIMCP_LOGGING_INFO("SNN inhibition rebalance: pop '%s' I/E %.3f -> %.3f "
                            "(scale %.2f, %llu synapses)",
-                           pop->name, ratio_before, (i_pvsom_after + i_other) / e_sum,
+                           pop->name, ratio_before, ratio_after,
                            s, (unsigned long long)n_scaled);
     }
 
@@ -4716,19 +4754,24 @@ int snn_network_apply_inhibition_rebalance(snn_network_t* network) {
     float max_scale = SNN_INH_REBALANCE_MAX_SCALE;
     const char* et = getenv("NIMCP_SNN_INH_TARGET_RATIO");
     const char* em = getenv("NIMCP_SNN_INH_MAX_SCALE");
+    const char* ek = getenv("NIMCP_SNN_INH_MIN_EXC_SCALE");
+    float min_exc = SNN_INH_REBALANCE_MIN_EXC_SCALE;
     if (et) { float v = strtof(et, NULL); if (isfinite(v) && v > 0.0f) target = v; }
     if (em) { float v = strtof(em, NULL); if (isfinite(v) && v >= 1.0f) max_scale = v; }
+    if (ek) { float v = strtof(ek, NULL); if (isfinite(v) && v > 0.0f && v <= 1.0f) min_exc = v; }
 
     snn_inh_rebalance_stats_t st;
-    int rc = snn_network_rebalance_inhibition(network, target, max_scale, &st);
+    int rc = snn_network_rebalance_inhibition_ex(network, target, max_scale, min_exc, &st);
     if (rc != 0) return rc;
     NIMCP_LOGGING_INFO("SNN inhibition rebalance: %u/%u pyramidal pops scaled, %llu synapses, "
                        "mean I/E %.3f -> %.3f (target %.2f, max scale %.2f applied, "
-                       "%u neurons held by metabolic cap)",
+                       "%u neurons at the metabolic cap, %u renormalized, "
+                       "min excitation scale %.3f, floor %.2f)",
                        st.pops_scaled, st.pops_examined,
                        (unsigned long long)st.synapses_scaled,
                        st.mean_ratio_before, st.mean_ratio_after, target,
-                       st.max_scale, st.neurons_capped);
+                       st.max_scale, st.neurons_capped, st.neurons_renormalized,
+                       st.min_exc_scale, min_exc);
     return 0;
 }
 
