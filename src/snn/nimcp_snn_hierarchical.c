@@ -29,6 +29,7 @@
 #include "core/synapse_types/nimcp_synapse_types.h"
 #include "utils/logging/nimcp_logging.h"
 #include "gpu/context/nimcp_gpu_context.h"  /* for GPU context cleanup */
+#include "gpu/snn/nimcp_snn_gpu.h"         /* nimcp_lif_state_t (per-neuron params dirty flag) */
 #include <string.h>
 
 #define LOG_MODULE "SNN_HIERARCHICAL"
@@ -64,6 +65,20 @@ static const snn_tier_def_t TIER_DEFS[] = {
     { 4, 64000, "output",      0.0f,  0.0f     },
 };
 #define NUM_TIERS (sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))
+
+/* P4.1: layer-specific pyramidal subtype per tier (see the comment in
+ * snn_hierarchical_create). File scope so the load-time restore uses the
+ * same table as the builder. */
+static const neuron_subclass_t TIER_SUBCLASS[] = {
+    SNN_NSC_PYRAMIDAL,                  /* 0: input */
+    SNN_NSC_PYRAMIDAL,                  /* 1: L1_feature */
+    SNN_NSC_PYRAMIDAL_L23,              /* 2: L2_pattern */
+    SNN_NSC_PYRAMIDAL_L23,              /* 3: L3_concept */
+    SNN_NSC_PYRAMIDAL_L4_STELLATE,      /* 4: L4_integr */
+    SNN_NSC_PYRAMIDAL_L5_BETZ,          /* 5: L5_exec */
+    SNN_NSC_PYRAMIDAL,                  /* 6: L6_project */
+    SNN_NSC_PYRAMIDAL,                  /* 7: output */
+    };
 
 /* Skip connection definitions: { src_tier, dst_tier, connectivity } */
 typedef struct {
@@ -274,16 +289,7 @@ static snn_network_t* hierarchical_build(
      * Tiers 0,1,7 (input / L1_feature / output) keep PYRAMIDAL — these are
      * stubs / sensory-relay / output-aggregation, not classical cortical
      * pyramidal layers, so a layer-specific tag would be misleading. */
-    static const neuron_subclass_t TIER_SUBCLASS[] = {
-        SNN_NSC_PYRAMIDAL,                  /* 0: input */
-        SNN_NSC_PYRAMIDAL,                  /* 1: L1_feature */
-        SNN_NSC_PYRAMIDAL_L23,              /* 2: L2_pattern */
-        SNN_NSC_PYRAMIDAL_L23,              /* 3: L3_concept */
-        SNN_NSC_PYRAMIDAL_L4_STELLATE,      /* 4: L4_integr */
-        SNN_NSC_PYRAMIDAL_L5_BETZ,          /* 5: L5_exec */
-        SNN_NSC_PYRAMIDAL,                  /* 6: L6_project */
-        SNN_NSC_PYRAMIDAL,                  /* 7: output */
-    };
+    /* TIER_SUBCLASS (file scope) maps each tier to its pyramidal subtype. */
 
     /* For simplicity: add ALL tier populations as new hidden populations,
      * ignoring the default 3. The default input/output pops are tiny stubs
@@ -996,6 +1002,76 @@ wire_connections:
     }
 
     return net;
+}
+
+/* Builder per-pop properties for a tier pyramidal pop ("<tier>_<k>"). */
+static void hier_apply_pyramidal_props(snn_network_t* net, uint32_t p, uint32_t t) {
+    (void)snn_network_set_pop_subclass(net, p, TIER_SUBCLASS[t]);
+    (void)snn_network_set_pop_conduction_delay(net, p, 1);
+    (void)snn_network_set_pop_heterogeneity(net, p, 0.10f);
+    if (snn_tune_get_dendritic_enabled() != 0.0f && !net->populations[p]->dendritic_enabled) {
+        (void)snn_network_enable_dendritic(net, p);
+    }
+}
+
+/* Returns the tier index whose name prefixes `name` followed by '_', or -1. */
+static int hier_tier_of_name(const char* name, const char** rest) {
+    for (uint32_t t = 0; t < NUM_TIERS; t++) {
+        size_t n = strlen(TIER_DEFS[t].name);
+        if (strncmp(name, TIER_DEFS[t].name, n) == 0 && name[n] == '_') {
+            if (rest) *rest = name + n + 1;
+            return (int)t;
+        }
+    }
+    return -1;
+}
+
+int snn_hierarchical_restore_pop_properties(snn_network_t* net) {
+    if (!net || !net->populations) return -1;
+    uint32_t n_pyr = 0, n_inh = 0, n_trn = 0;
+    for (uint32_t p = 0; p < net->n_populations; p++) {
+        snn_population_t* pop = net->populations[p];
+        if (!pop || !pop->name[0]) continue;
+        if (strcmp(pop->name, "thalamus_reticular") == 0) {
+            (void)snn_network_set_pop_subclass(net, p, SNN_NSC_TRN);
+            n_trn++;
+            continue;
+        }
+        const char* rest = NULL;
+        int t = hier_tier_of_name(pop->name, &rest);
+        if (t < 0 || !rest || !rest[0]) continue;
+        if (strcmp(rest, "PV") == 0) {
+            (void)snn_network_set_pop_subclass(net, p, SNN_NSC_PV);
+            (void)snn_network_set_pop_gap_coupling(net, p, 0.05f);
+            (void)snn_network_set_pop_conduction_delay(net, p, 0);
+            n_inh++;
+        } else if (strcmp(rest, "SOM") == 0) {
+            (void)snn_network_set_pop_subclass(net, p, SNN_NSC_SOM);
+            (void)snn_network_set_pop_conduction_delay(net, p, 1);
+            n_inh++;
+        } else if (strcmp(rest, "VIP") == 0) {
+            (void)snn_network_set_pop_subclass(net, p, SNN_NSC_VIP);
+            (void)snn_network_set_pop_conduction_delay(net, p, 1);
+            n_inh++;
+        } else {
+            /* "<tier>_<digits>" only */
+            const char* c = rest;
+            while (*c >= '0' && *c <= '9') c++;
+            if (*c != '\0') continue;
+            hier_apply_pyramidal_props(net, p, (uint32_t)t);
+            n_pyr++;
+        }
+    }
+    /* Subclass changes the per-neuron LIF params the GPU kernel reads. */
+    if (net->gpu_lif_state) {
+        ((nimcp_lif_state_t*)net->gpu_lif_state)->per_neuron_params_dirty = true;
+    }
+    if (n_pyr + n_inh + n_trn > 0) {
+        LOG_INFO("Restored builder pop properties on load: %u tier pyramidal, "
+                 "%u PV/SOM/VIP, %u TRN (subclass, conduction delay, "
+                 "heterogeneity, PV gap coupling)", n_pyr, n_inh, n_trn);
+    }
+    return (int)(n_pyr + n_inh + n_trn);
 }
 
 bool snn_hierarchical_has_tiers(const snn_network_t* net)

@@ -1134,6 +1134,21 @@ snn_network_t* snn_create_hierarchical_network(
 bool snn_hierarchical_has_tiers(const snn_network_t* net);
 
 /**
+ * @brief Re-apply the hierarchical builder's per-population properties to a
+ *        loaded network, matched by population name.
+ *
+ * snn_network_save persists only each population's name, size, CSR, rate
+ * EMA and depression, so a resumed network loses its subclass (PV/SOM/VIP/
+ * TRN and the L23/L4/L5 pyramidal subtypes), conduction delays, per-neuron
+ * heterogeneity and PV gap coupling. This restores them from the builder's
+ * tables: tier pyramidal pops "<tier>_<k>", interneurons "<tier>_PV|SOM|VIP"
+ * and "thalamus_reticular". Other pops are left untouched. Idempotent.
+ *
+ * @return Number of populations updated, or -1 on NULL network
+ */
+int snn_hierarchical_restore_pop_properties(snn_network_t* net);
+
+/**
  * @brief Append the 46-population cortical hierarchy to an existing
  *        network that lacks it (existing populations are kept). No-op
  *        when the tiers are already present. Returns `net`, or NULL on

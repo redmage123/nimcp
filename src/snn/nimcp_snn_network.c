@@ -7420,6 +7420,19 @@ snn_network_t* snn_network_load(const char* path) {
 
     /* Weights come from the checkpoint, so the inhibition rebalance runs on
      * the loaded network (idempotent: never weakens inhibition). */
+    /* Population subclass, delays, heterogeneity and gap coupling are not in
+     * the save format; restore them from the builder by name first — the
+     * rebalance identifies PV/SOM pops by subclass.
+     * NIMCP_SNN_RESTORE_POP_PROPS=0 skips the restore (pre-fix behaviour). */
+    {
+        const char* rp = getenv("NIMCP_SNN_RESTORE_POP_PROPS");
+        if (!(rp && rp[0] == '0' && rp[1] == '\0')) {
+            (void)snn_hierarchical_restore_pop_properties(net);
+        } else {
+            NIMCP_LOGGING_INFO("SNN load: population property restore disabled "
+                               "(NIMCP_SNN_RESTORE_POP_PROPS=0)");
+        }
+    }
     (void)snn_network_apply_inhibition_rebalance(net);
 
     fclose(f);
