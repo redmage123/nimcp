@@ -10032,6 +10032,11 @@ def chat_eval(brain, composer, decoder, stage, step, phi3=None):
 # ============================================================================
 
 METRICS_LOG_FILE = "metrics_log.jsonl"
+# One JSON line per evaluate_performance() call with everything it prints
+# (probe responses, visual recognition, cross-similarity, held-out metrics,
+# spectral CV). The console text is lost when training logs rotate; this file
+# is the durable record for tracking performance across stages.
+EVAL_LOG_FILE = "checkpoints/athena/eval_log.jsonl"
 
 
 class HeldOutBuffer:
@@ -10219,6 +10224,15 @@ _EVAL_PROBES = [
 _eval_history = {}  # probe_name → list of (step, response_text, similarity, vec_norm)
 
 
+def _eval_json_default(o):
+    """json.dumps fallback for numpy scalars/arrays in eval records."""
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return str(o)
+
+
 def evaluate_performance(brain, composer, decoder, stage, step):
     """Run fixed probes through the brain and show actual responses.
 
@@ -10249,6 +10263,8 @@ def evaluate_performance(brain, composer, decoder, stage, step):
 
     responses = []
     embeddings = []
+    _rec = {"stage": stage, "step": step, "timestamp": time.time(),
+            "ema": ema_active, "probes": {}}
 
     _rs_eval = _get_real_sensory()
     for probe_name, probe_text in _EVAL_PROBES:
@@ -10294,6 +10310,14 @@ def evaluate_performance(brain, composer, decoder, stage, step):
             print(f"    {probe_name:8s} → |output|={vec_norm:.2f}  "
                   f"active={result.get('num_active_neurons', '?')}")
 
+        _rec["probes"][probe_name] = {
+            "norm": vec_norm,
+            "active": result.get("num_active_neurons"),
+            "sparsity": result.get("sparsity"),
+            "top1": decoded_text or None,
+            "top1_sim": float(similarity),
+        }
+
         # Track history
         if probe_name not in _eval_history:
             _eval_history[probe_name] = []
@@ -10315,6 +10339,7 @@ def evaluate_performance(brain, composer, decoder, stage, step):
             _vhits = 0
             print(f"\n  Visual-only probes (held-out photos, prompt 'look at this'; controlled inference):")
             _ci = _ControlledInference(brain).__enter__()
+            _vrec = {}
             for _vl in _vlabels:
                 _hf = _rs_eval.get_heldout_frame(_vl, index=step // 500)
                 if not _hf:
@@ -10337,13 +10362,16 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                 _syns = {_vl} | {k for k, v in _SYN.items() if _vl in v}
                 _hit = any(any(s in t.lower() for s in _syns) for t in _top)
                 _vhits += int(_hit)
+                _vrec[_vl] = {"top3": _top, "hit": bool(_hit)}
                 print(f"    {_vl:8s} → {', '.join(t[:20] for t in _top) or '[no match]'}"
                       f"{'  ✓' if _hit else ''}")
             _ci.__exit__(None, None, None)
             if _vlabels:
                 print(f"    [VisualProbe] {_vhits}/{len(_vlabels)} labels recognised in top-3")
+                _rec["visual"] = {"hits": _vhits, "total": len(_vrec), "labels": _vrec}
         except Exception as _vpe:
             print(f"    [VisualProbe] failed: {_vpe}")
+            _rec["visual_error"] = str(_vpe)
 
     # --- Differentiation matrix: can she tell things apart? ---
     if len(embeddings) >= 2:
@@ -10377,6 +10405,10 @@ def evaluate_performance(brain, composer, decoder, stage, step):
             max_sim = np.max(upper)
             print(f"    Mean cross-similarity: {mean_sim:.3f}  "
                   f"(range: {min_sim:.3f}–{max_sim:.3f})")
+            _rec["cross_sim"] = {"mean": float(mean_sim), "min": float(min_sim),
+                                 "max": float(max_sim), "names": names,
+                                 "matrix": [[round(float(v), 4) for v in r]
+                                            for r in sim_matrix]}
             if mean_sim > 0.95:
                 print(f"    ⚠ Responses nearly identical — brain not differentiating yet")
             elif mean_sim < 0.5:
@@ -10420,6 +10452,7 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                 for dom, ddata in sorted(metrics['per_domain'].items()):
                     print(f"      {dom:20s}: cos={ddata['mean_cosine_sim']:.4f}  "
                           f"n={ddata['count']}")
+            _rec["heldout"] = metrics
             # Log to metrics_log.jsonl
             try:
                 entry = {
@@ -10458,10 +10491,20 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                     pass
             if test_losses:
                 mean_sim = np.mean(test_losses)
+                _rec["spectral_cv"] = {"fold": fold_idx, "n": len(test_losses),
+                                       "mean_cos_sim": float(mean_sim)}
                 print(f"    [Spectral CV] Fold {fold_idx}: {len(test_losses)} test items, "
                       f"mean_cos_sim={mean_sim:.4f}")
 
     print(f"  {'─' * 56}\n")
+
+    try:
+        _rec["duration_s"] = round(time.time() - _rec["timestamp"], 1)
+        os.makedirs(os.path.dirname(EVAL_LOG_FILE), exist_ok=True)
+        with open(EVAL_LOG_FILE, "a") as f:
+            f.write(json.dumps(_rec, default=_eval_json_default) + "\n")
+    except Exception as _ele:
+        print(f"  [EvalLog] write failed: {_ele}")
 
     # Swap back from EMA to live parameters
     if ema_active:
