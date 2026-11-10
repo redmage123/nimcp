@@ -1141,7 +1141,13 @@ snn_network_t* snn_network_load(const char* path);
  *
  * @param n_inputs Brain input dimension (for input population sizing)
  * @param n_outputs Brain output dimension (for output population sizing)
- * @param target_total_neurons Target total neuron count (actual may differ slightly)
+ * @param target_total_neurons Target tier neuron count. 0, or anything at or
+ *        above the table total (1.8M), builds the production table unchanged.
+ *        A smaller target scales every table-sized population (tier,
+ *        PV/SOM/VIP, TRN) by target/table (floor 32 neurons) and raises the
+ *        connectivity of each shrunk source by n_orig/n_actual (cap 1), so
+ *        per-neuron fan-in and synaptic weights stay at production values.
+ *        A scaled build neither loads nor writes the cached sidecar.
  * @return Network handle, or NULL on error
  */
 snn_network_t* snn_create_hierarchical_network(
@@ -1155,6 +1161,19 @@ snn_network_t* snn_create_hierarchical_network(
  *        language-cortex-only network, not a brain.
  */
 bool snn_hierarchical_has_tiers(const snn_network_t* net);
+
+/**
+ * @brief Total tier neurons in the production TIER_DEFS table (1.8M).
+ */
+uint32_t snn_hierarchical_table_total(void);
+
+/**
+ * @brief Size a table population of `n_orig` neurons gets for a given
+ *        target_total_neurons (see snn_create_hierarchical_network): n_orig
+ *        when the target is 0 or >= the table total, else
+ *        max(32, round(n_orig · target / table)).
+ */
+uint32_t snn_hierarchical_scaled_pop_size(uint32_t n_orig, uint32_t target_total_neurons);
 
 /**
  * @brief Re-apply the hierarchical builder's per-population properties to a

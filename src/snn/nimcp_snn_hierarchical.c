@@ -31,6 +31,7 @@
 #include "gpu/context/nimcp_gpu_context.h"  /* for GPU context cleanup */
 #include "gpu/snn/nimcp_snn_gpu.h"         /* nimcp_lif_state_t (per-neuron params dirty flag) */
 #include <string.h>
+#include <math.h>        /* lround (scaled builds) */
 
 #define LOG_MODULE "SNN_HIERARCHICAL"
 
@@ -201,6 +202,66 @@ static inline float snn_fluct_weight(float budget_share,
 #define SNN_SIDECAR_PATH "checkpoints/athena/athena_immersive.bin.snn"
 #define SNN_LEGACY_CACHE_PATH "checkpoints/athena/snn_hierarchical.bin"
 
+/* Scaled-down builds (target_total_neurons below the TIER_DEFS total).
+ *
+ * Only a request for FEWER neurons than the table scales; production asks for
+ * exactly the table total (1.8M) and gets the table unchanged. Each table-sized
+ * population (tier, PV/SOM/VIP, TRN) gets round(n · scale) neurons, floored at
+ * HIER_MIN_POP_NEURONS. Each connection whose SOURCE population was shrunk has
+ * its probability raised to conn · n_orig / n_actual (capped at 1), so every
+ * destination neuron keeps its production expected fan-in. Weights are still
+ * computed from the production (n_orig, conn) pair, so they are identical to
+ * production. Used by small test brains (scripts/overfit_probe.py), which
+ * otherwise cannot build the UTM's SNN outside a >45 GB host. */
+#define HIER_MIN_POP_NEURONS 32u
+
+static uint32_t hier_table_total(void)
+{
+    uint32_t total = 0;
+    for (uint32_t t = 0; t < NUM_TIERS; t++) {
+        total += TIER_DEFS[t].n_pops * TIER_DEFS[t].neurons_per_pop;
+    }
+    return total;
+}
+
+/* scale in (0, 1]; 1 for every production build. */
+static double hier_scale_for_target(uint32_t target_total_neurons)
+{
+    const uint32_t total = hier_table_total();
+    if (target_total_neurons == 0 || target_total_neurons >= total) return 1.0;
+    return (double)target_total_neurons / (double)total;
+}
+
+static uint32_t hier_scaled_n(uint32_t n_orig, double scale)
+{
+    if (scale >= 1.0) return n_orig;
+    uint32_t n = (uint32_t)lround((double)n_orig * scale);
+    return (n < HIER_MIN_POP_NEURONS) ? HIER_MIN_POP_NEURONS : n;
+}
+
+/* Connectivity from source pop `src_pop` that keeps the production fan-in
+ * n_orig · conn. Unchanged when the source is at (or above) its production
+ * size, which covers every connection of a production build. */
+static float hier_fanin_conn(const snn_network_t* net, uint32_t src_pop,
+                             float conn, uint32_t n_orig)
+{
+    const snn_population_t* src = (src_pop < net->n_populations)
+        ? net->populations[src_pop] : NULL;
+    if (!src || src->n_neurons == 0 || src->n_neurons >= n_orig) return conn;
+    const double c = (double)conn * (double)n_orig / (double)src->n_neurons;
+    return (c > 1.0) ? 1.0f : (float)c;
+}
+
+uint32_t snn_hierarchical_table_total(void)
+{
+    return hier_table_total();
+}
+
+uint32_t snn_hierarchical_scaled_pop_size(uint32_t n_orig, uint32_t target_total_neurons)
+{
+    return hier_scaled_n(n_orig, hier_scale_for_target(target_total_neurons));
+}
+
 /* Build the 46-population cortical hierarchy. With `existing` NULL a base
  * network is created first; otherwise the tiers are appended to `existing`
  * (its populations — e.g. loaded language pops — are kept and untouched). */
@@ -212,14 +273,23 @@ static snn_network_t* hierarchical_build(
 {
     snn_network_t* net = existing;
 
-    /* Compute actual total from tier definitions */
+    /* Production builds use the table as-is (scale 1). A smaller target
+     * scales the table down — see hier_scale_for_target(). */
+    const double scale = hier_scale_for_target(target_total_neurons);
     uint32_t actual_total = 0;
     for (uint32_t t = 0; t < NUM_TIERS; t++) {
-        actual_total += TIER_DEFS[t].n_pops * TIER_DEFS[t].neurons_per_pop;
+        actual_total += TIER_DEFS[t].n_pops * hier_scaled_n(TIER_DEFS[t].neurons_per_pop, scale);
     }
-    LOG_INFO("Creating hierarchical SNN: %u neurons across %zu tiers "
-             "(target=%u, actual=%u)",
-             actual_total, NUM_TIERS, target_total_neurons, actual_total);
+    if (scale < 1.0) {
+        LOG_INFO("Creating SCALED hierarchical SNN: %u tier neurons across %zu tiers "
+                 "(target=%u, table=%u, scale=%.4f; fan-in and weights kept at "
+                 "production values)",
+                 actual_total, NUM_TIERS, target_total_neurons, hier_table_total(), scale);
+    } else {
+        LOG_INFO("Creating hierarchical SNN: %u neurons across %zu tiers "
+                 "(target=%u, actual=%u)",
+                 actual_total, NUM_TIERS, target_total_neurons, actual_total);
+    }
 
     /* Count total populations */
     uint32_t total_pops = 0;
@@ -303,7 +373,7 @@ static snn_network_t* hierarchical_build(
             snprintf(pop_name, sizeof(pop_name), "%s_%u",
                      TIER_DEFS[t].name, p);
             int rc = snn_network_add_population_lightweight(net,
-                TIER_DEFS[t].neurons_per_pop,
+                hier_scaled_n(TIER_DEFS[t].neurons_per_pop, scale),
                 ntype, pop_name);
 
             if (rc < 0) {
@@ -320,7 +390,7 @@ static snn_network_t* hierarchical_build(
                  * Large populations (>50K neurons) alternate starting with GPU 1
                  * Small populations (<50K neurons) alternate starting with GPU 0
                  * This spreads large memory allocations more evenly */
-                uint32_t pop_neurons = TIER_DEFS[t].neurons_per_pop;
+                uint32_t pop_neurons = hier_scaled_n(TIER_DEFS[t].neurons_per_pop, scale);
                 uint32_t assigned_gpu;
                 if (pop_neurons > 50000) {
                     /* Large populations: GPU 1, 0, 1, 0... */
@@ -402,7 +472,8 @@ wire_connections:
                 if (sp >= flat_idx || dp >= flat_idx) continue;
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], pop_map[dp],
-                    SNN_TOPO_RANDOM, ff_conn,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], ff_conn, TIER_DEFS[t].neurons_per_pop),
                     SYNAPSE_AMPA, w_mean, w_mean * 0.3f);
                 if (nc > 0) total_connections += (uint32_t)nc;
             }
@@ -450,7 +521,8 @@ wire_connections:
                 if (sp >= flat_idx || dp >= flat_idx) continue;
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], pop_map[dp],
-                    SNN_TOPO_RANDOM, rec_conn,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], rec_conn, TIER_DEFS[t].neurons_per_pop),
                     SYNAPSE_AMPA, w_exc, 0.05f);
                 if (nc > 0) {
                     recurrent_connections += (uint32_t)nc;
@@ -521,6 +593,10 @@ wire_connections:
     uint32_t inh_pop_pv [NUM_INH_TIERS];
     uint32_t inh_pop_som[NUM_INH_TIERS];
     uint32_t inh_pop_vip[NUM_INH_TIERS];
+    /* Production (unscaled) sizes, for fan-in-preserving connectivity. */
+    uint32_t inh_orig_pv [NUM_INH_TIERS];
+    uint32_t inh_orig_som[NUM_INH_TIERS];
+    uint32_t inh_orig_vip[NUM_INH_TIERS];
     bool     inh_ok    [NUM_INH_TIERS];
     for (uint32_t i = 0; i < NUM_INH_TIERS; i++) {
         inh_ok[i] = false;
@@ -533,6 +609,12 @@ wire_connections:
         if (pv_n < 256) pv_n = 256;
         if (som_n < 128) som_n = 128;
         if (vip_n < 64) vip_n = 64;
+        inh_orig_pv [i] = pv_n;
+        inh_orig_som[i] = som_n;
+        inh_orig_vip[i] = vip_n;
+        pv_n  = hier_scaled_n(pv_n,  scale);
+        som_n = hier_scaled_n(som_n, scale);
+        vip_n = hier_scaled_n(vip_n, scale);
 
         char nm[64];
         snprintf(nm, sizeof(nm), "%s_PV", TIER_DEFS[t].name);
@@ -603,12 +685,14 @@ wire_connections:
             int nc;
             nc = snn_network_connect_populations(net,
                 pop_map[sp], inh_pop_pv[i],
-                SNN_TOPO_RANDOM, INH_PYR_TO_INH_CONN,
+                SNN_TOPO_RANDOM,
+                hier_fanin_conn(net, pop_map[sp], INH_PYR_TO_INH_CONN, pyr_n),
                 SYNAPSE_AMPA, w_pyr_to_inh, w_pyr_to_inh * 0.3f);
             if (nc > 0) inh_connections += (uint32_t)nc;
             nc = snn_network_connect_populations(net,
                 pop_map[sp], inh_pop_som[i],
-                SNN_TOPO_RANDOM, INH_PYR_TO_INH_CONN,
+                SNN_TOPO_RANDOM,
+                hier_fanin_conn(net, pop_map[sp], INH_PYR_TO_INH_CONN, pyr_n),
                 SYNAPSE_AMPA, w_pyr_to_inh, w_pyr_to_inh * 0.3f);
             if (nc > 0) inh_connections += (uint32_t)nc;
         }
@@ -646,7 +730,9 @@ wire_connections:
             for (uint32_t sp = tier_start_pop[pt]; sp < tier_start_pop[pt + 1] && sp < flat_idx; sp++) {
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], inh_pop_vip[i],
-                    SNN_TOPO_RANDOM, INH_LONG_FF_CONN,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], INH_LONG_FF_CONN,
+                                    TIER_DEFS[pt].neurons_per_pop),
                     SYNAPSE_AMPA, w_long, w_long * 0.3f);
                 if (nc > 0) inh_connections += (uint32_t)nc;
             }
@@ -658,12 +744,14 @@ wire_connections:
             int nc;
             nc = snn_network_connect_populations(net,
                 inh_pop_pv[i], pop_map[dp],
-                SNN_TOPO_RANDOM, INH_INH_TO_PYR_CONN,
+                SNN_TOPO_RANDOM,
+                hier_fanin_conn(net, inh_pop_pv[i], INH_INH_TO_PYR_CONN, inh_orig_pv[i]),
                 SYNAPSE_GABA_A, -w_pv_to_pyr, w_pv_to_pyr * 0.05f);
             if (nc > 0) inh_connections += (uint32_t)nc;
             nc = snn_network_connect_populations(net,
                 inh_pop_som[i], pop_map[dp],
-                SNN_TOPO_RANDOM, INH_INH_TO_PYR_CONN,
+                SNN_TOPO_RANDOM,
+                hier_fanin_conn(net, inh_pop_som[i], INH_INH_TO_PYR_CONN, inh_orig_som[i]),
                 SYNAPSE_GABA_A, -w_som_to_pyr, w_som_to_pyr * 0.05f);
             if (nc > 0) inh_connections += (uint32_t)nc;
         }
@@ -672,7 +760,8 @@ wire_connections:
         {
             int nc = snn_network_connect_populations(net,
                 inh_pop_vip[i], inh_pop_som[i],
-                SNN_TOPO_RANDOM, INH_VIP_TO_SOM_CONN,
+                SNN_TOPO_RANDOM,
+                hier_fanin_conn(net, inh_pop_vip[i], INH_VIP_TO_SOM_CONN, inh_orig_vip[i]),
                 SYNAPSE_GABA_A, -w_vip_to_som, w_vip_to_som * 0.05f);
             if (nc > 0) inh_connections += (uint32_t)nc;
         }
@@ -703,7 +792,8 @@ wire_connections:
                 if (sp >= flat_idx || dp >= flat_idx) continue;
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], pop_map[dp],
-                    SNN_TOPO_RANDOM, sc,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], sc, TIER_DEFS[st].neurons_per_pop),
                     SYNAPSE_AMPA, skip_w, skip_w * 0.3f);
                 if (nc > 0) skip_connections += (uint32_t)nc;
             }
@@ -784,7 +874,8 @@ wire_connections:
                 if (sp >= flat_idx || dp >= flat_idx) continue;
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], pop_map[dp],
-                    SNN_TOPO_RANDOM, tc,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], tc, TIER_DEFS[st].neurons_per_pop),
                     SYNAPSE_NMDA, td_w, td_w * 0.3f);
                 if (nc > 0) top_down_connections += (uint32_t)nc;
             }
@@ -841,7 +932,9 @@ wire_connections:
             int nc = snn_network_connect_populations(net,
                 pop_map[sp],
                 2,  /* pop 2 = output_pop */
-                SNN_TOPO_RANDOM, SNN_OUTPUT_CONVERGE_CONNECTIVITY,
+                SNN_TOPO_RANDOM,
+                hier_fanin_conn(net, pop_map[sp], SNN_OUTPUT_CONVERGE_CONNECTIVITY,
+                                TIER_DEFS[last_tier].neurons_per_pop),
                 SYNAPSE_AMPA, out_w, out_w * 0.3f);
             if (nc > 0) {
                 output_converge_conn += (uint32_t)nc;
@@ -884,8 +977,9 @@ wire_connections:
     #define TRN_INPUT_BUDGET_FRAC    0.3f
 
     uint32_t trn_input_conn = 0, trn_output_conn = 0;
+    const uint32_t trn_n = hier_scaled_n(TRN_NEURONS, scale);
     int trn_pop_rc = snn_network_add_population_lightweight(
-        net, TRN_NEURONS, NEURON_GENERIC_LIF, "thalamus_reticular");
+        net, trn_n, NEURON_GENERIC_LIF, "thalamus_reticular");
     if (trn_pop_rc >= 0) {
         uint32_t trn_pop_idx = (uint32_t)trn_pop_rc;
         /* Tag with TRN subclass — picks up bursting τ_mem (12 ms) and
@@ -902,7 +996,9 @@ wire_connections:
                  sp < tier_start_pop[1] && sp < flat_idx; sp++) {
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], trn_pop_idx,
-                    SNN_TOPO_RANDOM, TRN_INPUT_CONNECTIVITY,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], TRN_INPUT_CONNECTIVITY,
+                                    TIER_DEFS[0].neurons_per_pop),
                     SYNAPSE_NMDA, w_in_t0, w_in_t0 * 0.3f);
                 if (nc > 0) trn_input_conn += (uint32_t)nc;
             }
@@ -918,7 +1014,9 @@ wire_connections:
                  sp < tier_start_pop[7] && sp < flat_idx; sp++) {
                 int nc = snn_network_connect_populations(net,
                     pop_map[sp], trn_pop_idx,
-                    SNN_TOPO_RANDOM, TRN_INPUT_CONNECTIVITY,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, pop_map[sp], TRN_INPUT_CONNECTIVITY,
+                                    TIER_DEFS[6].neurons_per_pop),
                     SYNAPSE_NMDA, w_in_l6, w_in_l6 * 0.3f);
                 if (nc > 0) trn_input_conn += (uint32_t)nc;
             }
@@ -937,7 +1035,8 @@ wire_connections:
                  dp < tier_start_pop[1] && dp < flat_idx; dp++) {
                 int nc = snn_network_connect_populations(net,
                     trn_pop_idx, pop_map[dp],
-                    SNN_TOPO_RANDOM, TRN_OUTPUT_CONNECTIVITY,
+                    SNN_TOPO_RANDOM,
+                    hier_fanin_conn(net, trn_pop_idx, TRN_OUTPUT_CONNECTIVITY, TRN_NEURONS),
                     SYNAPSE_GABA_A, -w_out, w_out * 0.05f);
                 if (nc > 0) trn_output_conn += (uint32_t)nc;
             }
@@ -946,7 +1045,7 @@ wire_connections:
         LOG_INFO("Reticular thalamus: pop %u (%u neurons), "
                  "%u input syns (tier0+L6→TRN, NMDA), "
                  "%u output syns (TRN→tier0, GABA_A)",
-                 trn_pop_idx, TRN_NEURONS, trn_input_conn, trn_output_conn);
+                 trn_pop_idx, trn_n, trn_input_conn, trn_output_conn);
     } else {
         LOG_WARN("Failed to add reticular thalamus population: rc=%d", trn_pop_rc);
     }
@@ -962,7 +1061,7 @@ wire_connections:
     LOG_INFO("Hierarchical SNN complete: %u neurons, %u connections "
              "(ff=%u, rec=%u, skip=%u, td=%u, in_fan=%u, out_conv=%u, "
              "trn_in=%u, trn_out=%u)",
-             actual_total + TRN_NEURONS,
+             actual_total + trn_n,
              total_connections + recurrent_connections + skip_connections
                  + top_down_connections + input_fanout_conn
                  + output_converge_conn + trn_input_conn + trn_output_conn,
@@ -975,7 +1074,11 @@ wire_connections:
      * Disk guard: refuse if < 15 GB free (gzipped .snn is ~10-12 GB).
      * Without this check, a low-disk pod fills up trying to write
      * the cache and crashes the brain init. */
-    {
+    if (scale < 1.0) {
+        /* Never write a scaled-down test network over the canonical sidecar. */
+        LOG_INFO("Scaled SNN build: skipping the initial sidecar save to %s",
+                 SNN_SIDECAR_PATH);
+    } else {
         struct statvfs _st;
         if (statvfs("checkpoints/athena", &_st) == 0) {
             double free_gb = (double)_st.f_bavail * _st.f_frsize / (1024.0 * 1024.0 * 1024.0);
@@ -1106,6 +1209,12 @@ snn_network_t* snn_create_hierarchical_network(
      * pops (observed 2026-10-26: language pops only) is grafted, not
      * accepted as-is — otherwise the brain runs without a cortex. */
     extern snn_network_t* snn_network_load(const char* path);
+    /* A scaled-down request must not pick up a full-size cached network. */
+    if (hier_scale_for_target(target_total_neurons) < 1.0) {
+        LOG_INFO("Scaled SNN requested (target %u < table %u): skipping the "
+                 "cached-sidecar load", target_total_neurons, hier_table_total());
+        return hierarchical_build(NULL, n_inputs, n_outputs, target_total_neurons);
+    }
     const char* cache_paths[] = { SNN_SIDECAR_PATH, SNN_LEGACY_CACHE_PATH };
     for (int ci = 0; ci < 2; ci++) {
         snn_network_t* cached = snn_network_load(cache_paths[ci]);

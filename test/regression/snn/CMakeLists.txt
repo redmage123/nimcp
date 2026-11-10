@@ -546,3 +546,27 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_snn_inhibition_rebalance.cpp)
     )
     message(STATUS "  Added SNN regression test: test_snn_inhibition_rebalance")
 endif()
+
+# ============================================================================
+# Scaled hierarchical SNN (2026-11-10) — target_total_neurons below the table
+# ============================================================================
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_snn_hierarchical_scaled.cpp)
+    add_executable(regression_snn_test_snn_hierarchical_scaled
+        test_snn_hierarchical_scaled.cpp
+    )
+    target_link_libraries(regression_snn_test_snn_hierarchical_scaled
+        PRIVATE ${SNN_REGRESSION_TEST_LIBS}
+    )
+    target_include_directories(regression_snn_test_snn_hierarchical_scaled
+        PRIVATE ${SNN_REGRESSION_TEST_INCLUDES}
+    )
+    target_compile_features(regression_snn_test_snn_hierarchical_scaled
+        PRIVATE cxx_std_17)
+    gtest_discover_tests(regression_snn_test_snn_hierarchical_scaled
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        PROPERTIES
+            LABELS "regression;snn;hierarchical"
+            TIMEOUT 600
+    )
+    message(STATUS "  Added SNN regression test: test_snn_hierarchical_scaled")
+endif()
