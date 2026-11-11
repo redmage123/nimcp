@@ -3221,6 +3221,17 @@ struct brain_struct {
     bool      cascade_lnn_in_content;          /* opt-in: LNN state  → intent  */
     bool      cascade_hnn_in_content;          /* opt-in: HNN energy → floor   */
     bool      cascade_cnn_in_content;          /* opt-in: CNN feats  → intent  */
+
+    /* === Reliability-weighted ANN/SNN output fusion (2026-11-11) ==========
+     * EMAs of cos(pathway output, learn target), updated in
+     * brain_learn_vector only when NIMCP_FUSION_RELIABILITY=1. See
+     * core/brain/nimcp_brain_fusion_reliability.h. Kept at the end of the
+     * struct so existing field offsets (and the Python bindings) are
+     * unchanged. Not persisted: re-estimated after every load. */
+    float     fusion_rel_ann;
+    float     fusion_rel_snn;
+    uint32_t  fusion_rel_ann_samples;
+    uint32_t  fusion_rel_snn_samples;
 };
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L

@@ -161,6 +161,15 @@ uint32_t adaptive_network_forward_readonly(const adaptive_network_t network, con
                                            uint64_t timestamp);
 
 /**
+ * @brief cos(output, target) measured by the forward inside the most recent
+ *        distillation learn() call, before that call's weight update.
+ * @param network Adaptive network
+ * @param cos_out Receives the cosine
+ * @return false if no distillation step has recorded one yet
+ */
+bool adaptive_network_get_last_learn_cos(const adaptive_network_t network, float* cos_out);
+
+/**
  * @brief Raw forward pass — spike encoding + forward, NO output thresholding
  *
  * Same input processing as adaptive_network_forward() but returns raw network

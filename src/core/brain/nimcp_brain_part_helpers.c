@@ -3,6 +3,7 @@
 // DO NOT compile separately - #included from nimcp_brain.c
 
 #include "training/nimcp_cortex_cnn.h"
+#include "core/brain/nimcp_brain_fusion_reliability.h"
 
 
 /**
@@ -1546,7 +1547,13 @@ sequential_fallback:
         if (snn_output) {
             int rc = brain_snn_decide_forward(brain->snn_network, snn_input_ptr, snn_input_dim,
                                               snn_output, snn_out_dim);
-            if (rc == 0) {
+            float rel_w[2];
+            if (rc == 0 && brain_fusion_rel_blend(brain, decision->output_vector, snn_output,
+                                                  snn_out_dim, rel_w)) {
+                /* NIMCP_FUSION_RELIABILITY=1: weights from each pathway's
+                 * measured cos with its learn targets (2026-11-11) */
+                nimcp_decide_trace("pf2_fusion_w", rel_w, 2);
+            } else if (rc == 0) {
                 /* Blend adaptive + SNN outputs */
                 float w_adapt = 0.7f, w_snn = 0.3f;
                 if (brain->enable_fusion) {

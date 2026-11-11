@@ -5323,3 +5323,46 @@ float neural_network_get_sparsity_ratio(neural_network_t network) {
     if (!network || network->num_neurons == 0) return 0.0f;
     return (float)network->num_active_neurons / (float)network->num_neurons;
 }
+
+uint64_t neural_network_scale_output_layer(neural_network_t network, const uint32_t* layer_sizes,
+                                           uint32_t num_layers, float scale)
+{
+    if (!network || !layer_sizes || num_layers < 2) {
+        return 0;
+    }
+    uint64_t total = 0;
+    for (uint32_t l = 0; l < num_layers; l++) {
+        total += layer_sizes[l];
+    }
+    uint32_t out_n = layer_sizes[num_layers - 1];
+    if (total > network->num_neurons || out_n > total) {
+        return 0;
+    }
+    uint32_t out_start = (uint32_t)(total - out_n);
+    uint32_t out_end = (uint32_t)total;
+
+    /* Outgoing copies (what backprop reads and updates) */
+    for (uint32_t n = 0; n < out_start; n++) {
+        neuron_t* src = &network->neurons[n];
+        for (uint32_t s = 0; s < NEURON_OUT_COUNT(src); s++) {
+            synapse_handle_t* h = NEURON_OUT_HANDLE(src, s);
+            if (h && h->target_neuron_id >= out_start && h->target_neuron_id < out_end) {
+                h->weight *= scale;
+            }
+        }
+    }
+    /* Incoming copies (what the forward pass reads) and biases */
+    uint64_t scaled = 0;
+    for (uint32_t n = out_start; n < out_end; n++) {
+        neuron_t* dst = &network->neurons[n];
+        for (uint32_t s = 0; s < NEURON_IN_COUNT(dst); s++) {
+            synapse_handle_t* h = NEURON_IN_HANDLE(dst, s);
+            if (h) {
+                h->weight *= scale;
+                scaled++;
+            }
+        }
+        dst->bias *= scale;
+    }
+    return scaled;
+}

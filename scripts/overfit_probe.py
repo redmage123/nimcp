@@ -115,6 +115,8 @@ def main():
                          "same minus enable_multi_network; task = only "
                          "set_task_type('regression'); none = constructor defaults")
     ap.add_argument("--confidence", type=float, default=0.8)
+    ap.add_argument("--target-scale", type=float, default=1.0,
+                    help="multiply every target (diagnostic: output-norm vs target-norm mismatch)")
     ap.add_argument("--learning-rate", type=float, default=None)
     ap.add_argument("--out", default="overfit_probe.jsonl")
     ap.add_argument("--trace", default=None,
@@ -131,6 +133,9 @@ def main():
     rng = np.random.default_rng(args.seed)
     train = make_items(rng, args.items, args.num_inputs, args.num_outputs, args.embed_dim)
     held = make_items(rng, args.heldout, args.num_inputs, args.num_outputs, args.embed_dim)
+    if args.target_scale != 1.0:
+        train = [(x, t * args.target_scale) for x, t in train]
+        held = [(x, t * args.target_scale) for x, t in held]
     if args.trace:
         np.savez(args.trace + ".items.npz",
                  train_x=np.stack([x for x, _ in train]), train_t=np.stack([t for _, t in train]),

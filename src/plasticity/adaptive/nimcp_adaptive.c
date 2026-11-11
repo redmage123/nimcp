@@ -416,6 +416,11 @@ struct adaptive_network_struct {
     // EMA tracking for training stability detection
     _Atomic float ema_grad_norm;   /**< Exponential moving average of gradient norms (decay=0.99), -1 = uninitialized */
     _Atomic float ema_loss;        /**< Exponential moving average of training loss (decay=0.99), -1 = uninitialized */
+    /* cos(output, target) of the forward inside the latest learn() call,
+     * i.e. measured before that call's update (2026-11-11). Read by the
+     * brain's reliability-weighted output fusion. */
+    float last_learn_cos;
+    bool last_learn_cos_valid;
 
     // === Probe tracking state ===
     // Per-label accuracy tracking (circular buffer of recent predictions)
@@ -1156,6 +1161,50 @@ static void initialize_design_patterns(adaptive_network_t network)
  * @param config - Network configuration
  * @return Network handle or NULL on error
  */
+/* Record cos(output, target) over the target length for
+ * adaptive_network_get_last_learn_cos(). */
+static void adaptive_record_learn_cos(adaptive_network_t network, const float* output,
+                                      const float* target, uint32_t n)
+{
+    double dot = 0.0, no = 0.0, nt = 0.0;
+    for (uint32_t i = 0; i < n; i++) {
+        float o = isfinite(output[i]) ? output[i] : 0.0f;
+        dot += (double)o * target[i];
+        no += (double)o * o;
+        nt += (double)target[i] * target[i];
+    }
+    if (no > 1e-16 && nt > 1e-16) {
+        network->last_learn_cos = (float)(dot / sqrt(no * nt));
+        network->last_learn_cos_valid = true;
+    }
+}
+
+bool adaptive_network_get_last_learn_cos(const adaptive_network_t network, float* cos_out)
+{
+    if (!network || !cos_out || !network->last_learn_cos_valid) {
+        return false;
+    }
+    *cos_out = network->last_learn_cos;
+    return true;
+}
+
+
+/* NIMCP_ANN_LR_NORM_MAX (experimental): upper bound on the grad-norm
+ * learning-rate normalisation, as a multiple of the base rate. Default 100
+ * (unchanged). With a small output layer the first gradient is tiny, the EMA
+ * is seeded from it, and the next step is amplified up to 100x (overfit
+ * probe 2026-11-11). */
+static float adaptive_lr_norm_max(void)
+{
+    static float cached = -1.0f;
+    if (cached < 0.0f) {
+        const char* e = getenv("NIMCP_ANN_LR_NORM_MAX");
+        float v = e ? strtof(e, NULL) : 100.0f;
+        cached = (v > 0.0f) ? v : 100.0f;
+    }
+    return cached;
+}
+
 adaptive_network_t adaptive_network_create(const adaptive_network_config_t* config)
 {
 
@@ -1309,6 +1358,26 @@ adaptive_network_t adaptive_network_create(const adaptive_network_config_t* conf
 
     // Phase GPU-INF: Frozen state init
     network->frozen = false;
+
+    /* NIMCP_ANN_OUTPUT_INIT_SCALE=<s> (experimental, default off): scale the
+     * fresh output layer (incoming weights + biases) by s. The output layer
+     * reads layer-normalised hidden states, so its initial outputs have
+     * per-element std ~0.6 while semantic targets are ~0.03; backprop then
+     * spends almost every update shrinking the output instead of aligning
+     * it (overfit probe 2026-11-11). Applied before the GPU cache upload. */
+    {
+        const char* e = getenv("NIMCP_ANN_OUTPUT_INIT_SCALE");
+        float s = e ? strtof(e, NULL) : 1.0f;
+        if (e && s >= 0.0f && s != 1.0f &&
+            network->config.base_config.num_layers >= 2 &&
+            network->config.base_config.layer_sizes) {
+            uint64_t n = neural_network_scale_output_layer(
+                network->base_network, network->config.base_config.layer_sizes,
+                network->config.base_config.num_layers, s);
+            NIMCP_LOG_INFO("NIMCP_ANN_OUTPUT_INIT_SCALE=%.4f: scaled %llu output-layer weights",
+                           s, (unsigned long long)n);
+        }
+    }
 
     // Phase GPU: Initialize GPU acceleration (GPU-default, CPU fallback)
     network->gpu_enabled = false;
@@ -2153,6 +2222,10 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
             goto cpu_learn_path;
         }
 
+        if (mode == LEARN_MODE_DISTILLATION) {
+            adaptive_record_learn_cos(network, output, example->target, example->target_size);
+        }
+
         // 3. Compute loss — MSE + cosine alignment for distillation,
         //    BCE for classification.
         float loss = 0.0f;
@@ -2269,7 +2342,7 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
                 effective_lr = learning_rate * (target_norm / ema_gn);
                 /* Clamp to prevent extreme LR swings */
                 float lr_min = learning_rate * 0.01f;
-                float lr_max = learning_rate * 100.0f;
+                float lr_max = learning_rate * adaptive_lr_norm_max();
                 if (effective_lr < lr_min) effective_lr = lr_min;
                 if (effective_lr > lr_max) effective_lr = lr_max;
             }
@@ -2440,6 +2513,9 @@ cpu_learn_path:
     // target_size may be smaller, causing truncated forward → partial gradients → mode collapse.
     adaptive_network_forward_raw(network, example->input, example->input_size, output,
                                  network->config.base_config.output_size);
+    if (mode == LEARN_MODE_DISTILLATION) {
+        adaptive_record_learn_cos(network, output, example->target, example->target_size);
+    }
 
     // Compute loss based on mode
     float loss = 0.0F;
@@ -2480,7 +2556,7 @@ cpu_learn_path:
                     if (ema_gn > 1e-4f && isfinite(ema_gn)) {
                         cpu_eff_lr = learning_rate * (1.0f / ema_gn);
                         float lr_min = learning_rate * 0.01f;
-                        float lr_max = learning_rate * 100.0f;
+                        float lr_max = learning_rate * adaptive_lr_norm_max();
                         if (cpu_eff_lr < lr_min) cpu_eff_lr = lr_min;
                         if (cpu_eff_lr > lr_max) cpu_eff_lr = lr_max;
                     }
@@ -2576,7 +2652,7 @@ cpu_learn_path:
                     if (ema_gn > 1e-4f && isfinite(ema_gn)) {
                         cpu_eff_lr = learning_rate * (1.0f / ema_gn);
                         float lr_min = learning_rate * 0.01f;
-                        float lr_max = learning_rate * 100.0f;
+                        float lr_max = learning_rate * adaptive_lr_norm_max();
                         if (cpu_eff_lr < lr_min) cpu_eff_lr = lr_min;
                         if (cpu_eff_lr > lr_max) cpu_eff_lr = lr_max;
                     }
@@ -2716,7 +2792,7 @@ cpu_learn_path:
                     if (ema_gn > 1e-4f && isfinite(ema_gn)) {
                         cpu_eff_lr = learning_rate * (1.0f / ema_gn);
                         float lr_min = learning_rate * 0.01f;
-                        float lr_max = learning_rate * 100.0f;
+                        float lr_max = learning_rate * adaptive_lr_norm_max();
                         if (cpu_eff_lr < lr_min) cpu_eff_lr = lr_min;
                         if (cpu_eff_lr > lr_max) cpu_eff_lr = lr_max;
                     }
@@ -2950,7 +3026,7 @@ float adaptive_network_learn_batch(adaptive_network_t network, const training_ex
                 if (ema_gn > 1e-4f && isfinite(ema_gn)) {
                     batch_eff_lr = learning_rate * (1.0f / ema_gn);
                     float lr_min = learning_rate * 0.01f;
-                    float lr_max = learning_rate * 100.0f;
+                    float lr_max = learning_rate * adaptive_lr_norm_max();
                     if (batch_eff_lr < lr_min) batch_eff_lr = lr_min;
                     if (batch_eff_lr > lr_max) batch_eff_lr = lr_max;
                 }
@@ -4023,6 +4099,27 @@ adaptive_network_t adaptive_network_load(const char* filepath)
             if (needs_rebuild) {
                 neural_network_rebuild_incoming(network->base_network);
             }
+        }
+    }
+
+    /* NIMCP_ANN_OUTPUT_LOAD_SCALE=<s> (experimental, default off): one-off
+     * rescale of a loaded checkpoint's output layer, the load-time
+     * counterpart of NIMCP_ANN_OUTPUT_INIT_SCALE for brains trained before
+     * it existed. Applied before the GPU cache upload below. Set it for ONE
+     * load only: the scaled weights are saved with the next checkpoint, so
+     * leaving it set rescales again on every restart. */
+    {
+        const char* e = getenv("NIMCP_ANN_OUTPUT_LOAD_SCALE");
+        float s = e ? strtof(e, NULL) : 1.0f;
+        if (e && s >= 0.0f && s != 1.0f &&
+            network->config.base_config.num_layers >= 2 &&
+            network->config.base_config.layer_sizes) {
+            uint64_t n = neural_network_scale_output_layer(
+                network->base_network, network->config.base_config.layer_sizes,
+                network->config.base_config.num_layers, s);
+            NIMCP_LOG_WARN("NIMCP_ANN_OUTPUT_LOAD_SCALE=%.4f: scaled %llu output-layer "
+                              "weights of loaded checkpoint (unset before the next restart)",
+                              s, (unsigned long long)n);
         }
     }
 

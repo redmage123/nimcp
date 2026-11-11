@@ -18,6 +18,8 @@
 #include <cuda_fp16.h>
 #include <cublas_v2.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 // Now include our headers (which have extern "C" blocks)
 #include "gpu/training/nimcp_training_gpu.h"
@@ -591,14 +593,45 @@ __global__ void kernel_compute_deltas_mse(
     float* __restrict__ delta,
     const float* __restrict__ target,
     const float* __restrict__ output,
-    int size)
+    int size, float scale)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
     /* MSE gradient: d/d(output) of (1/N)∑(target-output)² = 2*(output-target)/N
      * We use (target-output) convention (negative gradient for descent),
-     * scaled by 2/N to match CPU backprop (nimcp_backprop_kernel.c:1137). */
-    delta[idx] = 2.0f * (target[idx] - output[idx]) / (float)size;
+     * scaled by mse_delta_scale() (2/N by default) to match CPU backprop
+     * (backprop_sparse_full_regression_wd in nimcp_backprop_kernel.c). */
+    delta[idx] = scale * (target[idx] - output[idx]);
+}
+
+/* NIMCP_ANN_MSE_REDUCTION=sum (experimental, default mean): drop the 1/N
+ * from the MSE output delta, same switch as the CPU kernel. With N=4096
+ * outputs and plain SGD the mean-reduced step is ~1e-3 of the error
+ * (overfit probe 2026-11-11). */
+static float mse_delta_scale(int size)
+{
+    static int s_sum = -1;
+    if (s_sum < 0) {
+        const char* e = getenv("NIMCP_ANN_MSE_REDUCTION");
+        s_sum = (e && strcmp(e, "sum") == 0) ? 1 : 0;
+    }
+    return s_sum ? 2.0f : 2.0f / (float)size;
+}
+
+/* NIMCP_ANN_GPU_OUTPUT_LR_BOOST=<b> (experimental, default 10): output-layer
+ * lr multiplier in nimcp_gpu_sparse_backward_pass. The CPU regression path
+ * uses 1x plus a global grad-norm clip; with NIMCP_ANN_MSE_REDUCTION=sum the
+ * unclipped 10x GPU step overshoots the target norm 20-40x per update
+ * (overfit probe on Vast, 2026-11-11). */
+static float gpu_output_lr_boost(void)
+{
+    static float cached = -1.0f;
+    if (cached < 0.0f) {
+        const char* e = getenv("NIMCP_ANN_GPU_OUTPUT_LR_BOOST");
+        float v = e ? strtof(e, NULL) : 10.0f;
+        cached = (v > 0.0f) ? v : 10.0f;
+    }
+    return cached;
 }
 
 __global__ void kernel_activation_derivative(
@@ -792,7 +825,7 @@ __global__ void kernel_compute_deltas_mse_fp16(
     float* __restrict__ delta,
     const float* __restrict__ target,
     const float* __restrict__ output,
-    int size)
+    int size, float scale_f)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
@@ -800,7 +833,7 @@ __global__ void kernel_compute_deltas_mse_fp16(
     __half t = __float2half(target[idx]);
     __half o = __float2half(output[idx]);
     __half diff = __hsub(t, o);
-    __half scale = __float2half(2.0f / (float)size);
+    __half scale = __float2half(scale_f);
     delta[idx] = __half2float(__hmul(diff, scale));
 }
 
@@ -1076,7 +1109,7 @@ bool nimcp_gpu_sparse_backward_accumulate(
 
     /* FP16 delta computation — saves memory bandwidth */
     kernel_compute_deltas_mse_fp16<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
-        d_delta_cur, d_target, d_output, bp_size);
+        d_delta_cur, d_target, d_output, bp_size, mse_delta_scale(bp_size));
 
     cudaFree(d_target);
     cudaFree(d_output);
@@ -1205,7 +1238,7 @@ extern "C" bool nimcp_gpu_bsr_backward_accumulate(
 
     /* FP16 delta computation */
     kernel_compute_deltas_mse_fp16<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
-        d_delta_cur, d_target, d_output, bp_size);
+        d_delta_cur, d_target, d_output, bp_size, mse_delta_scale(bp_size));
     cudaFree(d_target);
     cudaFree(d_output);
 
@@ -1414,12 +1447,12 @@ bool nimcp_gpu_sparse_backward_pass(
     cudaMemset(d_delta_prev, 0, max_layer * sizeof(float));
 
     kernel_compute_deltas_mse<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
-        d_delta_cur, d_target, d_output, bp_size);
+        d_delta_cur, d_target, d_output, bp_size, mse_delta_scale(bp_size));
 
     cudaFree(d_target);
     cudaFree(d_output);
 
-    float output_lr_boost = 10.0f;
+    float output_lr_boost = gpu_output_lr_boost();
 
     for (int32_t layer = (int32_t)num_layers - 1; layer >= 1; layer--) {
         uint32_t cur_size = layer_sizes[layer];

@@ -199,6 +199,7 @@ static void brain_enforce_dales_law(brain_t brain)
 #include "snn/nimcp_snn_fno.h"
 #include "snn/nimcp_snn_config.h"
 #include "snn/nimcp_snn_network.h"
+#include "core/brain/nimcp_brain_fusion_reliability.h"
 #include "snn/bridges/nimcp_snn_language_bridge.h"   /* Phase-3 projection training */
 /* Forward-declare R-STDP reward setter (full snn_training.h conflicts
  * with snn_backprop.h due to duplicate snn_surrogate_config_t typedef) */
@@ -2158,6 +2159,7 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         loss = adaptive_network_learn(brain->network, &example,
                                       LEARN_MODE_DISTILLATION,
                                       effective_lr);
+        brain_fusion_rel_observe_ann(brain);
     }
     if (trace_buf) {
         adaptive_network_forward_readonly(brain->network, blended_features, num_features,
@@ -2912,6 +2914,7 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             clock_gettime(CLOCK_MONOTONIC, &_snn_t0);
             training_dispatch_snn_step(brain, features, num_features,
                                        target, target_size, &snn_res);
+            brain_fusion_rel_observe_snn(brain, target, target_size);
             clock_gettime(CLOCK_MONOTONIC, &_snn_t1);
             double snn_ms = (_snn_t1.tv_sec - _snn_t0.tv_sec) * 1000.0 +
                            (_snn_t1.tv_nsec - _snn_t0.tv_nsec) / 1000000.0;
@@ -3056,6 +3059,7 @@ sequential_training:
                 }
                 training_dispatch_result_t snn_res = {0};
                 training_dispatch_snn_step(brain, features, num_features, target, target_size, &snn_res);
+                brain_fusion_rel_observe_snn(brain, target, target_size);
                 PROBE_STAGE(brain, PROBE_TRAIN_SNN, {
                     PROBE_SET_FLOAT(&_ctx, "snn_loss", snn_res.loss);
                     PROBE_SET_INT(&_ctx, "snn_steps", (int64_t)brain->network_metrics.snn_steps);

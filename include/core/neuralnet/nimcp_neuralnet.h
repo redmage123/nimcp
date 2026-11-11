@@ -463,6 +463,15 @@ bool neural_network_get_neuron_state(neural_network_t network, uint32_t neuron_i
 uint32_t neural_network_get_num_neurons(neural_network_t network);
 
 /**
+ * @brief Scale the output layer's incoming weights (both the outgoing-handle
+ *        copy backprop updates and the incoming-handle copy forward reads)
+ *        and its biases by @p scale.
+ * @return Number of incoming synapses scaled (0 on bad arguments)
+ */
+uint64_t neural_network_scale_output_layer(neural_network_t network, const uint32_t* layer_sizes,
+                                           uint32_t num_layers, float scale);
+
+/**
  * @brief Get pointer to neuron structure
  *
  * WHAT: Access neuron internals for serialization/introspection

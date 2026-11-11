@@ -1145,6 +1145,17 @@ int backprop_sparse_full_regression_wd(
     // No threshold, no negative sampling. Every output dimension gets gradient.
     uint32_t bp_min_output = output_size < target_size ? output_size : target_size;
     float mse_scale = 2.0f / (float)bp_min_output;
+    /* NIMCP_ANN_MSE_REDUCTION=sum (experimental, default mean): drop the 1/N.
+     * With N=4096 outputs and plain SGD the mean-reduced per-output step is
+     * ~1e-3 of the error (overfit probe 2026-11-11). */
+    {
+        static int s_sum = -1;
+        if (s_sum < 0) {
+            const char* e = getenv("NIMCP_ANN_MSE_REDUCTION");
+            s_sum = (e && strcmp(e, "sum") == 0) ? 1 : 0;
+        }
+        if (s_sum) mse_scale = 2.0f;
+    }
     for (uint32_t j = 0; j < bp_min_output; j++) {
         float diff = target[j] - output[j];
         delta_cur[j] = mse_scale * diff;
