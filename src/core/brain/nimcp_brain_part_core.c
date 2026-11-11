@@ -1084,6 +1084,12 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
         return NULL;
     }
 
+    if (nimcp_decide_trace_enabled()) {
+        nimcp_decide_trace_begin();
+        nimcp_decide_trace("in_features", features, num_features);
+        nimcp_decide_trace_ann("d00_ann_ro_at_entry", brain->network, features, num_features,
+                               brain->config.num_outputs);
+    }
     /* Phase 8: Send heartbeat at start of cognitive decision */
     brain_heartbeat(brain, "brain_decide", 0.0f);
 
@@ -1356,6 +1362,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
              * would monotonically increase confidence across repeat inputs. */
             w16_apply_kg_consumers(brain, cached_copy, /*from_cache=*/true);
             nimcp_free(local_features);
+            nimcp_decide_trace("cache_hit", cached_copy->output_vector, cached_copy->output_size);
             return cached_copy;
         }
         // Fall through if copy failed
@@ -1994,7 +2001,10 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
         PROBE_SET_INT(&_ctx, "num_features", (int64_t)num_features);
     });
 
+    nimcp_decide_trace_ann("d00b_ann_ro_pre_forward", brain->network, features, num_features,
+                           decision->output_size);
     uint32_t active_neurons = perform_forward_pass(brain, features, num_features, decision);
+    nimcp_decide_trace("d01_forward", decision->output_vector, decision->output_size);
 
     /* Cortical columns forward + ternary WTA + projection blend.
      * Skipped when columns disabled or pool empty — zero behavior change.
@@ -2080,6 +2090,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
                 }
             }
             brain->cortical_decisions++;
+            nimcp_decide_trace("d02_column_blend", decision->output_vector, decision->output_size);
         }
     }
 
@@ -2108,6 +2119,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
 
             // Re-run forward pass with refined input
             active_neurons = perform_forward_pass(brain, local_features, num_features, decision);
+            nimcp_decide_trace("d03_refine_reforward", decision->output_vector, decision->output_size);
         }
         brain->recurrent_iteration_count = iter;
     } else {
@@ -2174,6 +2186,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
         determine_output_label(brain, decision);
         update_inference_stats(brain, decision);
         nimcp_free(local_features);
+        nimcp_decide_trace("d99_final_partial", decision->output_vector, decision->output_size);
         return decision;
     }
 
@@ -2203,6 +2216,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
             decision->output_vector,
             decision->output_size);
         cortical_sparse_update_thresholds(brain->sparse_coding_system, pop_sparsity);
+        nimcp_decide_trace("d04_kwta", decision->output_vector, decision->output_size);
     }
 
     /* === FNO: Augment output with spectral features ===
@@ -2259,6 +2273,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
         nimcp_free(prediction);  // Free predictive processing buffer if allocated
         nimcp_free(local_features);
         brain_clear_error();
+        nimcp_decide_trace("d99_final_classify_fast", decision->output_vector, decision->output_size);
         return decision;
     }
 
@@ -2287,6 +2302,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
         nimcp_free(prediction);
         nimcp_free(local_features);
         brain_clear_error();
+        nimcp_decide_trace("d99_final_training_fast", decision->output_vector, decision->output_size);
         return decision;
     }
 
@@ -2360,6 +2376,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
         for (uint32_t i = 0; i < decision->output_size; i++) {
             decision->output_vector[i] *= lat_boost;
         }
+        nimcp_decide_trace("d07_lat_boost", decision->output_vector, decision->output_size);
     }
 
     BD_MARK(_bd_t_hemispheric);  /* End of hemispheric/callosum */
@@ -2557,9 +2574,11 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
     }
 
     // Apply task-specific output transformation
+    nimcp_decide_trace("d08_pre_transform", decision->output_vector, decision->output_size);
     if (brain->strategy && brain->strategy->transform_output) {
         brain->strategy->transform_output(decision->output_vector, decision->output_size);
     }
+    nimcp_decide_trace("d09_transform", decision->output_vector, decision->output_size);
 
     // ========================================================================
     // STAGE 3.5: Apply Sleep-Induced Noise (REM creativity)
@@ -2580,6 +2599,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
     // Determine output label and confidence
     determine_output_label(brain, decision);
 
+    nimcp_decide_trace("d10_after_sleep_noise", decision->output_vector, decision->output_size);
     // ========================================================================
     // STAGE 3.9: Edge-Cloud Hybrid Inference (Confidence-Gated Routing)
     // ========================================================================
@@ -2754,6 +2774,7 @@ brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t nu
 
     BD_MARK(_bd_t_post_parallel);  /* End of parallel post-forward dispatch */
 
+    nimcp_decide_trace("d11_pre_reasoning", decision->output_vector, decision->output_size);
     // ========================================================================
     // STAGE 4.1-4.3: PARALLEL REASONING DISPATCH (Actor Pattern)
     // ========================================================================
@@ -3087,6 +3108,7 @@ skip_sequential_reasoning: ; /* Label for parallel reasoning dispatch */
         }
     }
 
+    nimcp_decide_trace("d12_pre_wm_integration", decision->output_vector, decision->output_size);
     // ========================================================================
     // STAGE 6: Working Memory Integration (Phase 10.11.2)
     // ========================================================================
@@ -3919,6 +3941,7 @@ skip_sequential_reasoning: ; /* Label for parallel reasoning dispatch */
         }
     }
 
+    nimcp_decide_trace("d16_pre_mirror", decision->output_vector, decision->output_size);
     // ========================================================================
     // STAGE 8: Mirror Neuron Integration (Phase 10.11) - Execute Action
     // ========================================================================
@@ -4565,6 +4588,7 @@ skip_sequential_c5: ; /* Label for parallel C5 dispatch (C5.5/C6/Hyperledger rem
         }
     }
 
+    nimcp_decide_trace("d20_pre_motor_gate", decision->output_vector, decision->output_size);
     /* === LGSS MOTOR GATE: Validate motor commands before output ===
      * Defense in depth — watchdog checks values, motor gate checks intent.
      * Evaluates the output vector against the safety KB for motor safety. */
@@ -4687,6 +4711,7 @@ skip_sequential_c5: ; /* Label for parallel C5 dispatch (C5.5/C6/Hyperledger rem
     /* Inner speech: refine output through self-talk loop.
      * Skip when the underlying language model is undertrained — refine
      * is a no-op (or noise) below a minimum vocab size. */
+    nimcp_decide_trace("d30_pre_inner_speech", decision->output_vector, decision->output_size);
     if (brain->inner_speech && brain->native_language_enabled &&
         decision && decision->output_vector && decision->output_size > 0) {
         extern uint32_t nimcp_language_get_vocab_size(const void*);
@@ -4710,6 +4735,7 @@ skip_sequential_c5: ; /* Label for parallel C5 dispatch (C5.5/C6/Hyperledger rem
             "inference_refined", decision->confidence, 0.0f);
     }
 
+    nimcp_decide_trace("d40_pre_wm_scratchpad", decision->output_vector, decision->output_size);
     /* === WORKING MEMORY: Read scratchpad context into inference === */
     if (brain->wm_scratchpad && decision && decision->output_vector) {
         extern int nimcp_wms_read_all(void*, float*, uint32_t);
@@ -4908,6 +4934,7 @@ skip_sequential_c5: ; /* Label for parallel C5 dispatch (C5.5/C6/Hyperledger rem
     w16_apply_kg_consumers(brain, decision, /*from_cache=*/false);
 
     brain_clear_error();
+    nimcp_decide_trace("d99_final", decision->output_vector, decision->output_size);
     return decision;
 
 inference_timeout:

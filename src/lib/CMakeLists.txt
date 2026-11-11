@@ -183,6 +183,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/analysis/nimcp_brain_topology.c     # Topology and community detection (462 lines)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_kg.c                    # Internal runtime knowledge graph (self-awareness)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_kg_helpers.c           # KG helper utilities for module integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_decide_trace.c         # Opt-in NIMCP_DECIDE_TRACE output-vector dump
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_kg_hierarchy.c               # Hierarchical view of KG (3-level brain topology)
 
     # KG Self-Awareness Extension Modules (Phase Jan 2026)

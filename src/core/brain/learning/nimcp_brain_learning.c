@@ -29,6 +29,7 @@
  */
 
 #include "core/brain/learning/nimcp_brain_learning.h"
+#include "core/brain/nimcp_brain_decide_trace.h"
 #include "core/brain/nimcp_brain_lazy_init.h"
 #include "core/brain/nimcp_brain_cycle_coordinator.h"
 #include "core/brain/nimcp_brain_kg.h"  /* W17: KG consumers in training path */
@@ -2137,6 +2138,19 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             ann_frozen = true;  /* this step only, not a config change */
         }
     }
+    /* NIMCP_DECIDE_TRACE: target + ANN prediction before/after this update */
+    float* trace_buf = NULL;
+    if (nimcp_decide_trace_enabled()) {
+        nimcp_decide_trace_begin();
+        nimcp_decide_trace("learn_input", blended_features, num_features);
+        nimcp_decide_trace("learn_target", target, target_size);
+        trace_buf = nimcp_calloc(target_size, sizeof(float));
+        if (trace_buf) {
+            adaptive_network_forward_readonly(brain->network, blended_features, num_features,
+                                              trace_buf, target_size, 0);
+            nimcp_decide_trace("learn_ann_pre", trace_buf, target_size);
+        }
+    }
     float loss;
     if (ann_frozen) {
         loss = 0.0f;  /* frozen — ANN weights unchanged this step */
@@ -2144,6 +2158,14 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         loss = adaptive_network_learn(brain->network, &example,
                                       LEARN_MODE_DISTILLATION,
                                       effective_lr);
+    }
+    if (trace_buf) {
+        adaptive_network_forward_readonly(brain->network, blended_features, num_features,
+                                          trace_buf, target_size, 0);
+        nimcp_decide_trace("learn_ann_post", trace_buf, target_size);
+        float tr_meta[3] = {loss, effective_lr, ann_frozen ? 1.0f : 0.0f};
+        nimcp_decide_trace("learn_ann_loss_lr_frozen", tr_meta, 3);
+        nimcp_free(trace_buf);
     }
 
     if (blv_debug_timing_enabled()) clock_gettime(CLOCK_MONOTONIC, &_blv_ann);
@@ -2297,7 +2319,19 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                 static uint32_t _rl_zero_streak = 0;
                 const bool rl_sample_only = (_rl_zero_streak >= 20);
                 uint32_t modified = 0;
-                if (!rl_sample_only || brain->plasticity_step_counter % 10 == 0) {
+                /* NIMCP_ANN_REWARD_LEARNING=0 skips the walk. Below 100K ANN
+                 * neurons eligibility is on and it rewrites millions of
+                 * weights every 10th step with a common-mode push that
+                 * swamps backprop (overfit probe 2026-11-11); production
+                 * (150K) has never had it modify a weight. */
+                static int _rl_env = -1;
+                if (_rl_env < 0) {
+                    const char* e = getenv("NIMCP_ANN_REWARD_LEARNING");
+                    _rl_env = (e && e[0] == '0') ? 0 : 1;
+                }
+                nimcp_decide_trace_ann("learn_ann_ro_pre_reward", brain->network, features,
+                                       num_features, target_size);
+                if (_rl_env && (!rl_sample_only || brain->plasticity_step_counter % 10 == 0)) {
                     struct timespec _rl0, _rl1;
                     clock_gettime(CLOCK_MONOTONIC, &_rl0);
                     modified = neural_network_apply_reward_learning_active(
@@ -2313,6 +2347,8 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                 if (modified > 0) {
                     adaptive_network_invalidate_gpu_structure(brain->network);
                 }
+                nimcp_decide_trace_ann("learn_ann_ro_post_reward", brain->network, features,
+                                       num_features, target_size);
             }
         }
     }
@@ -4244,6 +4280,7 @@ sequential_training:
                            _total, _ann, _plast, _secondary, _cognitive, loss);
         #undef BLV_MS
     }
+    nimcp_decide_trace_ann("learn_ann_ro_at_exit", brain->network, features, num_features, target_size);
     return loss;
 }
 

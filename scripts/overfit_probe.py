@@ -117,13 +117,24 @@ def main():
     ap.add_argument("--confidence", type=float, default=0.8)
     ap.add_argument("--learning-rate", type=float, default=None)
     ap.add_argument("--out", default="overfit_probe.jsonl")
+    ap.add_argument("--trace", default=None,
+                    help="write a NIMCP_DECIDE_TRACE stage-by-stage dump here (plus <trace>.items.npz "
+                         "for scripts/decide_trace_report.py)")
     args = ap.parse_args()
 
+    if args.trace:
+        if os.path.exists(args.trace):
+            os.remove(args.trace)
+        os.environ["NIMCP_DECIDE_TRACE"] = args.trace
     import nimcp
 
     rng = np.random.default_rng(args.seed)
     train = make_items(rng, args.items, args.num_inputs, args.num_outputs, args.embed_dim)
     held = make_items(rng, args.heldout, args.num_inputs, args.num_outputs, args.embed_dim)
+    if args.trace:
+        np.savez(args.trace + ".items.npz",
+                 train_x=np.stack([x for x, _ in train]), train_t=np.stack([t for _, t in train]),
+                 held_x=np.stack([x for x, _ in held]), held_t=np.stack([t for _, t in held]))
 
     t0 = time.time()
     brain = nimcp.Brain("overfit", num_inputs=args.num_inputs, num_outputs=args.num_outputs,

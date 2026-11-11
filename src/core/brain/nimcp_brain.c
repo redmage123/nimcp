@@ -24,6 +24,7 @@
  */
 
 #include "core/brain/nimcp_brain.h"
+#include "core/brain/nimcp_brain_decide_trace.h"
 #include "security/nimcp_audit_log.h"
 #include "security/lgss/nimcp_lgss.h"
 #include "utils/bridge/nimcp_bridge_base.h"

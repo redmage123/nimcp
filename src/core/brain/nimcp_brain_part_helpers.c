@@ -1435,6 +1435,8 @@ sequential_fallback:
     PF_MARK(_pf_t_cortex);  /* end cortex CNN forward + fusion */
 
     /* 1. Adaptive network — primary forward pass (always runs) */
+    nimcp_decide_trace_ann("pf0b_ann_ro_pre_ann", brain->network, fwd_features, fwd_num,
+                           decision->output_size);
     if (brain->can_use_readonly) {
         active_neurons = adaptive_network_forward_readonly(
             brain->network, fwd_features, fwd_num, decision->output_vector, decision->output_size, 0);
@@ -1443,6 +1445,8 @@ sequential_fallback:
             brain->network, fwd_features, fwd_num, decision->output_vector, decision->output_size, 0);
     }
     PF_MARK(_pf_t_adaptive);  /* end adaptive (ANN main net) forward */
+    nimcp_decide_trace("pf0_fwd_features", fwd_features, fwd_num);
+    nimcp_decide_trace("pf1_after_ann", decision->output_vector, decision->output_size);
 
     PROBE_STAGE(brain, PROBE_INF_ADAPTIVE_FWD, {
         PROBE_SET_INT(&_ctx, "active_neurons", (int64_t)active_neurons);
@@ -1578,6 +1582,7 @@ sequential_fallback:
         snn_routing_bridge_update(brain->snn_routing_bridge, 1.0f);
     }
     PF_MARK(_pf_t_snn);  /* end SNN forward + routing bridge */
+    nimcp_decide_trace("pf2_after_snn", decision->output_vector, decision->output_size);
 
 lnn_gating:
 
@@ -1710,6 +1715,7 @@ lnn_gating:
         });
     }
     PF_MARK(_pf_t_lnn);  /* end LNN gating */
+    nimcp_decide_trace("pf3_after_lnn", decision->output_vector, decision->output_size);
 
     decision->inference_time_us = nimcp_time_elapsed_us(start_time);
 
