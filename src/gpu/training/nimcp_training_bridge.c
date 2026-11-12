@@ -518,6 +518,19 @@ static void* dl_writeback_worker(void* arg) {
                 if (col < src_local) lo = mid + 1; else hi = mid - 1;
             }
             in_h->weight = (fabsf(in_h->strength) > 1e-8f) ? eff_weight / in_h->strength : eff_weight;
+            /* Mirror into the source's outgoing copy (2026-11-12). The
+             * checkpoint saves outgoing handles and load rebuilds incoming
+             * from them, so writing only the incoming copy dropped every
+             * GPU-trained weight at save: production checkpoints held the
+             * same ANN weights from 2026-10-23 to 2026-11-11. Each outgoing
+             * handle has exactly one incoming peer, so slices never collide. */
+            if (in_h->peer_index != SPARSE_SYNAPSE_NO_PEER) {
+                neuron_t* src = neural_network_get_neuron(s->net, source_id);
+                synapse_handle_t* out_h = src ? NEURON_OUT_HANDLE(src, in_h->peer_index) : NULL;
+                if (out_h && out_h->target_neuron_id == s->dst_offset + i) {
+                    out_h->weight = in_h->weight;
+                }
+            }
         }
     }
     return NULL;
@@ -786,6 +799,25 @@ bool nimcp_gpu_weight_cache_download(nimcp_gpu_weight_cache_t* cache, neural_net
         uint32_t src_layer_size = cache->layer_sizes[l];
         uint32_t dst_offset = cache->layer_offsets[l + 1];
         uint32_t src_offset = cache->layer_offsets[l];
+
+        /* Biases (2026-11-12): the backward pass updates cache->biases on
+         * the GPU, but nothing copied them back, and the re-upload that
+         * follows every download (weights_dirty_on_cpu) reloaded the stale
+         * neuron->bias — so GPU bias learning was reset every step and
+         * never saved. host_bias_buf holds the largest layer. */
+        if (cache->biases && cache->biases[l] && cache->host_bias_buf &&
+            dst_layer_size <= cache->host_bias_buf_size &&
+            nimcp_gpu_tensor_to_host(cache->biases[l], cache->host_bias_buf)) {
+            for (uint32_t i = 0; i < dst_layer_size; i++) {
+                neuron_t* neuron = neural_network_get_neuron(net, dst_offset + i);
+                /* Upload's sparse fast path sends 0 for neurons with no
+                 * incoming synapses; leave their CPU bias alone. */
+                if (neuron && NEURON_IN_COUNT(neuron) > 0 &&
+                    isfinite(cache->host_bias_buf[i])) {
+                    neuron->bias = cache->host_bias_buf[i];
+                }
+            }
+        }
 
         // Skip empty transitions
         if (!cache->sparse_weights[l]) continue;
