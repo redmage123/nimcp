@@ -65,13 +65,24 @@ def tile_to_brain_input(embedding: np.ndarray) -> list:
 
 
 def extract_embedding_from_output(output_vector: np.ndarray,
-                                   embed_dim: int = EMBED_DIM) -> np.ndarray:
-    """Extract embedding from brain output by averaging tiled copies."""
-    v = np.asarray(output_vector, dtype=np.float32).ravel()
+                                   embed_dim: int = EMBED_DIM,
+                                   denormalize: bool = False) -> np.ndarray:
+    """Extract embedding from brain output by averaging tiled copies.
+
+    The brain is trained (immerse_athena.make_semantic_target) on raw,
+    zero-centred embeddings, so its output is already in embedding space and
+    is returned as is. denormalize=True applies the old [0,1] -> [-1,1] map,
+    only for outputs trained on _normalize_embedding targets. Applied to raw
+    outputs (the default before 2026-11-13) it turns every output into
+    roughly the constant -1 vector, so any two outputs score cos ~0.9997:
+    eval cross_sim sat at 0.9996-0.9998 whatever the brain did, and the
+    contrastive/diversity regularizers fired on every check.
+    """
+    v = np.array(output_vector, dtype=np.float32).ravel()   # copy: chunks are edited below
     num_outputs = len(v)
 
     if num_outputs <= embed_dim:
-        return _denormalize_embedding(v)
+        return _denormalize_embedding(v) if denormalize else v
 
     n_full = num_outputs // embed_dim
     remainder = num_outputs % embed_dim
@@ -82,7 +93,7 @@ def extract_embedding_from_output(output_vector: np.ndarray,
             chunks[i][:remainder] = (chunks[i][:remainder] + partial / n_full)
 
     averaged = np.mean(chunks, axis=0).astype(np.float32)
-    return _denormalize_embedding(averaged)
+    return _denormalize_embedding(averaged) if denormalize else averaged
 
 
 # ---------------------------------------------------------------------------

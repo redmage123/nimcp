@@ -117,8 +117,9 @@ class HybridDecoder:
     def _extract_embedding(self, output_arr):
         """Extract 1024-dim embedding from 4096-dim brain output.
 
-        Mirrors extract_embedding_from_output() in immerse_athena.py:
-        tiles 4x to 1024, averages, denormalizes from [0,1] to [-1,1].
+        Mirrors extract_embedding_from_output() in talk_to_athena.py:
+        averages the 4 tiles. No [0,1] -> [-1,1] denormalization: the brain
+        is trained on raw zero-centred embeddings (see that function).
         """
         if len(output_arr) >= 1024:
             # Use projector if available
@@ -133,8 +134,6 @@ class HybridDecoder:
                 for i in range(n_tiles):
                     emb += output_arr[i * 1024:(i + 1) * 1024]
                 emb /= n_tiles
-            # Denormalize [0,1] → [-1,1]
-            emb = emb * 2.0 - 1.0
             return emb
         return output_arr
 
