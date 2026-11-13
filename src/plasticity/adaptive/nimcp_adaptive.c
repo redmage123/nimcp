@@ -2336,7 +2336,8 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
         float effective_lr = learning_rate;
         {
             float ema_gn = network->ema_grad_norm;
-            if (ema_gn > 1e-4f && isfinite(ema_gn)) {
+            if (ema_gn > 1e-4f && isfinite(ema_gn) &&
+                !nimcp_gpu_grad_clip_mode() /* the clip normalises instead */) {
                 /* Target: effective gradient step ≈ learning_rate * target_norm */
                 float target_norm = 1.0f;
                 effective_lr = learning_rate * (target_norm / ema_gn);
@@ -3023,7 +3024,8 @@ float adaptive_network_learn_batch(adaptive_network_t network, const training_ex
             float batch_eff_lr = learning_rate;
             {
                 float ema_gn = network->ema_grad_norm;
-                if (ema_gn > 1e-4f && isfinite(ema_gn)) {
+                if (ema_gn > 1e-4f && isfinite(ema_gn) &&
+                    !nimcp_gpu_grad_clip_mode() /* the clip normalises instead */) {
                     batch_eff_lr = learning_rate * (1.0f / ema_gn);
                     float lr_min = learning_rate * 0.01f;
                     float lr_max = learning_rate * adaptive_lr_norm_max();

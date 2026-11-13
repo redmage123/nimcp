@@ -122,6 +122,19 @@ typedef struct nimcp_gpu_weight_cache_s {
     nimcp_gpu_tensor_t** checkpoint_activations; /**< Saved activations at checkpoint layers only */
     bool*      is_checkpoint_layer;        /**< Per-layer: true if this layer is a checkpoint boundary */
     uint32_t   num_checkpoint_layers;      /**< Number of checkpoint boundary layers */
+
+    // NIMCP_ANN_GPU_GRAD=clip: learning rate of the pending accumulated batch
+    // (the clipped flush applies the learning rate, not the accumulate step)
+    float      clip_accum_lr;
+
+    // NIMCP_ANN_GPU_GRAD=clip: per-layer record of the latest forward pass,
+    // host-side, for the exact LayerNorm + residual backward. Indexed by
+    // layer; only hidden layers are filled. Allocated on first use.
+    float**    clip_pre_h;                 /**< Post-activation, pre-LayerNorm values h */
+    float**    clip_ln_y;                  /**< LayerNorm output y = (h - mean) * inv_std */
+    float*     clip_ln_inv_std;            /**< 1 / sqrt(var(h) + eps) */
+    bool*      clip_ln_valid;              /**< Layer recorded by the latest forward */
+    bool       clip_residual;              /**< Latest forward added the L-1 -> L residual */
 } nimcp_gpu_weight_cache_t;
 
 //=============================================================================
@@ -308,6 +321,17 @@ NIMCP_EXPORT bool nimcp_gpu_backward_pass(
 //=============================================================================
 // GPU Gradient Accumulation (Mini-Batch Training)
 //=============================================================================
+
+/**
+ * @brief True when NIMCP_ANN_GPU_GRAD=clip (cached): the ANN's GPU backward
+ *        uses the clipped full-backprop mode (raw FP32 gradients to every
+ *        layer, one global norm clip, the same learning rate everywhere)
+ *        in both nimcp_gpu_backward_pass and the accumulate/flush pair.
+ */
+NIMCP_EXPORT bool nimcp_gpu_grad_clip_mode(void);
+
+/** Global gradient-norm clip for the clipped mode: NIMCP_ANN_GPU_GRAD_CLIP, default 1.0 */
+NIMCP_EXPORT float nimcp_gpu_grad_clip_norm(void);
 
 /**
  * @brief Accumulate gradients from one sample (no weight update)

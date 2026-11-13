@@ -34,6 +34,7 @@
 #include "utils/exception/nimcp_exception_macros.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef NIMCP_ENABLE_CUDA
@@ -45,6 +46,107 @@
 //=============================================================================
 // Internal Helpers
 //=============================================================================
+
+/* NIMCP_ANN_GPU_GRAD=clip (2026-11-12): see nimcp_gpu_clip_backward_accumulate */
+bool nimcp_gpu_grad_clip_mode(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        const char* e = getenv("NIMCP_ANN_GPU_GRAD");
+        cached = (e && strcmp(e, "clip") == 0) ? 1 : 0;
+        if (cached) {
+            NIMCP_LOG_WARN("NIMCP_ANN_GPU_GRAD=clip: ANN GPU backward uses summed-error "
+                           "FP32 gradients for every layer, global norm clip %.3g, "
+                           "uniform learning rate", (double)nimcp_gpu_grad_clip_norm());
+        }
+    }
+    return cached == 1;
+}
+
+float nimcp_gpu_grad_clip_norm(void)
+{
+    static float cached = -1.0f;
+    if (cached < 0.0f) {
+        const char* e = getenv("NIMCP_ANN_GPU_GRAD_CLIP");
+        float v = e ? strtof(e, NULL) : 1.0f;
+        cached = (isfinite(v) && v > 0.0f) ? v : 1.0f;
+    }
+    return cached;
+}
+
+static bool ensure_grad_accum_buffers(nimcp_gpu_weight_cache_t* cache);
+
+/* Clip mode: per-layer host record of the forward pass (see header) */
+static bool clip_ensure_record(nimcp_gpu_weight_cache_t* cache)
+{
+    if (cache->clip_ln_valid) return true;
+    uint32_t L = cache->num_layers;
+    cache->clip_pre_h = nimcp_calloc(L, sizeof(float*));
+    cache->clip_ln_y = nimcp_calloc(L, sizeof(float*));
+    cache->clip_ln_inv_std = nimcp_calloc(L, sizeof(float));
+    bool* valid = nimcp_calloc(L, sizeof(bool));
+    bool ok = cache->clip_pre_h && cache->clip_ln_y && cache->clip_ln_inv_std && valid;
+    for (uint32_t l = 1; ok && l + 1 < L; l++) {
+        cache->clip_pre_h[l] = nimcp_calloc(cache->layer_sizes[l], sizeof(float));
+        cache->clip_ln_y[l] = nimcp_calloc(cache->layer_sizes[l], sizeof(float));
+        ok = cache->clip_pre_h[l] && cache->clip_ln_y[l];
+    }
+    if (!ok) {
+        for (uint32_t l = 0; l < L; l++) {
+            if (cache->clip_pre_h) nimcp_free(cache->clip_pre_h[l]);
+            if (cache->clip_ln_y) nimcp_free(cache->clip_ln_y[l]);
+        }
+        nimcp_free(cache->clip_pre_h);
+        nimcp_free(cache->clip_ln_y);
+        nimcp_free(cache->clip_ln_inv_std);
+        nimcp_free(valid);
+        cache->clip_pre_h = NULL;
+        cache->clip_ln_y = NULL;
+        cache->clip_ln_inv_std = NULL;
+        return false;
+    }
+    cache->clip_ln_valid = valid;   /* set last: marks the record usable */
+    return true;
+}
+
+static void clip_free_record(nimcp_gpu_weight_cache_t* cache)
+{
+    for (uint32_t l = 0; l < cache->num_layers; l++) {
+        if (cache->clip_pre_h) nimcp_free(cache->clip_pre_h[l]);
+        if (cache->clip_ln_y) nimcp_free(cache->clip_ln_y[l]);
+    }
+    nimcp_free(cache->clip_pre_h);
+    nimcp_free(cache->clip_ln_y);
+    nimcp_free(cache->clip_ln_inv_std);
+    nimcp_free(cache->clip_ln_valid);
+    cache->clip_pre_h = NULL;
+    cache->clip_ln_y = NULL;
+    cache->clip_ln_inv_std = NULL;
+    cache->clip_ln_valid = NULL;
+}
+
+/* Clip mode: activation codes for the host-side derivative, matching what
+ * forward_one_layer actually applies (unlike build_act_types, whose default
+ * is leaky ReLU while the forward's default is tanh):
+ * 0 RELU, 1 LEAKY_RELU, 2 TANH, 3 SIGMOID, 4 LINEAR, 5 ADAPTIVE gated tanh. */
+static int* clip_build_act_codes(nimcp_gpu_weight_cache_t* cache)
+{
+    int* codes = nimcp_calloc(cache->num_layers, sizeof(int));
+    if (!codes) return NULL;
+    for (uint32_t l = 0; l < cache->num_layers; l++) {
+        switch (cache->layer_activations[l]) {
+            case ACTIVATION_RELU:       codes[l] = 0; break;
+            case ACTIVATION_LEAKY_RELU: codes[l] = 1; break;
+            case ACTIVATION_TANH:       codes[l] = 2; break;
+            case ACTIVATION_SIGMOID:    codes[l] = 3; break;
+            case ACTIVATION_LINEAR:     codes[l] = 4; break;
+            case ACTIVATION_ADAPTIVE:   codes[l] = 5; break;
+            default:                    codes[l] = 2; break;
+        }
+    }
+    codes[cache->num_layers - 1] = 4;   /* the forward forces the output layer linear */
+    return codes;
+}
 
 /**
  * @brief Compute layer neuron offsets from layer_sizes
@@ -401,6 +503,7 @@ void nimcp_gpu_weight_cache_destroy(nimcp_gpu_weight_cache_t* cache)
     nimcp_free(cache->host_coo_col_idx);
     nimcp_free(cache->host_csr_row_ptrs);
     nimcp_free(cache->host_bias_buf);
+    clip_free_record(cache);
     nimcp_free(cache->host_activation_buf);
 
     nimcp_free(cache);
@@ -1048,10 +1151,16 @@ static bool forward_one_layer(nimcp_gpu_weight_cache_t* cache, uint32_t l, uint3
     // Skip output layer (last transition → output is raw LINEAR).
     if (l + 1 < num_transitions) {
         uint32_t layer_size = cache->layer_sizes[l + 1];
+        bool clip_rec = nimcp_gpu_grad_clip_mode() && clip_ensure_record(cache);
+        if (clip_rec) cache->clip_ln_valid[l + 1] = false;
         if (layer_size > 1) {
             if (!nimcp_gpu_tensor_to_host(cache->activations[l + 1],
                                           cache->host_activation_buf)) {
                 return false;
+            }
+            if (clip_rec) {
+                memcpy(cache->clip_pre_h[l + 1], cache->host_activation_buf,
+                       layer_size * sizeof(float));
             }
             double sum = 0.0;
             for (uint32_t ci = 0; ci < layer_size; ci++) {
@@ -1067,6 +1176,12 @@ static bool forward_one_layer(nimcp_gpu_weight_cache_t* cache, uint32_t l, uint3
             for (uint32_t ci = 0; ci < layer_size; ci++) {
                 cache->host_activation_buf[ci] =
                     (cache->host_activation_buf[ci] - mean) * inv_std;
+            }
+            if (clip_rec) {
+                memcpy(cache->clip_ln_y[l + 1], cache->host_activation_buf,
+                       layer_size * sizeof(float));
+                cache->clip_ln_inv_std[l + 1] = inv_std;
+                cache->clip_ln_valid[l + 1] = true;
             }
             size_t a_dims[1] = { layer_size };
             nimcp_gpu_tensor_t* normed = nimcp_gpu_tensor_from_host(
@@ -1159,6 +1274,7 @@ bool nimcp_gpu_forward_pass(
     if (cache->num_layers > 3) {
         residual_bufs = (float**)nimcp_calloc(cache->num_layers, sizeof(float*));
     }
+    cache->clip_residual = (residual_bufs != NULL);
 
     for (uint32_t l = 0; l < num_transitions; l++) {
         if (!forward_one_layer(cache, l, num_transitions)) {
@@ -1569,6 +1685,39 @@ bool nimcp_gpu_backward_pass(
         return false;
     }
 
+    if (nimcp_gpu_grad_clip_mode()) {
+        /* One-example batch through the clipped accumulate/flush pair.
+         * A batch left pending in the buffers would be folded in here; the
+         * learn paths never interleave single and batch steps. */
+        int* codes = clip_build_act_codes(cache);
+        bool cok = codes && ensure_grad_accum_buffers(cache) && cache->clip_ln_valid &&
+                   nimcp_gpu_clip_backward_accumulate(
+                       cache->ctx, cache->sparse_weights, cache->activations,
+                       cache->d_weight_grad_accum, cache->d_bias_grad_accum,
+                       codes, cache->num_layers, cache->layer_sizes,
+                       target, output, target_size,
+                       cache->clip_pre_h, cache->clip_ln_y, cache->clip_ln_inv_std,
+                       cache->clip_ln_valid, cache->clip_residual) &&
+                   nimcp_gpu_clip_gradient_flush(
+                       cache->ctx, cache->sparse_weights, cache->biases,
+                       cache->d_weight_grad_accum, cache->d_bias_grad_accum,
+                       cache->num_layers, cache->layer_sizes, 1,
+                       learning_rate, nimcp_gpu_grad_clip_norm(),
+                       min_weight, max_weight, out_grad_norm);
+        nimcp_free(act_types);
+        nimcp_free(codes);
+        if (!cok) {
+            static int warned = 0;
+            if (!warned++) NIMCP_LOG_WARN("clip-mode GPU backward failed (forward record missing?)");
+        }
+        if (cok) {
+            cache->grad_accum_count = 0;
+            nimcp_gpu_weight_cache_download(cache, net);
+            cache->weights_dirty_on_cpu = true;
+        }
+        return cok;
+    }
+
     {
         static int _bp_bridge = 0;
         if (_bp_bridge++ < 5) {
@@ -1666,8 +1815,10 @@ bool nimcp_gpu_backward_accumulate(
 
     if (!ensure_grad_accum_buffers(cache)) return false;
 
-    // Enter autocast region if mixed precision is enabled
-    bool autocast_active = cache->mixed_precision_enabled && cache->autocast_ctx;
+    // Enter autocast region if mixed precision is enabled (never in clip
+    // mode: its loss-scaled lr was not unscaled before the weight update)
+    bool clip_mode = nimcp_gpu_grad_clip_mode();
+    bool autocast_active = !clip_mode && cache->mixed_precision_enabled && cache->autocast_ctx;
     if (autocast_active) {
         nimcp_autocast_begin(cache->autocast_ctx);
     }
@@ -1700,6 +1851,25 @@ bool nimcp_gpu_backward_accumulate(
     if (!act_types) {
         if (autocast_active) nimcp_autocast_end(cache->autocast_ctx);
         return false;
+    }
+
+    if (clip_mode) {
+        int* codes = clip_build_act_codes(cache);
+        bool cok = codes && cache->clip_ln_valid &&
+                   nimcp_gpu_clip_backward_accumulate(
+                       cache->ctx, cache->sparse_weights, cache->activations,
+                       cache->d_weight_grad_accum, cache->d_bias_grad_accum,
+                       codes, cache->num_layers, cache->layer_sizes,
+                       target, output, target_size,
+                       cache->clip_pre_h, cache->clip_ln_y, cache->clip_ln_inv_std,
+                       cache->clip_ln_valid, cache->clip_residual);
+        nimcp_free(act_types);
+        nimcp_free(codes);
+        if (cok) {
+            cache->clip_accum_lr = learning_rate;  /* applied at flush */
+            cache->grad_accum_count++;
+        }
+        return cok;
     }
 
     // Scale learning rate by loss scale for FP16 gradient stability
@@ -1738,6 +1908,21 @@ bool nimcp_gpu_gradient_flush_and_sync(
 {
     if (!cache || !net || cache->grad_accum_count == 0) return false;
     if (!cache->grad_accum_initialized) return false;
+
+    if (nimcp_gpu_grad_clip_mode()) {
+        bool cok = nimcp_gpu_clip_gradient_flush(
+            cache->ctx, cache->sparse_weights, cache->biases,
+            cache->d_weight_grad_accum, cache->d_bias_grad_accum,
+            cache->num_layers, cache->layer_sizes, cache->grad_accum_count,
+            cache->clip_accum_lr, nimcp_gpu_grad_clip_norm(),
+            min_weight, max_weight, out_grad_norm);
+        if (cok) {
+            nimcp_gpu_weight_cache_download(cache, net);
+            cache->weights_dirty_on_cpu = true;
+            cache->grad_accum_count = 0;
+        }
+        return cok;
+    }
 
     // Enter autocast region if mixed precision is enabled
     bool autocast_active = cache->mixed_precision_enabled && cache->autocast_ctx;

@@ -1525,6 +1525,302 @@ bool nimcp_gpu_sparse_backward_pass(
     return true;
 }
 
+//=============================================================================
+// Clipped full-backprop mode (NIMCP_ANN_GPU_GRAD=clip, 2026-11-12)
+//
+// The default GPU step barely reaches the hidden layers: the error is
+// scaled by 2/N (N = 4096), the output layer gets 10x the rate and hidden
+// layers lr / fan_in^0.25, and the batch flush drops weight gradients below
+// 1e-7. Hidden relative updates came out ~1e-8..1e-9 per step (output 8e-5)
+// and production hidden weights did not change at all. This mode mirrors
+// the CPU regression path instead: sum-reduced MSE error, raw FP32 gradients
+// for every layer (deltas propagated through the pre-update weights), one
+// global gradient-norm clip, and the same learning rate for every layer.
+//=============================================================================
+
+/* delta = 2 (target - output): gradient of the summed squared error,
+ * sign matching the existing kernels (weights += lr * delta * act). */
+__global__ void kernel_clip_output_deltas(
+    float* __restrict__ delta, const float* __restrict__ target,
+    const float* __restrict__ output, int size)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    float d = 2.0f * (target[idx] - output[idx]);
+    delta[idx] = isfinite(d) ? d : 0.0f;
+}
+
+/* accum[idx] += delta[row] * activation[col] for each CSR entry */
+__global__ void kernel_clip_csr_grad_accumulate(
+    const int* __restrict__ csr_row_ptrs, const int* __restrict__ csr_col_indices,
+    const float* __restrict__ delta, const float* __restrict__ activation,
+    float* __restrict__ grad_accum, int nnz, int rows)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nnz) return;
+    int lo = 0, hi = rows - 1, row = 0;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (csr_row_ptrs[mid + 1] <= idx) { lo = mid + 1; }
+        else if (csr_row_ptrs[mid] > idx) { hi = mid - 1; }
+        else { row = mid; break; }
+    }
+    if (lo > hi) row = lo;
+    grad_accum[idx] += delta[row] * activation[csr_col_indices[idx]];
+}
+
+__global__ void kernel_clip_vec_accumulate(
+    const float* __restrict__ delta, float* __restrict__ accum, int size)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= size) return;
+    accum[idx] += delta[idx];
+}
+
+/* out += sum(x^2), one atomic per block */
+__global__ void kernel_clip_sumsq(const float* __restrict__ x, int n, float* __restrict__ out)
+{
+    __shared__ float s[BLOCK_SIZE];
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    float v = (idx < n) ? x[idx] : 0.0f;
+    s[threadIdx.x] = isfinite(v) ? v * v : 0.0f;
+    __syncthreads();
+    for (int k = blockDim.x / 2; k > 0; k >>= 1) {
+        if (threadIdx.x < k) s[threadIdx.x] += s[threadIdx.x + k];
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) atomicAdd(out, s[0]);
+}
+
+/* values += step * accum, clamp, reset accum */
+__global__ void kernel_clip_apply(
+    float* __restrict__ values, float* __restrict__ accum, int n,
+    float step, float lo, float hi)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n) return;
+    float g = accum[idx];
+    accum[idx] = 0.0f;
+    if (!isfinite(g)) return;
+    float v = values[idx] + step * g;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    values[idx] = v;
+}
+
+/* Host-side derivative of the activation the GPU forward applied, from the
+ * post-activation value h (codes from the bridge's clip_build_act_codes). */
+static inline float clip_act_deriv(int code, float h)
+{
+    switch (code) {
+        case 0: return (h > 0.0f) ? 1.0f : 0.0f;                    /* RELU */
+        case 1: return (h > 0.0f) ? 1.0f : 0.01f;                   /* LEAKY_RELU */
+        case 2: return 1.0f - h * h;                                /* TANH */
+        case 3: return h * (1.0f - h);                              /* SIGMOID */
+        case 4: return 1.0f;                                        /* LINEAR */
+        case 5: return (h > 0.0f) ? (1.0f - h * h) / 10.0f : 0.0f;  /* gated tanh((x-t)/10) */
+        default: return 1.0f;
+    }
+}
+
+bool nimcp_gpu_clip_backward_accumulate(
+    nimcp_gpu_context_t* gpu_ctx,
+    nimcp_sparse_tensor_t** sparse_weights,
+    nimcp_gpu_tensor_t** activations,
+    float** d_weight_grad_accum,
+    float** d_bias_grad_accum,
+    const int* act_codes,
+    uint32_t num_layers,
+    const uint32_t* layer_sizes,
+    const float* target_host,
+    const float* output_host,
+    uint32_t output_size,
+    float* const* pre_h,
+    float* const* ln_y,
+    const float* ln_inv_std,
+    const bool* ln_valid,
+    bool residual)
+{
+    if (!gpu_ctx || !sparse_weights || !activations || !d_weight_grad_accum ||
+        !d_bias_grad_accum || !act_codes || !layer_sizes || !pre_h || !ln_y ||
+        !ln_inv_std || !ln_valid || !target_host || !output_host || num_layers < 2) {
+        return false;
+    }
+    /* Every hidden layer must have been recorded by the forward that
+     * produced output_host, or the gradient would be wrong. */
+    for (uint32_t l = 1; l + 1 < num_layers; l++) {
+        if (!ln_valid[l] || !pre_h[l] || !ln_y[l]) return false;
+    }
+    cudaStream_t stream = nimcp_gpu_get_pool_stream(gpu_ctx);
+    uint32_t out_layer_size = layer_sizes[num_layers - 1];
+    uint32_t bp_size = out_layer_size < output_size ? out_layer_size : output_size;
+    uint32_t max_layer = 0;
+    for (uint32_t l = 0; l < num_layers; l++) {
+        if (layer_sizes[l] > max_layer) max_layer = layer_sizes[l];
+    }
+
+    float *d_target = NULL, *d_output = NULL, *d_cur = NULL, *d_prev = NULL;
+    float* g = (float*)malloc(max_layer * sizeof(float));        /* dL/ds of the current hidden layer */
+    float* gs_next = (float*)malloc(max_layer * sizeof(float));  /* dL/ds of the layer above */
+    bool ok = g && gs_next &&
+              cudaMalloc(&d_target, bp_size * sizeof(float)) == cudaSuccess &&
+              cudaMalloc(&d_output, bp_size * sizeof(float)) == cudaSuccess &&
+              cudaMalloc(&d_cur, max_layer * sizeof(float)) == cudaSuccess &&
+              cudaMalloc(&d_prev, max_layer * sizeof(float)) == cudaSuccess &&
+              cudaMemcpy(d_target, target_host, bp_size * sizeof(float), cudaMemcpyHostToDevice) == cudaSuccess &&
+              cudaMemcpy(d_output, output_host, bp_size * sizeof(float), cudaMemcpyHostToDevice) == cudaSuccess;
+    if (ok) {
+        cudaMemsetAsync(d_cur, 0, max_layer * sizeof(float), stream);
+        kernel_clip_output_deltas<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
+            d_cur, d_target, d_output, (int)bp_size);
+    }
+    bool have_gs_next = false;
+
+    /* Forward per hidden layer l: h = act(W s_{l-1} + b), y = LN(h),
+     * s_l = y + s_{l-1}[:n] when l is a residual destination
+     * (2 <= l <= L-2), else s_l = y. The output layer is linear. */
+    for (int32_t layer = (int32_t)num_layers - 1; ok && layer >= 1; layer--) {
+        uint32_t cur_size = layer_sizes[layer];
+        uint32_t prev_size = layer_sizes[layer - 1];
+        nimcp_sparse_tensor_t* W = sparse_weights[layer - 1];
+        if (!W || W->format != SPARSE_FORMAT_CSR || W->data.csr.nnz == 0 ||
+            !activations[layer - 1]) {
+            break;  /* no path further back */
+        }
+        int nnz = W->data.csr.nnz;
+        /* d_cur holds delta = -dL/dz for this layer */
+        if (d_bias_grad_accum[layer - 1]) {
+            kernel_clip_vec_accumulate<<<GRID_SIZE(cur_size), BLOCK_SIZE, 0, stream>>>(
+                d_cur, d_bias_grad_accum[layer - 1], (int)cur_size);
+        }
+        if (d_weight_grad_accum[layer - 1]) {
+            kernel_clip_csr_grad_accumulate<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
+                W->data.csr.row_ptrs, W->data.csr.col_indices, d_cur,
+                (const float*)activations[layer - 1]->data,
+                d_weight_grad_accum[layer - 1], nnz, W->data.csr.rows);
+        }
+        if (layer == 1) break;
+
+        /* g = W^T delta: the gradient reaching s_{layer-1} through W */
+        uint32_t h_l = (uint32_t)layer - 1;   /* hidden layer being entered */
+        cudaMemsetAsync(d_prev, 0, prev_size * sizeof(float), stream);
+        kernel_sparse_delta_propagate<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
+            W->data.csr.values, W->data.csr.row_ptrs, W->data.csr.col_indices,
+            d_cur, d_prev, nnz, W->data.csr.rows);
+        ok = cudaMemcpyAsync(g, d_prev, prev_size * sizeof(float), cudaMemcpyDeviceToHost, stream) == cudaSuccess &&
+             cudaStreamSynchronize(stream) == cudaSuccess;
+        if (!ok) break;
+
+        /* Residual: s_layer[:n] = y_layer[:n] + s_{h_l}[:n], so the layer
+         * above's dL/ds also flows straight into s_{h_l}[:n] */
+        if (residual && have_gs_next && layer >= 2 && (uint32_t)layer + 1 < num_layers) {
+            uint32_t n = (prev_size < cur_size) ? prev_size : cur_size;
+            for (uint32_t i = 0; i < n; i++) g[i] += gs_next[i];
+        }
+        memcpy(gs_next, g, prev_size * sizeof(float));   /* dL/ds_{h_l} */
+        have_gs_next = true;
+
+        /* LayerNorm backward (no gain/bias): dh = inv_std (g - mean(g) - y mean(g y)),
+         * then the activation derivative at h. */
+        const float* y = ln_y[h_l];
+        const float* hv = pre_h[h_l];
+        double mg = 0.0, mgy = 0.0;
+        for (uint32_t i = 0; i < prev_size; i++) {
+            mg += g[i];
+            mgy += (double)g[i] * y[i];
+        }
+        mg /= prev_size;
+        mgy /= prev_size;
+        float inv_std = ln_inv_std[h_l];
+        int code = act_codes[h_l];
+        for (uint32_t i = 0; i < prev_size; i++) {
+            float dh = inv_std * (float)(g[i] - mg - y[i] * mgy);
+            float d = dh * clip_act_deriv(code, hv[i]);
+            g[i] = isfinite(d) ? d : 0.0f;
+        }
+        ok = cudaMemcpyAsync(d_prev, g, prev_size * sizeof(float), cudaMemcpyHostToDevice, stream) == cudaSuccess;
+        float* tmp = d_cur; d_cur = d_prev; d_prev = tmp;
+    }
+    if (ok) ok = cudaStreamSynchronize(stream) == cudaSuccess;
+    cudaFree(d_target);
+    cudaFree(d_output);
+    cudaFree(d_cur);
+    cudaFree(d_prev);
+    free(g);
+    free(gs_next);
+    return ok;
+}
+
+bool nimcp_gpu_clip_gradient_flush(
+    nimcp_gpu_context_t* gpu_ctx,
+    nimcp_sparse_tensor_t** sparse_weights,
+    nimcp_gpu_tensor_t** biases,
+    float** d_weight_grad_accum,
+    float** d_bias_grad_accum,
+    uint32_t num_layers,
+    const uint32_t* layer_sizes,
+    uint32_t batch_size,
+    float learning_rate,
+    float clip_norm,
+    float min_weight, float max_weight,
+    float* out_grad_norm)
+{
+    if (!gpu_ctx || !sparse_weights || !d_weight_grad_accum || !d_bias_grad_accum ||
+        !layer_sizes || num_layers < 2 || batch_size == 0) {
+        return false;
+    }
+    cudaStream_t stream = nimcp_gpu_get_pool_stream(gpu_ctx);
+    float* d_sq = NULL;
+    if (cudaMalloc(&d_sq, sizeof(float)) != cudaSuccess) return false;
+    cudaMemsetAsync(d_sq, 0, sizeof(float), stream);
+
+    /* Norm of the summed gradient over the whole network */
+    for (uint32_t l = 1; l < num_layers; l++) {
+        nimcp_sparse_tensor_t* W = sparse_weights[l - 1];
+        if (W && W->format == SPARSE_FORMAT_CSR && W->data.csr.nnz > 0 && d_weight_grad_accum[l - 1]) {
+            int nnz = W->data.csr.nnz;
+            kernel_clip_sumsq<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
+                d_weight_grad_accum[l - 1], nnz, d_sq);
+        }
+        if (d_bias_grad_accum[l - 1]) {
+            kernel_clip_sumsq<<<GRID_SIZE(layer_sizes[l]), BLOCK_SIZE, 0, stream>>>(
+                d_bias_grad_accum[l - 1], (int)layer_sizes[l], d_sq);
+        }
+    }
+    float sq = 0.0f;
+    if (cudaMemcpyAsync(&sq, d_sq, sizeof(float), cudaMemcpyDeviceToHost, stream) != cudaSuccess ||
+        cudaStreamSynchronize(stream) != cudaSuccess) {
+        cudaFree(d_sq);
+        return false;
+    }
+    cudaFree(d_sq);
+
+    /* Average over the batch, then clip the averaged gradient's norm */
+    float inv_bs = 1.0f / (float)batch_size;
+    float g = isfinite(sq) ? sqrtf(sq) * inv_bs : 0.0f;
+    float scale = (clip_norm > 0.0f && g > clip_norm) ? clip_norm / g : 1.0f;
+    float step = learning_rate * scale * inv_bs;
+    if (!isfinite(step)) step = 0.0f;
+
+    for (uint32_t l = 1; l < num_layers; l++) {
+        nimcp_sparse_tensor_t* W = sparse_weights[l - 1];
+        if (W && W->format == SPARSE_FORMAT_CSR && W->data.csr.nnz > 0 && d_weight_grad_accum[l - 1]) {
+            int nnz = W->data.csr.nnz;
+            kernel_clip_apply<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
+                W->data.csr.values, d_weight_grad_accum[l - 1], nnz, step,
+                min_weight, max_weight);
+        }
+        if (biases && biases[l - 1] && d_bias_grad_accum[l - 1]) {
+            kernel_clip_apply<<<GRID_SIZE(layer_sizes[l]), BLOCK_SIZE, 0, stream>>>(
+                (float*)biases[l - 1]->data, d_bias_grad_accum[l - 1],
+                (int)layer_sizes[l], step, -10.0f, 10.0f);
+        }
+    }
+    bool ok = cudaStreamSynchronize(stream) == cudaSuccess;
+    if (out_grad_norm) *out_grad_norm = g;   /* pre-clip norm of the averaged gradient */
+    return ok;
+}
+
 #else // !NIMCP_ENABLE_CUDA
 
 #include "gpu/training/nimcp_training_gpu.h"
@@ -1651,6 +1947,37 @@ bool nimcp_gpu_gradient_flush(
     (void)gpu_ctx; (void)sparse_weights; (void)biases;
     (void)d_weight_grad_accum; (void)d_bias_grad_accum;
     (void)num_layers; (void)layer_sizes; (void)batch_size;
+    (void)min_weight; (void)max_weight; (void)out_grad_norm;
+    return false;
+}
+
+bool nimcp_gpu_clip_backward_accumulate(
+    nimcp_gpu_context_t* gpu_ctx, nimcp_sparse_tensor_t** sparse_weights,
+    nimcp_gpu_tensor_t** activations, float** d_weight_grad_accum,
+    float** d_bias_grad_accum, const int* act_codes, uint32_t num_layers,
+    const uint32_t* layer_sizes, const float* target_host,
+    const float* output_host, uint32_t output_size, float* const* pre_h,
+    float* const* ln_y, const float* ln_inv_std, const bool* ln_valid,
+    bool residual)
+{
+    (void)gpu_ctx; (void)sparse_weights; (void)activations;
+    (void)d_weight_grad_accum; (void)d_bias_grad_accum; (void)act_codes;
+    (void)num_layers; (void)layer_sizes; (void)target_host; (void)output_host;
+    (void)output_size; (void)pre_h; (void)ln_y; (void)ln_inv_std; (void)ln_valid;
+    (void)residual;
+    return false;
+}
+
+bool nimcp_gpu_clip_gradient_flush(
+    nimcp_gpu_context_t* gpu_ctx, nimcp_sparse_tensor_t** sparse_weights,
+    nimcp_gpu_tensor_t** biases, float** d_weight_grad_accum,
+    float** d_bias_grad_accum, uint32_t num_layers,
+    const uint32_t* layer_sizes, uint32_t batch_size, float learning_rate,
+    float clip_norm, float min_weight, float max_weight, float* out_grad_norm)
+{
+    (void)gpu_ctx; (void)sparse_weights; (void)biases;
+    (void)d_weight_grad_accum; (void)d_bias_grad_accum; (void)num_layers;
+    (void)layer_sizes; (void)batch_size; (void)learning_rate; (void)clip_norm;
     (void)min_weight; (void)max_weight; (void)out_grad_norm;
     return false;
 }

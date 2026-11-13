@@ -637,6 +637,66 @@ NIMCP_EXPORT bool nimcp_gpu_gradient_flush(
     float* out_grad_norm
 );
 
+/**
+ * @brief Clipped full-backprop mode, accumulate step (NIMCP_ANN_GPU_GRAD=clip)
+ *
+ * Adds one example's raw FP32 gradients to the accumulation buffers: output
+ * error 2*(target - output) (summed squared error), deltas propagated through
+ * the current weights to every layer, no learning rate, no skip thresholds.
+ * Hidden layers get the exact backward of the GPU forward: the residual
+ * (s_l = LN(h_l) + s_{l-1}[:n] for 2 <= l <= L-2 when @p residual), the
+ * LayerNorm backward from the recorded y / inv_std, and the activation
+ * derivative at the recorded pre-norm h (@p act_codes: 0 RELU, 1 LEAKY_RELU,
+ * 2 TANH, 3 SIGMOID, 4 LINEAR, 5 gated tanh). Fails unless every hidden
+ * layer is marked valid in @p ln_valid by the forward that produced
+ * @p output_host. Apply with nimcp_gpu_clip_gradient_flush().
+ * @return true on success
+ */
+NIMCP_EXPORT bool nimcp_gpu_clip_backward_accumulate(
+    nimcp_gpu_context_t* gpu_ctx,
+    nimcp_sparse_tensor_t** sparse_weights,
+    nimcp_gpu_tensor_t** activations,
+    float** d_weight_grad_accum,
+    float** d_bias_grad_accum,
+    const int* act_codes,
+    uint32_t num_layers,
+    const uint32_t* layer_sizes,
+    const float* target_host,
+    const float* output_host,
+    uint32_t output_size,
+    float* const* pre_h,
+    float* const* ln_y,
+    const float* ln_inv_std,
+    const bool* ln_valid,
+    bool residual
+);
+
+/**
+ * @brief Clipped full-backprop mode, apply step
+ *
+ * Averages the accumulated gradients over @p batch_size, scales them so the
+ * whole-network gradient norm is at most @p clip_norm, applies
+ * learning_rate * gradient to every layer's weights (clamped to
+ * [min_weight, max_weight]) and biases (clamped to ±10), and zeroes the
+ * buffers.
+ * @param out_grad_norm Output: norm of the averaged gradient before clipping
+ * @return true on success
+ */
+NIMCP_EXPORT bool nimcp_gpu_clip_gradient_flush(
+    nimcp_gpu_context_t* gpu_ctx,
+    nimcp_sparse_tensor_t** sparse_weights,
+    nimcp_gpu_tensor_t** biases,
+    float** d_weight_grad_accum,
+    float** d_bias_grad_accum,
+    uint32_t num_layers,
+    const uint32_t* layer_sizes,
+    uint32_t batch_size,
+    float learning_rate,
+    float clip_norm,
+    float min_weight, float max_weight,
+    float* out_grad_norm
+);
+
 #ifdef __cplusplus
 }
 #endif
