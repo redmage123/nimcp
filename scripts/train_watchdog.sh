@@ -178,8 +178,18 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     # $TRAIN_EXTRA_ARGS, else the first line of /root/train_extra_args, which
     # survives watchdog restarts that do not carry the environment.
     extra_args="${TRAIN_EXTRA_ARGS:-$(head -n1 /root/train_extra_args 2>/dev/null)}"
+    # One-shot environment (2026-11-12): the first line of /root/train_once_env
+    # (e.g. "NIMCP_ANN_OUTPUT_LOAD_SCALE=0.05") applies to THIS start only and
+    # the file is deleted, so a later crash-restart cannot repeat a one-off
+    # such as an output-layer rescale of the loaded checkpoint.
+    once_env=""
+    if [ -f /root/train_once_env ]; then
+        once_env="$(head -n1 /root/train_once_env)"
+        rm -f /root/train_once_env
+        log_wd "One-shot environment for this start: $once_env"
+    fi
     # shellcheck disable=SC2086  # word-split the flag list on purpose
-    python3 scripts/immerse_athena.py --stage "$STAGE" --resume $extra_args > "$TRAINING_LOG" 2>&1 &
+    env $once_env python3 scripts/immerse_athena.py --stage "$STAGE" --resume $extra_args > "$TRAINING_LOG" 2>&1 &
     train_pid=$!
     log_wd "Training started with PID $train_pid${extra_args:+ (extra args: $extra_args)}"
     sampler_pid=$(start_gpu_sampler)
