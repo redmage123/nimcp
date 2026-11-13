@@ -29,6 +29,17 @@ GPU_DEAD_PATTERN='busy or unavailable|recovery action: RESET_DEVICE|CUDA UNRECOV
 GPU_DEAD_THRESHOLD=20
 GPU_DEAD_TAIL_BYTES=2000000
 GPU_MEM_SAMPLES=/tmp/gpu_mem_samples.csv
+# Daemon mode (2026-11-13): when the trainer flags include --daemon, the brain
+# lives in `brain_daemon.py --trainer-mode` and survives trainer restarts. The
+# watchdog starts it, health-checks it before every trainer start, and treats
+# its log as part of the training log (C-side logging moves to the daemon).
+DAEMON_LOG="${LOG_DIR}/brain_daemon.log"
+DAEMON_LOAD_TIMEOUT_SEC=2400     # checkpoint load on Vast: ~2-4 min; generous
+DAEMON_BARRIER_TIMEOUT_SEC=900   # a save (~21 GB SNN to shm) takes ~1 min
+DAEMON_MODE=0
+DAEMON_MAX_START_FAILS=3         # in a row; a load that keeps failing is not transient
+daemon_start_fails=0
+ONCE_ENV_FILE=/root/train_once_env
 
 log_wd() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$WATCHDOG_LOG"
@@ -65,6 +76,107 @@ diagnose_and_fix() {
     esac
 }
 
+# One-shot environment: the first line of $ONCE_ENV_FILE, consumed (deleted)
+# by whichever process loads the brain next — the trainer, or in daemon mode
+# the daemon.
+take_once_env() {
+    if [ -f "$ONCE_ENV_FILE" ]; then
+        head -n1 "$ONCE_ENV_FILE"
+        rm -f "$ONCE_ENV_FILE"
+    fi
+}
+
+daemon_pids() {
+    pgrep -f "^python3 scripts/brain_daemon.py"
+}
+
+# daemon_rpc CMD TIMEOUT_SEC — exit 0 when the daemon answers CMD in time.
+# "barrier" runs under the brain lock, so it also proves the lock is not stuck.
+daemon_rpc() {
+    python3 - "$1" "$2" <<'PY'
+import sys
+sys.path.insert(0, "scripts")
+from brain_client import BrainProxy
+try:
+    BrainProxy(timeout=float(sys.argv[2]))._send_once({"cmd": sys.argv[1]})
+except Exception as e:
+    print(f"daemon {sys.argv[1]}: {type(e).__name__}: {e}")
+    sys.exit(1)
+PY
+}
+
+stop_daemon() {
+    local pids p i
+    pids=$(daemon_pids)
+    [ -z "$pids" ] && return 0
+    log_wd "Stopping brain daemon (PIDs $pids) - trainer mode keeps nothing unsaved of its own"
+    kill -TERM $pids 2>/dev/null
+    for i in $(seq 1 30); do
+        [ -z "$(daemon_pids)" ] && return 0
+        sleep 2
+    done
+    for p in $(daemon_pids); do kill -9 "$p" 2>/dev/null; done
+    sleep 3
+}
+
+start_daemon() {
+    local once ckpt waited=0 pid
+    if [ ! -f "$CKPT_DIR/athena_immersive.bin" ]; then
+        log_wd "FATAL: no checkpoint at $CKPT_DIR/athena_immersive.bin for the brain daemon"
+        return 1
+    fi
+    once=$(take_once_env)
+    ckpt=$(readlink -f "$CKPT_DIR/athena_immersive.bin")
+    log_wd "Starting brain daemon (trainer mode) from $(basename "$ckpt")${once:+ with one-shot env: $once}"
+    [ -f "$DAEMON_LOG" ] && mv -f "$DAEMON_LOG" "$DAEMON_LOG.prev"
+    # shellcheck disable=SC2086  # word-split the one-shot env on purpose
+    env $once python3 scripts/brain_daemon.py --trainer-mode \
+        --checkpoint "$CKPT_DIR/athena_immersive.bin" > "$DAEMON_LOG" 2>&1 < /dev/null &
+    pid=$!
+    while [ "$waited" -lt "$DAEMON_LOAD_TIMEOUT_SEC" ]; do
+        sleep 15
+        waited=$((waited + 15))
+        if ! kill -0 "$pid" 2>/dev/null; then
+            log_wd "Brain daemon exited while loading - see $DAEMON_LOG"
+            return 1
+        fi
+        if daemon_rpc ping 10 > /dev/null; then
+            log_wd "Brain daemon ready (PID $pid) after ${waited}s"
+            return 0
+        fi
+    done
+    log_wd "Brain daemon not ready after ${DAEMON_LOAD_TIMEOUT_SEC}s - stopping it"
+    stop_daemon
+    return 1
+}
+
+# Make sure a healthy daemon is serving before a trainer start: reuse a live
+# one (wait if it is still loading), restart one whose brain lock is stuck.
+ensure_daemon() {
+    local waited=0 msg
+    if [ -n "$(daemon_pids)" ]; then
+        while ! daemon_rpc ping 10 > /dev/null; do
+            if [ -z "$(daemon_pids)" ] || [ "$waited" -ge "$DAEMON_LOAD_TIMEOUT_SEC" ]; then
+                break
+            fi
+            [ "$waited" -eq 0 ] && log_wd "Brain daemon running but not answering yet - waiting (still loading?)"
+            sleep 15
+            waited=$((waited + 15))
+        done
+        if [ -n "$(daemon_pids)" ] && daemon_rpc ping 10 > /dev/null; then
+            if msg=$(daemon_rpc barrier "$DAEMON_BARRIER_TIMEOUT_SEC"); then
+                log_wd "Brain daemon healthy (PID $(daemon_pids | tr '\n' ' ')) - reusing it"
+                return 0
+            fi
+            log_wd "Brain daemon answers ping but its brain lock is stuck ($msg) - restarting it"
+        else
+            log_wd "Brain daemon not answering after ${waited}s - restarting it"
+        fi
+        stop_daemon
+    fi
+    start_daemon
+}
+
 monitor_training() {
     local pid=$1
     local last_size=0
@@ -76,6 +188,9 @@ monitor_training() {
 
         if [ -f "$TRAINING_LOG" ]; then
             local current_size=$(stat -c%s "$TRAINING_LOG" 2>/dev/null || echo 0)
+            if [ "$DAEMON_MODE" = 1 ]; then
+                current_size=$((current_size + $(stat -c%s "$DAEMON_LOG" 2>/dev/null || echo 0)))
+            fi
             if [ "$current_size" -eq "$last_size" ]; then
                 stale_count=$((stale_count + check_interval))
                 if [ "$stale_count" -ge "$HANG_TIMEOUT_SEC" ]; then
@@ -88,8 +203,10 @@ monitor_training() {
                 last_size=$current_size
             fi
 
-            local dead_count
-            dead_count=$(tail -c "$GPU_DEAD_TAIL_BYTES" "$TRAINING_LOG" 2>/dev/null \
+            local dead_count gpu_log="$TRAINING_LOG"
+            # In daemon mode the CUDA work, and its errors, are in the daemon.
+            [ "$DAEMON_MODE" = 1 ] && gpu_log="$DAEMON_LOG"
+            dead_count=$(tail -c "$GPU_DEAD_TAIL_BYTES" "$gpu_log" 2>/dev/null \
                          | grep -cE "$GPU_DEAD_PATTERN")
             if [ "${dead_count:-0}" -ge "$GPU_DEAD_THRESHOLD" ]; then
                 log_wd "GPU CONTEXT DEAD: $dead_count CUDA failures in log tail - killing PID $pid"
@@ -183,10 +300,27 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     # the file is deleted, so a later crash-restart cannot repeat a one-off
     # such as an output-layer rescale of the loaded checkpoint.
     once_env=""
-    if [ -f /root/train_once_env ]; then
-        once_env="$(head -n1 /root/train_once_env)"
-        rm -f /root/train_once_env
-        log_wd "One-shot environment for this start: $once_env"
+    case " $extra_args " in
+        *" --daemon "*) DAEMON_MODE=1 ;;
+        *) DAEMON_MODE=0 ;;
+    esac
+    if [ "$DAEMON_MODE" = 1 ]; then
+        # The daemon loads the brain, so it takes the one-shot environment
+        # (only when it is (re)started; a reused daemon leaves the file).
+        if ! ensure_daemon; then
+            daemon_start_fails=$((daemon_start_fails + 1))
+            if [ "$daemon_start_fails" -ge "$DAEMON_MAX_START_FAILS" ]; then
+                log_wd "FATAL: brain daemon failed to start $daemon_start_fails times in a row - manual intervention needed (see $DAEMON_LOG)"
+                exit 2
+            fi
+            log_wd "Brain daemon failed to start ($daemon_start_fails/$DAEMON_MAX_START_FAILS) - retrying in 60s"
+            sleep 60
+            continue
+        fi
+        daemon_start_fails=0
+    else
+        once_env="$(take_once_env)"
+        [ -n "$once_env" ] && log_wd "One-shot environment for this start: $once_env"
     fi
     # shellcheck disable=SC2086  # word-split the flag list on purpose
     env $once_env python3 scripts/immerse_athena.py --stage "$STAGE" --resume $extra_args > "$TRAINING_LOG" 2>&1 &
@@ -213,23 +347,35 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
             ;;
         42)
             log_wd "GPU error detected (code 42) - diagnosing and fixing"
+            # The daemon owns the dead CUDA context: stop it before the fix.
+            [ "$DAEMON_MODE" = 1 ] && stop_daemon
             if ! diagnose_and_fix; then
                 log_wd "FATAL: Diagnosis says unfixable - exiting"
                 exit 2
             fi
             ;;
         99)
-            log_wd "Hang detected - diagnosing and fixing"
-            if ! diagnose_and_fix; then
-                log_wd "FATAL: Diagnosis says unfixable - exiting"
-                exit 2
+            if [ "$DAEMON_MODE" = 1 ]; then
+                # The trainer holds no GPU state; ensure_daemon checks the
+                # brain (barrier) before the next start.
+                log_wd "Hang detected - restarting the trainer"
+            else
+                log_wd "Hang detected - diagnosing and fixing"
+                if ! diagnose_and_fix; then
+                    log_wd "FATAL: Diagnosis says unfixable - exiting"
+                    exit 2
+                fi
             fi
             ;;
         *)
-            log_wd "Unexpected exit code $exit_code - diagnosing and fixing"
-            if ! diagnose_and_fix; then
-                log_wd "FATAL: Diagnosis says unfixable - exiting"
-                exit 2
+            if [ "$DAEMON_MODE" = 1 ]; then
+                log_wd "Unexpected exit code $exit_code - restarting the trainer (daemon is checked first)"
+            else
+                log_wd "Unexpected exit code $exit_code - diagnosing and fixing"
+                if ! diagnose_and_fix; then
+                    log_wd "FATAL: Diagnosis says unfixable - exiting"
+                    exit 2
+                fi
             fi
             ;;
     esac

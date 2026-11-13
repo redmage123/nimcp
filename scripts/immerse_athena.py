@@ -12046,7 +12046,10 @@ def main():
     # accumulate (each .tmp.snn is ~10 GB). The in-process error path
     # only fires on graceful exception — process kills/SIGKILL leave
     # them behind. Sweep them at startup to recover disk.
-    _startup_cleanup_orphan_tmps()
+    # With --daemon the daemon may still be writing a save the previous
+    # trainer requested; the sweep runs after a barrier RPC instead (below).
+    if not args.daemon:
+        _startup_cleanup_orphan_tmps()
 
     # --- Load or create brain ---
     checkpoint_path = args.checkpoint
@@ -12125,6 +12128,10 @@ def main():
             sys.exit(1)
         brain = BrainProxy()
         print(f"  Connected to brain daemon (neurons={brain.get_neuron_count():,})")
+        # Wait out any save still running for a previous trainer, then sweep
+        # the .tmp files it left (deleting them mid-write corrupts that save).
+        brain.barrier()
+        _startup_cleanup_orphan_tmps()
     elif checkpoint_path and os.path.exists(checkpoint_path):
         # Resume: load full brain state from checkpoint (avoids 52GB+ fresh init)
         print(f"  Loading brain from checkpoint: {checkpoint_path}")
@@ -12201,90 +12208,60 @@ def main():
         _training_integration = None
 
     # --- Brain configuration ---
-    # In daemon mode, the brain was already configured when first created.
-    # These calls are idempotent but some (lnn_create, enable_multi_network)
-    # may fail if already initialized — wrap in try/except.
-    if args.daemon:
-        # Full config via daemon — same as non-daemon but with try/except
-        try:
-            brain.set_fast_training(False)
-            brain.set_task_type("regression")
-            brain.enable_biological_plasticity(True)
-        except Exception as e:
-            print(f"  Daemon config (basic): {e} (non-fatal)")
-        for label, fn in [
-            ("Mixed precision", lambda: brain.enable_mixed_precision(True)),
-            ("Gradient checkpointing", lambda: brain.enable_gradient_checkpointing(False, 0)),
-            ("World model", lambda: brain.enable_world_model(True)),
-            ("LNN", lambda: brain.lnn_create(128, 64, 32, 64)),
-            ("Multi-network UTM", lambda: brain.enable_multi_network()),
-        ]:
-            try:
-                fn()
-            except Exception as e:
-                print(f"  {label}: {e} (non-fatal)")
+    # The same calls in both modes: `brain_daemon.py --trainer-mode` holds the
+    # brain exactly as it was loaded, so the trainer configures it as it does
+    # in-process. (The old daemon branch also ran init_cortex_cnns, which the
+    # in-process path never does.) Under a standalone daemon these calls are
+    # repeats of its own boot setup; each is idempotent or guarded.
+    # --- CRITICAL: Disable fast training → ALL bio subsystems active ---
+    brain.set_fast_training(False)
+    print("  Fast training: OFF (full biological pipeline)")
 
-        # Initialize all 4 cortex CNN processors (visual/audio/speech/somato + FNO).
-        # Direct API call — no sensory data or learning required.
-        try:
-            brain.init_cortex_cnns()
-            ccm = brain.get_cortex_cnn_metrics()
-            active = sorted(ccm.keys()) if ccm else []
-            print(f"  Cortex CNNs: {active if active else 'NONE'}", flush=True)
-        except Exception as e:
-            print(f"  Cortex CNN init: {e} (non-fatal)", flush=True)
+    # --- CRITICAL: Use regression strategy (raw output, no softmax) ---
+    brain.set_task_type("regression")
+    print("  Task type: REGRESSION (raw output, no softmax)")
 
-        print("  Daemon mode: training config applied", flush=True)
-    else:
-        # --- CRITICAL: Disable fast training → ALL bio subsystems active ---
-        brain.set_fast_training(False)
-        print("  Fast training: OFF (full biological pipeline)")
+    # --- Enable mixed precision (FP16) for ~2x GPU throughput ---
+    try:
+        brain.enable_mixed_precision(True)
+        print("  Mixed precision: ON (FP16 compute, FP32 accumulation)")
+    except Exception as e:
+        print(f"  Mixed precision: FAILED ({e})")
 
-        # --- CRITICAL: Use regression strategy (raw output, no softmax) ---
-        brain.set_task_type("regression")
-        print("  Task type: REGRESSION (raw output, no softmax)")
+    # --- Enable gradient checkpointing for memory-efficient training ---
+    try:
+        brain.enable_gradient_checkpointing(False, 0)
+        print("  Gradient checkpointing: OFF (avoiding stack smash in fresh init)")
+    except Exception as e:
+        print(f"  Gradient checkpointing: FAILED ({e})")
 
-        # --- Enable mixed precision (FP16) for ~2x GPU throughput ---
-        try:
-            brain.enable_mixed_precision(True)
-            print("  Mixed precision: ON (FP16 compute, FP32 accumulation)")
-        except Exception as e:
-            print(f"  Mixed precision: FAILED ({e})")
+    # --- Enable biological plasticity ---
+    try:
+        brain.enable_biological_plasticity(True)
+        print("  Biological plasticity: ON (TPB + EDP + coordinator)")
+    except Exception as e:
+        print(f"  Biological plasticity: FAILED ({e})")
 
-        # --- Enable gradient checkpointing for memory-efficient training ---
-        try:
-            brain.enable_gradient_checkpointing(False, 0)
-            print("  Gradient checkpointing: OFF (avoiding stack smash in fresh init)")
-        except Exception as e:
-            print(f"  Gradient checkpointing: FAILED ({e})")
+    # --- Enable world model ---
+    try:
+        brain.enable_world_model(True)
+        print("  World model: ON (JEPA + RSSM)")
+    except Exception as e:
+        print(f"  World model: FAILED ({e})")
 
-        # --- Enable biological plasticity ---
-        try:
-            brain.enable_biological_plasticity(True)
-            print("  Biological plasticity: ON (TPB + EDP + coordinator)")
-        except Exception as e:
-            print(f"  Biological plasticity: FAILED ({e})")
+    # --- Create LNN temporal processor ---
+    try:
+        brain.lnn_create(128, 64, 32, 64)
+        print("  LNN temporal processor: ON (128→64→32→64)")
+    except Exception as e:
+        print(f"  LNN: FAILED ({e})")
 
-        # --- Enable world model ---
-        try:
-            brain.enable_world_model(True)
-            print("  World model: ON (JEPA + RSSM)")
-        except Exception as e:
-            print(f"  World model: FAILED ({e})")
-
-        # --- Create LNN temporal processor ---
-        try:
-            brain.lnn_create(128, 64, 32, 64)
-            print("  LNN temporal processor: ON (128→64→32→64)")
-        except Exception as e:
-            print(f"  LNN: FAILED ({e})")
-
-        # --- Enable multi-network unified training (UTM) ---
-        try:
-            brain.enable_multi_network()
-            print("  Multi-network UTM: ON (4 networks, unified optimizer)")
-        except Exception as e:
-            print(f"  Multi-network UTM: FAILED ({e})")
+    # --- Enable multi-network unified training (UTM) ---
+    try:
+        brain.enable_multi_network()
+        print("  Multi-network UTM: ON (4 networks, unified optimizer)")
+    except Exception as e:
+        print(f"  Multi-network UTM: FAILED ({e})")
 
     # --- Initialize reasoning KB ---
     try:

@@ -27,6 +27,27 @@ import time
 
 SOCKET_PATH = "/var/run/athena/brain.sock"
 DEFAULT_TIMEOUT = 300.0  # 5 min — 2.5M neurons + SNN BPTT can take 60-90s per step
+_USE_DEFAULT = object()  # sentinel: "use the proxy's own timeout"
+
+# Commands that are safe to send again after the request already reached the
+# daemon (the reply was lost or timed out). Everything else changes the brain
+# (learn_*, save, sleep_run_cycle, reward, tune setters, ...): sending it again
+# would run it twice — a second save on top of one still writing, or a
+# duplicate gradient step — so those raise DaemonResponseLost instead.
+_RESEND_SAFE = frozenset({
+    "ping", "status", "stats", "probe", "snn_tune_get", "lnn_tune_get",
+    "decide_full", "predict", "comprehend",
+})
+
+
+def _resend_safe(cmd):
+    return (cmd in _RESEND_SAFE or cmd.startswith("get_")
+            or cmd.endswith(("_get", "_stats", "_metrics", "_diag")))
+
+
+class DaemonResponseLost(RuntimeError):
+    """A non-idempotent request reached the daemon but its reply did not come
+    back. The daemon may still be running it, so it is NOT re-sent."""
 
 
 def is_daemon_running(socket_path=SOCKET_PATH):
@@ -76,37 +97,55 @@ class BrainProxy:
             self._async_pool = ThreadPoolExecutor(max_workers=2)
         self._async_pool.submit(self._send_once, req)
 
-    def _send_once(self, req):
-        """Single send attempt — no retries."""
+    def _send_once(self, req, timeout=_USE_DEFAULT):
+        """Single send attempt — no retries.
+
+        timeout: seconds, None to block until the daemon answers, or the
+        proxy default. Once the request is fully sent, a lost or late reply
+        to a command that is not _resend_safe raises DaemonResponseLost, which
+        _send does not retry.
+        """
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
+        sock.settimeout(self.timeout if timeout is _USE_DEFAULT else timeout)
         try:
             sock.connect(self.socket_path)
             data = json.dumps(req, default=_json_default).encode("utf-8")
             sock.sendall(struct.pack(">I", len(data)) + data)
-
-            # Receive response
-            hdr = b""
-            while len(hdr) < 4:
-                chunk = sock.recv(4 - len(hdr))
-                if not chunk:
-                    raise ConnectionError("Daemon closed connection")
-                hdr += chunk
-            length = struct.unpack(">I", hdr)[0]
-            body = b""
-            while len(body) < length:
-                chunk = sock.recv(min(length - len(body), 65536))
-                if not chunk:
-                    raise ConnectionError("Daemon closed connection")
-                body += chunk
-            resp = json.loads(body.decode("utf-8"))
-            if "error" in resp and resp["error"]:
-                raise RuntimeError(f"Brain daemon error: {resp['error']}")
-            return resp
+            try:
+                return self._recv_response(sock)
+            except self._TRANSIENT as e:
+                cmd = req.get("cmd", "?")
+                if _resend_safe(cmd):
+                    raise
+                raise DaemonResponseLost(
+                    f"'{cmd}' was delivered but its reply was lost "
+                    f"({type(e).__name__}: {e}); not re-sending it — the "
+                    f"daemon may still be running it") from e
         finally:
             sock.close()
 
-    def _send(self, req):
+    def _recv_response(self, sock):
+        """Read one length-prefixed JSON reply."""
+        # Receive response
+        hdr = b""
+        while len(hdr) < 4:
+            chunk = sock.recv(4 - len(hdr))
+            if not chunk:
+                raise ConnectionError("Daemon closed connection")
+            hdr += chunk
+        length = struct.unpack(">I", hdr)[0]
+        body = b""
+        while len(body) < length:
+            chunk = sock.recv(min(length - len(body), 65536))
+            if not chunk:
+                raise ConnectionError("Daemon closed connection")
+            body += chunk
+        resp = json.loads(body.decode("utf-8"))
+        if "error" in resp and resp["error"]:
+            raise RuntimeError(f"Brain daemon error: {resp['error']}")
+        return resp
+
+    def _send(self, req, timeout=_USE_DEFAULT):
         """Send with automatic retry and exponential backoff.
 
         Retries on transient socket errors (connection refused, reset, timeout,
@@ -121,6 +160,9 @@ class BrainProxy:
         retries' worth of socket-gone events before the brain finished
         loading. Now the retry budget is reserved for "brain is up but
         flaky" failures (ConnectionReset, recv-timeout, etc.).
+
+        Only failures before the request is delivered, or on _resend_safe
+        commands, are retried; see _send_once and DaemonResponseLost.
         """
         last_exc = None
         backoff = self.INITIAL_BACKOFF
@@ -128,7 +170,7 @@ class BrainProxy:
 
         while attempt < self.MAX_RETRIES:
             try:
-                resp = self._send_once(req)
+                resp = self._send_once(req, timeout)
                 # Success — reset failure counter
                 if self._consecutive_failures > 0:
                     print(f"  [BrainProxy] Reconnected after "
@@ -860,7 +902,15 @@ class BrainProxy:
     # -- Checkpoint --
 
     def save(self, path):
-        self._send({"cmd": "save", "path": path})
+        # No timeout: a full save (~21 GB SNN sidecar) can outlast any fixed
+        # limit, and giving up early made the trainer delete the .tmp files
+        # the daemon was still writing. Never re-sent (see DaemonResponseLost).
+        self._send({"cmd": "save", "path": path}, timeout=None)
+
+    def barrier(self):
+        """Return once every request queued ahead of this one (a save, a
+        learn step) has finished: the daemon runs it under the brain lock."""
+        self._send({"cmd": "barrier"}, timeout=None)
 
     # -- Monitoring --
 
@@ -1035,6 +1085,82 @@ class BrainProxy:
         resp = self._send({"cmd": "utm_forward_only",
                            "features": _to_list(features)})
         return resp.get("result")
+
+    def utm_reset_early_stopping(self):
+        self._send({"cmd": "utm_reset_early_stopping"})
+
+    def utm_set_early_stopping_enabled(self, enabled):
+        self._send({"cmd": "utm_set_early_stopping_enabled",
+                    "enabled": bool(enabled)})
+
+    def utm_set_per_network_lr(self, net_idx, lr):
+        self._send({"cmd": "utm_set_per_network_lr",
+                    "net_idx": int(net_idx), "lr": float(lr)})
+
+    # -- Runtime SNN / LNN knobs (trainer probes) --
+    # The in-process trainer sets these temporarily (probe noise off, LNN
+    # substrate frozen) and restores them. persist=False keeps the daemon
+    # from writing them to snn_tune.json, where they would outlive a restart.
+
+    def snn_tune(self, name, value):
+        self._send({"cmd": "snn_tune", "name": name, "value": float(value),
+                    "persist": False})
+
+    def snn_tune_get(self):
+        resp = self._send({"cmd": "snn_tune_get"})
+        return resp.get("params", {})
+
+    def lnn_tune(self, name, value):
+        self._send({"cmd": "lnn_tune", "name": name, "value": float(value)})
+
+    def lnn_tune_get(self):
+        resp = self._send({"cmd": "lnn_tune_get"})
+        return resp.get("params", {})
+
+    def reset_inference_state(self):
+        resp = self._send({"cmd": "reset_inference_state"})
+        return resp.get("result")
+
+    def thalamus_set_attention(self, region, gain):
+        return self._send({"cmd": "thalamus_set_attention", "region": region,
+                           "gain": float(gain)}).get("result")
+
+    # -- Visual cortex (video phase) --
+
+    def cortex_embed_visual(self, pixels, width, height, channels=3):
+        resp = self._send({"cmd": "cortex_embed_visual",
+                           "pixels": _to_list(pixels),
+                           "width": int(width), "height": int(height),
+                           "channels": int(channels)})
+        return resp.get("embedding")
+
+    def set_visual_target(self, target, modality=0):
+        self._send({"cmd": "set_visual_target", "target": _to_list(target),
+                    "modality": int(modality)})
+
+    # -- Octopus peripheral exploration --
+
+    def octopus_explore_from_occipital(self):
+        return self._send({"cmd": "octopus_explore_from_occipital"}).get("result")
+
+    def octopus_explore_from_audio_cortex(self):
+        return self._send({"cmd": "octopus_explore_from_audio_cortex"}).get("result")
+
+    def octopus_explore_from_somatosensory(self):
+        return self._send({"cmd": "octopus_explore_from_somatosensory"}).get("result")
+
+    # -- Edge --
+
+    def edge_score_importance(self, *args):
+        resp = self._send({"cmd": "edge_score_importance", "args": list(args)})
+        return resp.get("scores")
+
+    def sensor_hub_create(self, *args):
+        return self._send({"cmd": "sensor_hub_create", "args": list(args)}).get("result")
+
+    def watchdog_create(self, *args, **kwargs):
+        return self._send({"cmd": "watchdog_create", "args": list(args),
+                           "kwargs": kwargs}).get("result")
 
     # -- Experience --
 

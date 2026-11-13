@@ -18,6 +18,23 @@ log_diag() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$DIAG_LOG"
 }
 
+# Kill python processes to free their CUDA contexts — except the brain daemon
+# (scripts/brain_daemon.py). The watchdog runs this script when the TRAINER
+# fails; a blanket `pkill -9 -f python3` also SIGKILLed a daemon holding the
+# brain, losing everything since its last save. A daemon whose own GPU context
+# is dead is stopped by the watchdog before it calls this script.
+kill_python_except_daemon() {
+    local pid cmd
+    for pid in $(pgrep -f python3); do
+        [ "$pid" = "$$" ] && continue
+        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || continue
+        case "$cmd" in
+            *brain_daemon.py*) log_diag "  sparing brain daemon PID $pid" ;;
+            *) kill -9 "$pid" 2>/dev/null ;;
+        esac
+    done
+}
+
 log_diag "=========================================="
 log_diag "GPU DIAGNOSIS - analyzing failure"
 log_diag "=========================================="
@@ -101,8 +118,8 @@ case "$ERROR_TYPE" in
         log_diag "FIX: GPU device busy - clearing CUDA state"
 
         # 1. Kill ALL python processes to free CUDA contexts
-        log_diag "  Step 1: Killing all python processes"
-        pkill -9 -f python3 2>/dev/null
+        log_diag "  Step 1: Killing python processes (brain daemon spared)"
+        kill_python_except_daemon
         sleep 2
 
         # 2. Clear CUDA cache files that might be stale
@@ -162,7 +179,7 @@ except Exception as e:
 
     "oom")
         log_diag "FIX: GPU OOM - clearing memory"
-        pkill -9 -f python3 2>/dev/null
+        kill_python_except_daemon
         sleep 2
         rm -rf ~/.nv/ComputeCache 2>/dev/null
 
@@ -181,7 +198,7 @@ except Exception as e:
 
     "illegal_access")
         log_diag "FIX: Illegal memory access - full GPU reset required"
-        pkill -9 -f python3 2>/dev/null
+        kill_python_except_daemon
         sleep 2
         nvidia-smi --gpu-reset 2>&1 | tee -a "$DIAG_LOG"
         sleep 3
@@ -194,7 +211,7 @@ except Exception as e:
 
     *)
         log_diag "FIX: Unknown error type - generic recovery"
-        pkill -9 -f python3 2>/dev/null
+        kill_python_except_daemon
         sleep 3
         if nvidia-smi > /dev/null 2>&1; then
             FIX_RESULT=1

@@ -83,6 +83,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger("brain_daemon")
 
+
+class _SkipStep(Exception):
+    """Raised inside a guarded startup step to skip it (--trainer-mode)."""
+
 SOCKET_PATH = "/var/run/athena/brain.sock"
 SOCKET_LOCK = "/var/run/athena/brain.sock.lock"
 PID_FILE = "/var/run/athena/brain.pid"
@@ -3555,7 +3559,11 @@ class BrainService:
                 self.brain.snn_tune(str(name), float(value))
         except ValueError as e:
             return {"error": str(e)}
-        _save_persistent_snn_tune(name, value, logger)
+        # persist=False: a temporary setting (the trainer's probes switch
+        # noise off and restore it); writing it to snn_tune.json would make
+        # it outlive a daemon restart.
+        if req.get("persist", True):
+            _save_persistent_snn_tune(name, value, logger)
         return {"ok": True, "name": name, "value": float(value)}
 
     def _cmd_snn_tune_get(self, _req):
@@ -3568,6 +3576,73 @@ class BrainService:
             params['autotune_cycles_observed'] = _runtime_state['autotune_cycles_observed']
             params['autotune_last_action'] = _runtime_state['autotune_last_action']
         return {"params": params}
+
+    # -- Trainer parity (immerse_athena.py --daemon) --
+    # Methods the in-process trainer calls on nimcp.Brain that had no RPC, so
+    # under BrainProxy they raised AttributeError and the trainer's
+    # try/except silently skipped them (video-phase learning, probe controls).
+
+    def _call_brain(self, name, *args, **kwargs):
+        fn = getattr(self.brain, name, None)
+        if fn is None:
+            return {"error": f"{name} not available in this nimcp build"}
+        return {"ok": True, "result": fn(*args, **kwargs)}
+
+    def _cmd_barrier(self, _req):
+        """No-op run under the brain lock: it replies only after every request
+        queued ahead of it (a save, a learn step) has finished."""
+        return {"ok": True}
+
+    def _cmd_lnn_tune(self, req):
+        name, value = req.get("name"), req.get("value")
+        if name is None or value is None:
+            return {"error": "lnn_tune requires 'name' and 'value'"}
+        self.brain.lnn_tune(str(name), float(value))
+        return {"ok": True, "name": name, "value": float(value)}
+
+    def _cmd_lnn_tune_get(self, _req):
+        return {"params": dict(self.brain.lnn_tune_get() or {})}
+
+    def _cmd_reset_inference_state(self, _req):
+        return self._call_brain("reset_inference_state")
+
+    def _cmd_cortex_embed_visual(self, req):
+        emb = self.brain.cortex_embed_visual(req["pixels"], int(req["width"]),
+                                             int(req["height"]),
+                                             int(req.get("channels", 3)))
+        return {"embedding": emb}
+
+    def _cmd_set_visual_target(self, req):
+        return self._call_brain("set_visual_target", req["target"],
+                                int(req.get("modality", 0)))
+
+    def _cmd_thalamus_set_attention(self, req):
+        return self._call_brain("thalamus_set_attention", req["region"],
+                                float(req["gain"]))
+
+    def _cmd_utm_set_per_network_lr(self, req):
+        return self._call_brain("utm_set_per_network_lr", int(req["net_idx"]),
+                                float(req["lr"]))
+
+    def _cmd_octopus_explore_from_occipital(self, _req):
+        return self._call_brain("octopus_explore_from_occipital")
+
+    def _cmd_octopus_explore_from_audio_cortex(self, _req):
+        return self._call_brain("octopus_explore_from_audio_cortex")
+
+    def _cmd_octopus_explore_from_somatosensory(self, _req):
+        return self._call_brain("octopus_explore_from_somatosensory")
+
+    def _cmd_edge_score_importance(self, req):
+        out = self._call_brain("edge_score_importance", *req.get("args", []))
+        return {"scores": out["result"]} if "result" in out else out
+
+    def _cmd_sensor_hub_create(self, req):
+        return self._call_brain("sensor_hub_create", *req.get("args", []))
+
+    def _cmd_watchdog_create(self, req):
+        return self._call_brain("watchdog_create", *req.get("args", []),
+                                **req.get("kwargs", {}))
 
     def _cmd_snn_pop_stats(self, _req):
         """Return per-population live firing-rate snapshot."""
@@ -5517,349 +5592,10 @@ def _install_wedge_watchdog(traceback_path="/var/log/athena/brain_traceback.log"
         logger.warning("Wedge watchdog install failed: %s", e)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Athena Brain Daemon — persistent brain server")
-    parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Load brain from checkpoint file")
-    parser.add_argument("--resume", action="store_true",
-                        help="Auto-resume from latest checkpoint")
-    parser.add_argument("--fresh", action="store_true",
-                        help="Ignore checkpoints, create fresh brain")
-    parser.add_argument("--init-mode", type=str, default="full",
-                        choices=["full", "fast", "minimal"],
-                        help="Brain init mode (default: full)")
-    parser.add_argument("--neuron-count", type=int, default=DEFAULT_ANN_NEURONS,
-                        help=f"ANN neuron count (default: {DEFAULT_ANN_NEURONS}, SNN is primary)")
-    parser.add_argument("--snn-neuron-count", type=int, default=DEFAULT_SNN_NEURONS,
-                        help=f"SNN target neuron count (default: {DEFAULT_SNN_NEURONS})")
-    parser.add_argument("--lnn-neuron-count", type=int, default=DEFAULT_LNN_NEURONS,
-                        help=f"LNN neuron count (default: {DEFAULT_LNN_NEURONS})")
-    parser.add_argument("--num-inputs", type=int, default=1024,
-                        help="Input dimension (default: 1024)")
-    parser.add_argument("--num-outputs", type=int, default=2048,
-                        help="Output dimension (default: 2048)")
-    parser.add_argument("--socket", type=str, default=SOCKET_PATH,
-                        help=f"Unix socket path (default: {SOCKET_PATH})")
-    parser.add_argument("--workers", type=int, default=4,
-                        help="Max concurrent worker threads (default: 4)")
-    parser.add_argument("--checkpoint-dir", type=str,
-                        default=None,
-                        help="Auto-checkpoint directory (default: same dir as --checkpoint)")
-    parser.add_argument("--checkpoint-interval", type=int, default=300,
-                        help="Auto-checkpoint interval seconds (default: 300)")
-    parser.add_argument("--sleep-interval-min", type=int, default=15,
-                        help="Periodic sleep-wake cycle interval in minutes "
-                             "(default: 15). Each interval triggers one full "
-                             "drowsy→NREM→REM→awake cycle. Pressure-driven "
-                             "triggers still fire between periodic cycles. "
-                             "Rationale: replay batch=100 memories, learning "
-                             "at ~6 steps/min → 15 min ≈ 90 new memories per "
-                             "cycle, keeping consolidation paced 1:1 with "
-                             "learning.")
-    parser.add_argument("--log-file", type=str, default=None,
-                        help="Log file path (default: stderr)")
-    parser.add_argument("--bootstrap-lexicon", type=str, default=None,
-                        metavar="PATH",
-                        help="Optional path to base_lexicon_v*.json. If "
-                             "given AND the brain has < 300 vocab words at "
-                             "startup, bootstrap the grounded lexicon from "
-                             "this file. Skipped on resume from a "
-                             "checkpoint that already has a populated "
-                             "lexicon to avoid double-bootstrapping.")
-    args = parser.parse_args()
-
-    # Logging setup
-    log_handlers = [logging.StreamHandler()]
-    if args.log_file:
-        log_handlers.append(logging.FileHandler(args.log_file))
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
-        handlers=log_handlers,
-    )
-
-    # Wedge watchdog — periodic all-thread stack dump for diagnosing
-    # compute-bound hangs when ptrace is unavailable (container
-    # restriction on the pod, 2026-05-15). See _install_wedge_watchdog.
-    _install_wedge_watchdog()
-
-    # Stale PID cleanup disabled — supervisord/systemd manages process lifecycle.
-    # The pgrep-based approach killed sibling restarts, causing FATAL loops.
-    my_pid = os.getpid()
-    stale_pids = set()
-
-    if False:  # Disabled — was causing restart loops under process managers
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["pgrep", "-f", "brain_daemon.py"],
-                capture_output=True, text=True)
-            for line in result.stdout.strip().split('\n'):
-                if not line:
-                    continue
-                try:
-                    pid = int(line.strip())
-                    if pid != my_pid:
-                        stale_pids.add(pid)
-                except ValueError:
-                    continue
-        except Exception:
-            pass
-
-    # Kill all stale processes with patience (they may be saving checkpoints)
-    for pid in stale_pids:
-        logger.info("Killing stale brain_daemon process (PID %d)", pid)
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            continue
-
-    if stale_pids:
-        import time as _time
-        # Wait up to 10 seconds for graceful shutdown
-        for wait in range(10):
-            _time.sleep(1)
-            still_alive = []
-            for pid in stale_pids:
-                try:
-                    os.kill(pid, 0)  # Check if alive
-                    still_alive.append(pid)
-                except ProcessLookupError:
-                    pass
-            if not still_alive:
-                break
-            if wait == 9:
-                # Force kill after 10 seconds
-                for pid in still_alive:
-                    logger.warning("Force-killing unresponsive daemon PID %d", pid)
-                    try:
-                        os.kill(pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                _time.sleep(1)  # Let kernel clean up
-
-    # Clean stale socket
-    if os.path.exists(args.socket):
-        try:
-            os.unlink(args.socket)
-            logger.info("Removed stale socket: %s", args.socket)
-        except OSError:
-            pass
-
-    # Write PID file (ensure directory exists)
-    os.makedirs(os.path.dirname(PID_FILE), exist_ok=True)
-    with open(PID_FILE, "w") as f:
-        f.write(str(os.getpid()))
-    logger.info("Brain daemon PID %d", os.getpid())
-
-    # Import nimcp with progress display
-    import nimcp
-    print("\n" + "=" * 60, flush=True)
-    print("  ATHENA BRAIN DAEMON — Initializing", flush=True)
-    print("=" * 60, flush=True)
-
-    try:
-        from tqdm import tqdm
-        HAS_TQDM = True
-    except ImportError:
-        HAS_TQDM = False
-        print("  [tqdm not available — using text progress]", flush=True)
-
-    print("  [1/8] Initializing NIMCP library...", flush=True)
-    nimcp.init()
-    print("  [1/8] ✓ Library initialized", flush=True)
-
-    # === STARTUP ORPHAN CLEANUP ===
-    # Sweep .tmp / .tmp.* files left from crashed-mid-save runs.
-    # When the brain is SIGKILL'd or crashes, the C-side save's .tmp
-    # files (especially the 10 GB .snn.tmp from gzip) persist.
-    try:
-        import glob as _g
-        ckpt_dir = args.checkpoint_dir or "checkpoints/athena"
-        if ckpt_dir and os.path.isdir(ckpt_dir):
-            patterns = [
-                os.path.join(ckpt_dir, "*.tmp"),
-                os.path.join(ckpt_dir, "*.tmp.*"),
-                os.path.join(ckpt_dir, "*.snn.tmp"),
-                os.path.join(ckpt_dir, "*.lnk"),
-            ]
-            # Don't delete short-lived state files mid-write (audit bug #4)
-            KEEP = {"immersive_state.json.tmp"}
-            removed = 0
-            freed = 0
-            for pat in patterns:
-                for f in _g.glob(pat):
-                    if os.path.basename(f) in KEEP:
-                        continue
-                    try:
-                        sz = os.path.getsize(f) if os.path.exists(f) else 0
-                        os.remove(f)
-                        removed += 1
-                        freed += sz
-                    except OSError:
-                        pass
-            if removed > 0:
-                logger.info("Startup cleanup: removed %d orphan .tmp files (freed %.1f GB)",
-                            removed, freed / 1e9)
-    except Exception as _ce:
-        logger.warning("Startup cleanup error: %s", _ce)
-
-    # Determine checkpoint dir — MUST be same directory as the checkpoint file
-    # to avoid saving to a different filesystem path
-    if args.checkpoint_dir is None:
-        if args.checkpoint:
-            args.checkpoint_dir = os.path.dirname(os.path.abspath(args.checkpoint))
-        else:
-            args.checkpoint_dir = os.path.join(os.getcwd(), "checkpoints", "athena")
-    args.checkpoint_dir = os.path.abspath(args.checkpoint_dir)
-
-    # Determine checkpoint path
-    checkpoint_path = args.checkpoint
-    if checkpoint_path:
-        checkpoint_path = os.path.abspath(checkpoint_path)
-    if args.fresh:
-        checkpoint_path = None
-        logger.info("Fresh mode: ignoring checkpoints, creating new brain")
-    elif args.resume and not checkpoint_path:
-        default_ckpt = os.path.join(args.checkpoint_dir, "athena_immersive.bin")
-        daemon_ckpt = os.path.join(args.checkpoint_dir, "athena_daemon.bin")
-        if os.path.exists(daemon_ckpt):
-            checkpoint_path = daemon_ckpt
-        elif os.path.exists(default_ckpt):
-            checkpoint_path = default_ckpt
-        if checkpoint_path:
-            logger.info("Auto-resume: %s", checkpoint_path)
-
-    # Load or create brain (with .bak fallback)
-    t0 = time.time()
-    brain = None
-    if checkpoint_path and os.path.exists(checkpoint_path):
-        # Audit fix #7: validate critical sidecars exist before loading.
-        # Without .snn the brain loads with no spike network state but
-        # training proceeds — silent partial restore.
-        # Resolve symlinks so we check real files not stale dangling links.
-        _real_ckpt = os.path.realpath(checkpoint_path)
-        _missing_sidecars = []
-        for _ext in ['.snn', '.cnn', '.lnn']:
-            _sc = _real_ckpt + _ext
-            if not os.path.exists(_sc):
-                _missing_sidecars.append(_ext)
-        if _missing_sidecars:
-            logger.warning(
-                "Checkpoint %s is missing critical sidecars: %s — "
-                "brain will load with default %s state. Training may be wrong.",
-                os.path.basename(checkpoint_path),
-                _missing_sidecars,
-                "/".join(s.lstrip(".") for s in _missing_sidecars))
-            print(f"  [WARN] Missing sidecars: {_missing_sidecars}", flush=True)
-
-        # Main bin + ALL sidecars — SNN sidecar is 20x larger than main.
-        # Using only main-bin size (ckpt_size_main * 300) vastly under-
-        # estimates the loader's wall-time and caused a false "load failed"
-        # on 2026-04-24 when the background thread was still running.
-        ckpt_size_main = os.path.getsize(checkpoint_path) / (1024**3)
-        ckpt_size_total = ckpt_size_main
-        for _ext in (".snn", ".lnn", ".cnn", ".meta", ".tokenizer",
-                     ".mirror_neurons", ".executive",
-                     ".cortex_visual", ".cortex_audio",
-                     ".cortex_speech", ".cortex_somato"):
-            _p = checkpoint_path + _ext
-            if os.path.exists(_p):
-                ckpt_size_total += os.path.getsize(_p) / (1024**3)
-        ckpt_size = ckpt_size_total
-        print(f"  [2/8] Loading checkpoint: {os.path.basename(checkpoint_path)} "
-              f"({ckpt_size_main:.1f} GB main + {ckpt_size_total - ckpt_size_main:.1f} GB sidecars)",
-              flush=True)
-
-        # Show a progress bar during the blocking load
-        if HAS_TQDM:
-            # Brain load is blocking C code — we can't track real progress,
-            # but we can show an estimated timer based on checkpoint size
-            import threading as _threading
-            load_done = _threading.Event()
-            load_result = [None, None]  # [brain, error]
-
-            def _load():
-                try:
-                    load_result[0] = nimcp.Brain("athena",
-                                                   checkpoint=str(checkpoint_path),
-                                                   init_mode=args.init_mode)
-                except Exception as e:
-                    load_result[1] = e
-                load_done.set()
-
-            t = _threading.Thread(target=_load, daemon=True)
-            t.start()
-
-            # No timeout — let the load take as long as it needs.
-            # Large brains with grown metadata pools can take 15-20+ minutes.
-            # ~60s per GB of total checkpoint footprint; minimum 15 minutes.
-            est_seconds = max(900, int(ckpt_size * 60))
-            pbar = tqdm(total=est_seconds, desc="  Loading brain",
-                        unit="s", bar_format="  {desc}: {bar:40} {n_fmt}/{total_fmt}s",
-                        ncols=70)
-            tick = 0
-            while not load_done.wait(timeout=0.1):
-                if tick % 10 == 0:
-                    # Cap display at est_seconds but keep waiting for the
-                    # loader thread. Prior bug: exited the loop when tick
-                    # hit est_seconds*10, leaving brain=None while the
-                    # loader was still running → spurious "load failed".
-                    if pbar.n < est_seconds:
-                        pbar.update(1)
-                tick += 1
-            pbar.n = est_seconds
-            pbar.refresh()
-            pbar.close()
-
-            if load_result[1]:
-                raise load_result[1]
-            brain = load_result[0]
-        else:
-            print("  Loading... (this takes ~10 minutes)", flush=True)
-            try:
-                brain = nimcp.Brain("athena", checkpoint=str(checkpoint_path),
-                                    init_mode=args.init_mode)
-            except Exception as e:
-                logger.error("Failed to load checkpoint: %s", e)
-
-        if brain is None:
-            # Try .bak fallback
-            bak_path = checkpoint_path + ".bak"
-            if os.path.exists(bak_path):
-                print(f"  [2/8] Trying backup: {os.path.basename(bak_path)}", flush=True)
-                try:
-                    brain = nimcp.Brain("athena", checkpoint=str(bak_path),
-                                        init_mode=args.init_mode)
-                    checkpoint_path = bak_path
-                except Exception as e2:
-                    logger.error("Backup checkpoint also failed: %s", e2)
-
-    if brain is None:
-        if checkpoint_path:
-            # CRITICAL: If a checkpoint was specified but failed to load,
-            # EXIT immediately. NEVER create a fresh brain that would
-            # overwrite trained data when the auto-checkpointer runs.
-            print(f"  [2/8] FATAL: Checkpoint load failed: {checkpoint_path}", flush=True)
-            print(f"  [2/8] Refusing to create fresh brain — would destroy trained data.", flush=True)
-            logger.critical("Checkpoint load failed for %s — exiting to protect data", checkpoint_path)
-            sys.exit(1)
-        print(f"  [2/8] Creating new brain: ANN={args.neuron_count:,}, "
-              f"SNN={args.snn_neuron_count:,}, LNN={args.lnn_neuron_count:,}, "
-              f"mode={args.init_mode}", flush=True)
-        brain = nimcp.Brain("athena",
-                            num_inputs=args.num_inputs,
-                            num_outputs=args.num_outputs,
-                            neuron_count=args.neuron_count,
-                            init_mode=args.init_mode,
-                            snn_neuron_count=args.snn_neuron_count,
-                            lnn_neuron_count=args.lnn_neuron_count)
-    elapsed = time.time() - t0
-    n_neurons = brain.get_neuron_count() if brain else 0
-    print(f"  [2/8] ✓ Brain loaded: {n_neurons:,} neurons in {elapsed:.1f}s", flush=True)
-    logger.info("Brain ready in %.1f seconds (%d neurons)", elapsed, n_neurons)
-
+def _apply_daemon_boot_config(brain, args):
+    """Post-load brain setup of a standalone daemon (moved out of main()
+    unchanged so --trainer-mode can skip it). Each step changes the brain
+    compared with the in-process trainer, which does none of them."""
     # CRITICAL: flip cognitive feature flags on the live brain. Without this,
     # resumed checkpoints carry whatever config was saved (often with
     # enable_sleep_wake_cycle=false from earlier training runs), and the
@@ -6035,6 +5771,393 @@ def main():
             except Exception as _boot_e:
                 logger.warning("bootstrap_lexicon: %s (non-fatal)", _boot_e)
 
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Athena Brain Daemon — persistent brain server")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Load brain from checkpoint file")
+    parser.add_argument("--resume", action="store_true",
+                        help="Auto-resume from latest checkpoint")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Ignore checkpoints, create fresh brain")
+    parser.add_argument("--init-mode", type=str, default="full",
+                        choices=["full", "fast", "minimal"],
+                        help="Brain init mode (default: full)")
+    parser.add_argument("--neuron-count", type=int, default=DEFAULT_ANN_NEURONS,
+                        help=f"ANN neuron count (default: {DEFAULT_ANN_NEURONS}, SNN is primary)")
+    parser.add_argument("--snn-neuron-count", type=int, default=DEFAULT_SNN_NEURONS,
+                        help=f"SNN target neuron count (default: {DEFAULT_SNN_NEURONS})")
+    parser.add_argument("--lnn-neuron-count", type=int, default=DEFAULT_LNN_NEURONS,
+                        help=f"LNN neuron count (default: {DEFAULT_LNN_NEURONS})")
+    parser.add_argument("--num-inputs", type=int, default=1024,
+                        help="Input dimension (default: 1024)")
+    parser.add_argument("--num-outputs", type=int, default=2048,
+                        help="Output dimension (default: 2048)")
+    parser.add_argument("--socket", type=str, default=SOCKET_PATH,
+                        help=f"Unix socket path (default: {SOCKET_PATH})")
+    parser.add_argument("--workers", type=int, default=4,
+                        help="Max concurrent worker threads (default: 4)")
+    parser.add_argument("--checkpoint-dir", type=str,
+                        default=None,
+                        help="Auto-checkpoint directory (default: same dir as --checkpoint)")
+    parser.add_argument("--checkpoint-interval", type=int, default=300,
+                        help="Auto-checkpoint interval seconds (default: 300)")
+    parser.add_argument("--sleep-interval-min", type=int, default=15,
+                        help="Periodic sleep-wake cycle interval in minutes "
+                             "(default: 15). Each interval triggers one full "
+                             "drowsy→NREM→REM→awake cycle. Pressure-driven "
+                             "triggers still fire between periodic cycles. "
+                             "Rationale: replay batch=100 memories, learning "
+                             "at ~6 steps/min → 15 min ≈ 90 new memories per "
+                             "cycle, keeping consolidation paced 1:1 with "
+                             "learning.")
+    parser.add_argument("--log-file", type=str, default=None,
+                        help="Log file path (default: stderr)")
+    parser.add_argument("--bootstrap-lexicon", type=str, default=None,
+                        metavar="PATH",
+                        help="Optional path to base_lexicon_v*.json. If "
+                             "given AND the brain has < 300 vocab words at "
+                             "startup, bootstrap the grounded lexicon from "
+                             "this file. Skipped on resume from a "
+                             "checkpoint that already has a populated "
+                             "lexicon to avoid double-bootstrapping.")
+    parser.add_argument("--trainer-mode", action="store_true",
+                        help="Serve the brain for `immerse_athena.py --daemon` "
+                             "exactly as the in-process trainer would hold it: "
+                             "load --checkpoint with Brain.load + "
+                             "eager_init_cognitive and nothing else (no "
+                             "configure_cognitive / CB rescale / catch-up "
+                             "sleep / output-activation / HNN / language "
+                             "config / retrofit), no auto or shutdown saves "
+                             "(the trainer saves via the save RPC), no sleep "
+                             "scheduler or autotuner, no startup .tmp sweep "
+                             "(it would delete a save still being written).")
+    args = parser.parse_args()
+    if args.trainer_mode:
+        if args.fresh or not (args.checkpoint or args.resume):
+            parser.error("--trainer-mode needs --checkpoint (or --resume) "
+                         "and refuses --fresh")
+        # The in-process trainer sets these before importing nimcp.
+        os.environ["NIMCP_NO_COW_SIGNAL"] = "1"
+        os.environ.setdefault("NIMCP_DISABLE_LEARN_LANGUAGE", "0")
+        args.checkpoint_interval = 0
+
+    # Logging setup
+    log_handlers = [logging.StreamHandler()]
+    if args.log_file:
+        log_handlers.append(logging.FileHandler(args.log_file))
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+        handlers=log_handlers,
+    )
+
+    # Wedge watchdog — periodic all-thread stack dump for diagnosing
+    # compute-bound hangs when ptrace is unavailable (container
+    # restriction on the pod, 2026-05-15). See _install_wedge_watchdog.
+    _install_wedge_watchdog()
+
+    # Stale PID cleanup disabled — supervisord/systemd manages process lifecycle.
+    # The pgrep-based approach killed sibling restarts, causing FATAL loops.
+    my_pid = os.getpid()
+    stale_pids = set()
+
+    if False:  # Disabled — was causing restart loops under process managers
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["pgrep", "-f", "brain_daemon.py"],
+                capture_output=True, text=True)
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                try:
+                    pid = int(line.strip())
+                    if pid != my_pid:
+                        stale_pids.add(pid)
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+
+    # Kill all stale processes with patience (they may be saving checkpoints)
+    for pid in stale_pids:
+        logger.info("Killing stale brain_daemon process (PID %d)", pid)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+
+    if stale_pids:
+        import time as _time
+        # Wait up to 10 seconds for graceful shutdown
+        for wait in range(10):
+            _time.sleep(1)
+            still_alive = []
+            for pid in stale_pids:
+                try:
+                    os.kill(pid, 0)  # Check if alive
+                    still_alive.append(pid)
+                except ProcessLookupError:
+                    pass
+            if not still_alive:
+                break
+            if wait == 9:
+                # Force kill after 10 seconds
+                for pid in still_alive:
+                    logger.warning("Force-killing unresponsive daemon PID %d", pid)
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                _time.sleep(1)  # Let kernel clean up
+
+    # Clean stale socket
+    if os.path.exists(args.socket):
+        try:
+            os.unlink(args.socket)
+            logger.info("Removed stale socket: %s", args.socket)
+        except OSError:
+            pass
+
+    # Write PID file (ensure directory exists)
+    os.makedirs(os.path.dirname(PID_FILE), exist_ok=True)
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    logger.info("Brain daemon PID %d", os.getpid())
+
+    # Import nimcp with progress display
+    import nimcp
+    print("\n" + "=" * 60, flush=True)
+    print("  ATHENA BRAIN DAEMON — Initializing", flush=True)
+    print("=" * 60, flush=True)
+
+    try:
+        from tqdm import tqdm
+        HAS_TQDM = True
+    except ImportError:
+        HAS_TQDM = False
+        print("  [tqdm not available — using text progress]", flush=True)
+
+    print("  [1/8] Initializing NIMCP library...", flush=True)
+    nimcp.init()
+    print("  [1/8] ✓ Library initialized", flush=True)
+
+    # === STARTUP ORPHAN CLEANUP ===
+    # Sweep .tmp / .tmp.* files left from crashed-mid-save runs.
+    # When the brain is SIGKILL'd or crashes, the C-side save's .tmp
+    # files (especially the 10 GB .snn.tmp from gzip) persist.
+    try:
+        import glob as _g
+        ckpt_dir = args.checkpoint_dir or "checkpoints/athena"
+        if args.trainer_mode:
+            logger.info("Trainer mode: startup .tmp sweep skipped")
+        elif ckpt_dir and os.path.isdir(ckpt_dir):
+            patterns = [
+                os.path.join(ckpt_dir, "*.tmp"),
+                os.path.join(ckpt_dir, "*.tmp.*"),
+                os.path.join(ckpt_dir, "*.snn.tmp"),
+                os.path.join(ckpt_dir, "*.lnk"),
+            ]
+            # Don't delete short-lived state files mid-write (audit bug #4)
+            KEEP = {"immersive_state.json.tmp"}
+            removed = 0
+            freed = 0
+            for pat in patterns:
+                for f in _g.glob(pat):
+                    if os.path.basename(f) in KEEP:
+                        continue
+                    try:
+                        sz = os.path.getsize(f) if os.path.exists(f) else 0
+                        os.remove(f)
+                        removed += 1
+                        freed += sz
+                    except OSError:
+                        pass
+            if removed > 0:
+                logger.info("Startup cleanup: removed %d orphan .tmp files (freed %.1f GB)",
+                            removed, freed / 1e9)
+    except Exception as _ce:
+        logger.warning("Startup cleanup error: %s", _ce)
+
+    # Determine checkpoint dir — MUST be same directory as the checkpoint file
+    # to avoid saving to a different filesystem path
+    if args.checkpoint_dir is None:
+        if args.checkpoint:
+            args.checkpoint_dir = os.path.dirname(os.path.abspath(args.checkpoint))
+        else:
+            args.checkpoint_dir = os.path.join(os.getcwd(), "checkpoints", "athena")
+    args.checkpoint_dir = os.path.abspath(args.checkpoint_dir)
+
+    # Determine checkpoint path
+    checkpoint_path = args.checkpoint
+    if checkpoint_path:
+        checkpoint_path = os.path.abspath(checkpoint_path)
+    if args.fresh:
+        checkpoint_path = None
+        logger.info("Fresh mode: ignoring checkpoints, creating new brain")
+    elif args.resume and not checkpoint_path:
+        default_ckpt = os.path.join(args.checkpoint_dir, "athena_immersive.bin")
+        daemon_ckpt = os.path.join(args.checkpoint_dir, "athena_daemon.bin")
+        if os.path.exists(daemon_ckpt):
+            checkpoint_path = daemon_ckpt
+        elif os.path.exists(default_ckpt):
+            checkpoint_path = default_ckpt
+        if checkpoint_path:
+            logger.info("Auto-resume: %s", checkpoint_path)
+
+    # Load or create brain (with .bak fallback)
+    t0 = time.time()
+    brain = None
+    if args.trainer_mode:
+        # Load exactly as immerse_athena.py does in-process. Brain.load raises
+        # on failure; nimcp.Brain(checkpoint=...) below instead falls back to
+        # a FRESH brain, which the trainer's next save would write over the
+        # lineage.
+        if not (checkpoint_path and os.path.exists(checkpoint_path)):
+            logger.critical("Trainer mode: checkpoint %s not found", checkpoint_path)
+            sys.exit(1)
+        print(f"  [2/8] Trainer mode: Brain.load({checkpoint_path})", flush=True)
+        brain = nimcp.Brain.load(str(checkpoint_path))
+        try:
+            # Creates grounded_lang / kg / immune and loads their sidecars.
+            n_init = brain.eager_init_cognitive()
+            logger.info("Trainer mode: eager_init_cognitive -> %s", n_init)
+        except Exception as _ic_e:
+            logger.warning("Trainer mode: eager_init_cognitive failed: %s", _ic_e)
+    elif checkpoint_path and os.path.exists(checkpoint_path):
+        # Audit fix #7: validate critical sidecars exist before loading.
+        # Without .snn the brain loads with no spike network state but
+        # training proceeds — silent partial restore.
+        # Resolve symlinks so we check real files not stale dangling links.
+        _real_ckpt = os.path.realpath(checkpoint_path)
+        _missing_sidecars = []
+        for _ext in ['.snn', '.cnn', '.lnn']:
+            _sc = _real_ckpt + _ext
+            if not os.path.exists(_sc):
+                _missing_sidecars.append(_ext)
+        if _missing_sidecars:
+            logger.warning(
+                "Checkpoint %s is missing critical sidecars: %s — "
+                "brain will load with default %s state. Training may be wrong.",
+                os.path.basename(checkpoint_path),
+                _missing_sidecars,
+                "/".join(s.lstrip(".") for s in _missing_sidecars))
+            print(f"  [WARN] Missing sidecars: {_missing_sidecars}", flush=True)
+
+        # Main bin + ALL sidecars — SNN sidecar is 20x larger than main.
+        # Using only main-bin size (ckpt_size_main * 300) vastly under-
+        # estimates the loader's wall-time and caused a false "load failed"
+        # on 2026-04-24 when the background thread was still running.
+        ckpt_size_main = os.path.getsize(checkpoint_path) / (1024**3)
+        ckpt_size_total = ckpt_size_main
+        for _ext in (".snn", ".lnn", ".cnn", ".meta", ".tokenizer",
+                     ".mirror_neurons", ".executive",
+                     ".cortex_visual", ".cortex_audio",
+                     ".cortex_speech", ".cortex_somato"):
+            _p = checkpoint_path + _ext
+            if os.path.exists(_p):
+                ckpt_size_total += os.path.getsize(_p) / (1024**3)
+        ckpt_size = ckpt_size_total
+        print(f"  [2/8] Loading checkpoint: {os.path.basename(checkpoint_path)} "
+              f"({ckpt_size_main:.1f} GB main + {ckpt_size_total - ckpt_size_main:.1f} GB sidecars)",
+              flush=True)
+
+        # Show a progress bar during the blocking load
+        if HAS_TQDM:
+            # Brain load is blocking C code — we can't track real progress,
+            # but we can show an estimated timer based on checkpoint size
+            import threading as _threading
+            load_done = _threading.Event()
+            load_result = [None, None]  # [brain, error]
+
+            def _load():
+                try:
+                    load_result[0] = nimcp.Brain("athena",
+                                                   checkpoint=str(checkpoint_path),
+                                                   init_mode=args.init_mode)
+                except Exception as e:
+                    load_result[1] = e
+                load_done.set()
+
+            t = _threading.Thread(target=_load, daemon=True)
+            t.start()
+
+            # No timeout — let the load take as long as it needs.
+            # Large brains with grown metadata pools can take 15-20+ minutes.
+            # ~60s per GB of total checkpoint footprint; minimum 15 minutes.
+            est_seconds = max(900, int(ckpt_size * 60))
+            pbar = tqdm(total=est_seconds, desc="  Loading brain",
+                        unit="s", bar_format="  {desc}: {bar:40} {n_fmt}/{total_fmt}s",
+                        ncols=70)
+            tick = 0
+            while not load_done.wait(timeout=0.1):
+                if tick % 10 == 0:
+                    # Cap display at est_seconds but keep waiting for the
+                    # loader thread. Prior bug: exited the loop when tick
+                    # hit est_seconds*10, leaving brain=None while the
+                    # loader was still running → spurious "load failed".
+                    if pbar.n < est_seconds:
+                        pbar.update(1)
+                tick += 1
+            pbar.n = est_seconds
+            pbar.refresh()
+            pbar.close()
+
+            if load_result[1]:
+                raise load_result[1]
+            brain = load_result[0]
+        else:
+            print("  Loading... (this takes ~10 minutes)", flush=True)
+            try:
+                brain = nimcp.Brain("athena", checkpoint=str(checkpoint_path),
+                                    init_mode=args.init_mode)
+            except Exception as e:
+                logger.error("Failed to load checkpoint: %s", e)
+
+        if brain is None:
+            # Try .bak fallback
+            bak_path = checkpoint_path + ".bak"
+            if os.path.exists(bak_path):
+                print(f"  [2/8] Trying backup: {os.path.basename(bak_path)}", flush=True)
+                try:
+                    brain = nimcp.Brain("athena", checkpoint=str(bak_path),
+                                        init_mode=args.init_mode)
+                    checkpoint_path = bak_path
+                except Exception as e2:
+                    logger.error("Backup checkpoint also failed: %s", e2)
+
+    if brain is None:
+        if checkpoint_path:
+            # CRITICAL: If a checkpoint was specified but failed to load,
+            # EXIT immediately. NEVER create a fresh brain that would
+            # overwrite trained data when the auto-checkpointer runs.
+            print(f"  [2/8] FATAL: Checkpoint load failed: {checkpoint_path}", flush=True)
+            print(f"  [2/8] Refusing to create fresh brain — would destroy trained data.", flush=True)
+            logger.critical("Checkpoint load failed for %s — exiting to protect data", checkpoint_path)
+            sys.exit(1)
+        print(f"  [2/8] Creating new brain: ANN={args.neuron_count:,}, "
+              f"SNN={args.snn_neuron_count:,}, LNN={args.lnn_neuron_count:,}, "
+              f"mode={args.init_mode}", flush=True)
+        brain = nimcp.Brain("athena",
+                            num_inputs=args.num_inputs,
+                            num_outputs=args.num_outputs,
+                            neuron_count=args.neuron_count,
+                            init_mode=args.init_mode,
+                            snn_neuron_count=args.snn_neuron_count,
+                            lnn_neuron_count=args.lnn_neuron_count)
+    elapsed = time.time() - t0
+    n_neurons = brain.get_neuron_count() if brain else 0
+    print(f"  [2/8] ✓ Brain loaded: {n_neurons:,} neurons in {elapsed:.1f}s", flush=True)
+    logger.info("Brain ready in %.1f seconds (%d neurons)", elapsed, n_neurons)
+
+    if args.trainer_mode:
+        logger.info("Trainer mode: daemon boot configuration skipped — the "
+                    "trainer applies its own, as it does in-process")
+    else:
+        _apply_daemon_boot_config(brain, args)
+
     # Create service and daemon
     print("  [7/8] Creating brain service...", flush=True)
     service = BrainService(brain)
@@ -6085,29 +6208,41 @@ def main():
 
     # Start
     daemon.start()
-    checkpointer.start()
-    plateau_detector.start()
+    if args.trainer_mode:
+        logger.info("Trainer mode: auto-checkpointer and plateau detector not "
+                    "started — the trainer owns saves")
+    else:
+        checkpointer.start()
+        plateau_detector.start()
 
     # Retrofit synapse metadata — restores plasticity for ALL synapses created
     # without metadata (pool exhaustion, backbone repair, sub-network init).
     # Runs AFTER all init is complete so it catches every handle-only synapse.
     try:
+        if args.trainer_mode:
+            raise _SkipStep("trainer mode")
         retrofitted = brain.retrofit_synapse_metadata()
         if retrofitted > 0:
             logger.info("Retrofitted metadata onto %d synapses (plasticity restored)",
                         retrofitted)
         else:
             logger.info("All synapses already have metadata — no retrofit needed")
+    except _SkipStep:
+        logger.info("Trainer mode: metadata retrofit skipped")
     except Exception as e:
         logger.warning("Metadata retrofit failed: %s", e)
 
     # Pre-warm ONNX encoder
     print("  [8/8] Loading ONNX encoder (BGE-large)...", flush=True)
     try:
+        if args.trainer_mode:
+            raise _SkipStep("trainer mode")
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from onnx_encoder import encode_text
         encode_text("warmup")
         print("  [8/8] ✓ ONNX encoder ready (CUDA)", flush=True)
+    except _SkipStep:
+        print("  [8/8] Trainer mode: ONNX warmup skipped (loads on first use)", flush=True)
     except Exception as e:
         print(f"  [8/8] ⚠ ONNX encoder not available: {e}", flush=True)
 
@@ -6275,26 +6410,31 @@ def main():
                 except Exception as _uerr:
                     logger.debug("[sleep] cycle_unregister failed: %s", _uerr)
 
-    _sleep_thread = threading.Thread(
-        target=_sleep_scheduler, name="sleep-scheduler", daemon=True)
-    _sleep_thread.start()
-    logger.info("[sleep] scheduler thread started (periodic every %d min, "
-                "plus pressure-driven triggers, 30s poll interval)",
-                args.sleep_interval_min)
+    if args.trainer_mode:
+        logger.info("Trainer mode: sleep scheduler and SNN autotuner not "
+                    "started — the trainer drives sleep itself")
+    else:
+        _sleep_thread = threading.Thread(
+            target=_sleep_scheduler, name="sleep-scheduler", daemon=True)
+        _sleep_thread.start()
+        logger.info("[sleep] scheduler thread started (periodic every %d min, "
+                    "plus pressure-driven triggers, 30s poll interval)",
+                    args.sleep_interval_min)
 
     # SNN auto-tune controller — defaults to observation-only mode. Set
     # autotune_enabled=1 in snn_tune.json (or via the snn_tune socket
     # command) to let it actually apply knob changes.
-    _autotune_thread = threading.Thread(
-        target=_snn_autotuner,
-        args=(brain, service, shutdown_event, logger),
-        name="snn-autotuner", daemon=True)
-    _autotune_thread.start()
-    with _runtime_state_lock:
-        _at_enabled = _runtime_state['autotune_enabled']
-    logger.info("[autotune] controller thread started (mode=%s, "
-                "30s observation interval)",
-                'APPLY' if _at_enabled else 'DRY_RUN')
+    if not args.trainer_mode:
+        _autotune_thread = threading.Thread(
+            target=_snn_autotuner,
+            args=(brain, service, shutdown_event, logger),
+            name="snn-autotuner", daemon=True)
+        _autotune_thread.start()
+        with _runtime_state_lock:
+            _at_enabled = _runtime_state['autotune_enabled']
+        logger.info("[autotune] controller thread started (mode=%s, "
+                    "30s observation interval)",
+                    'APPLY' if _at_enabled else 'DRY_RUN')
 
     try:
         daemon.serve_forever()
@@ -6331,8 +6471,15 @@ def main():
     except Exception as e:
         logger.warning("Shutdown: pool shutdown raised %s", e)
 
-    logger.info("Shutdown: saving final checkpoint...")
-    checkpointer.save_now()
+    if args.trainer_mode:
+        # The trainer saves (SIGINT to the trainer, then stop the daemon).
+        # A save here would write athena_daemon-style files the trainer's
+        # state file never points at.
+        logger.warning("Shutdown: trainer mode — no final save; anything "
+                       "learned since the trainer's last save is discarded")
+    else:
+        logger.info("Shutdown: saving final checkpoint...")
+        checkpointer.save_now()
 
     # Clean up
     try:
