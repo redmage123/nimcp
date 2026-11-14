@@ -40,6 +40,12 @@ DAEMON_MODE=0
 DAEMON_MAX_START_FAILS=3         # in a row; a load that keeps failing is not transient
 daemon_start_fails=0
 ONCE_ENV_FILE=/root/train_once_env
+# Hetzner holds every shipped snapshot (see vast_pod_recovery.sh).
+HETZNER_HOST="${HETZNER_HOST:-bbrelin@176.9.99.103}"
+HETZNER_SSH_KEY="${HETZNER_SSH_KEY:-/root/.ssh/id_ed25519_hetzner}"
+HETZNER_CKPT_DIR="${HETZNER_CKPT_DIR:-/home/bbrelin/nimcp/checkpoints/athena}"
+RESTORE_TIMEOUT_SEC="${RESTORE_TIMEOUT_SEC:-5400}"   # ~13 min at the usual 27 MB/s
+STATE_FILE="$NIMCP_DIR/checkpoints/athena/immersive_state.json"
 
 log_wd() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$WATCHDOG_LOG"
@@ -177,6 +183,84 @@ ensure_daemon() {
     start_daemon
 }
 
+# /dev/shm (31 GB tmpfs) holds one ~22 GB snapshot, never two, and the host
+# has no RAM to spare for a bigger tmpfs (2026-11-14: 22 GB MemAvailable on a
+# shared host, no swap for this cgroup). So before every save the trainer
+# ships the current canonical to Hetzner and deletes it locally ("emergency
+# ship"), and until the new save completes there is no local snapshot. A
+# trainer death in that window used to leave the watchdog refusing to start
+# (exit 3) until someone restored by hand. Instead, pull back the snapshot
+# the state file names - exactly the one that was shipped - and relink it.
+# Returns 0 when a complete canonical set is in place.
+restore_canonical_from_hetzner() {
+    local snap remote_snn remote_bin local_snn need avail ssh_opts
+    snap=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("snapshot",""))' \
+           "$STATE_FILE" 2>/dev/null)
+    case "$snap" in
+        athena_s*_step*.bin) ;;
+        *) log_wd "RESTORE: state file names no snapshot ('$snap')"; return 1 ;;
+    esac
+    # A daemon may still be writing a save the dead trainer requested; the
+    # barrier RPC returns once the brain lock (held by a save) is free. That
+    # save may have produced a complete canonical after all.
+    if [ -n "$(daemon_pids)" ]; then
+        if ! daemon_rpc barrier "$DAEMON_BARRIER_TIMEOUT_SEC" > /dev/null; then
+            log_wd "RESTORE: brain daemon does not answer a barrier - stopping it first"
+            stop_daemon
+        fi
+        if [ -f "$CKPT_DIR/athena_immersive.bin" ] && [ -f "$CKPT_DIR/athena_immersive.bin.snn" ]; then
+            log_wd "RESTORE: not needed - a save finished while waiting"
+            return 0
+        fi
+    fi
+    ssh_opts="-i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30"
+    # shellcheck disable=SC2086
+    read -r remote_bin remote_snn < <(ssh $ssh_opts "$HETZNER_HOST" \
+        "stat -c%s '$HETZNER_CKPT_DIR/$snap' '$HETZNER_CKPT_DIR/$snap.snn' 2>/dev/null | tr '\n' ' '")
+    if [ -z "$remote_snn" ] || [ "${remote_bin:-0}" -le 0 ] || [ "$remote_snn" -le 0 ]; then
+        log_wd "RESTORE: $snap (and its .snn) not found on $HETZNER_HOST:$HETZNER_CKPT_DIR"
+        return 1
+    fi
+    # Leftovers of the interrupted save hold tmpfs space the restore needs.
+    find "$CKPT_DIR" -maxdepth 1 -name 'athena_s*_step*.bin*.tmp*' -print -delete \
+        | sed 's/^/  removed /' | tee -a "$WATCHDOG_LOG"
+    need=$((remote_snn + 1024 * 1024 * 1024))
+    avail=$(df -B1 --output=avail "$CKPT_DIR" | tail -1 | tr -d ' ')
+    if [ "$avail" -lt "$need" ]; then
+        log_wd "RESTORE: $CKPT_DIR has $((avail >> 30)) GB free, $snap needs $((need >> 30)) GB - not restoring"
+        return 1
+    fi
+    log_wd "RESTORE: pulling $snap ($((remote_snn >> 20)) MB .snn) from Hetzner"
+    sysctl -q -w net.ipv4.tcp_congestion_control=bbr 2>/dev/null || true
+    # --partial-dir and parallel_xfer's own verify: an interrupted pull never
+    # leaves a fragment under a final name.
+    if ! timeout "$RESTORE_TIMEOUT_SEC" rsync -a --partial-dir=.rsync-partial \
+            --exclude='*.snn' --exclude='*.tmp*' -e "ssh $ssh_opts" \
+            "$HETZNER_HOST:$HETZNER_CKPT_DIR/$snap*" "$CKPT_DIR/" >> "$WATCHDOG_LOG" 2>&1; then
+        log_wd "RESTORE: rsync of the $snap sidecars failed"
+        return 1
+    fi
+    if ! timeout "$RESTORE_TIMEOUT_SEC" python3 "$NIMCP_DIR/scripts/parallel_xfer.py" pull \
+            "$HETZNER_HOST:$HETZNER_CKPT_DIR/$snap.snn" "$CKPT_DIR/$snap.snn" \
+            --streams 12 --chunk-mb 256 --ssh "-i $HETZNER_SSH_KEY" >> "$WATCHDOG_LOG" 2>&1; then
+        log_wd "RESTORE: parallel pull of $snap.snn failed"
+        return 1
+    fi
+    local_snn=$(stat -c%s "$CKPT_DIR/$snap.snn" 2>/dev/null || echo 0)
+    if [ "$local_snn" != "$remote_snn" ] || [ ! -s "$CKPT_DIR/$snap" ]; then
+        log_wd "RESTORE: size check failed ($snap.snn local $local_snn, remote $remote_snn)"
+        return 1
+    fi
+    (
+        cd "$CKPT_DIR" || exit 1
+        rm -f athena_immersive.bin*
+        for f in "$snap"*; do ln -sfn "$f" "athena_immersive.bin${f#"$snap"}"; done
+        rm -f .local_checkpoint_shipped
+    ) || return 1
+    log_wd "RESTORE: $snap restored from Hetzner and linked as the canonical checkpoint"
+    return 0
+}
+
 monitor_training() {
     local pid=$1
     local last_size=0
@@ -254,9 +338,15 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
     if [ -f "$CKPT_DIR/athena_immersive.bin" ] && [ -f "$CKPT_DIR/athena_immersive.bin.snn" ]; then
         ckpt=$(readlink -f "$CKPT_DIR/athena_immersive.bin")
         log_wd "Resuming from checkpoint: $(basename $ckpt)"
-    elif grep -q '"snapshot"' "$NIMCP_DIR/checkpoints/athena/immersive_state.json" 2>/dev/null; then
-        log_wd "FATAL: no local canonical checkpoint in $CKPT_DIR but the state file records a lineage ($(tr -d '\n' < "$NIMCP_DIR/checkpoints/athena/immersive_state.json" | cut -c1-120)) — restore it from Hetzner (scripts/vast_pod_recovery.sh) before starting; refusing to train a fresh brain"
-        exit 3
+    elif grep -q '"snapshot"' "$STATE_FILE" 2>/dev/null; then
+        log_wd "No local canonical checkpoint in $CKPT_DIR but the state file records a lineage ($(tr -d '\n' < "$STATE_FILE" | cut -c1-120)) - restoring it from Hetzner"
+        if restore_canonical_from_hetzner; then
+            ckpt=$(readlink -f "$CKPT_DIR/athena_immersive.bin")
+            log_wd "Resuming from checkpoint: $(basename "$ckpt")"
+        else
+            log_wd "FATAL: could not restore the checkpoint from Hetzner - restore it by hand (scripts/vast_pod_recovery.sh, then scripts/finalize_restore.sh) before starting; refusing to train a fresh brain"
+            exit 3
+        fi
     else
         log_wd "No checkpoint found, starting fresh"
     fi
