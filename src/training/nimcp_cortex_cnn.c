@@ -1666,6 +1666,11 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
 
 uint32_t cortex_cnn_fuse(cortex_cnn_processor_t* procs[], uint32_t count,
                           float* fused_out, uint32_t max_dim) {
+    return cortex_cnn_fuse_masked(procs, count, UINT32_MAX, fused_out, max_dim);
+}
+
+uint32_t cortex_cnn_fuse_masked(cortex_cnn_processor_t* procs[], uint32_t count,
+                                uint32_t fresh_mask, float* fused_out, uint32_t max_dim) {
     if (!procs || !fused_out || max_dim == 0 || count == 0) return 0;
 
     /* Count active processors and compute total embedding dim */
@@ -1722,7 +1727,9 @@ uint32_t cortex_cnn_fuse(cortex_cnn_processor_t* procs[], uint32_t count,
         uint32_t dim = p->embedding_dim;
         if (offset + dim > max_dim) dim = max_dim - offset;
 
-        float w = attention[i];
+        /* A cortex not in fresh_mask keeps its slot (fixed layout) but
+         * contributes zeros: its embedding is from an earlier percept. */
+        float w = (fresh_mask & (1u << idx)) ? attention[i] : 0.0f;
         for (uint32_t j = 0; j < dim; j++) {
             fused_out[offset + j] = w * p->embedding[j];
         }

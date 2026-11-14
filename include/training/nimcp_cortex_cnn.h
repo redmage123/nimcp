@@ -186,6 +186,23 @@ float cortex_cnn_backward(cortex_cnn_processor_t* proc,
 uint32_t cortex_cnn_fuse(cortex_cnn_processor_t* procs[], uint32_t count,
                           float* fused_out, uint32_t max_dim);
 
+/**
+ * @brief cortex_cnn_fuse, but only cortexes in fresh_mask contribute
+ *
+ * WHAT: Same layout and attention weights as cortex_cnn_fuse; the segment of
+ *       any cortex whose bit (1u << index) is clear in fresh_mask is zeroed.
+ * WHY:  A cortex keeps its last embedding until its next forward, so plain
+ *       fusion blends a percept from an earlier stimulus into every later
+ *       text-only decision. Zeroing (rather than skipping) keeps each
+ *       modality at the same input offset.
+ *
+ * @param fresh_mask Bit i set = procs[i] produced its embedding for the
+ *                   current stimulus. UINT32_MAX = all (cortex_cnn_fuse).
+ * @return Fused dimension written (same as cortex_cnn_fuse), or 0
+ */
+uint32_t cortex_cnn_fuse_masked(cortex_cnn_processor_t* procs[], uint32_t count,
+                                uint32_t fresh_mask, float* fused_out, uint32_t max_dim);
+
 /* ========================================================================= */
 /* Metrics / Introspection                                                    */
 /* ========================================================================= */

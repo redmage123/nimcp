@@ -3800,6 +3800,25 @@ class TargetDiversifier:
 
         return emb
 
+    def diversify_static(self, embedding, text, category=None):
+        """diversify() without the running-mean step: no subtraction and no
+        update of the mean buffer, so evaluation can build reference targets
+        without changing the targets training sees. Rotation and category
+        signal are the parts that set which targets cluster together."""
+        emb = np.array(embedding, dtype=np.float32)
+        cat = category or self._detect_category(text)
+        if cat in self._rotations:
+            emb = self._rotations[cat] @ emb
+        cat_idx = self.CATEGORIES.index(cat) if cat in self.CATEGORIES else len(self.CATEGORIES) - 1
+        band_start = (cat_idx * 40) % self.embedding_dim
+        for k in range(40):
+            emb[(band_start + k) % self.embedding_dim] += self.category_weight
+        orig_norm = np.linalg.norm(embedding)
+        new_norm = np.linalg.norm(emb)
+        if new_norm > 1e-8 and orig_norm > 1e-8:
+            emb = emb * (orig_norm / new_norm)
+        return emb
+
 
 # Global diversifier instance
 _target_diversifier = TargetDiversifier()
@@ -10233,6 +10252,68 @@ def _eval_json_default(o):
     return str(o)
 
 
+_PROBE_REF_TARGETS = None  # name -> static diversified target (1024-dim)
+
+
+def _probe_reference_targets():
+    """Static training-target embeddings for _EVAL_PROBES (cached)."""
+    global _PROBE_REF_TARGETS
+    if _PROBE_REF_TARGETS is None:
+        _PROBE_REF_TARGETS = {
+            name: _target_diversifier.diversify_static(encode_text(text), text)
+            for name, text in _EVAL_PROBES}
+    return _PROBE_REF_TARGETS
+
+
+def _cos_matrix(vectors):
+    m = np.asarray(vectors, dtype=np.float32)
+    m = m / np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-8)
+    return m @ m.T
+
+
+def _controlled_probe_pass(brain, composer):
+    """Text probes under _ControlledInference (2026-11-14).
+
+    The main probe loop runs with SNN noise on, carries recurrent state from
+    training and from the previous probe, and stages a different held-out
+    photo each eval, so its cross-similarity swung 0.54-0.81 between evals of
+    one run. Here every probe starts from reset inference state with noise
+    off and no photo. Remaining shared inputs: the brain-state context that
+    compose() adds, and (unless NIMCP_CORTEX_FUSION_FRESH_ONLY=1) the last
+    cortex embeddings, which are the same for every probe in this pass.
+
+    target_corr = Pearson correlation between the output cosine matrix and
+    the probes' training-target cosine matrix (upper triangles): how much of
+    the target cluster structure (dog~cat, sun~rain~ocean, rest apart) the
+    outputs reproduce. Returns a record dict or None.
+    """
+    names, embs = [], []
+    with _ControlledInference(brain) as ci:
+        for name, text in _EVAL_PROBES:
+            ci.reset()
+            res = brain.decide_full(composer.compose(text=text, modality="text"))
+            out = (res or {}).get("output_vector")
+            if out is None:
+                continue
+            names.append(name)
+            embs.append(extract_embedding_from_output(np.asarray(out, dtype=np.float32)))
+    if len(names) < 3:
+        return None
+    out_sim = _cos_matrix(embs)
+    refs = _probe_reference_targets()
+    tgt_sim = _cos_matrix([refs[n] for n in names])
+    iu = np.triu_indices(len(names), k=1)
+    mean_sim = float(np.mean(out_sim[iu]))
+    corr = float(np.corrcoef(out_sim[iu], tgt_sim[iu])[0, 1])
+    print(f"\n  Controlled probes (reset state, noise off, no photo):")
+    print(f"    Mean cross-similarity: {mean_sim:.3f}  "
+          f"(targets {float(np.mean(tgt_sim[iu])):.3f})  "
+          f"target-structure corr: {corr:+.3f}")
+    return {"mean": mean_sim, "target_corr": corr,
+            "target_mean": float(np.mean(tgt_sim[iu])), "names": names,
+            "matrix": [[round(float(v), 4) for v in r] for r in out_sim]}
+
+
 def evaluate_performance(brain, composer, decoder, stage, step):
     """Run fixed probes through the brain and show actual responses.
 
@@ -10413,6 +10494,14 @@ def evaluate_performance(brain, composer, decoder, stage, step):
                 print(f"    ⚠ Responses nearly identical — brain not differentiating yet")
             elif mean_sim < 0.5:
                 print(f"    ✓ Good differentiation — responses are distinct")
+
+    try:
+        _ctl = _controlled_probe_pass(brain, composer)
+        if _ctl:
+            _rec["controlled"] = _ctl
+    except Exception as _cpe:
+        print(f"    [ControlledProbes] failed: {_cpe}")
+        _rec["controlled_error"] = str(_cpe)
 
     # --- Show evolution for any probe with history ---
     probes_with_history = [p for p in _eval_history if len(_eval_history[p]) >= 2]

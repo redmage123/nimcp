@@ -1221,6 +1221,8 @@ uint32_t brain_cortex_forward_and_fuse(brain_t brain)
         const float* segments, uint32_t n_segments);
     extern uint32_t cortex_cnn_fuse(struct cortex_cnn_processor* procs[], uint32_t count,
         float* fused_out, uint32_t max_dim);
+    extern uint32_t cortex_cnn_fuse_masked(struct cortex_cnn_processor* procs[], uint32_t count,
+        uint32_t fresh_mask, float* fused_out, uint32_t max_dim);
 
     uint32_t ran = 0;
     if (!brain) return 0;
@@ -1273,10 +1275,31 @@ uint32_t brain_cortex_forward_and_fuse(brain_t brain)
         nimcp_free(brain->cortex_cnn_fused_embedding);
         brain->cortex_cnn_fused_embedding = (float*)nimcp_calloc(max_fused, sizeof(float));
     }
+    /* NIMCP_CORTEX_FUSION_FRESH_ONLY=1 (2026-11-14, default off): fuse only
+     * the cortexes that ran on this call's staged data. Otherwise each cortex
+     * keeps contributing its last embedding forever, so every text-only
+     * decision and ANN learn step is blended with the percept of whatever
+     * stimulus came before — the same vector for all of them. Stale slots are
+     * zeroed (layout kept); with none fresh the embedding is all zeros and
+     * cortex_cnn_fusion_scale returns 0, so the blend adds nothing. */
+    static int fresh_only = -1;
+    if (fresh_only < 0) {
+        const char* e = getenv("NIMCP_CORTEX_FUSION_FRESH_ONLY");
+        fresh_only = (e && e[0] == '1') ? 1 : 0;
+        if (fresh_only) {
+            NIMCP_LOGGING_INFO("[CORTEX-FUSION] fresh-only: stale cortex embeddings are not blended");
+        }
+    }
     if (brain->cortex_cnn_fused_embedding) {
-        brain->cortex_cnn_fused_dim = cortex_cnn_fuse(
-            (struct cortex_cnn_processor**)brain->cortex_cnns, 4,
-            brain->cortex_cnn_fused_embedding, max_fused);
+        if (!fresh_only) {
+            brain->cortex_cnn_fused_dim = cortex_cnn_fuse(
+                (struct cortex_cnn_processor**)brain->cortex_cnns, 4,
+                brain->cortex_cnn_fused_embedding, max_fused);
+        } else {
+            brain->cortex_cnn_fused_dim = cortex_cnn_fuse_masked(
+                (struct cortex_cnn_processor**)brain->cortex_cnns, 4, ran,
+                brain->cortex_cnn_fused_embedding, max_fused);
+        }
     }
     return ran;
 }
