@@ -1112,6 +1112,109 @@ static void learn_lnn_task(void* arg)
  * @param confidence Training weight
  * @return Loss value or -1 on error
  */
+/* ---------------------------------------------------------------------------
+ * Learn-step recorder (2026-11-15, learning harness P1).
+ *
+ * WHY: the ANN learns item-specific mappings in isolation (ann_clip_test,
+ * top-1 44% on real stage-1 pairs) but nobody knew what the live brain
+ * actually feeds it. This writes exactly what adaptive_network_learn gets
+ * so the replay ladder can train on it offline.
+ *
+ * HOW: NIMCP_LEARN_RECORD=<path> enables it; NIMCP_LEARN_RECORD_N (default
+ * 2000) caps the number of records, after which the file is closed. File:
+ * "NLRC", uint32 version (1), then per record:
+ *   uint32 nf, uint32 ts, uint64 step, float lr, float confidence,
+ *   float fusion_scale, float loss, uint32 flags (bit0 ANN frozen this step,
+ *   bit1 cortex embedding blended in), char label[64],
+ *   float raw[nf], float blended[nf], float target[ts].
+ * Little-endian, no padding (fields written one by one).
+ * ------------------------------------------------------------------------- */
+#define BLV_REC_LABEL_LEN 64
+#define BLV_REC_FLAG_FROZEN  0x1u
+#define BLV_REC_FLAG_BLENDED 0x2u
+
+static FILE*    g_blv_rec_fp      = NULL;
+static uint32_t g_blv_rec_left    = 0;
+static int      g_blv_rec_state   = 0;   /* 0 unchecked, 1 on, -1 off/done */
+
+static void blv_record_step(uint64_t step, const float* raw, const float* blended,
+                            uint32_t nf, const float* target, uint32_t ts,
+                            float lr, float confidence, float fusion_scale,
+                            float loss, uint32_t flags, const char* label)
+{
+    int state = __atomic_load_n(&g_blv_rec_state, __ATOMIC_ACQUIRE);
+    if (state < 0) {
+        return;
+    }
+    if (state == 0) {
+        /* First caller decides; others racing here see -1 or 1 after. */
+        int expected = 0;
+        const char* path = getenv("NIMCP_LEARN_RECORD");
+        if (!path || !*path) {
+            __atomic_compare_exchange_n(&g_blv_rec_state, &expected, -1, false,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+            return;
+        }
+        if (!__atomic_compare_exchange_n(&g_blv_rec_state, &expected, 2, false,
+                                         __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            return;  /* another thread is opening; skip this step */
+        }
+        const char* n_env = getenv("NIMCP_LEARN_RECORD_N");
+        long n = n_env ? strtol(n_env, NULL, 10) : 2000;
+        FILE* fp = (n > 0) ? fopen(path, "wb") : NULL;
+        if (!fp) {
+            NIMCP_LOGGING_WARN("[LEARN-RECORD] cannot open %s; recorder off", path);
+            __atomic_store_n(&g_blv_rec_state, -1, __ATOMIC_RELEASE);
+            return;
+        }
+        const uint32_t version = 1;
+        fwrite("NLRC", 1, 4, fp);
+        fwrite(&version, sizeof(version), 1, fp);
+        g_blv_rec_fp = fp;
+        g_blv_rec_left = (uint32_t)n;
+        NIMCP_LOGGING_INFO("[LEARN-RECORD] recording %ld learn steps to %s", n, path);
+        __atomic_store_n(&g_blv_rec_state, 1, __ATOMIC_RELEASE);
+    } else if (state != 1) {
+        return;  /* still opening */
+    }
+
+    FILE* fp = g_blv_rec_fp;
+    flockfile(fp);
+    if (g_blv_rec_left == 0 || __atomic_load_n(&g_blv_rec_state, __ATOMIC_ACQUIRE) != 1) {
+        funlockfile(fp);
+        return;
+    }
+    char lab[BLV_REC_LABEL_LEN] = {0};
+    if (label) {
+        strncpy(lab, label, BLV_REC_LABEL_LEN - 1);
+    }
+    fwrite(&nf, sizeof(nf), 1, fp);
+    fwrite(&ts, sizeof(ts), 1, fp);
+    fwrite(&step, sizeof(step), 1, fp);
+    fwrite(&lr, sizeof(lr), 1, fp);
+    fwrite(&confidence, sizeof(confidence), 1, fp);
+    fwrite(&fusion_scale, sizeof(fusion_scale), 1, fp);
+    fwrite(&loss, sizeof(loss), 1, fp);
+    fwrite(&flags, sizeof(flags), 1, fp);
+    fwrite(lab, 1, BLV_REC_LABEL_LEN, fp);
+    fwrite(raw, sizeof(float), nf, fp);
+    fwrite(blended, sizeof(float), nf, fp);
+    fwrite(target, sizeof(float), ts, fp);
+    g_blv_rec_left--;
+    bool done = (g_blv_rec_left == 0);
+    if (done || (g_blv_rec_left % 100) == 0) {
+        fflush(fp);
+    }
+    if (done) {
+        /* The FILE stays open (one handle for the process lifetime): a
+         * thread that loaded fp before this store may still be waiting in
+         * flockfile, so closing here could hand it a freed FILE. */
+        __atomic_store_n(&g_blv_rec_state, -1, __ATOMIC_RELEASE);
+        NIMCP_LOGGING_INFO("[LEARN-RECORD] done; %s complete", getenv("NIMCP_LEARN_RECORD"));
+    }
+    funlockfile(fp);
+}
+
 float brain_learn_vector(brain_t brain, const float* features, uint32_t num_features,
                           const float* target, uint32_t target_size,
                           const char* label, float confidence)
@@ -1944,6 +2047,7 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
      * the CNN trainer's forward_result state). */
     float* blended_features = (float*)features;
     bool owns_blended = false;
+    float rec_fusion_scale = 0.0f;  /* for the learn-step recorder */
     if (brain->cortex_cnn_fused_embedding && brain->cortex_cnn_fused_dim > 0) {
         blended_features = nimcp_malloc(num_features * sizeof(float));
         if (blended_features) {
@@ -1958,6 +2062,7 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                 blended_features[i] += fscale * brain->cortex_cnn_fused_embedding[i];
             }
             owns_blended = true;
+            rec_fusion_scale = fscale;
         } else {
             blended_features = (float*)features;
         }
@@ -2161,6 +2266,11 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                                       effective_lr);
         brain_fusion_rel_observe_ann(brain);
     }
+    blv_record_step(_blv_step_tracker, features, blended_features, num_features,
+                    target, target_size, effective_lr, confidence, rec_fusion_scale,
+                    loss, (ann_frozen ? BLV_REC_FLAG_FROZEN : 0u)
+                          | (owns_blended ? BLV_REC_FLAG_BLENDED : 0u),
+                    label);
     if (trace_buf) {
         adaptive_network_forward_readonly(brain->network, blended_features, num_features,
                                           trace_buf, target_size, 0);

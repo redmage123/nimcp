@@ -1583,6 +1583,17 @@ DIFFICULTY_STEP = 0.1        # How much to adjust difficulty per evaluation
 BASE_LEARNING_RATE = 0.0001  # Reduced for layer norm architecture — norm handles scale
 MIN_LEARNING_RATE = 0.00001  # Floor — prevents stalling
 MAX_LEARNING_RATE = 0.001    # Ceiling — prevents weight explosion
+# Environment overrides (2026-11-14). On real trainer pairs the production
+# ANN reached held-out top-1 0.445 at lr 1e-3 vs 0.148 at 1e-4
+# (tests/manual/ann_clip_test.c), while the live stage-1 rate had drifted to
+# 3e-5 through the DFA "oscillating" x0.3 rule. NIMCP_LR_ADAPT=0 holds the
+# AdaptiveLRController at its initial rate (no plateau / divergence / DFA
+# changes; the manual /tmp/athena_lr override and the NaN-recovery halving
+# still apply).
+BASE_LEARNING_RATE = float(os.environ.get("NIMCP_BASE_LR", BASE_LEARNING_RATE))
+MAX_LEARNING_RATE = max(float(os.environ.get("NIMCP_MAX_LR", MAX_LEARNING_RATE)),
+                        BASE_LEARNING_RATE)
+LR_ADAPT = os.environ.get("NIMCP_LR_ADAPT", "1") != "0"
 LR_SCALE_STRUGGLING = 1.5    # Scale up when mastery < THRESHOLD_LOW
 LR_SCALE_MASTERED = 0.5      # Scale down when mastery > THRESHOLD_HIGH
 LR_EVAL_INTERVAL = 100       # Steps between LR recalculations
@@ -2657,6 +2668,9 @@ class AdaptiveLRController:
         if self.check_trigger_file():
             self.history.append((step, self.lr, avg_loss, "MANUAL"))
             return self.lr
+        if not LR_ADAPT:
+            self.history.append((step, self.lr, avg_loss, "FIXED"))
+            return self.lr
 
         action = "HOLD"
         if avg_loss < self.best_loss - self.min_delta:
@@ -2702,6 +2716,8 @@ class AdaptiveLRController:
         - OSCILLATING (α<0.3): chaotic, reduce LR significantly
         - PLATEAU (H>0.8): stuck, increase LR
         """
+        if not LR_ADAPT:
+            return
         try:
             health = brain.utm_get_training_health()
         except (AttributeError, RuntimeError):
@@ -6070,7 +6086,7 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
             print(f"  Parent: {narration}")
 
         # Held-out check: 20% of items are evaluation-only (no learning)
-        if _held_out_buffer.is_held_out(features):
+        if _held_out_buffer.check_and_note(name, description, features):
             _held_out_buffer.add(features, target, domain="stage1_naming")
             self.interaction_count += 1
             return 0.0, {}
@@ -8469,6 +8485,7 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
         from stage_gate import stage_gate_for, log_gate_event
         gate = stage_gate_for(1)
         gate.chat_log_path = _CHAT_LOG_FILE
+        gate.competence_eval_log = EVAL_LOG_FILE
         print(f"  [StageGate 1] active — min {num_stimuli} stimuli, then ALL criteria "
               f"3x consecutively; safety ceiling: "
               f"{STAGE1_MAX_STIMULI if STAGE1_MAX_STIMULI else 'none'}")
@@ -8542,7 +8559,7 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
             narration = parent._pop_content("_narrations")
             if narration:
                 print(f"  Parent: {narration}")
-            if _held_out_buffer.is_held_out(pre_features):
+            if _held_out_buffer.check_and_note(name, description, pre_features):
                 _held_out_buffer.add(pre_features, pre_target, domain="stage1_naming")
                 loss = 0.0
             else:
@@ -10093,6 +10110,73 @@ class HeldOutBuffer:
     def __len__(self):
         return len(self._items)
 
+    # --- Text-keyed split (2026-11-15, NIMCP_HELDOUT_BY_TEXT=1) -------------
+    # is_held_out() hashes the composed input, which includes brain-state
+    # context and so differs on every presentation of the same text: a
+    # "held-out" description is trained ~80% of the times it comes up, so
+    # the held-out set is not unseen. Keying on the description text holds
+    # the same texts out every time. Collected texts (held-out and a sample
+    # of trained ones) persist to TEXTS_FILE so the specificity eval scores
+    # the same items across restarts.
+
+    TEXTS_FILE = "checkpoints/athena/heldout_texts.json"
+    MAX_TEXTS = 2000
+
+    @staticmethod
+    def by_text_enabled():
+        return os.environ.get("NIMCP_HELDOUT_BY_TEXT", "0") == "1"
+
+    @staticmethod
+    def is_held_out_text(text):
+        """True if this description is evaluation-only (20%, stable by text)."""
+        h = hashlib.md5(str(text).encode("utf-8")).hexdigest()
+        return int(h, 16) % 5 == 0
+
+    def _load_texts(self):
+        if getattr(self, "_texts", None) is not None:
+            return
+        self._texts = {"held": [], "train": []}
+        try:
+            with open(self.TEXTS_FILE) as f:
+                d = json.load(f)
+            for k in ("held", "train"):
+                self._texts[k] = [tuple(x) for x in d.get(k, [])][:self.MAX_TEXTS]
+        except (OSError, ValueError):
+            pass
+        self._text_keys = {k: {x[1] for x in v} for k, v in self._texts.items()}
+
+    def note_text(self, name, description, held):
+        """Record a (name, description) pair the first time it is seen."""
+        self._load_texts()
+        k = "held" if held else "train"
+        if description in self._text_keys[k] or len(self._texts[k]) >= self.MAX_TEXTS:
+            return
+        self._texts[k].append((str(name), str(description)))
+        self._text_keys[k].add(description)
+        try:
+            os.makedirs(os.path.dirname(self.TEXTS_FILE), exist_ok=True)
+            tmp = self.TEXTS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self._texts, f)
+            os.replace(tmp, self.TEXTS_FILE)
+        except OSError:
+            pass
+
+    def held_out_texts(self, which="held", n=None):
+        """First n recorded (name, description) pairs, in recording order."""
+        self._load_texts()
+        v = self._texts[which]
+        return list(v if n is None else v[:n])
+
+    def check_and_note(self, name, description, features):
+        """Stage-1 split: text-keyed when NIMCP_HELDOUT_BY_TEXT=1, else the
+        original feature hash. Records the text either way it goes."""
+        if self.by_text_enabled():
+            held = self.is_held_out_text(description)
+            self.note_text(name, description, held)
+            return held
+        return self.is_held_out(features)
+
 
 class MetricsComputer:
     """Compute real accuracy metrics on held-out evaluation items.
@@ -10314,6 +10398,93 @@ def _controlled_probe_pass(brain, composer):
             "matrix": [[round(float(v), 4) for v in r] for r in out_sim]}
 
 
+def _set_fit_metrics(outs, tgts):
+    """Item-specific fit of outputs to their own targets within one set.
+
+    outs, tgts: (n, d) arrays, row i = item i. Cosine to the own target
+    cannot tell learning from outputting the average target (on real
+    stage-1 pairs the average target alone scores ~0.34), so this also
+    reports:
+      mean_baseline  cos(mean target, own target): what a constant output scores
+      spec           cos(own target) - mean cos(other targets in the set)
+      top1 / top5    own target among the 1 / 5 nearest targets in the set
+      out_xsim       mean pairwise output cosine (collapse -> 1)
+    """
+    O = np.asarray(outs, dtype=np.float64)
+    T = np.asarray(tgts, dtype=np.float64)
+    On = O / np.maximum(np.linalg.norm(O, axis=1, keepdims=True), 1e-12)
+    Tn = T / np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-12)
+    n = len(O)
+    C = On @ Tn.T  # C[i, j] = cos(output i, target j)
+    own = np.diag(C)
+    others = (C.sum(axis=1) - own) / max(n - 1, 1)
+    ranks = (C > own[:, None]).sum(axis=1)  # targets strictly closer than own
+    mu = T.mean(axis=0)
+    mu_n = mu / max(np.linalg.norm(mu), 1e-12)
+    iu = np.triu_indices(n, k=1)
+    return {
+        "n": int(n),
+        "own_cos": float(own.mean()),
+        "mean_baseline": float((Tn @ mu_n).mean()),
+        "spec": float((own - others).mean()),
+        "top1": float((ranks == 0).mean()),
+        "top5": float((ranks < 5).mean()),
+        "chance_top1": 1.0 / n,
+        "out_xsim": float((On @ On.T)[iu].mean()) if n > 1 else 0.0,
+        "tgt_xsim": float((Tn @ Tn.T)[iu].mean()) if n > 1 else 0.0,
+    }
+
+
+def _specificity_eval(brain, composer):
+    """Item-specific fit on fixed held-out and trained stage-1 texts (P0 of
+    the learning harness, 2026-11-15).
+
+    Needs NIMCP_HELDOUT_BY_TEXT=1 (otherwise no texts are recorded). Scores
+    the first NIMCP_SPEC_EVAL_N (default 48) recorded texts of each set, so
+    the items stay the same from eval to eval once that many are seen.
+    Every decision runs under _ControlledInference from reset state, like
+    the controlled probes. Targets are diversify_static (no running-mean
+    step), compared on the 1024-d embedding part of the output.
+    """
+    try:
+        n_max = int(os.environ.get("NIMCP_SPEC_EVAL_N", "48"))
+    except ValueError:
+        n_max = 48
+    if n_max <= 0:
+        return None
+    sets = {k: _held_out_buffer.held_out_texts(k, n_max) for k in ("held", "train")}
+    if len(sets["held"]) < 16:
+        print(f"\n  Specificity eval: {len(sets['held'])} held-out texts recorded "
+              f"(need 16)")
+        return None
+    t0 = time.time()
+    rec = {}
+    with _ControlledInference(brain) as ci:
+        for k, items in sets.items():
+            outs, tgts = [], []
+            for name, desc in items:
+                ci.reset()
+                res = brain.decide_full(composer.compose(text=desc, modality="text"))
+                out = (res or {}).get("output_vector")
+                if out is None:
+                    continue
+                outs.append(extract_embedding_from_output(np.asarray(out, dtype=np.float32)))
+                tgts.append(_target_diversifier.diversify_static(
+                    encode_text(name + " " + desc), name + " " + desc))
+            if len(outs) >= 2:
+                rec[k] = _set_fit_metrics(outs, tgts)
+    rec["duration_s"] = round(time.time() - t0, 1)
+    print(f"\n  Specificity eval (reset state, noise off; {rec['duration_s']}s):")
+    for k in ("held", "train"):
+        m = rec.get(k)
+        if m:
+            print(f"    {k:5s} n={m['n']:3d}  own_cos {m['own_cos']:.3f} "
+                  f"(mean-target baseline {m['mean_baseline']:.3f})  spec {m['spec']:+.3f}  "
+                  f"top1 {m['top1']:.3f} top5 {m['top5']:.3f} (chance {m['chance_top1']:.3f})  "
+                  f"out_xsim {m['out_xsim']:.3f} (targets {m['tgt_xsim']:.3f})")
+    return rec
+
+
 def evaluate_performance(brain, composer, decoder, stage, step):
     """Run fixed probes through the brain and show actual responses.
 
@@ -10502,6 +10673,14 @@ def evaluate_performance(brain, composer, decoder, stage, step):
     except Exception as _cpe:
         print(f"    [ControlledProbes] failed: {_cpe}")
         _rec["controlled_error"] = str(_cpe)
+
+    try:
+        _spec = _specificity_eval(brain, composer)
+        if _spec:
+            _rec["specificity"] = _spec
+    except Exception as _spe:
+        print(f"    [SpecificityEval] failed: {_spe}")
+        _rec["specificity_error"] = str(_spe)
 
     # --- Show evolution for any probe with history ---
     probes_with_history = [p for p in _eval_history if len(_eval_history[p]) >= 2]

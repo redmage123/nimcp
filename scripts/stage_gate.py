@@ -17,6 +17,10 @@ The gate enforces ALL of:
     4. Per-item non-zero ratio high (few collapsed responses)
     5. SNN biologically stable (sparsity 0.88-0.99 ≈ 1-12% firing)
     6. Chat eval passes (coherence + differentiation)
+    7. (when thresholds are set) Competence: the median of the stage's last
+       few performance evals clears a held-out fit and a target-structure
+       floor. Criteria 1-6 only check health; stage 0 passed them for 116k
+       steps while learning nothing measurable (2026-11-14).
 
 Criteria are intentionally conjunctive: if ANY fails, the stage does NOT advance.
 Loss is deliberately NOT a stage-ending criterion by default (2026-10-27):
@@ -85,6 +89,18 @@ class StageGate:
     # fixed candidates in _find_chat_log never matched it, so the chat
     # criterion could not pass. Callers set this explicitly.
     chat_log_path: str | None = None
+
+    # Competence (criterion 7). Read from immerse_athena's eval_log.jsonl
+    # (one record per performance eval). None disables a threshold.
+    #   target_corr: "controlled" -> "target_corr", correlation of the
+    #     reset-state probe outputs' cosine matrix with their training
+    #     targets' cosine matrix (does the output keep the target clusters).
+    #   heldout: "heldout" -> "mean_cosine_sim", output-target cosine on
+    #     held-out items the brain never learned from.
+    competence_eval_log: str | None = None
+    competence_window: int = 3            # median over this many latest evals
+    competence_target_corr_min: float | None = None
+    competence_heldout_min: float | None = None
 
     # Internal state
     last_chat_step: int = -1
@@ -201,6 +217,15 @@ class StageGate:
         else:
             details["chat_eval"] = {"passed": True, "reason": "not_required_at_this_stage"}
 
+        # 7. Competence
+        if (self.competence_target_corr_min is not None
+                or self.competence_heldout_min is not None):
+            comp = self._check_competence()
+            details["competence"] = comp
+            if not comp.get("passed", False):
+                return GateResult(False, f"competence_low: {comp.get('reason', 'unknown')}",
+                                  details)
+
         # All criteria pass for this check — need N consecutive passes
         self.cumulative_passes += 1
         details["consecutive_passes"] = self.cumulative_passes
@@ -274,6 +299,58 @@ class StageGate:
         self.last_chat_result = result
         return result
 
+    def _check_competence(self) -> dict:
+        """Median of each competence metric over the stage's latest
+        `competence_window` eval records; every enabled metric must clear
+        its floor, and each needs a full window of values."""
+        path = self.competence_eval_log
+        if not path or not os.path.exists(path):
+            return {"passed": False, "reason": f"eval_log_not_found ({path})"}
+        records = []
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if r.get("stage") == self.stage:
+                        records.append(r)
+        except OSError as e:
+            return {"passed": False, "reason": f"eval_log_read:{e}"}
+
+        def _median(vals):
+            vals = sorted(vals)
+            n = len(vals)
+            return vals[n // 2] if n % 2 else 0.5 * (vals[n // 2 - 1] + vals[n // 2])
+
+        checks = (
+            ("target_corr", self.competence_target_corr_min,
+             lambda r: (r.get("controlled") or {}).get("target_corr")),
+            ("heldout_cos", self.competence_heldout_min,
+             lambda r: (r.get("heldout") or {}).get("mean_cosine_sim")),
+        )
+        out = {"window": self.competence_window}
+        for name, floor, get in checks:
+            if floor is None:
+                continue
+            vals = [float(v) for v in (get(r) for r in records) if isinstance(v, (int, float))]
+            vals = vals[-self.competence_window:]
+            if len(vals) < self.competence_window:
+                out.update({"passed": False,
+                            "reason": f"{name}_insufficient_evals ({len(vals)}<{self.competence_window})"})
+                return out
+            med = _median(vals)
+            out[name] = med
+            if med < floor:
+                out.update({"passed": False, "reason": f"{name}_low ({med:.3f} < {floor})"})
+                return out
+        out.update({"passed": True, "reason": "competence_met"})
+        return out
+
     def _find_chat_log(self) -> str | None:
         if self.chat_log_path and os.path.exists(self.chat_log_path):
             return self.chat_log_path
@@ -309,7 +386,17 @@ def stage_gate_for(stage: int) -> StageGate:
                          chat_cross_sim_max=1.0,
                          required_consecutive_passes=3)
     if stage == 1:
+        # Competence floors (2026-11-14; env-overridable). At step 35000 the
+        # brain stood at target_corr +0.55 (one controlled eval) and held-out
+        # cosine ~0.33; set a NIMCP_GATE1_* variable to "off" to disable.
+        def _floor(var, default):
+            v = os.environ.get(var, "")
+            if v.lower() == "off":
+                return None
+            return float(v) if v else default
         return StageGate(stage=1,
+                         competence_target_corr_min=_floor("NIMCP_GATE1_TARGET_CORR_MIN", 0.6),
+                         competence_heldout_min=_floor("NIMCP_GATE1_HELDOUT_MIN", 0.45),
                          min_step=1500,              # enough warm-up
                          max_mean_loss=1.0,          # informational only
                          plateau_window=200,

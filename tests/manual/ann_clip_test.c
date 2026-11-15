@@ -25,6 +25,19 @@
  * the set), top1 = fraction whose nearest target in the set is their own,
  * xsim = mean pairwise output cos. A model that outputs the mean target
  * scores spec 0 and top1 ~1/N however high own_cos is.
+ * nlrc:<file>: replay of learn steps the live brain recorded
+ * (NIMCP_LEARN_RECORD, nimcp_brain_learning.c, "NLRC" v1), learning
+ * harness P2 (2026-11-15). Steps where the ANN was frozen are skipped. Split:
+ * a record is held out when FNV-1a(label) % 5 == 0, so a held-out label is
+ * never trained; a label covering more than 5% of the records (e.g. the
+ * "language" facts, all labelled alike) is split by record index instead.
+ * K (if given) caps the train set; at most 256 of each set are scored.
+ * Options by environment:
+ *   NLRC_INPUT=blended|raw   features after (default) / before the cortex blend
+ *   NLRC_ORDER=recorded|shuffled  recorded = live order every epoch
+ * lr "rec" uses each step's recorded effective lr (the live schedule).
+ * Every report also prints base = cos(mean target of the set, own target),
+ * the score of an output that ignores its input.
  * Scores come from the GPU forward (nimcp_gpu_forward_pass on the weight
  * cache), the function training optimises. adaptive_network_forward_readonly
  * is NOT used for scoring: every gradient flush flags the weights dirty on
@@ -116,6 +129,133 @@ static double cosd(const float* a, const float* b, uint32_t n)
     return (na > 0 && nb > 0) ? d / sqrt(na * nb) : 0.0;
 }
 
+/* Mean over a set of cos(mean target of the set, own target) */
+static double mean_target_baseline(const float* Tg, uint32_t n, uint32_t d)
+{
+    double* mu = calloc(d, sizeof(double));
+    for (uint32_t a = 0; a < n; a++)
+        for (uint32_t i = 0; i < d; i++) mu[i] += Tg[(size_t)a * d + i];
+    double mn = 0;
+    for (uint32_t i = 0; i < d; i++) mn += mu[i] * mu[i];
+    mn = sqrt(mn) + 1e-30;
+    double sum = 0;
+    for (uint32_t a = 0; a < n; a++) {
+        double dot = 0, tn = 0;
+        for (uint32_t i = 0; i < d; i++) {
+            dot += mu[i] * Tg[(size_t)a * d + i];
+            tn += (double)Tg[(size_t)a * d + i] * Tg[(size_t)a * d + i];
+        }
+        sum += dot / (mn * (sqrt(tn) + 1e-30));
+    }
+    free(mu);
+    return sum / n;
+}
+
+static uint32_t fnv1a(const char* s)
+{
+    uint32_t h = 2166136261u;
+    for (; *s; s++) { h ^= (uint8_t)*s; h *= 16777619u; }
+    return h;
+}
+
+/* Recorded learn steps, train records first (recorded order), then held. */
+typedef struct {
+    uint32_t n, k, h;        /* total kept, train, held */
+    float* in;               /* n x nf, chosen input (raw or blended) */
+    float* tg;               /* n x ts */
+    float* lr;               /* n, recorded effective lr */
+    char (*label)[64];
+} nlrc_t;
+
+static int load_nlrc(const char* path, uint32_t in, uint32_t out, bool raw, nlrc_t* r)
+{
+    FILE* f = fopen(path, "rb");
+    char magic[4];
+    uint32_t ver = 0;
+    if (!f || fread(magic, 1, 4, f) != 4 || memcmp(magic, "NLRC", 4) != 0 ||
+        fread(&ver, sizeof ver, 1, f) != 1 || ver != 1) {
+        fprintf(stderr, "bad nlrc file %s\n", path);
+        return -1;
+    }
+    uint32_t cap = 1024, n = 0, frozen = 0;
+    float* xin = malloc((size_t)cap * in * sizeof(float));
+    float* xtg = malloc((size_t)cap * out * sizeof(float));
+    float* xlr = malloc(cap * sizeof(float));
+    char (*xlab)[64] = malloc((size_t)cap * 64);
+    float* skip = malloc((size_t)in * sizeof(float));
+    for (;;) {
+        uint32_t nf, ts, flags;
+        uint64_t step;
+        float lr, conf, fscale, loss;
+        char lab[64];
+        if (fread(&nf, 4, 1, f) != 1) break;   /* clean end of file */
+        if (fread(&ts, 4, 1, f) != 1 || fread(&step, 8, 1, f) != 1 || fread(&lr, 4, 1, f) != 1 ||
+            fread(&conf, 4, 1, f) != 1 || fread(&fscale, 4, 1, f) != 1 ||
+            fread(&loss, 4, 1, f) != 1 || fread(&flags, 4, 1, f) != 1 || fread(lab, 1, 64, f) != 64) {
+            fprintf(stderr, "truncated record header after %u records\n", n + frozen);
+            break;
+        }
+        if (nf != in || ts != out) {
+            fprintf(stderr, "record dims %u->%u, network %u->%u\n", nf, ts, in, out);
+            return -1;
+        }
+        if (n == cap) {
+            cap *= 2;
+            xin = realloc(xin, (size_t)cap * in * sizeof(float));
+            xtg = realloc(xtg, (size_t)cap * out * sizeof(float));
+            xlr = realloc(xlr, cap * sizeof(float));
+            xlab = realloc(xlab, (size_t)cap * 64);
+        }
+        float* dst_raw = raw ? &xin[(size_t)n * in] : skip;
+        float* dst_bl = raw ? skip : &xin[(size_t)n * in];
+        if (fread(dst_raw, 4, nf, f) != nf || fread(dst_bl, 4, nf, f) != nf ||
+            fread(&xtg[(size_t)n * out], 4, ts, f) != ts) {
+            fprintf(stderr, "truncated record body after %u records\n", n + frozen);
+            break;
+        }
+        if (flags & 0x1u) { frozen++; continue; }   /* ANN did not learn this step */
+        xlr[n] = lr;
+        lab[63] = 0;
+        memcpy(xlab[n], lab, 64);
+        n++;
+    }
+    fclose(f);
+    free(skip);
+    if (n < 10) {
+        fprintf(stderr, "only %u usable records\n", n);
+        return -1;
+    }
+    /* held flag per record */
+    uint8_t* held = calloc(n, 1);
+    for (uint32_t a = 0; a < n; a++) {
+        uint32_t same = 0;
+        for (uint32_t b = 0; b < n; b++) same += strcmp(xlab[a], xlab[b]) == 0;
+        held[a] = (same * 20 > n) ? (a % 5 == 0) : (fnv1a(xlab[a]) % 5 == 0);
+    }
+    r->in = malloc((size_t)n * in * sizeof(float));
+    r->tg = malloc((size_t)n * out * sizeof(float));
+    r->lr = malloc(n * sizeof(float));
+    r->label = malloc((size_t)n * 64);
+    uint32_t j = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        for (uint32_t a = 0; a < n; a++) {
+            if (held[a] != pass) continue;
+            memcpy(&r->in[(size_t)j * in], &xin[(size_t)a * in], in * sizeof(float));
+            memcpy(&r->tg[(size_t)j * out], &xtg[(size_t)a * out], out * sizeof(float));
+            r->lr[j] = xlr[a];
+            memcpy(r->label[j], xlab[a], 64);
+            j++;
+        }
+        if (pass == 0) r->k = j;
+    }
+    r->n = n;
+    r->h = n - r->k;
+    printf("nlrc: %u learn records (%u frozen skipped), %u train, %u held out, input=%s\n",
+           n, frozen, r->k, r->h, raw ? "raw" : "blended");
+    free(held); free(xin); free(xtg); free(xlr); free(xlab);
+    return 0;
+}
+
 /* Snapshot of every layer's incoming weights and biases, in a fixed order */
 typedef struct {
     float* w;
@@ -186,22 +326,33 @@ int main(int argc, char** argv)
 {
     if (argc < 5) {
         fprintf(stderr, "usage: %s <brain.bin> <lr> <epochs> <single|batch> [K] "
-                "[random|cluster|real:<file>] [fuse]\n", argv[0]);
+                "[random|cluster|real:<file>|nlrc:<file>] [fuse]\n", argv[0]);
         return 2;
     }
-    float lr = strtof(argv[2], NULL);
+    bool rec_lr = strcmp(argv[2], "rec") == 0;
+    float lr = rec_lr ? 0.0f : strtof(argv[2], NULL);
     int epochs = atoi(argv[3]);
     bool batch = strcmp(argv[4], "batch") == 0;
     bool cluster = argc > 6 && strcmp(argv[6], "cluster") == 0;
     const char* real_path = (argc > 6 && strncmp(argv[6], "real:", 5) == 0) ? argv[6] + 5 : NULL;
+    const char* nlrc_path = (argc > 6 && strncmp(argv[6], "nlrc:", 5) == 0) ? argv[6] + 5 : NULL;
+    const char* order_env = getenv("NLRC_ORDER");
+    const char* input_env = getenv("NLRC_INPUT");
+    bool shuffled = order_env && strcmp(order_env, "shuffled") == 0;
+    bool raw_input = input_env && strcmp(input_env, "raw") == 0;
+    if (rec_lr && !nlrc_path) {
+        fprintf(stderr, "lr 'rec' needs an nlrc: task\n");
+        return 2;
+    }
     float fuse = argc > 7 ? strtof(argv[7], NULL) : 0.0f;
     uint32_t K = argc > 5 ? (uint32_t)atoi(argv[5]) : (cluster ? 48 : real_path ? 512 : 16);
     uint32_t H = cluster ? 16 : 4;   /* held-out items (real: set from the file) */
     const uint32_t C = 8;            /* clusters; item k belongs to k % C */
     const char* mode = getenv("NIMCP_ANN_GPU_GRAD");
-    printf("== mode=%s lr=%g epochs=%d path=%s K=%u task=%s fuse=%g\n", mode ? mode : "default",
-           lr, epochs, batch ? "batch8" : "single", K,
-           cluster ? "cluster" : real_path ? "real" : "random", fuse);
+    printf("== mode=%s lr=%s epochs=%d path=%s K=%u task=%s fuse=%g order=%s\n", mode ? mode : "default",
+           argv[2], epochs, batch ? "batch8" : "single", K,
+           cluster ? "cluster" : real_path ? "real" : nlrc_path ? "nlrc" : "random", fuse,
+           shuffled ? "shuffled" : "recorded");
 
     adaptive_network_t net = adaptive_network_load(argv[1]);
     if (!net) {
@@ -222,7 +373,25 @@ int main(int argc, char** argv)
     }
     float* rin = NULL;
     float* rtg = NULL;
-    if (real_path) {
+    float* rlr = NULL;
+    if (nlrc_path) {
+        nlrc_t r;
+        if (load_nlrc(nlrc_path, in, out, raw_input, &r) != 0) return 1;
+        int kreq = argc > 5 ? atoi(argv[5]) : 0;   /* 0 or absent = every train record */
+        uint32_t ktr = (kreq > 0 && (uint32_t)kreq < r.k) ? (uint32_t)kreq : r.k;
+        /* keep the first ktr train records, then all held ones */
+        rin = malloc((size_t)(ktr + r.h) * in * sizeof(float));
+        rtg = malloc((size_t)(ktr + r.h) * out * sizeof(float));
+        memcpy(rin, r.in, (size_t)ktr * in * sizeof(float));
+        memcpy(&rin[(size_t)ktr * in], &r.in[(size_t)r.k * in], (size_t)r.h * in * sizeof(float));
+        memcpy(rtg, r.tg, (size_t)ktr * out * sizeof(float));
+        memcpy(&rtg[(size_t)ktr * out], &r.tg[(size_t)r.k * out], (size_t)r.h * out * sizeof(float));
+        rlr = r.lr;   /* first ktr entries are the train records' */
+        K = ktr;
+        H = r.h;
+        real_path = nlrc_path;   /* from here on handled like real: */
+        if (shuffled) srand(777);
+    } else if (real_path) {
         FILE* f = fopen(real_path, "rb");
         uint32_t hdr[3];
         if (!f || fread(hdr, sizeof hdr, 1, f) != 1 || hdr[1] != in || hdr[2] != out || hdr[0] <= K) {
@@ -292,8 +461,23 @@ int main(int argc, char** argv)
         for (uint32_t k = 0; k < K + H; k++) memcpy(&TG[(size_t)k * out], ex[k].target, out * sizeof(float));
     }
 
+    if (batch && (shuffled || rec_lr)) {
+        fprintf(stderr, "batch path supports neither NLRC_ORDER=shuffled nor lr 'rec'\n");
+        return 2;
+    }
+    uint32_t* order = malloc((K ? K : 1) * sizeof(uint32_t));
+    for (uint32_t k = 0; k < K; k++) order[k] = k;
+    bool is_nlrc = nlrc_path != NULL;
+    uint32_t nK = K < 256 ? K : 256, nH = H < 256 ? H : 256;   /* scored for spec/top1 */
+
     for (int e = 0; e <= epochs; e++) {
         double t0 = now_s(), loss = 0;
+        if (shuffled && e > 0) {
+            for (uint32_t k = K; k > 1; k--) {
+                uint32_t j = (uint32_t)(rand() % k);
+                uint32_t t = order[k - 1]; order[k - 1] = order[j]; order[j] = t;
+            }
+        }
         int steps = 0;
         if (e > 0) {
             if (batch) {
@@ -304,7 +488,10 @@ int main(int argc, char** argv)
                 }
             } else {
                 for (uint32_t k = 0; k < K; k++) {
-                    loss += adaptive_network_learn(net, &ex[k], LEARN_MODE_DISTILLATION, lr);
+                    uint32_t kk = k;
+                    if (shuffled) kk = order[k];
+                    float step_lr = rec_lr ? rlr[kk] : lr;
+                    loss += adaptive_network_learn(net, &ex[kk], LEARN_MODE_DISTILLATION, step_lr);
                     steps++;
                 }
             }
@@ -313,7 +500,7 @@ int main(int argc, char** argv)
         double own = 0, held = 0, cent = 0, on = 0, cpu_own = 0;
         bool finite = true;
         nimcp_gpu_weight_cache_t* cache = adaptive_network_get_gpu_weight_cache(net);
-        for (uint32_t k = 0; k < K; k++) {
+        for (uint32_t k = 0; k < K && !is_nlrc; k++) {   /* CPU fallback: slow, skipped for nlrc */
             adaptive_network_forward_readonly(net, ex[k].input, in, o, out, 0);
             cpu_own += cosd(o, ex[k].target, out) / K;
         }
@@ -342,10 +529,15 @@ int main(int argc, char** argv)
                steps ? 1000.0 * dt / steps : 0.0, finite ? "" : "  NON-FINITE");
         if (O) {
             double sp, t1, xs, hsp, ht1, hxs;
-            set_metrics(O, TG, K, out, &sp, &t1, &xs);
-            set_metrics(&O[(size_t)K * out], &TG[(size_t)K * out], H, out, &hsp, &ht1, &hxs);
+            set_metrics(O, TG, nK, out, &sp, &t1, &xs);
+            set_metrics(&O[(size_t)K * out], &TG[(size_t)K * out], nH, out, &hsp, &ht1, &hxs);
             printf("    train: spec %+.4f top1 %.3f xsim %.4f | held: spec %+.4f top1 %.3f xsim %.4f"
-                   "  (chance top1 %.4f / %.4f)\n", sp, t1, xs, hsp, ht1, hxs, 1.0 / K, 1.0 / H);
+                   "  (chance top1 %.4f / %.4f)\n", sp, t1, xs, hsp, ht1, hxs, 1.0 / nK, 1.0 / nH);
+            if (e == 0) {
+                printf("    base (output = mean target of the set): train %+.4f held %+.4f\n",
+                       mean_target_baseline(TG, K, out),
+                       mean_target_baseline(&TG[(size_t)K * out], H, out));
+            }
         }
         if (e == 1 || e == epochs || (e > 0 && e % 10 == 0)) {
             report_change(base, bc, &s0);
