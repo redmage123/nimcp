@@ -18,9 +18,9 @@ The gate enforces ALL of:
     5. SNN biologically stable (sparsity 0.88-0.99 ≈ 1-12% firing)
     6. Chat eval passes (coherence + differentiation)
     7. (when thresholds are set) Competence: the median of the stage's last
-       few performance evals clears a held-out fit and a target-structure
-       floor. Criteria 1-6 only check health; stage 0 passed them for 116k
-       steps while learning nothing measurable (2026-11-14).
+       few performance evals clears item-specificity floors on held-out
+       texts (spec, top1). Criteria 1-6 only check health; stage 0 passed
+       them for 116k steps while learning nothing measurable (2026-11-14).
 
 Criteria are intentionally conjunctive: if ANY fails, the stage does NOT advance.
 Loss is deliberately NOT a stage-ending criterion by default (2026-10-27):
@@ -96,11 +96,20 @@ class StageGate:
     #     reset-state probe outputs' cosine matrix with their training
     #     targets' cosine matrix (does the output keep the target clusters).
     #   heldout: "heldout" -> "mean_cosine_sim", output-target cosine on
-    #     held-out items the brain never learned from.
+    #     held-out items the brain never learned from. Cannot tell learning
+    #     from outputting the mean target (both score ~0.34-0.50).
+    #   spec: "specificity" -> "held" -> "spec", own-target cosine minus the
+    #     mean cosine to the other held-out texts' targets (0 = output does
+    #     not depend on which item it is).
+    #   top1: "specificity" -> "held" -> "top1", fraction of held-out texts
+    #     whose output is nearest its own target (chance 1/n).
     competence_eval_log: str | None = None
     competence_window: int = 3            # median over this many latest evals
     competence_target_corr_min: float | None = None
     competence_heldout_min: float | None = None
+    competence_spec_min: float | None = None
+    competence_top1_min: float | None = None
+    competence_min_held_n: int = 16       # a specificity record needs this many held texts
 
     # Internal state
     last_chat_step: int = -1
@@ -218,8 +227,10 @@ class StageGate:
             details["chat_eval"] = {"passed": True, "reason": "not_required_at_this_stage"}
 
         # 7. Competence
-        if (self.competence_target_corr_min is not None
-                or self.competence_heldout_min is not None):
+        if any(v is not None for v in (self.competence_target_corr_min,
+                                       self.competence_heldout_min,
+                                       self.competence_spec_min,
+                                       self.competence_top1_min)):
             comp = self._check_competence()
             details["competence"] = comp
             if not comp.get("passed", False):
@@ -327,7 +338,18 @@ class StageGate:
             n = len(vals)
             return vals[n // 2] if n % 2 else 0.5 * (vals[n // 2 - 1] + vals[n // 2])
 
+        def _held(key):
+            def get(r):
+                held = (r.get("specificity") or {}).get("held") or {}
+                n = held.get("n")
+                if not isinstance(n, (int, float)) or n < self.competence_min_held_n:
+                    return None
+                return held.get(key)
+            return get
+
         checks = (
+            ("spec", self.competence_spec_min, _held("spec")),
+            ("top1", self.competence_top1_min, _held("top1")),
             ("target_corr", self.competence_target_corr_min,
              lambda r: (r.get("controlled") or {}).get("target_corr")),
             ("heldout_cos", self.competence_heldout_min,
@@ -386,17 +408,23 @@ def stage_gate_for(stage: int) -> StageGate:
                          chat_cross_sim_max=1.0,
                          required_consecutive_passes=3)
     if stage == 1:
-        # Competence floors (2026-11-14; env-overridable). At step 35000 the
-        # brain stood at target_corr +0.55 (one controlled eval) and held-out
-        # cosine ~0.33; set a NIMCP_GATE1_* variable to "off" to disable.
+        # Competence floors (2026-11-16; env-overridable): held-out item
+        # specificity from the eval's "specificity" record. At steps
+        # 40500-42000 held spec stood at +0.27-0.29 and held top1 at
+        # 0.38-0.56 (n 24-48, chance 0.02-0.04). Set a NIMCP_GATE1_* variable
+        # to a number to change a floor or to "off" to disable it. The older
+        # target_corr / held-out cosine floors are off unless set: neither
+        # separated learning from outputting the mean target.
         def _floor(var, default):
             v = os.environ.get(var, "")
             if v.lower() == "off":
                 return None
             return float(v) if v else default
         return StageGate(stage=1,
-                         competence_target_corr_min=_floor("NIMCP_GATE1_TARGET_CORR_MIN", 0.6),
-                         competence_heldout_min=_floor("NIMCP_GATE1_HELDOUT_MIN", 0.45),
+                         competence_spec_min=_floor("NIMCP_GATE1_SPEC_MIN", 0.30),
+                         competence_top1_min=_floor("NIMCP_GATE1_TOP1_MIN", 0.60),
+                         competence_target_corr_min=_floor("NIMCP_GATE1_TARGET_CORR_MIN", None),
+                         competence_heldout_min=_floor("NIMCP_GATE1_HELDOUT_MIN", None),
                          min_step=1500,              # enough warm-up
                          max_mean_loss=1.0,          # informational only
                          plateau_window=200,
