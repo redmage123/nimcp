@@ -916,11 +916,19 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_coo(
             return NULL;
         }
 
-        // Sort COO by row first
+        /* Sort COO by (row, col): by column, then stably by row. Sorting by
+         * row alone kept each row's columns in synapse order, which is
+         * ascending only for connections made at init. The weight download
+         * (dl_writeback_worker) binary-searches each row's columns, so a
+         * row with connections added later (output fan-in widening,
+         * 2026-11-16) failed the search and the synapse's weight was
+         * written as 0 on every step. */
         thrust::device_ptr<int> row_ptr(d_row_indices);
         thrust::device_ptr<int> col_ptr(d_col_indices);
         thrust::device_ptr<float> val_ptr(d_values);
-        thrust::sort_by_key(thrust::device, row_ptr, row_ptr + nnz,
+        thrust::stable_sort_by_key(thrust::device, col_ptr, col_ptr + nnz,
+            thrust::make_zip_iterator(thrust::make_tuple(row_ptr, val_ptr)));
+        thrust::stable_sort_by_key(thrust::device, row_ptr, row_ptr + nnz,
             thrust::make_zip_iterator(thrust::make_tuple(col_ptr, val_ptr)));
 
         cusparseStatus_t coo2csr_st = cusparseXcoo2csr(ctx->cusparse_handle,
@@ -970,12 +978,14 @@ nimcp_sparse_tensor_t* nimcp_sparse_from_coo(
             nimcp_free(sparse); return NULL;
         }
 
-        /* Sort COO by row */
+        /* Sort COO by (row, col); see the CSR branch above */
         {
             thrust::device_ptr<int> row_ptr(d_row_indices);
             thrust::device_ptr<int> col_ptr(d_col_indices);
             thrust::device_ptr<float> val_ptr(d_values);
-            thrust::sort_by_key(thrust::device, row_ptr, row_ptr + nnz,
+            thrust::stable_sort_by_key(thrust::device, col_ptr, col_ptr + nnz,
+                thrust::make_zip_iterator(thrust::make_tuple(row_ptr, val_ptr)));
+            thrust::stable_sort_by_key(thrust::device, row_ptr, row_ptr + nnz,
                 thrust::make_zip_iterator(thrust::make_tuple(col_ptr, val_ptr)));
         }
 

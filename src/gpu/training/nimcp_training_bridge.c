@@ -613,13 +613,17 @@ static void* dl_writeback_worker(void* arg) {
             if (source_id < s->src_offset || source_id >= s->src_offset + s->src_layer_size) continue;
             int src_local = (int)(source_id - s->src_offset);
             float eff_weight = 0.0f;
+            bool found = false;
             int lo = row_start, hi = row_end - 1;
-            while (lo <= hi) {  /* columns are sorted by cuSPARSE */
+            while (lo <= hi) {  /* columns sorted by (row, col) in nimcp_sparse_from_coo */
                 int mid = lo + (hi - lo) / 2;
                 int col = cache->host_coo_col_idx[mid];
-                if (col == src_local) { eff_weight = cache->host_coo_values[mid]; break; }
+                if (col == src_local) { eff_weight = cache->host_coo_values[mid]; found = true; break; }
                 if (col < src_local) lo = mid + 1; else hi = mid - 1;
             }
+            /* A miss means the GPU matrix does not hold this synapse (or its
+             * row is unsorted); keep the CPU weight rather than zeroing it. */
+            if (!found) continue;
             in_h->weight = (fabsf(in_h->strength) > 1e-8f) ? eff_weight / in_h->strength : eff_weight;
             /* Mirror into the source's outgoing copy (2026-11-12). The
              * checkpoint saves outgoing handles and load rebuilds incoming
