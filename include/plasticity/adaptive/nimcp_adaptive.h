@@ -616,6 +616,25 @@ bool adaptive_network_is_gpu_enabled(adaptive_network_t network);
 void adaptive_network_mark_gpu_weights_dirty(adaptive_network_t network);
 
 /**
+ * @brief Widen the output layer to at least @p target_fan_in inputs per
+ *        neuron (see neural_network_widen_layer_fanin); new weights start at
+ *        0. Rebuilds the GPU weight cache when connections were added.
+ *
+ * adaptive_network_load applies this when NIMCP_ANN_OUTPUT_FANIN=<n> is set.
+ * The added connections are saved with the next checkpoint, and a network
+ * already at the target is left unchanged.
+ *
+ * @return Number of connections added (0 if none or on bad arguments)
+ */
+uint32_t adaptive_network_widen_output_fanin(adaptive_network_t network, uint32_t target_fan_in);
+
+/**
+ * @brief Destroy and rebuild the GPU weight cache from the current network
+ *        (needed after connections are added or removed). No-op without GPU.
+ */
+void adaptive_network_rebuild_gpu_cache(adaptive_network_t network);
+
+/**
  * @brief Reset EMA tracking (gradient norm + loss) to uninitialized state
  *
  * Call after reinit_weights to prevent stale collapsed EMA values from

@@ -472,6 +472,26 @@ uint64_t neural_network_scale_output_layer(neural_network_t network, const uint3
                                            uint32_t num_layers, float scale);
 
 /**
+ * @brief Give every neuron of layer @p layer at least @p target_fan_in inputs
+ *        from layer @p layer - 1, adding connections from distinct random
+ *        sources it is not yet connected to. New weights start at 0 (output
+ *        unchanged until training moves them) with strength 1.
+ *
+ * Existing connections are kept. Neurons already at or above the target are
+ * left alone, so repeated calls add nothing. The target is capped at the
+ * source layer's size. Any GPU weight cache built from the network must be
+ * rebuilt afterwards.
+ *
+ * @param layer_sizes Per-layer neuron counts (layer 0 is the input layer)
+ * @param layer       Destination layer index, 1 .. num_layers - 1
+ * @param seed        Seed for source selection (0 uses a fixed default)
+ * @return Number of connections added (0 on bad arguments)
+ */
+uint32_t neural_network_widen_layer_fanin(neural_network_t network, const uint32_t* layer_sizes,
+                                          uint32_t num_layers, uint32_t layer,
+                                          uint32_t target_fan_in, uint32_t seed);
+
+/**
  * @brief Get pointer to neuron structure
  *
  * WHAT: Access neuron internals for serialization/introspection

@@ -4125,6 +4125,23 @@ adaptive_network_t adaptive_network_load(const char* filepath)
         }
     }
 
+    /* NIMCP_ANN_OUTPUT_FANIN=<n> (default off): widen the output layer to at
+     * least n inputs per neuron, new weights at 0, before the GPU cache is
+     * built below. Saved with the next checkpoint; a no-op once reached. */
+    {
+        const char* e = getenv("NIMCP_ANN_OUTPUT_FANIN");
+        long f = e ? strtol(e, NULL, 10) : 0;
+        uint32_t L = network->config.base_config.num_layers;
+        if (f > 0 && L >= 2 && network->config.base_config.layer_sizes) {
+            uint32_t n = neural_network_widen_layer_fanin(
+                network->base_network, network->config.base_config.layer_sizes, L,
+                L - 1, (uint32_t)f, 0);
+            NIMCP_LOG_WARN("NIMCP_ANN_OUTPUT_FANIN=%ld: added %u output-layer connections "
+                           "(weight 0)", f, n);
+            fprintf(stderr, "[ANN-FANIN] target %ld: added %u output-layer connections\n", f, n);
+        }
+    }
+
     // H11: Clean up GPU resources from create() before re-initializing
     if (network->gpu_weight_cache) {
         nimcp_gpu_weight_cache_destroy(network->gpu_weight_cache);
@@ -4579,6 +4596,23 @@ void adaptive_network_reset_ema(adaptive_network_t network)
     /* C11 _Atomic float supports direct assignment with sequential consistency */
     network->ema_grad_norm = -1.0f;
     network->ema_loss = -1.0f;
+}
+
+uint32_t adaptive_network_widen_output_fanin(adaptive_network_t network, uint32_t target_fan_in)
+{
+    if (!network || !network->base_network ||
+        network->config.base_config.num_layers < 2 ||
+        !network->config.base_config.layer_sizes) {
+        return 0;
+    }
+    uint32_t L = network->config.base_config.num_layers;
+    uint32_t n = neural_network_widen_layer_fanin(network->base_network,
+                                                  network->config.base_config.layer_sizes,
+                                                  L, L - 1, target_fan_in, 0);
+    if (n > 0) {
+        adaptive_network_rebuild_gpu_cache(network);
+    }
+    return n;
 }
 
 void adaptive_network_rebuild_gpu_cache(adaptive_network_t network)

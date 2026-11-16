@@ -5324,6 +5324,72 @@ float neural_network_get_sparsity_ratio(neural_network_t network) {
     return (float)network->num_active_neurons / (float)network->num_neurons;
 }
 
+uint32_t neural_network_widen_layer_fanin(neural_network_t network, const uint32_t* layer_sizes,
+                                          uint32_t num_layers, uint32_t layer,
+                                          uint32_t target_fan_in, uint32_t seed)
+{
+    if (!network || !layer_sizes || layer == 0 || layer >= num_layers || target_fan_in == 0) {
+        return 0;
+    }
+    uint64_t dst_start = 0;
+    for (uint32_t l = 0; l < layer; l++) {
+        dst_start += layer_sizes[l];
+    }
+    uint32_t src_n = layer_sizes[layer - 1];
+    uint32_t dst_n = layer_sizes[layer];
+    if (src_n == 0 || dst_start + dst_n > network->num_neurons) {
+        return 0;
+    }
+    uint32_t src_start = (uint32_t)(dst_start - src_n);
+    if (target_fan_in > src_n) {
+        target_fan_in = src_n;
+    }
+
+    uint8_t* linked = nimcp_calloc(src_n, 1);   /* sources already feeding this neuron */
+    if (!linked) {
+        return 0;
+    }
+    uint64_t rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
+    uint32_t added = 0;
+    for (uint32_t d = 0; d < dst_n; d++) {
+        uint32_t dst_id = (uint32_t)dst_start + d;
+        neuron_t* dst = &network->neurons[dst_id];
+        uint32_t have = 0;
+        for (uint32_t k = 0; k < NEURON_IN_COUNT(dst); k++) {
+            synapse_handle_t* h = NEURON_IN_HANDLE(dst, k);
+            uint32_t s = h ? h->target_neuron_id : UINT32_MAX;
+            if (s >= src_start && s - src_start < src_n && !linked[s - src_start]) {
+                linked[s - src_start] = 1;
+                have++;
+            }
+        }
+        while (have < target_fan_in) {
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;   /* xorshift64 */
+            uint32_t r = (uint32_t)(rng % src_n);
+            if (linked[r]) {
+                continue;
+            }
+            if (!neural_network_add_connection(network, src_start + r, dst_id, 0.0F)) {
+                LOG_WARN(LOG_MODULE, "widen_layer_fanin: add_connection %u->%u failed",
+                         src_start + r, dst_id);
+                break;
+            }
+            linked[r] = 1;
+            have++;
+            added++;
+        }
+        for (uint32_t k = 0; k < NEURON_IN_COUNT(dst); k++) {   /* reset for the next neuron */
+            synapse_handle_t* h = NEURON_IN_HANDLE(dst, k);
+            uint32_t s = h ? h->target_neuron_id : UINT32_MAX;
+            if (s >= src_start && s - src_start < src_n) {
+                linked[s - src_start] = 0;
+            }
+        }
+    }
+    nimcp_free(linked);
+    return added;
+}
+
 uint64_t neural_network_scale_output_layer(neural_network_t network, const uint32_t* layer_sizes,
                                            uint32_t num_layers, float scale)
 {
