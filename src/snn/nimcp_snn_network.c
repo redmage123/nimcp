@@ -5367,6 +5367,10 @@ float snn_tune_get_decide_carry_state(void)    { return g_snn_decide_carry_state
 void  snn_tune_set_decide_window_ms(float v)   { if (v >= 1.0f && v <= 1000.0f) g_snn_decide_window_ms = v; }
 float snn_tune_get_decide_window_ms(void)      { return g_snn_decide_window_ms; }
 
+static float g_snn_decide_blend = 1.0f;
+void  snn_tune_set_decide_blend(float v)       { g_snn_decide_blend = (v != 0.0f) ? 1.0f : 0.0f; }
+float snn_tune_get_decide_blend(void)          { return g_snn_decide_blend; }
+
 int snn_network_forward_carry(snn_network_t* network,
                               const float* inputs,
                               uint32_t n_inputs,

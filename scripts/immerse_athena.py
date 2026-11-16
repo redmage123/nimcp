@@ -10473,6 +10473,9 @@ def _specificity_eval(brain, composer):
                     encode_text(name + " " + desc), name + " " + desc))
             if len(outs) >= 2:
                 rec[k] = _set_fit_metrics(outs, tgts)
+        heads = _head_ablation_eval(brain, composer, ci, sets["held"])
+        if heads:
+            rec["heads"] = heads
     rec["duration_s"] = round(time.time() - t0, 1)
     print(f"\n  Specificity eval (reset state, noise off; {rec['duration_s']}s):")
     for k in ("held", "train"):
@@ -10482,7 +10485,67 @@ def _specificity_eval(brain, composer):
                   f"(mean-target baseline {m['mean_baseline']:.3f})  spec {m['spec']:+.3f}  "
                   f"top1 {m['top1']:.3f} top5 {m['top5']:.3f} (chance {m['chance_top1']:.3f})  "
                   f"out_xsim {m['out_xsim']:.3f} (targets {m['tgt_xsim']:.3f})")
+    for cfg, m in (rec.get("heads") or {}).items():
+        print(f"    held [{cfg:7s}] own_cos {m['own_cos']:.3f}  spec {m['spec']:+.3f}  "
+              f"top1 {m['top1']:.3f} top5 {m['top5']:.3f}")
     return rec
+
+
+_head_ablation_calls = 0
+
+# Decision-path heads switched off per configuration: (SNN blend, LNN blend).
+# The full blend is the specificity eval's own "held" result.
+_HEAD_CONFIGS = (("ann", False, False), ("ann_snn", True, False), ("ann_lnn", False, True))
+
+
+def _head_ablation_eval(brain, composer, ci, held_items):
+    """Held-out specificity with the SNN and/or LNN blends removed from the
+    decision (2026-11-16): how much each head adds to, or takes from, the
+    item-specific output. Every NIMCP_HEAD_ABLATION_EVERY-th specificity eval
+    (default 0 = off); each configuration costs one held-out pass."""
+    global _head_ablation_calls
+    try:
+        every = int(os.environ.get("NIMCP_HEAD_ABLATION_EVERY", "0"))
+    except ValueError:
+        every = 0
+    if every <= 0:
+        return None
+    _head_ablation_calls += 1
+    if (_head_ablation_calls - 1) % every:
+        return None
+    try:
+        snn_old = float((brain.snn_tune_get() or {}).get("decide_blend", 1.0))
+        lnn_old = float((brain.lnn_tune_get() or {}).get("decide_weight", 0.1))
+    except Exception as e:
+        print(f"\n  Head ablation skipped: {e}")
+        return None
+    out = {}
+    try:
+        for cfg, snn_on, lnn_on in _HEAD_CONFIGS:
+            brain.snn_tune("decide_blend", 1.0 if snn_on else 0.0)
+            brain.lnn_tune("decide_weight", lnn_old if lnn_on else 0.0)
+            outs, tgts = [], []
+            for name, desc in held_items:
+                ci.reset()
+                res = brain.decide_full(composer.compose(text=desc, modality="text"))
+                vec = (res or {}).get("output_vector")
+                if vec is None:
+                    continue
+                outs.append(extract_embedding_from_output(np.asarray(vec, dtype=np.float32)))
+                tgts.append(_target_diversifier.diversify_static(
+                    encode_text(name + " " + desc), name + " " + desc))
+            if len(outs) >= 2:
+                out[cfg] = _set_fit_metrics(outs, tgts)
+    except Exception as e:
+        print(f"\n  Head ablation stopped: {e}")
+    finally:
+        for fn, key, val in ((brain.snn_tune, "decide_blend", snn_old),
+                             (brain.lnn_tune, "decide_weight", lnn_old)):
+            try:
+                fn(key, val)
+            except Exception:
+                pass
+    return out
 
 
 def evaluate_performance(brain, composer, decoder, stage, step):

@@ -460,11 +460,16 @@ int snn_network_forward_carry(snn_network_t* network,
 /* Decision-path tunables (2026-11-02), process-wide.
  * decide_carry_state: 1 = brain decisions use snn_network_forward_carry
  *                     (default), 0 = legacy reset-every-decision.
- * decide_window_ms:   simulated time per decision, [1, 1000] ms. */
+ * decide_window_ms:   simulated time per decision, [1, 1000] ms.
+ * decide_blend:       1 = blend the SNN output into the decision (default),
+ *                     0 = leave the decision without it (eval ablation;
+ *                     the SNN still runs). */
 void  snn_tune_set_decide_carry_state(float v);
 float snn_tune_get_decide_carry_state(void);
 void  snn_tune_set_decide_window_ms(float v);
 float snn_tune_get_decide_window_ms(void);
+void  snn_tune_set_decide_blend(float v);
+float snn_tune_get_decide_blend(void);
 
 //=============================================================================
 // Training

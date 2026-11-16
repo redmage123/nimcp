@@ -1571,7 +1571,9 @@ sequential_fallback:
             int rc = brain_snn_decide_forward(brain->snn_network, snn_input_ptr, snn_input_dim,
                                               snn_output, snn_out_dim);
             float rel_w[2];
-            if (rc == 0 && brain_fusion_rel_blend(brain, decision->output_vector, snn_output,
+            if (rc == 0 && snn_tune_get_decide_blend() == 0.0f) {
+                /* snn_tune decide_blend=0: decision without the SNN (ablation) */
+            } else if (rc == 0 && brain_fusion_rel_blend(brain, decision->output_vector, snn_output,
                                                   snn_out_dim, rel_w)) {
                 /* NIMCP_FUSION_RELIABILITY=1: weights from each pathway's
                  * measured cos with its learn targets (2026-11-11) */
