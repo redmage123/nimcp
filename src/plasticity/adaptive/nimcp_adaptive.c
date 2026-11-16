@@ -453,6 +453,34 @@ struct adaptive_network_struct {
     _Atomic uint64_t prev_synapse_count;
 };
 
+/* Bring the GPU weight cache up to date if CPU-side learning changed the
+ * weights. Returns false when the upload failed; the cache is then left
+ * dirty (nimcp_gpu_weight_cache_upload) and the caller must take its CPU
+ * path for this call rather than compute on stale or partial GPU weights.
+ * The CAS keeps two threads from uploading the same dirty state. */
+static bool adaptive_gpu_sync_weights(adaptive_network_t network)
+{
+    if (!network || !network->gpu_weight_cache) return false;
+    bool expected_dirty = true;
+    if (__atomic_compare_exchange_n(&network->gpu_weight_cache->weights_dirty_on_cpu,
+                                    &expected_dirty, false, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        return nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
+                                             network->base_network);
+    }
+    return true;
+}
+
+/* Initial upload when a GPU cache is created: on failure the cache stays
+ * dirty, so the first GPU use retries and otherwise falls back to CPU. */
+static void adaptive_gpu_initial_upload(adaptive_network_t network)
+{
+    if (!nimcp_gpu_weight_cache_upload(network->gpu_weight_cache, network->base_network)) {
+        NIMCP_LOG_WARN("adaptive network: initial GPU weight upload failed; "
+                       "will retry on first use");
+    }
+}
+
 //=============================================================================
 // Object Pool Implementation
 //=============================================================================
@@ -1394,8 +1422,7 @@ adaptive_network_t adaptive_network_create(const adaptive_network_config_t* conf
                 network->config.base_config.layer_sizes,
                 network->config.base_config.num_layers);
             if (network->gpu_weight_cache) {
-                nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                             network->base_network);
+                adaptive_gpu_initial_upload(network);
                 network->gpu_enabled = true;
                 fprintf(stderr, "[GPU] Training enabled for adaptive network (%u layers)\n",
                         network->config.base_config.num_layers);
@@ -1843,12 +1870,9 @@ uint32_t adaptive_network_forward(adaptive_network_t network, const float* input
     // TODO: Re-enable when running on actual AWS Inferentia hardware.
 
     // Phase GPU: GPU-accelerated forward pass
-    if (network->gpu_enabled && network->gpu_weight_cache) {
-        // Re-upload weights if CPU biological learning modified them
-        if (__atomic_load_n(&network->gpu_weight_cache->weights_dirty_on_cpu, __ATOMIC_ACQUIRE)) {
-            nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                         network->base_network);
-        }
+    // Re-upload weights if CPU learning modified them; CPU path if that fails
+    if (network->gpu_enabled && network->gpu_weight_cache &&
+        adaptive_gpu_sync_weights(network)) {
 
         // Use same fixed threshold as training path (adaptive_network_learn)
         // to ensure train/test consistency. Adaptive threshold can be higher
@@ -2069,12 +2093,9 @@ uint32_t adaptive_network_forward_raw(adaptive_network_t network, const float* i
     // I-H2 FIX: GPU forward path for raw inference (no output thresholding).
     // When GPU is enabled and weights are synced, use GPU for inference to match
     // the computational path used during training.
-    if (network->gpu_enabled && network->gpu_weight_cache) {
-        // Re-upload weights if CPU biological learning modified them
-        if (__atomic_load_n(&network->gpu_weight_cache->weights_dirty_on_cpu, __ATOMIC_ACQUIRE)) {
-            nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                         network->base_network);
-        }
+    // Re-upload weights if CPU learning modified them; CPU path if that fails
+    if (network->gpu_enabled && network->gpu_weight_cache &&
+        adaptive_gpu_sync_weights(network)) {
 
         bool gpu_ok = nimcp_gpu_forward_pass(network->gpu_weight_cache,
                                              spike_input, input_size, output, output_size);
@@ -2168,14 +2189,8 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
         // Use atomic CAS to avoid TOCTOU race: concurrent threads could both
         // see dirty=true and redundantly upload, or one could clear while
         // another skips the upload it needed.
-        {
-            bool expected_dirty = true;
-            if (__atomic_compare_exchange_n(&network->gpu_weight_cache->weights_dirty_on_cpu,
-                                            &expected_dirty, false, false,
-                                            __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                             network->base_network);
-            }
+        if (!adaptive_gpu_sync_weights(network)) {
+            goto cpu_learn_path;   /* GPU weights are stale; learn on CPU */
         }
 
         // 2. Spike-encode input with fixed threshold (preserves magnitude discrimination)
@@ -2928,11 +2943,9 @@ float adaptive_network_learn_batch(adaptive_network_t network, const training_ex
     /* GPU gradient accumulation: run forward+backward for each sample but accumulate
      * gradients on GPU without updating weights. After all samples, apply averaged
      * gradients in one shot. This gives true mini-batch gradient descent. */
-    if (gpu_batch_opt && num_examples >= 2) {
-        if (__atomic_load_n(&network->gpu_weight_cache->weights_dirty_on_cpu, __ATOMIC_ACQUIRE)) {
-            nimcp_gpu_weight_cache_upload(network->gpu_weight_cache, network->base_network);
-            __atomic_store_n(&network->gpu_weight_cache->weights_dirty_on_cpu, false, __ATOMIC_RELEASE);
-        }
+    /* A failed sync drops to the per-sample path below, whose
+     * adaptive_network_learn calls retry the upload or learn on CPU. */
+    if (gpu_batch_opt && num_examples >= 2 && adaptive_gpu_sync_weights(network)) {
 
         float fixed_threshold = network->config.spike_params.min_threshold;
         if (fixed_threshold <= 0.0f) fixed_threshold = 0.1f;
@@ -3079,13 +3092,9 @@ float adaptive_network_learn_batch(adaptive_network_t network, const training_ex
     }
 
     /* Fallback: per-sample learning (original path, for GPU batch_size=1 or CPU) */
-    if (gpu_batch_opt) {
-        if (__atomic_load_n(&network->gpu_weight_cache->weights_dirty_on_cpu, __ATOMIC_ACQUIRE)) {
-            nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                         network->base_network);
-        }
-        __atomic_store_n(&network->gpu_weight_cache->weights_dirty_on_cpu, false, __ATOMIC_RELEASE);
-    }
+    /* Per-sample path: each adaptive_network_learn syncs the GPU weights
+     * itself (and learns on CPU if the upload fails). The old code cleared
+     * the dirty flag here even when the upload had failed. */
 
     float total_loss = 0.0F;
     uint32_t successful = 0;
@@ -4164,8 +4173,7 @@ adaptive_network_t adaptive_network_load(const char* filepath)
                 network->config.base_config.layer_sizes,
                 network->config.base_config.num_layers);
             if (network->gpu_weight_cache) {
-                nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                             network->base_network);
+                adaptive_gpu_initial_upload(network);
                 network->gpu_enabled = true;
             } else {
                 nimcp_gpu_context_destroy(network->gpu_ctx);
@@ -4636,8 +4644,7 @@ void adaptive_network_rebuild_gpu_cache(adaptive_network_t network)
             network->config.base_config.layer_sizes,
             network->config.base_config.num_layers);
         if (network->gpu_weight_cache) {
-            nimcp_gpu_weight_cache_upload(network->gpu_weight_cache,
-                                         network->base_network);
+            adaptive_gpu_initial_upload(network);
             fprintf(stderr, "[REINIT] GPU weight cache rebuilt\n");
         }
     }

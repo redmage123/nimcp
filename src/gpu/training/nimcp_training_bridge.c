@@ -655,7 +655,7 @@ static void coo_run_slices(coo_slice_t* slices, uint32_t n, void* (*fn)(void*)) 
     for (uint32_t t = 1; t <= spawned; t++) pthread_join(tids[t], NULL);
 }
 
-bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_network_t net)
+static bool weight_cache_upload_impl(nimcp_gpu_weight_cache_t* cache, neural_network_t net)
 {
     if (!cache || !net) return false;
     const double upload_t0_ms = upload_now_ms();
@@ -821,12 +821,11 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
         }
 
         // --- Upload sparse weights via COO -> CSR ---
-        // Destroy previous sparse tensor for this layer
-        if (cache->sparse_weights[l]) {
-            nimcp_sparse_tensor_destroy(cache->sparse_weights[l]);
-            cache->sparse_weights[l] = NULL;
-        }
-
+        /* Build the new matrix before releasing the old one: a failed
+         * upload (GPU memory, conversion) keeps the previous layer instead
+         * of leaving it NULL, which the forward/backward treat as an empty
+         * transition and silently skip (2026-11-17). */
+        nimcp_sparse_tensor_t* new_w = NULL;
         if (nnz > 0) {
             /* Pre-allocation memory check to prevent OOM crashes
              * Estimate memory needed for sparse CSR tensor:
@@ -855,7 +854,7 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
 #endif
 
             /* CSR for backward pass + plasticity, BSR for forward pass (tensor cores) */
-            cache->sparse_weights[l] = nimcp_sparse_from_coo(
+            new_w = nimcp_sparse_from_coo(
                 cache->sparse_ctx,
                 cache->host_coo_values,
                 cache->host_coo_row_idx,
@@ -864,13 +863,17 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
                 (int)src_layer_size,
                 (int)nnz,
                 SPARSE_FORMAT_CSR);
-            if (!cache->sparse_weights[l]) return false;
+            if (!new_w) return false;
 
             /* BSR DISABLED: dual CSR+BSR doubles VRAM for 204M weights.
              * Random connectivity → ~6x BSR padding → CUDA OOM → GPU corruption.
              * Infrastructure ready for structured sparsity or larger VRAM. */
         }
-        // nnz == 0: sparse_weights[l] stays NULL (valid empty transition)
+        // nnz == 0: new_w is NULL (valid empty transition)
+        if (cache->sparse_weights[l]) {
+            nimcp_sparse_tensor_destroy(cache->sparse_weights[l]);
+        }
+        cache->sparse_weights[l] = new_w;
 
         // Upload bias vector to GPU
         size_t b_dims[1] = { dst_layer_size };
@@ -893,6 +896,26 @@ bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_netwo
         }
     }
     return true;
+}
+
+/* Every failed upload leaves the cache dirty, so the next caller retries
+ * instead of computing on a partly refreshed matrix; callers fall back to
+ * the CPU path when this returns false (2026-11-17). */
+bool nimcp_gpu_weight_cache_upload(nimcp_gpu_weight_cache_t* cache, neural_network_t net)
+{
+    if (!cache || !net) return false;
+    if (weight_cache_upload_impl(cache, net)) return true;
+    __atomic_store_n(&cache->weights_dirty_on_cpu, true, __ATOMIC_RELEASE);
+    static uint64_t s_failures = 0;
+    uint64_t n = __atomic_add_fetch(&s_failures, 1, __ATOMIC_RELAXED);
+    if (n <= 5 || n % 1000 == 0) {
+        NIMCP_LOG_WARN("GPU weight cache upload failed (%llu failures so far); "
+                       "cache left dirty, caller falls back to CPU",
+                       (unsigned long long)n);
+        fprintf(stderr, "[GPU-BRIDGE] weight upload failed (%llu so far)\n",
+                (unsigned long long)n);
+    }
+    return false;
 }
 
 bool nimcp_gpu_weight_cache_download(nimcp_gpu_weight_cache_t* cache, neural_network_t net)
