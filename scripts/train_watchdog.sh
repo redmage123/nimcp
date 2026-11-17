@@ -214,12 +214,37 @@ restore_canonical_from_hetzner() {
         fi
     fi
     ssh_opts="-i $HETZNER_SSH_KEY -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30"
+    # The state file names the snapshot the trainer started shipping, but a
+    # host reboot can cut that ship short (2026-11-17: step 47150's .bin and
+    # sidecars reached Hetzner, its 21 GB .snn never did). The .snn ships
+    # last and only appears under its final name once complete (parallel_xfer
+    # writes .pxfer temps, rsync a partial dir), so ".bin and .snn both
+    # present" means complete. Try the named snapshot first, then fall back
+    # to the newest complete one by mtime (step numbers can go backwards
+    # across --resume runs; see hetzner_cleanup_checkpoints.sh).
+    local named="$snap" cand cbin csnn seen=" "
+    snap=""
     # shellcheck disable=SC2086
-    read -r remote_bin remote_snn < <(ssh $ssh_opts "$HETZNER_HOST" \
-        "stat -c%s '$HETZNER_CKPT_DIR/$snap' '$HETZNER_CKPT_DIR/$snap.snn' 2>/dev/null | tr '\n' ' '")
-    if [ -z "$remote_snn" ] || [ "${remote_bin:-0}" -le 0 ] || [ "$remote_snn" -le 0 ]; then
-        log_wd "RESTORE: $snap (and its .snn) not found on $HETZNER_HOST:$HETZNER_CKPT_DIR"
+    while read -r cand cbin csnn; do
+        case "$cand" in athena_s*_step*.bin) ;; *) continue ;; esac
+        case "$seen" in *" $cand "*) continue ;; esac
+        seen="$seen$cand "
+        if [ "${cbin:-0}" -gt 0 ] && [ "${csnn:-0}" -gt 0 ]; then
+            snap="$cand"; remote_bin="$cbin"; remote_snn="$csnn"
+            break
+        fi
+        log_wd "RESTORE: $cand on Hetzner is incomplete (.bin ${cbin:-0} B, .snn ${csnn:-0} B) - skipping"
+    done < <(ssh $ssh_opts "$HETZNER_HOST" \
+        "cd '$HETZNER_CKPT_DIR' 2>/dev/null || exit 0
+         for f in '$named' \$(ls -t athena_s*_step*.bin 2>/dev/null); do
+             echo \"\$f \$(stat -c%s \"\$f\" 2>/dev/null || echo 0) \$(stat -c%s \"\$f.snn\" 2>/dev/null || echo 0)\"
+         done")
+    if [ -z "$snap" ]; then
+        log_wd "RESTORE: no complete snapshot on $HETZNER_HOST:$HETZNER_CKPT_DIR (state file named $named)"
         return 1
+    fi
+    if [ "$snap" != "$named" ]; then
+        log_wd "RESTORE: FALLBACK - $named is incomplete on Hetzner; restoring $snap, the newest complete snapshot (training since it is lost)"
     fi
     # Leftovers of the interrupted save hold tmpfs space the restore needs.
     find "$CKPT_DIR" -maxdepth 1 -name 'athena_s*_step*.bin*.tmp*' -print -delete \
@@ -257,6 +282,29 @@ restore_canonical_from_hetzner() {
         for f in "$snap"*; do ln -sfn "$f" "athena_immersive.bin${f#"$snap"}"; done
         rm -f .local_checkpoint_shipped
     ) || return 1
+    # The trainer resumes its step counter from the state file; point it at
+    # what was actually restored (original kept beside it).
+    if [ "$snap" != "$named" ]; then
+        cp -p "$STATE_FILE" "$STATE_FILE.pre_fallback.$(date +%s)"
+        if ! python3 - "$STATE_FILE" "$snap" <<'PY'
+import json, re, sys, time
+path, snap = sys.argv[1], sys.argv[2]
+m = re.fullmatch(r"athena_s(\d+)_step(\d+)\.bin", snap)
+with open(path) as fh:
+    state = json.load(fh)
+state.update(snapshot=snap, stage=int(m.group(1)), step=int(m.group(2)),
+             timestamp=time.strftime("%Y-%m-%d %H:%M:%S"))
+with open(path + ".tmp", "w") as fh:
+    json.dump(state, fh, indent=2)
+import os
+os.replace(path + ".tmp", path)
+PY
+        then
+            log_wd "RESTORE: restored $snap but could not rewrite $STATE_FILE - fix it by hand"
+            return 1
+        fi
+        log_wd "RESTORE: state file now names $snap"
+    fi
     log_wd "RESTORE: $snap restored from Hetzner and linked as the canonical checkpoint"
     return 0
 }

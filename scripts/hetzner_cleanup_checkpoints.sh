@@ -21,7 +21,7 @@
 
 set -eu
 
-KEEP_LATEST=5
+KEEP_LATEST=3
 # Safety floor: never delete anything newer than this many minutes, regardless
 # of what keep-N math says. If sort logic ever goes wrong again, recent saves
 # survive long enough for a human to notice before they're destroyed.
