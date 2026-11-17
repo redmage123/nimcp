@@ -451,6 +451,15 @@ struct adaptive_network_struct {
 
     // Synapse count for growth tracking
     _Atomic uint64_t prev_synapse_count;
+
+    /* Ranking loss (NIMCP_ANN_RANK, 2026-11-17): ring of recent distillation
+     * targets, unit-normalised, the candidates each step is ranked against. */
+    float* rank_bank;              /**< rank_bank_cap x rank_bank_dim */
+    uint32_t rank_bank_cap;
+    uint32_t rank_bank_dim;
+    uint32_t rank_bank_len;        /**< filled entries */
+    uint32_t rank_bank_head;       /**< next slot to overwrite */
+    volatile int rank_bank_lock;   /**< spinlock (__atomic builtins) */
 };
 
 /* Bring the GPU weight cache up to date if CPU-side learning changed the
@@ -458,6 +467,182 @@ struct adaptive_network_struct {
  * dirty (nimcp_gpu_weight_cache_upload) and the caller must take its CPU
  * path for this call rather than compute on stale or partial GPU weights.
  * The CAS keeps two threads from uploading the same dirty state. */
+/* ---------------------------------------------------------------------------
+ * Ranking loss for distillation (2026-11-17)
+ *
+ * NIMCP_ANN_RANK="<lambda>[,<tau>[,<bank>]]" (unset or lambda <= 0: off).
+ * The plain distillation error pulls the output toward its own target; it
+ * never says "be closer to your target than to the most similar wrong one",
+ * which is what item retrieval (top1) needs. With this on, each GPU
+ * distillation step scores the output o against its own target and a bank of
+ * recent targets (cos / tau, softmax), takes the gradient g of
+ * -log(softmax mass on the own target) w.r.t. o, and hands the rest of the
+ * step the target
+ *     t' = o + (1 - lambda)(t - o) - lambda |t - o| g / |g|
+ * so the step length is unchanged and lambda 0 is the plain loss. Bank
+ * entries within cos 0.999 of the own target count as the own target. The
+ * own target then enters the bank. Replay (tests/manual/ann_clip_test.c,
+ * NLRC_RANK) on the recorded learn steps: lambda 0.5 raised held top1
+ * 31.2% -> 35.2% and spec .361 -> .397 over 3 epochs.
+ * ------------------------------------------------------------------------- */
+typedef struct {
+    float lambda, tau;
+    uint32_t bank;
+} adaptive_rank_cfg_t;
+
+static const adaptive_rank_cfg_t* adaptive_rank_cfg(void)
+{
+    static adaptive_rank_cfg_t cfg;
+    static volatile int state = 0;   /* 0 unread, 1 reading, 2 ready */
+    if (__atomic_load_n(&state, __ATOMIC_ACQUIRE) == 2) return &cfg;
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&state, &expected, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        cfg.lambda = 0.0f;
+        cfg.tau = 0.1f;
+        cfg.bank = 2048;
+        const char* e = getenv("NIMCP_ANN_RANK");
+        if (e && *e) {
+            char* end = NULL;
+            float l = strtof(e, &end);
+            if (end && *end == ',') {
+                float t = strtof(end + 1, &end);
+                if (t > 1e-4f && t < 10.0f) cfg.tau = t;
+                if (end && *end == ',') {
+                    long b = strtol(end + 1, NULL, 10);
+                    if (b >= 16 && b <= 65536) cfg.bank = (uint32_t)b;
+                }
+            }
+            if (l > 0.0f && l <= 1.0f) cfg.lambda = l;
+            if (cfg.lambda > 0.0f) {
+                fprintf(stderr, "[ANN] ranking loss on: lambda %g tau %g bank %u (NIMCP_ANN_RANK)\n",
+                        cfg.lambda, cfg.tau, cfg.bank);
+            }
+        }
+        __atomic_store_n(&state, 2, __ATOMIC_RELEASE);
+        return &cfg;
+    }
+    while (__atomic_load_n(&state, __ATOMIC_ACQUIRE) != 2) sched_yield();
+    return &cfg;
+}
+
+/* Writes the ranking-adjusted target into tp (n floats). Returns false (tp
+ * untouched) when the loss is off, the bank cannot be allocated or nothing
+ * in the bank differs from the own target yet. Pushes target into the bank
+ * either way once the bank exists. */
+static bool adaptive_rank_target(adaptive_network_t network, const float* output,
+                                 const float* target, uint32_t n, float* tp)
+{
+    const adaptive_rank_cfg_t* cfg = adaptive_rank_cfg();
+    if (cfg->lambda <= 0.0f || n == 0) return false;
+
+    double tn = 0.0;
+    for (uint32_t i = 0; i < n; i++) tn += (double)target[i] * target[i];
+    tn = sqrt(tn);
+    if (!(tn > 1e-12)) return false;
+
+    while (__atomic_test_and_set(&network->rank_bank_lock, __ATOMIC_ACQUIRE)) sched_yield();
+    if (!network->rank_bank || network->rank_bank_dim != n) {
+        if (network->rank_bank) nimcp_free(network->rank_bank);
+        network->rank_bank = nimcp_calloc((size_t)cfg->bank * n, sizeof(float));
+        network->rank_bank_cap = network->rank_bank ? cfg->bank : 0;
+        network->rank_bank_dim = n;
+        network->rank_bank_len = 0;
+        network->rank_bank_head = 0;
+    }
+    if (!network->rank_bank) {
+        __atomic_clear(&network->rank_bank_lock, __ATOMIC_RELEASE);
+        return false;
+    }
+
+    const uint32_t len = network->rank_bank_len;
+    double on = 0.0;
+    for (uint32_t i = 0; i < n; i++) {
+        double o = isfinite(output[i]) ? output[i] : 0.0;
+        on += o * o;
+    }
+    on = sqrt(on);
+    bool ok = false;
+    double* c = (len && on > 1e-12) ? malloc(((size_t)len + 1) * sizeof(double)) : NULL;
+    uint8_t* own = c ? malloc((size_t)len + 1) : NULL;
+    double* g = own ? calloc(n, sizeof(double)) : NULL;
+    if (g) {
+        /* candidate len is the own target itself */
+        const float* bank = network->rank_bank;
+        double mx = -1e300, own_dot = 0.0;
+        for (uint32_t i = 0; i < n; i++) {
+            double o = isfinite(output[i]) ? output[i] : 0.0;
+            own_dot += o * target[i];
+        }
+        c[len] = own_dot / (on * tn);
+        own[len] = 1;
+        uint32_t negatives = 0;
+        for (uint32_t b = 0; b < len; b++) {
+            const float* tb = &bank[(size_t)b * n];
+            double dot = 0.0, st = 0.0;
+            for (uint32_t i = 0; i < n; i++) {
+                double o = isfinite(output[i]) ? output[i] : 0.0;
+                dot += o * tb[i];
+                st += (double)target[i] * tb[i];
+            }
+            c[b] = dot / on;
+            own[b] = st / tn > 0.999;
+            negatives += !own[b];
+        }
+        if (negatives > 0) {
+            for (uint32_t b = 0; b <= len; b++) if (c[b] / cfg->tau > mx) mx = c[b] / cfg->tau;
+            double z = 0.0, zown = 0.0;
+            for (uint32_t b = 0; b <= len; b++) {
+                double e = exp(c[b] / cfg->tau - mx);
+                z += e;
+                if (own[b]) zown += e;
+            }
+            /* L = -log(zown / z); dL/dc_b = (p_b - own_b p_b / P_own) / tau,
+             * dc_b/do = (t_b - c_b o/|o|) / |o| with t_b unit-norm */
+            double radial = 0.0;
+            for (uint32_t b = 0; b <= len; b++) {
+                double pb = exp(c[b] / cfg->tau - mx) / z;
+                double w = (pb - (own[b] ? pb * z / zown : 0.0)) / cfg->tau;
+                if (w == 0.0) continue;
+                if (b == len) {
+                    for (uint32_t i = 0; i < n; i++) g[i] += w * target[i] / tn;
+                } else {
+                    const float* tb = &bank[(size_t)b * n];
+                    for (uint32_t i = 0; i < n; i++) g[i] += w * tb[i];
+                }
+                radial += w * c[b];
+            }
+            double gn = 0.0, r = 0.0;
+            for (uint32_t i = 0; i < n; i++) {
+                double o = isfinite(output[i]) ? output[i] : 0.0;
+                g[i] = (g[i] - radial * o / on) / on;
+                gn += g[i] * g[i];
+                r += (target[i] - o) * (target[i] - o);
+            }
+            gn = sqrt(gn);
+            r = sqrt(r);
+            if (gn > 1e-30 && isfinite(gn) && isfinite(r)) {
+                const double lam = cfg->lambda;
+                for (uint32_t i = 0; i < n; i++) {
+                    double o = isfinite(output[i]) ? output[i] : 0.0;
+                    tp[i] = (float)(o + (1.0 - lam) * (target[i] - o) - lam * r * g[i] / gn);
+                }
+                ok = true;
+            }
+        }
+    }
+    free(c);
+    free(own);
+    free(g);
+
+    /* push the own target */
+    float* slot = &network->rank_bank[(size_t)network->rank_bank_head * n];
+    for (uint32_t i = 0; i < n; i++) slot[i] = (float)(target[i] / tn);
+    network->rank_bank_head = (network->rank_bank_head + 1) % network->rank_bank_cap;
+    if (network->rank_bank_len < network->rank_bank_cap) network->rank_bank_len++;
+    __atomic_clear(&network->rank_bank_lock, __ATOMIC_RELEASE);
+    return ok;
+}
+
 static bool adaptive_gpu_sync_weights(adaptive_network_t network)
 {
     if (!network || !network->gpu_weight_cache) return false;
@@ -1501,6 +1686,11 @@ void adaptive_network_destroy(adaptive_network_t network)
     }
     LOG_MODULE_DEBUG(LOG_MODULE, "Neuron cache destroyed");
 
+    if (network->rank_bank) {
+        nimcp_free(network->rank_bank);
+        network->rank_bank = NULL;
+    }
+
     // Phase GPU: Clean up GPU resources before base network
     if (network->gpu_weight_cache) {
         LOG_MODULE_DEBUG(LOG_MODULE, "Destroying GPU weight cache...");
@@ -2241,6 +2431,23 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
             adaptive_record_learn_cos(network, output, example->target, example->target_size);
         }
 
+        /* Ranking loss (NIMCP_ANN_RANK): the rest of this step trains toward
+         * the ranking-adjusted target, as the replay harness did. */
+        training_example_t rank_example;
+        const training_example_t* const rank_orig_example = example;
+        float* rank_target = NULL;
+        if (mode == LEARN_MODE_DISTILLATION &&
+            example->target_size <= network->config.base_config.output_size &&
+            adaptive_rank_cfg()->lambda > 0.0f) {
+            rank_target = (float*)alloc_hot_buffer(example->target_size * sizeof(float));
+            if (rank_target && adaptive_rank_target(network, output, example->target,
+                                                    example->target_size, rank_target)) {
+                rank_example = *example;
+                rank_example.target = rank_target;
+                example = &rank_example;
+            }
+        }
+
         // 3. Compute loss — MSE + cosine alignment for distillation,
         //    BCE for classification.
         float loss = 0.0f;
@@ -2460,6 +2667,8 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
             }
         }
 
+        example = rank_orig_example;   /* probe tracking scores the real target */
+
         // --- Probe tracking (GPU path) ---
         {
             uint32_t target_label = 0;
@@ -2495,6 +2704,7 @@ float adaptive_network_learn(adaptive_network_t network, const training_example_
 
         free_hot_buffer(output);
         free_hot_buffer(div_grad);
+        if (rank_target) free_hot_buffer(rank_target);
         network->total_learning_steps++;
 
         // L-3: Update EMA of training loss in GPU path (same logic as CPU path)

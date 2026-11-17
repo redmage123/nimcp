@@ -35,6 +35,13 @@
  * Options by environment:
  *   NLRC_INPUT=blended|raw   features after (default) / before the cortex blend
  *   NLRC_ORDER=recorded|shuffled  recorded = live order every epoch
+ *   NLRC_RANK=<lambda>[,<tau>]  ranking (softmax over candidates) loss, single
+ *     path only (2026-11-17). Before each step the output o is scored against
+ *     every train target (cos / tau, tau default 0.1); the gradient g of
+ *     -log softmax(own) w.r.t. o is turned into the target the learn call sees:
+ *     t' = o + (1 - lambda)(t - o) - lambda |t - o| g/|g|, so the step length
+ *     is unchanged and lambda 0 is the plain loss. Targets within cos 0.999 of
+ *     the own target count as the own target (records repeat labels).
  * lr "rec" uses each step's recorded effective lr (the live schedule).
  * Every report also prints base = cos(mean target of the set, own target),
  * the score of an output that ignores its input.
@@ -127,6 +134,56 @@ static double cosd(const float* a, const float* b, uint32_t n)
     double d = 0, na = 0, nb = 0;
     for (uint32_t i = 0; i < n; i++) { d += (double)a[i] * b[i]; na += (double)a[i] * a[i]; nb += (double)b[i] * b[i]; }
     return (na > 0 && nb > 0) ? d / sqrt(na * nb) : 0.0;
+}
+
+/* Ranking-loss target for one step (NLRC_RANK). That: k x d unit-norm candidate
+ * targets, a: own index, o: current output, t: own target, c: k scratch,
+ * g: d scratch. Writes t' (see header) into tp; returns the softmax mass on
+ * the own class. */
+static double rank_target(const float* That, uint32_t k, uint32_t d, uint32_t a,
+                          const float* o, const float* t, float lambda, float tau,
+                          float* tp, double* c, uint8_t* own, double* g)
+{
+    double on = 0;
+    for (uint32_t i = 0; i < d; i++) on += (double)o[i] * o[i];
+    on = sqrt(on) + 1e-30;
+    const float* ta = &That[(size_t)a * d];
+    double mx = -1e30;
+    for (uint32_t b = 0; b < k; b++) {
+        const float* tb = &That[(size_t)b * d];
+        double dot = 0, st = 0;
+        for (uint32_t i = 0; i < d; i++) { dot += (double)o[i] * tb[i]; st += (double)ta[i] * tb[i]; }
+        c[b] = dot / on;                          /* cos(o, t_b) */
+        own[b] = b == a || st > 0.999;
+        if (c[b] / tau > mx) mx = c[b] / tau;
+    }
+    double z = 0, zown = 0;
+    for (uint32_t b = 0; b < k; b++) z += exp(c[b] / tau - mx);
+    for (uint32_t b = 0; b < k; b++) if (own[b]) zown += exp(c[b] / tau - mx) / z;
+    /* L = -log(own-class mass); dL/dc_b = (p_b - own_b p_b / zown) / tau,
+     * dc_b/do = (t_b - c_b o/|o|) / |o| */
+    for (uint32_t i = 0; i < d; i++) g[i] = 0;
+    double radial = 0;
+    for (uint32_t b = 0; b < k; b++) {
+        double pb = exp(c[b] / tau - mx) / z;
+        double w = (pb - (own[b] ? pb / (zown + 1e-30) : 0.0)) / tau;
+        if (w == 0) continue;
+        const float* tb = &That[(size_t)b * d];
+        for (uint32_t i = 0; i < d; i++) g[i] += w * tb[i];
+        radial += w * c[b];
+    }
+    double gn = 0;
+    for (uint32_t i = 0; i < d; i++) {
+        g[i] = (g[i] - radial * o[i] / on) / on;
+        gn += g[i] * g[i];
+    }
+    gn = sqrt(gn) + 1e-30;
+    double r = 0;
+    for (uint32_t i = 0; i < d; i++) r += (double)(t[i] - o[i]) * (t[i] - o[i]);
+    r = sqrt(r);
+    for (uint32_t i = 0; i < d; i++)
+        tp[i] = (float)(o[i] + (1.0 - lambda) * (t[i] - o[i]) - lambda * r * g[i] / gn);
+    return zown;
 }
 
 /* Mean over a set of cos(mean target of the set, own target) */
@@ -461,6 +518,38 @@ int main(int argc, char** argv)
         for (uint32_t k = 0; k < K + H; k++) memcpy(&TG[(size_t)k * out], ex[k].target, out * sizeof(float));
     }
 
+    /* NLRC_RANK: ranking loss over the train targets */
+    const char* rank_env = getenv("NLRC_RANK");
+    float rank_lambda = 0.0f, rank_tau = 0.1f;
+    if (rank_env) {
+        rank_lambda = strtof(rank_env, NULL);
+        const char* comma = strchr(rank_env, ',');
+        if (comma) rank_tau = strtof(comma + 1, NULL);
+    }
+    bool rank = rank_lambda > 0.0f && real_path && !batch;
+    float* That = NULL;
+    float* tprime = NULL;
+    double* rc = NULL;
+    double* rg = NULL;
+    uint8_t* rown = NULL;
+    double own_mass = 0;
+    if (rank) {
+        That = malloc((size_t)K * out * sizeof(float));
+        for (uint32_t k = 0; k < K; k++) {
+            double s = 0;
+            for (uint32_t i = 0; i < out; i++) s += (double)ex[k].target[i] * ex[k].target[i];
+            s = sqrt(s) + 1e-30;
+            for (uint32_t i = 0; i < out; i++) That[(size_t)k * out + i] = (float)(ex[k].target[i] / s);
+        }
+        tprime = malloc(out * sizeof(float));
+        rc = malloc(K * sizeof(double));
+        rg = malloc(out * sizeof(double));
+        rown = malloc(K);
+        printf("ranking loss: lambda %g tau %g over %u train targets\n", rank_lambda, rank_tau, K);
+    } else if (rank_env) {
+        fprintf(stderr, "NLRC_RANK needs a real:/nlrc: task and the single path; ignored\n");
+    }
+
     if (batch && (shuffled || rec_lr)) {
         fprintf(stderr, "batch path supports neither NLRC_ORDER=shuffled nor lr 'rec'\n");
         return 2;
@@ -491,12 +580,30 @@ int main(int argc, char** argv)
                     uint32_t kk = k;
                     if (shuffled) kk = order[k];
                     float step_lr = rec_lr ? rlr[kk] : lr;
-                    loss += adaptive_network_learn(net, &ex[kk], LEARN_MODE_DISTILLATION, step_lr);
+                    if (rank) {
+                        nimcp_gpu_weight_cache_t* rcache = adaptive_network_get_gpu_weight_cache(net);
+                        if (!rcache || !nimcp_gpu_forward_pass(rcache, ex[kk].input, in, o, out)) {
+                            fprintf(stderr, "GPU forward unavailable (ranking loss)\n");
+                            return 1;
+                        }
+                        own_mass += rank_target(That, K, out, kk, o, ex[kk].target, rank_lambda,
+                                                rank_tau, tprime, rc, rown, rg);
+                        float* t_orig = ex[kk].target;
+                        ex[kk].target = tprime;
+                        loss += adaptive_network_learn(net, &ex[kk], LEARN_MODE_DISTILLATION, step_lr);
+                        ex[kk].target = t_orig;
+                    } else {
+                        loss += adaptive_network_learn(net, &ex[kk], LEARN_MODE_DISTILLATION, step_lr);
+                    }
                     steps++;
                 }
             }
         }
         double dt = now_s() - t0;
+        if (rank && steps) {
+            printf("    rank: mean own-class softmax mass %.4f (before each step)\n", own_mass / steps);
+            own_mass = 0;
+        }
         double own = 0, held = 0, cent = 0, on = 0, cpu_own = 0;
         bool finite = true;
         nimcp_gpu_weight_cache_t* cache = adaptive_network_get_gpu_weight_cache(net);
