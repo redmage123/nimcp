@@ -1751,6 +1751,87 @@ bool nimcp_gpu_clip_backward_accumulate(
     return ok;
 }
 
+/* NIMCP_ANN_GPU_LAYER_REL=<k_hidden>,<k_out> (clip mode only, 2026-11-17).
+ * The shared clipped step lets the ~40M hidden weights take most of the
+ * update budget, so the output layer learns more slowly than in the
+ * default mode (held top1 23% vs 35% in the replays), while the default
+ * mode leaves the hidden layers frozen (relative change ~1e-9). With this
+ * set, each layer l moves by a fixed fraction of its own weight norm per
+ * step (LARS-style trust ratio):
+ *     dW_l = (lr * k_l * ||W_l|| / ||G_l||) * G_l,
+ * k_l = k_out for the output layer and k_hidden for the others, so the
+ * relative step is lr * k_l and follows the lr schedule. k_hidden = 0
+ * freezes the hidden layers. The bias step uses the layer's factor. */
+#define CLIP_MAX_LAYERS 32
+static bool  s_layer_rel_init = false;
+static float s_layer_rel_k_hidden = 0.0f;
+static float s_layer_rel_k_out = 0.0f;
+static bool  s_layer_rel_on = false;
+
+static bool clip_layer_rel_enabled(void)
+{
+    if (!s_layer_rel_init) {
+        const char* e = getenv("NIMCP_ANN_GPU_LAYER_REL");
+        if (e && *e) {
+            float kh = 0.0f, ko = 0.0f;
+            int n = sscanf(e, "%f,%f", &kh, &ko);
+            if (n == 2 && isfinite(kh) && isfinite(ko) && kh >= 0.0f && ko >= 0.0f) {
+                s_layer_rel_k_hidden = kh;
+                s_layer_rel_k_out = ko;
+                s_layer_rel_on = true;
+                fprintf(stderr, "[ANN-GPU] layer-relative steps: k_hidden=%g k_out=%g\n",
+                        (double)kh, (double)ko);
+            } else {
+                fprintf(stderr, "[ANN-GPU] NIMCP_ANN_GPU_LAYER_REL='%s' ignored "
+                        "(want <k_hidden>,<k_out>)\n", e);
+            }
+        }
+        s_layer_rel_init = true;
+    }
+    return s_layer_rel_on;
+}
+
+/* Per-layer step lr * k_l * ||W_l|| / ||G_l|| into step_out[1..L-1]
+ * (G_l = the layer's accumulated weight and bias gradient). */
+static bool clip_layer_rel_steps(cudaStream_t stream,
+                                 nimcp_sparse_tensor_t** sparse_weights,
+                                 float** d_weight_grad_accum, float** d_bias_grad_accum,
+                                 uint32_t num_layers, const uint32_t* layer_sizes,
+                                 float learning_rate, float* step_out)
+{
+    float* d_sq = NULL;   /* [2 * num_layers]: (grad sumsq, weight sumsq) per layer */
+    if (cudaMalloc(&d_sq, 2 * num_layers * sizeof(float)) != cudaSuccess) return false;
+    cudaMemsetAsync(d_sq, 0, 2 * num_layers * sizeof(float), stream);
+    for (uint32_t l = 1; l < num_layers; l++) {
+        nimcp_sparse_tensor_t* W = sparse_weights[l - 1];
+        if (W && W->format == SPARSE_FORMAT_CSR && W->data.csr.nnz > 0 && d_weight_grad_accum[l - 1]) {
+            int nnz = W->data.csr.nnz;
+            kernel_clip_sumsq<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
+                d_weight_grad_accum[l - 1], nnz, &d_sq[2 * l]);
+            kernel_clip_sumsq<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
+                W->data.csr.values, nnz, &d_sq[2 * l + 1]);
+        }
+        if (d_bias_grad_accum[l - 1]) {
+            kernel_clip_sumsq<<<GRID_SIZE(layer_sizes[l]), BLOCK_SIZE, 0, stream>>>(
+                d_bias_grad_accum[l - 1], (int)layer_sizes[l], &d_sq[2 * l]);
+        }
+    }
+    float sq[2 * CLIP_MAX_LAYERS];
+    bool ok = cudaMemcpyAsync(sq, d_sq, 2 * num_layers * sizeof(float),
+                              cudaMemcpyDeviceToHost, stream) == cudaSuccess &&
+              cudaStreamSynchronize(stream) == cudaSuccess;
+    cudaFree(d_sq);
+    if (!ok) return false;
+    step_out[0] = 0.0f;
+    for (uint32_t l = 1; l < num_layers; l++) {
+        float k = (l == num_layers - 1) ? s_layer_rel_k_out : s_layer_rel_k_hidden;
+        float gn = sqrtf(sq[2 * l]), wn = sqrtf(sq[2 * l + 1]);
+        float s = (gn > 0.0f && isfinite(gn) && isfinite(wn)) ? learning_rate * k * wn / gn : 0.0f;
+        step_out[l] = isfinite(s) ? s : 0.0f;
+    }
+    return true;
+}
+
 bool nimcp_gpu_clip_gradient_flush(
     nimcp_gpu_context_t* gpu_ctx,
     nimcp_sparse_tensor_t** sparse_weights,
@@ -1802,7 +1883,16 @@ bool nimcp_gpu_clip_gradient_flush(
     float step = learning_rate * scale * inv_bs;
     if (!isfinite(step)) step = 0.0f;
 
+    /* Layer-relative steps (NIMCP_ANN_GPU_LAYER_REL, see clip_layer_rel):
+     * replace the shared step with one per layer. */
+    float layer_step[CLIP_MAX_LAYERS];
+    bool per_layer = clip_layer_rel_enabled() && num_layers <= CLIP_MAX_LAYERS &&
+                     clip_layer_rel_steps(stream, sparse_weights, d_weight_grad_accum,
+                                          d_bias_grad_accum, num_layers, layer_sizes,
+                                          learning_rate, layer_step);
+
     for (uint32_t l = 1; l < num_layers; l++) {
+        if (per_layer) step = layer_step[l];
         nimcp_sparse_tensor_t* W = sparse_weights[l - 1];
         if (W && W->format == SPARSE_FORMAT_CSR && W->data.csr.nnz > 0 && d_weight_grad_accum[l - 1]) {
             int nnz = W->data.csr.nnz;
