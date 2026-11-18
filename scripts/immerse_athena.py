@@ -6086,7 +6086,10 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
             print(f"  Parent: {narration}")
 
         # Held-out check: 20% of items are evaluation-only (no learning)
-        if _held_out_buffer.check_and_note(name, description, features):
+        # last_step_held_out tells the stage loop not to log this step's 0.0
+        # as a training loss (the stage gate counts zero losses as failures).
+        self.last_step_held_out = _held_out_buffer.check_and_note(name, description, features)
+        if self.last_step_held_out:
             _held_out_buffer.add(features, target, domain="stage1_naming")
             self.interaction_count += 1
             return 0.0, {}
@@ -6117,6 +6120,7 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
 
         50% chance of cross-modal paired learning when data is available.
         """
+        self.last_step_held_out = False   # set by the held-out check below
         # Cross-modal paired learning: real image + real audio together
         if self.multimodal and random.random() < 0.5:
             pair = self._show_and_tell(brain, composer, concept)
@@ -6165,7 +6169,8 @@ IMPORTANT: Return actual arrays with the requested number of strings, not descri
         response_text = self.observe_response(result)
 
         # Held-out check: 20% of items are evaluation-only (no learning)
-        if _held_out_buffer.is_held_out(features):
+        self.last_step_held_out = _held_out_buffer.is_held_out(features)
+        if self.last_step_held_out:
             _held_out_buffer.add(features, target, domain="stage2_encourage")
             self.interaction_count += 1
             return 0.0, result
@@ -8559,7 +8564,8 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
             narration = parent._pop_content("_narrations")
             if narration:
                 print(f"  Parent: {narration}")
-            if _held_out_buffer.check_and_note(name, description, pre_features):
+            held_step = _held_out_buffer.check_and_note(name, description, pre_features)
+            if held_step:
                 _held_out_buffer.add(pre_features, pre_target, domain="stage1_naming")
                 loss = 0.0
             else:
@@ -8573,6 +8579,7 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
             # Slow path: first iteration, no prefetch yet
             loss, result = parent.show_and_name(brain, composer, name, description,
                                                 learning_rate=lr_ctrl.get_lr())
+            held_step = getattr(parent, "last_step_held_out", False)
 
         # Collect prefetched next item (blocks only if prefetch slower than training)
         try:
@@ -8580,7 +8587,11 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
         except Exception:
             run_stage_1._next_item = None
 
-        losses.append(loss if loss is not None else 0)
+        # Held-out steps are evaluation-only (no learning); a 0.0 here would
+        # read as a dead step to the stage gate's non-zero check (~20% of
+        # steps, so it could never reach 48/50).
+        if not held_step:
+            losses.append(loss if loss is not None else 0)
 
         # === Training integration hook (Phase A-E modules) ===
         # Observes the training event for symbolic writing + memory
@@ -9061,7 +9072,8 @@ def run_stage_2(brain, composer, parent, clock, source, decoder,
         loss, result = parent.ask_and_encourage(
             brain, composer, expected, description,
             learning_rate=effective_lr)
-        losses.append(loss if loss is not None else 0)
+        if not getattr(parent, "last_step_held_out", False):   # see run_stage_1
+            losses.append(loss if loss is not None else 0)
 
         # Fast collapse detection (every 10 steps — catches collapse in ~2 min)
         output_vec = result.get("output_vector") if result else None
