@@ -71,6 +71,12 @@ void nimcp_emergent_language_destroy(nimcp_emergent_language_t* el);
 int nimcp_emergent_observe(nimcp_emergent_language_t* el,
     const float* brain_output, uint32_t output_dim);
 
+/* As observe(), and reports the token the output was assigned to
+ * (reinforced or newly discovered) in *out_token_id, or UINT32_MAX when
+ * none (near-zero output, or vocabulary full). out_token_id may be NULL. */
+int nimcp_emergent_observe_ex(nimcp_emergent_language_t* el,
+    const float* brain_output, uint32_t output_dim, uint32_t* out_token_id);
+
 /* === Express: Convert brain state to emergent token sequence === */
 int nimcp_emergent_express(nimcp_emergent_language_t* el,
     const float* brain_output, uint32_t output_dim,
@@ -91,6 +97,20 @@ int nimcp_emergent_comprehend(nimcp_emergent_language_t* el,
  * the context in which it was discovered */
 int nimcp_emergent_associate_human(nimcp_emergent_language_t* el,
     uint32_t token_id, const char* human_text, float confidence);
+
+/* Vote: `human_text` was the label when this token was expressed. Keeps
+ * per-token word counts; the gloss becomes the most-voted word and
+ * translation_confidence its share of the votes (purity).
+ * Returns 1 if the token's gloss already equalled human_text before this
+ * vote (a correct prediction), 0 if not, -1 on error / unknown token. */
+int nimcp_emergent_vote_human(nimcp_emergent_language_t* el,
+    uint32_t token_id, const char* human_text);
+
+/* Vote summary: tokens with at least one vote, and vote-weighted purity
+ * (sum of each token's top-word votes / all votes; 1.0 = every token maps
+ * to a single human word). Either out pointer may be NULL. */
+int nimcp_emergent_get_vote_stats(nimcp_emergent_language_t* el,
+    uint32_t* out_labeled_tokens, float* out_purity);
 
 /* Get best human translation for an emergent token */
 int nimcp_emergent_get_translation(const nimcp_emergent_language_t* el,

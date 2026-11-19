@@ -7,6 +7,7 @@
 
 /* Moved from inside brain_destroy() function body to file scope
  * (includes inside function bodies are non-standard and cause warnings) */
+#include "cognitive/language/nimcp_emergent_language_bridge.h"
 #include "cognitive/analysis/nimcp_network_analysis.h"
 #include "core/brain/subcortical/nimcp_amygdala.h"  /* Phase 3c: amygdala destroy */
 #include "core/brain/factory/init/nimcp_brain_init_subsystems.h"  /* glial destroy helper */
@@ -383,6 +384,13 @@ void brain_destroy(brain_t brain)
     if (brain->grounded_lang) {
         grounded_language_destroy(brain->grounded_lang);
         brain->grounded_lang = NULL;
+    }
+
+    /* Emergent language bridge: self-contained (no refs into other
+     * subsystems); saves its vocabulary if a path is configured. */
+    if (brain->emergent_bridge) {
+        emergent_bridge_destroy((emergent_bridge_t*)brain->emergent_bridge);
+        brain->emergent_bridge = NULL;
     }
 
     /* S2-C2 fix: destroy the arcuate-feedback lock (lazy-init'd by the

@@ -34,6 +34,7 @@ static const int   IMAGINATION_SIM_STEPS     = 3;      /* Number of prospective 
  * NOTE: brain_part_core.c is #included from nimcp_brain.c — brain_kg.h
  * include must live here because brain.c does not transitively expose it. */
 #include "core/brain/nimcp_brain_kg.h"
+#include "cognitive/language/nimcp_emergent_language_bridge.h"
 #include "security/nimcp_w11_safety_kg_events.h"  /* W11: LGSS KG emission */
 #include "cognitive/kg/nimcp_wave13_metacog_kg.h"  /* W13: analogy + multiscale events */
 #include "middleware/routing/nimcp_thalamic_router.h"  /* routing_stats_t for module_activity counters */
@@ -1075,7 +1076,28 @@ cleanup:
  * @param num_features Feature count
  * @return Decision result (caller must free with brain_free_decision)
  */
+static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
+                                           uint32_t num_features);
+
+/* brain_decide = the decision pipeline (brain_decide_impl, many return
+ * paths) + post-decision observers that must see every result. */
 brain_decision_t* brain_decide(brain_t brain, const float* features, uint32_t num_features)
+{
+    brain_decision_t* decision = brain_decide_impl(brain, features, num_features);
+    if (decision && brain && decision->output_vector && decision->output_size > 0) {
+        /* Emergent language (opt-in NIMCP_EMERGENT_LANGUAGE=1): cluster the
+         * output into the brain's own tokens; vote the training label on
+         * if this input was just trained. No-op when the flag is off. */
+        emergent_bridge_t* eb = emergent_bridge_get(&brain->emergent_bridge);
+        if (eb) emergent_bridge_on_decide(eb, features, num_features,
+                                          decision->output_vector,
+                                          decision->output_size);
+    }
+    return decision;
+}
+
+static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
+                                           uint32_t num_features)
 {
     // Guard: Validate parameters
     if (!brain || !features) {

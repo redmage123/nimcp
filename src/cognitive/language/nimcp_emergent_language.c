@@ -1,12 +1,7 @@
 /*
- * DEPRECATED — STATUE (audit 2026-04-30)
- *
- * This module has no production callers. nimcp_emergent_language_create
- * is referenced only inside this file; brain-struct has no
- * `emergent_language` field. The intended consumer was likely the
- * brain-native language path, which now lives in inner_speech /
- * brain_native_language. Either wire a consumer or delete the file
- * before the next major version. Do not extend.
+ * Wired 2026-11-19: driven from brain_decide / brain_learn_vector through
+ * nimcp_emergent_language_bridge.c when NIMCP_EMERGENT_LANGUAGE=1 (default
+ * OFF). Previously a statue (audit 2026-04-30).
  */
 
 /**
@@ -37,6 +32,18 @@
 #define MAX_LAST_EXPRESSED 32
 #define CO_OCCUR_WINDOW 8
 #define ACTIVE_WINDOW 1000
+#define EMERGENT_VOTES 8      /* human words tracked per token (space-saving counts) */
+#define VOTE_WORD_LEN 48
+
+typedef struct {
+    char     word[VOTE_WORD_LEN];
+    uint32_t count;
+} _vote_t;
+
+typedef struct {
+    _vote_t  v[EMERGENT_VOTES];
+    uint32_t total;
+} _votes_t;
 
 /* ======================================================================== */
 /* Internal struct                                                            */
@@ -50,6 +57,10 @@ struct nimcp_emergent_language {
 
     /* Translation table */
     nimcp_emergent_translation_t* translations;
+
+    /* Parallel per-slot arrays (move with tokens on swap-remove) */
+    _votes_t* votes;          /* human-word votes per token */
+    uint32_t* last_used;      /* total_observations when last matched */
 
     /* Co-occurrence tracking */
     uint32_t last_expressed[MAX_LAST_EXPRESSED];
@@ -188,6 +199,60 @@ static void _free_token_data(nimcp_emergent_token_t* tok) {
     tok->embedding = NULL;
 }
 
+/* Move slot src into dst (all parallel arrays). */
+static void _move_slot(nimcp_emergent_language_t* el, uint32_t dst, uint32_t src) {
+    el->tokens[dst] = el->tokens[src];
+    el->translations[dst] = el->translations[src];
+    el->votes[dst] = el->votes[src];
+    el->last_used[dst] = el->last_used[src];
+}
+
+/* Zero slot s in all parallel arrays (token data must already be freed). */
+static void _clear_slot(nimcp_emergent_language_t* el, uint32_t s) {
+    memset(&el->tokens[s], 0, sizeof(nimcp_emergent_token_t));
+    memset(&el->translations[s], 0, sizeof(nimcp_emergent_translation_t));
+    memset(&el->votes[s], 0, sizeof(_votes_t));
+    el->last_used[s] = 0;
+}
+
+static uint32_t _slot_of(const nimcp_emergent_language_t* el, uint32_t token_id) {
+    for (uint32_t i = 0; i < el->vocab_size; i++)
+        if (el->tokens[i].id == token_id) return i;
+    return UINT32_MAX;
+}
+
+/* Recompute gloss + confidence (= purity: top votes / all votes). */
+static void _refresh_gloss(nimcp_emergent_language_t* el, uint32_t slot) {
+    _votes_t* vt = &el->votes[slot];
+    nimcp_emergent_translation_t* tr = &el->translations[slot];
+    uint32_t best = UINT32_MAX;
+    for (uint32_t k = 0; k < EMERGENT_VOTES; k++)
+        if (vt->v[k].count > 0 && (best == UINT32_MAX || vt->v[k].count > vt->v[best].count))
+            best = k;
+    tr->emergent_id = el->tokens[slot].id;
+    if (best == UINT32_MAX || vt->total == 0) return;
+    snprintf(tr->human_gloss, sizeof(tr->human_gloss), "%s", vt->v[best].word);
+    tr->translation_confidence = (float)vt->v[best].count / (float)vt->total;
+}
+
+/* Add `count` votes for `word` to a slot (space-saving: a full table
+ * replaces its smallest entry and inherits that count). */
+static void _add_votes(_votes_t* vt, const char* word, uint32_t count) {
+    uint32_t empty = UINT32_MAX, min_k = 0;
+    for (uint32_t k = 0; k < EMERGENT_VOTES; k++) {
+        if (vt->v[k].count == 0) { if (empty == UINT32_MAX) empty = k; continue; }
+        if (strncmp(vt->v[k].word, word, VOTE_WORD_LEN - 1) == 0) {
+            vt->v[k].count += count; vt->total += count; return;
+        }
+        if (vt->v[k].count < vt->v[min_k].count || vt->v[min_k].count == 0) min_k = k;
+    }
+    uint32_t k = (empty != UINT32_MAX) ? empty : min_k;
+    uint32_t base = (empty != UINT32_MAX) ? 0 : vt->v[k].count;
+    snprintf(vt->v[k].word, VOTE_WORD_LEN, "%s", word);
+    vt->v[k].count = base + count;
+    vt->total += count;
+}
+
 /* ======================================================================== */
 /* Lifecycle                                                                  */
 /* ======================================================================== */
@@ -220,9 +285,13 @@ nimcp_emergent_language_t* nimcp_emergent_language_create(const nimcp_emergent_c
 
     el->tokens = nimcp_calloc(el->config.max_tokens, sizeof(nimcp_emergent_token_t));
     el->translations = nimcp_calloc(el->config.max_tokens, sizeof(nimcp_emergent_translation_t));
-    if (!el->tokens || !el->translations) {
+    el->votes = nimcp_calloc(el->config.max_tokens, sizeof(_votes_t));
+    el->last_used = nimcp_calloc(el->config.max_tokens, sizeof(uint32_t));
+    if (!el->tokens || !el->translations || !el->votes || !el->last_used) {
         nimcp_free(el->tokens);
         nimcp_free(el->translations);
+        nimcp_free(el->votes);
+        nimcp_free(el->last_used);
         nimcp_free(el);
         return NULL;
     }
@@ -253,6 +322,8 @@ void nimcp_emergent_language_destroy(nimcp_emergent_language_t* el) {
     }
     nimcp_free(el->tokens);
     nimcp_free(el->translations);
+    nimcp_free(el->votes);
+    nimcp_free(el->last_used);
     if (el->lock) nimcp_mutex_free(el->lock);
     nimcp_free(el);
 }
@@ -264,6 +335,13 @@ void nimcp_emergent_language_destroy(nimcp_emergent_language_t* el) {
 int nimcp_emergent_observe(nimcp_emergent_language_t* el,
     const float* brain_output, uint32_t output_dim)
 {
+    return nimcp_emergent_observe_ex(el, brain_output, output_dim, NULL);
+}
+
+int nimcp_emergent_observe_ex(nimcp_emergent_language_t* el,
+    const float* brain_output, uint32_t output_dim, uint32_t* out_token_id)
+{
+    if (out_token_id) *out_token_id = UINT32_MAX;
     if (!el || !brain_output || output_dim == 0) return -1;
 
     if (el->lock) nimcp_mutex_lock(el->lock);
@@ -272,8 +350,10 @@ int nimcp_emergent_observe(nimcp_emergent_language_t* el,
     uint32_t dim = (output_dim < cd) ? output_dim : cd;
 
     /* Normalize input for cosine comparison */
+    /* _vec_norm adds 1e-12 under the sqrt, so an all-zero vector has norm
+     * 1e-6; the old 1e-10 cutoff never fired and dead outputs became tokens. */
     float input_norm = _vec_norm(brain_output, dim);
-    if (input_norm < 1e-10f) {
+    if (input_norm < 1e-5f) {
         if (el->lock) nimcp_mutex_unlock(el->lock);
         return 0; /* Skip near-zero outputs */
     }
@@ -303,6 +383,8 @@ int nimcp_emergent_observe(nimcp_emergent_language_t* el,
                                 alpha * brain_output[i];
         }
         tok->usage_count++;
+        el->last_used[best_idx] = el->total_observations;
+        if (out_token_id) *out_token_id = tok->id;
 
         /* Update specificity: running estimate of inverse variance.
          * Higher specificity = tighter cluster. */
@@ -352,6 +434,8 @@ int nimcp_emergent_observe(nimcp_emergent_language_t* el,
                         el->config.embed_dim, el->config.use_unicode_symbols,
                         &el->rng_state) == 0) {
             el->vocab_size++;
+            el->last_used[slot] = el->total_observations;
+            if (out_token_id) *out_token_id = new_id;
             LOG_DEBUG("[%s] Discovered token '%s' (id=%u, vocab=%u, best_sim=%.3f)",
                       LOG_MODULE, el->tokens[slot].symbol, new_id,
                       el->vocab_size, best_sim);
@@ -363,15 +447,6 @@ int nimcp_emergent_observe(nimcp_emergent_language_t* el,
     }
 
     el->total_observations++;
-
-    /* Apply usage decay to all tokens */
-    if (el->total_observations % 100 == 0) {
-        for (uint32_t i = 0; i < el->vocab_size; i++) {
-            /* Decay is applied periodically, not every observation */
-            /* usage_count is integer so we don't decay it, but we could
-             * track a float "activity" score if needed */
-        }
-    }
 
     if (el->lock) nimcp_mutex_unlock(el->lock);
     return 0;
@@ -631,6 +706,49 @@ int nimcp_emergent_associate_human(nimcp_emergent_language_t* el,
     return 0;
 }
 
+int nimcp_emergent_vote_human(nimcp_emergent_language_t* el,
+    uint32_t token_id, const char* human_text)
+{
+    if (!el || !human_text || human_text[0] == '\0') return -1;
+    if (el->lock) nimcp_mutex_lock(el->lock);
+    uint32_t slot = _slot_of(el, token_id);
+    if (slot == UINT32_MAX) {
+        if (el->lock) nimcp_mutex_unlock(el->lock);
+        return -1;
+    }
+    /* Score the token's current gloss before this vote counts. */
+    int matched = (el->votes[slot].total > 0 &&
+                   strncmp(el->translations[slot].human_gloss, human_text,
+                           VOTE_WORD_LEN - 1) == 0) ? 1 : 0;
+    _add_votes(&el->votes[slot], human_text, 1);
+    _refresh_gloss(el, slot);
+    if (el->lock) nimcp_mutex_unlock(el->lock);
+    return matched;
+}
+
+int nimcp_emergent_get_vote_stats(nimcp_emergent_language_t* el,
+    uint32_t* out_labeled_tokens, float* out_purity)
+{
+    if (!el) return -1;
+    if (el->lock) nimcp_mutex_lock(el->lock);
+    uint32_t labeled = 0;
+    uint64_t top_sum = 0, all_sum = 0;
+    for (uint32_t i = 0; i < el->vocab_size; i++) {
+        const _votes_t* vt = &el->votes[i];
+        if (vt->total == 0) continue;
+        uint32_t top = 0;
+        for (uint32_t k = 0; k < EMERGENT_VOTES; k++)
+            if (vt->v[k].count > top) top = vt->v[k].count;
+        labeled++;
+        top_sum += top;
+        all_sum += vt->total;
+    }
+    if (el->lock) nimcp_mutex_unlock(el->lock);
+    if (out_labeled_tokens) *out_labeled_tokens = labeled;
+    if (out_purity) *out_purity = all_sum ? (float)top_sum / (float)all_sum : 0.0f;
+    return 0;
+}
+
 int nimcp_emergent_get_translation(const nimcp_emergent_language_t* el,
     uint32_t token_id, nimcp_emergent_translation_t* translation)
 {
@@ -691,12 +809,10 @@ int nimcp_emergent_prune(nimcp_emergent_language_t* el) {
 
             /* Swap with last token */
             if (i < el->vocab_size - 1) {
-                el->tokens[i] = el->tokens[el->vocab_size - 1];
-                el->translations[i] = el->translations[el->vocab_size - 1];
+                _move_slot(el, i, el->vocab_size - 1);
             }
             el->vocab_size--;
-            memset(&el->tokens[el->vocab_size], 0, sizeof(nimcp_emergent_token_t));
-            memset(&el->translations[el->vocab_size], 0, sizeof(nimcp_emergent_translation_t));
+            _clear_slot(el, el->vocab_size);
             pruned++;
             /* Don't increment i — re-check the swapped-in token */
         } else {
@@ -758,6 +874,12 @@ int nimcp_emergent_merge_similar(nimcp_emergent_language_t* el) {
                 }
 
                 el->tokens[i].usage_count += el->tokens[j].usage_count;
+                for (uint32_t k = 0; k < EMERGENT_VOTES; k++)
+                    if (el->votes[j].v[k].count > 0)
+                        _add_votes(&el->votes[i], el->votes[j].v[k].word,
+                                   el->votes[j].v[k].count);
+                if (el->last_used[j] > el->last_used[i]) el->last_used[i] = el->last_used[j];
+                _refresh_gloss(el, i);
 
                 /* Keep the more specific symbol (higher specificity) */
                 if (el->tokens[j].specificity > el->tokens[i].specificity) {
@@ -769,12 +891,10 @@ int nimcp_emergent_merge_similar(nimcp_emergent_language_t* el) {
                 /* Remove j: swap with last */
                 _free_token_data(&el->tokens[j]);
                 if (j < el->vocab_size - 1) {
-                    el->tokens[j] = el->tokens[el->vocab_size - 1];
-                    el->translations[j] = el->translations[el->vocab_size - 1];
+                    _move_slot(el, j, el->vocab_size - 1);
                 }
                 el->vocab_size--;
-                memset(&el->tokens[el->vocab_size], 0, sizeof(nimcp_emergent_token_t));
-                memset(&el->translations[el->vocab_size], 0, sizeof(nimcp_emergent_translation_t));
+                _clear_slot(el, el->vocab_size);
                 merged++;
                 j--; /* Re-check this slot (now has a different token) */
             }
@@ -847,11 +967,27 @@ int nimcp_emergent_save(const nimcp_emergent_language_t* el, const char* filepat
             if (tok->embed_dim % 16 != 0) fprintf(f, "\n");
         }
 
-        /* Translation */
+        /* Translation (spaces stored as '_' so the gloss is one field) */
         const nimcp_emergent_translation_t* tr = &el->translations[i];
+        char gloss[sizeof(tr->human_gloss)];
+        snprintf(gloss, sizeof(gloss), "%s",
+                 (tr->human_gloss[0] != '\0') ? tr->human_gloss : "<none>");
+        for (char* c = gloss; *c; c++) if (*c == ' ') *c = '_';
         fprintf(f, "TRL %.6f %u %s\n",
-                tr->translation_confidence, tr->num_co_occurring,
-                (tr->human_gloss[0] != '\0') ? tr->human_gloss : "<none>");
+                tr->translation_confidence, tr->num_co_occurring, gloss);
+
+        /* Votes */
+        const _votes_t* vt = &el->votes[i];
+        uint32_t nv = 0;
+        for (uint32_t k = 0; k < EMERGENT_VOTES; k++) if (vt->v[k].count > 0) nv++;
+        fprintf(f, "VOT %u %u\n", nv, vt->total);
+        for (uint32_t k = 0; k < EMERGENT_VOTES; k++) {
+            if (vt->v[k].count == 0) continue;
+            char w[VOTE_WORD_LEN];
+            snprintf(w, sizeof(w), "%s", vt->v[k].word);
+            for (char* c = w; *c; c++) if (*c == ' ') *c = '_';
+            fprintf(f, "%s %u\n", w, vt->v[k].count);
+        }
     }
 
     fclose(f);
@@ -952,10 +1088,29 @@ int nimcp_emergent_load(nimcp_emergent_language_t* el, const char* filepath) {
             el->translations[el->vocab_size].translation_confidence = trl_conf;
             el->translations[el->vocab_size].num_co_occurring = 0;
             if (strcmp(trl_gloss, "<none>") != 0) {
+                for (char* c = trl_gloss; *c; c++) if (*c == '_') *c = ' ';
                 snprintf(el->translations[el->vocab_size].human_gloss,
                          sizeof(el->translations[el->vocab_size].human_gloss),
                          "%s", trl_gloss);
             }
+        }
+
+        /* Votes (absent in files written before 2026-11-19) */
+        memset(&el->votes[el->vocab_size], 0, sizeof(_votes_t));
+        el->last_used[el->vocab_size] = 0;
+        uint32_t nv = 0, vtotal = 0;
+        if (fscanf(f, " VOT %u %u\n", &nv, &vtotal) == 2) {
+            for (uint32_t k = 0; k < nv; k++) {
+                char w[VOTE_WORD_LEN];
+                uint32_t cnt;
+                if (fscanf(f, "%47s %u\n", w, &cnt) != 2) break;
+                for (char* c = w; *c; c++) if (*c == '_') *c = ' ';
+                if (k < EMERGENT_VOTES) {
+                    snprintf(el->votes[el->vocab_size].v[k].word, VOTE_WORD_LEN, "%s", w);
+                    el->votes[el->vocab_size].v[k].count = cnt;
+                }
+            }
+            el->votes[el->vocab_size].total = vtotal;
         }
 
         /* Populate token slot */
@@ -993,12 +1148,12 @@ int nimcp_emergent_get_stats(const nimcp_emergent_language_t* el,
     stats->merges_performed = el->merges_performed;
     stats->tokens_pruned = el->tokens_pruned;
 
-    /* Count active tokens (used at least once in last ACTIVE_WINDOW observations) */
+    /* Count active tokens (matched within the last ACTIVE_WINDOW observations) */
     uint32_t active = 0;
     float total_specificity = 0.0f;
 
     for (uint32_t i = 0; i < el->vocab_size; i++) {
-        if (el->tokens[i].usage_count > 0) {
+        if (el->total_observations - el->last_used[i] <= ACTIVE_WINDOW) {
             active++;
         }
         total_specificity += el->tokens[i].specificity;

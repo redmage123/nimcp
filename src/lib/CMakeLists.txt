@@ -3247,6 +3247,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_tokenizer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_inner_speech.c       # Inner speech loop (iterative self-refinement)
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_emergent_language.c  # Emergent language (vocabulary from neural patterns)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_emergent_language_bridge.c  # Brain <-> emergent language wiring (NIMCP_EMERGENT_LANGUAGE=1)
 
     # Episodic Replay (sleep consolidation)
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/memory/nimcp_episodic_replay.c     # Episodic replay during sleep/consolidation

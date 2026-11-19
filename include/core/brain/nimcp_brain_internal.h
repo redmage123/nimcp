@@ -3232,6 +3232,11 @@ struct brain_struct {
     float     fusion_rel_snn;
     uint32_t  fusion_rel_ann_samples;
     uint32_t  fusion_rel_snn_samples;
+
+    /* Emergent language (2026-11-19): emergent_bridge_t*, created lazily by
+     * emergent_bridge_for() when NIMCP_EMERGENT_LANGUAGE=1. Appended so
+     * existing offsets are unchanged. */
+    void*     emergent_bridge;
 };
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L

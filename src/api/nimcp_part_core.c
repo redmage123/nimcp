@@ -13,6 +13,7 @@
 #include "security/nimcp_toxicity_response.h"                /* Phase 3a: counterclaim engine */
 #include "security/nimcp_toxicity_ml.h"                      /* Task 134: ML head */
 #include "security/nimcp_audit_log.h"                        /* 2026-05-22: counterclaim audit */
+#include "cognitive/language/nimcp_emergent_language_bridge.h"  /* emergent stats */
 
 
 //=============================================================================
@@ -121,6 +122,11 @@ nimcp_status_t nimcp_brain_learn_vector(
     const char* label,
     float confidence)
 {
+    /* Emergent language belongs to the caller-facing brain only: create it
+     * here (public API), never from internal sub-brains (hemispheres etc.),
+     * whose decide/learn hooks only look it up. No-op unless the flag is on. */
+    if (brain && brain->internal_brain)
+        (void)emergent_bridge_for(&brain->internal_brain->emergent_bridge);
     LOG_DEBUG("Learning vector: target_size=%u, num_features=%u, confidence=%.3f",
               target_size, num_features, confidence);
 
@@ -352,6 +358,43 @@ float nimcp_brain_get_accuracy(nimcp_brain_t brain)
  * NIMCP_ERROR_NULL_POINTER if brain is NULL; NIMCP_OK with zeroed
  * out params if the registry was never created (older checkpoints
  * loaded before the registry was a thing). */
+nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
+                                              nimcp_brain_emergent_stats_t* out)
+{
+    if (!out) return NIMCP_ERROR_NULL_POINTER;
+    memset(out, 0, sizeof(*out));
+    if (!brain || !brain->internal_brain) return NIMCP_ERROR_NULL_POINTER;
+    emergent_bridge_t* eb = (emergent_bridge_t*)__atomic_load_n(
+        &brain->internal_brain->emergent_bridge, __ATOMIC_ACQUIRE);
+    emergent_bridge_stats_t s;
+    if (!eb || emergent_bridge_get_stats(eb, &s) != 0) return NIMCP_OK;
+    out->enabled = true;
+    out->vocab_size = s.vocab_size;
+    out->active_tokens = s.active_tokens;
+    out->labeled_tokens = s.labeled_tokens;
+    out->purity = s.purity;
+    out->observations = s.observations;
+    out->labeled_decides = s.labeled_decides;
+    out->predictions = s.predictions;
+    out->hits = s.hits;
+    out->majority_hits = s.majority_hits;
+    out->distinct_labels = s.distinct_labels;
+    return NIMCP_OK;
+}
+
+nimcp_status_t nimcp_brain_emergent_express(nimcp_brain_t brain,
+                                            const float* output, uint32_t output_size,
+                                            char* out_text, uint32_t text_max_len)
+{
+    if (!out_text || text_max_len == 0) return NIMCP_ERROR_NULL_POINTER;
+    out_text[0] = '\0';
+    if (!brain || !brain->internal_brain || !output) return NIMCP_ERROR_NULL_POINTER;
+    emergent_bridge_t* eb = (emergent_bridge_t*)__atomic_load_n(
+        &brain->internal_brain->emergent_bridge, __ATOMIC_ACQUIRE);
+    if (eb) emergent_bridge_express(eb, output, output_size, out_text, text_max_len);
+    return NIMCP_OK;
+}
+
 nimcp_status_t nimcp_brain_get_concept_registry_stats(
     nimcp_brain_t brain,
     size_t* total_referents,
@@ -910,6 +953,11 @@ nimcp_status_t nimcp_brain_decide_full(
     uint32_t* out_num_active_neurons, float* out_sparsity,
     uint64_t* out_inference_time_us)
 {
+    /* Emergent language belongs to the caller-facing brain only: create it
+     * here (public API), never from internal sub-brains (hemispheres etc.),
+     * whose decide/learn hooks only look it up. No-op unless the flag is on. */
+    if (brain && brain->internal_brain)
+        (void)emergent_bridge_for(&brain->internal_brain->emergent_bridge);
     API_CHECK_THROW(brain, NIMCP_ERROR_NULL_ARG, "NULL brain handle");
     API_CHECK_THROW(features, NIMCP_ERROR_NULL_ARG, "Features array is NULL");
     API_CHECK_THROW(out_label, NIMCP_ERROR_NULL_ARG, "Output label buffer is NULL");
@@ -2395,6 +2443,41 @@ nimcp_status_t nimcp_brain_experience_attend(
 }
 
 
+/* Opt-in (default OFF): NIMCP_SPEAK_VIA_GROUNDED=1 routes speak() and
+ * generate_text() through grounded_language production before the LNN
+ * language generator. Part of consolidating nimcp's text-production paths
+ * (2026-11-19): grounded_language + cascade is the main language system; the
+ * LNN generator in src/generation/ is a second, separate path with its own
+ * tokenizer. With the flag set, the LNN generator is only a fallback when
+ * grounded production returns nothing, so the two can be compared on the
+ * live trainer (scripts/compare_speak_paths.py) before the generator is
+ * retired. Read per call so it can be flipped without a rebuild. */
+static bool speak_via_grounded(void) {
+    const char* v = getenv("NIMCP_SPEAK_VIA_GROUNDED");
+    return v && v[0] == '1';
+}
+
+/* Grounded production of a semantic vector into out_text. Returns true when
+ * non-empty text was produced; outputs are untouched otherwise. */
+static bool speak_grounded(brain_t ib, const float* sem, uint32_t sem_dim,
+                           char* out_text, uint32_t text_max_len,
+                           float* out_confidence, float* out_fluency) {
+    if (!ib->grounded_lang || !sem || sem_dim == 0 || text_max_len == 0) return false;
+    gl_production_result_t r = {0};
+    int rc = grounded_language_produce(ib->grounded_lang, sem, sem_dim,
+                                       GL_PRODUCE_DESCRIBE, &r);
+    bool ok = (rc == 0 && r.text && r.text[0] != '\0');
+    if (ok) {
+        strncpy(out_text, r.text, text_max_len - 1);
+        out_text[text_max_len - 1] = '\0';
+        if (out_confidence) *out_confidence = r.fluency * r.relevance;
+        if (out_fluency) *out_fluency = r.fluency;
+    }
+    gl_production_result_cleanup(&r);
+    return ok;
+}
+
+
 nimcp_status_t nimcp_brain_speak(
     nimcp_brain_t brain,
     const float* semantic_input,
@@ -2418,6 +2501,13 @@ nimcp_status_t nimcp_brain_speak(
         /* No cached decision vector in public API — require explicit input */
         set_error("semantic_input is required (no cached decision)");
         return NIMCP_ERROR_NULL_ARG;
+    }
+
+    if (speak_via_grounded() &&
+        speak_grounded(ib, sem, sem_dim, out_text, text_max_len,
+                       out_confidence, out_fluency)) {
+        set_error("No error");
+        return NIMCP_OK;
     }
 
     /* Try LNN-based language generator first */
@@ -2578,6 +2668,28 @@ nimcp_status_t nimcp_brain_generate_text(
 
     brain_t ib = brain->internal_brain;
     out_text[0] = '\0';
+
+    if (speak_via_grounded()) {
+        /* Grounded path: a text prompt is a conversation turn; a vector is
+         * a production intent. No perplexity exists on this path, so
+         * out_perplexity is reported as 0. Falls through to the LNN
+         * generator below when grounded production returns nothing. */
+        bool ok = false;
+        if (prompt && prompt[0] != '\0') {
+            ok = nimcp_brain_grounded_respond(brain, prompt, out_text, text_max_len,
+                                              out_confidence) == NIMCP_OK
+                 && out_text[0] != '\0';
+        } else {
+            ok = speak_grounded(ib, semantic_input, semantic_dim, out_text,
+                                text_max_len, out_confidence, NULL);
+        }
+        if (ok) {
+            if (out_perplexity) *out_perplexity = 0.0f;
+            set_error("No error");
+            return NIMCP_OK;
+        }
+        out_text[0] = '\0';
+    }
 
     if (!ib->lang_generator) {
         /* Fall back to brain_speak */

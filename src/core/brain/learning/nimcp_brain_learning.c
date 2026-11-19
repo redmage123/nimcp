@@ -31,6 +31,7 @@
 #include "core/brain/learning/nimcp_brain_learning.h"
 #include "core/brain/nimcp_brain_decide_trace.h"
 #include "core/brain/nimcp_brain_lazy_init.h"
+#include "cognitive/language/nimcp_emergent_language_bridge.h"
 #include "core/brain/nimcp_brain_cycle_coordinator.h"
 #include "core/brain/nimcp_brain_kg.h"  /* W17: KG consumers in training path */
 #include "core/probes/nimcp_probe_stages.h"
@@ -1641,6 +1642,14 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             (void)symbolic_logic_extract_fact_from_text(
                 brain->symbolic_logic, label, confidence);
         }
+    }
+
+    /* Emergent language: remember this input's label so a later decide on
+     * the same input can vote it onto the brain's own token. Opt-in
+     * (NIMCP_EMERGENT_LANGUAGE=1); no-op otherwise. */
+    {
+        emergent_bridge_t* eb = emergent_bridge_get(&brain->emergent_bridge);
+        if (eb) emergent_bridge_on_learn(eb, features, num_features, label);
     }
 
     /* Phase 5A: drive the octopus module with the clean training input.

@@ -4311,6 +4311,55 @@ static PyObject* Brain_get_concept_registry_stats(BrainObject* self,
     return d;
 }
 
+static PyObject* Brain_get_emergent_stats(BrainObject* self,
+                                          PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    nimcp_brain_emergent_stats_t s;
+    if (nimcp_brain_get_emergent_stats(self->brain, &s) != NIMCP_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "get_emergent_stats failed");
+        return NULL;
+    }
+    return Py_BuildValue(
+        "{s:O,s:I,s:I,s:I,s:f,s:K,s:K,s:K,s:K,s:K,s:I}",
+        "enabled", s.enabled ? Py_True : Py_False,
+        "vocab_size", s.vocab_size, "active_tokens", s.active_tokens,
+        "labeled_tokens", s.labeled_tokens, "purity", (double)s.purity,
+        "observations", (unsigned long long)s.observations,
+        "labeled_decides", (unsigned long long)s.labeled_decides,
+        "predictions", (unsigned long long)s.predictions,
+        "hits", (unsigned long long)s.hits,
+        "majority_hits", (unsigned long long)s.majority_hits,
+        "distinct_labels", s.distinct_labels);
+}
+
+static PyObject* Brain_emergent_express(BrainObject* self, PyObject* args) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    PyObject* seq = NULL;
+    if (!PyArg_ParseTuple(args, "O", &seq)) return NULL;
+    PyObject* fast = PySequence_Fast(seq, "output_vector must be a sequence");
+    if (!fast) return NULL;
+    Py_ssize_t n = PySequence_Fast_GET_SIZE(fast);
+    float* v = (float*)malloc((size_t)(n > 0 ? n : 1) * sizeof(float));
+    if (!v) { Py_DECREF(fast); return PyErr_NoMemory(); }
+    for (Py_ssize_t i = 0; i < n; i++)
+        v[i] = (float)PyFloat_AsDouble(PySequence_Fast_GET_ITEM(fast, i));
+    Py_DECREF(fast);
+    if (PyErr_Occurred()) { free(v); return NULL; }
+    char text[1024];
+    nimcp_status_t st = nimcp_brain_emergent_express(self->brain, v, (uint32_t)n,
+                                                     text, sizeof(text));
+    free(v);
+    if (st != NIMCP_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "emergent_express failed");
+        return NULL;
+    }
+    return PyUnicode_FromString(text);
+}
+
 /*===========================================================================
  * Slice E (Option-1 architectural rebuild) — stage scaffolding bindings.
  *=========================================================================*/
@@ -13354,6 +13403,10 @@ static PyMethodDef Brain_methods[] = {
      "Slice D: configure the self-train reward threshold + TTL — set_cascade_self_train_reward_gating(reward_threshold: float, reward_ttl_us: int) -> None. Either argument <= 0 leaves the brain's value unchanged. Defaults (0.5 threshold, 5,000,000 µs TTL) are applied in-stage when both fields remain calloc-zero."},
     {"get_cascade_self_train_gate_counters", (PyCFunction)Brain_get_cascade_self_train_gate_counters, METH_NOARGS,
      "Slice D: snapshot the three reward-gating counters — returns {'skipped_stale': int, 'skipped_below_threshold': int, 'fired': int}. Surfaced in lang_status under stats.cascade.self_train."},
+    {"get_emergent_stats", (PyCFunction)Brain_get_emergent_stats, METH_NOARGS,
+     "Emergent language (NIMCP_EMERGENT_LANGUAGE=1): {'enabled', 'vocab_size', 'active_tokens', 'labeled_tokens', 'purity', 'observations', 'labeled_decides', 'predictions', 'hits', 'majority_hits', 'distinct_labels'}. hits/predictions = brain's own token already named the training label; majority_hits/labeled_decides = baseline."},
+    {"emergent_express", (PyCFunction)Brain_emergent_express, METH_VARARGS,
+     "Emergent-language symbols for an output vector (str; '' when off or empty)."},
     {"get_concept_registry_stats", (PyCFunction)Brain_get_concept_registry_stats, METH_NOARGS,
      "Walkthrough-2: snapshot the cross-modal concept_registry — returns {'total_referents': int, 'total_modality_bindings': int}. Verifies the bind hook in brain_learn_vector is firing during training. Surfaced in lang_status under stats.concept_registry."},
     /* Slice E (Option-1 rebuild) — developmental stage scaffolding. */

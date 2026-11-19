@@ -16,6 +16,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cstdio>
+#include <unistd.h>
 
 extern "C" {
 #include "cognitive/language/nimcp_emergent_language.h"
@@ -577,4 +578,151 @@ TEST(EmergentLanguage, GetTranslationNull) {
     nimcp_emergent_translation_t trans;
     int rc = nimcp_emergent_get_translation(NULL, 0, &trans);
     EXPECT_LT(rc, 0);
+}
+
+// ============================================================================
+// Wiring additions (2026-11-19): observe_ex, vote_human, vote stats, save
+// format for multi-word glosses + votes, votes surviving merge.
+// ============================================================================
+
+static nimcp_emergent_language_t* small_el(uint32_t dim) {
+    nimcp_emergent_config_t cfg = nimcp_emergent_config_default();
+    cfg.centroid_dim = dim;
+    cfg.embed_dim = dim;
+    cfg.max_tokens = 64;
+    return nimcp_emergent_language_create(&cfg);
+}
+
+TEST(EmergentLanguageWiring, ObserveExReportsTokenId) {
+    const uint32_t dim = 32;
+    nimcp_emergent_language_t* el = small_el(dim);
+    ASSERT_NE(el, nullptr);
+    std::vector<float> a(dim), a2(dim), b(dim);
+    fill_random_embedding(a.data(), dim, 1.0f);
+    fill_similar_embedding(a2.data(), a.data(), dim, 0.01f);
+    for (uint32_t i = 0; i < dim; i++) b[i] = (i % 2) ? 1.0f : -1.0f;
+
+    uint32_t t1 = 999, t2 = 999, t3 = 999;
+    EXPECT_EQ(nimcp_emergent_observe_ex(el, a.data(), dim, &t1), 0);
+    EXPECT_EQ(nimcp_emergent_observe_ex(el, a2.data(), dim, &t2), 0);
+    EXPECT_EQ(nimcp_emergent_observe_ex(el, b.data(), dim, &t3), 0);
+    EXPECT_NE(t1, UINT32_MAX);
+    EXPECT_EQ(t1, t2);          // near-identical output reinforces the same token
+    EXPECT_NE(t1, t3);          // a dissimilar output discovers a new one
+
+    std::vector<float> zero(dim, 0.0f);
+    uint32_t tz = 0;
+    EXPECT_EQ(nimcp_emergent_observe_ex(el, zero.data(), dim, &tz), 0);
+    EXPECT_EQ(tz, UINT32_MAX);  // near-zero output is skipped
+    EXPECT_EQ(nimcp_emergent_observe_ex(el, a.data(), dim, NULL), 0);  // NULL out ok
+    nimcp_emergent_language_destroy(el);
+}
+
+TEST(EmergentLanguageWiring, VoteHumanScoresBeforeCountingAndTracksMajority) {
+    const uint32_t dim = 16;
+    nimcp_emergent_language_t* el = small_el(dim);
+    std::vector<float> a(dim);
+    fill_random_embedding(a.data(), dim, 0.5f);
+    uint32_t t = UINT32_MAX;
+    nimcp_emergent_observe_ex(el, a.data(), dim, &t);
+    ASSERT_NE(t, UINT32_MAX);
+
+    EXPECT_EQ(nimcp_emergent_vote_human(el, t, "big dog"), 0);  // no gloss yet
+    EXPECT_EQ(nimcp_emergent_vote_human(el, t, "big dog"), 1);  // gloss now "big dog"
+    EXPECT_EQ(nimcp_emergent_vote_human(el, t, "cat"), 0);
+    nimcp_emergent_translation_t tr;
+    ASSERT_EQ(nimcp_emergent_get_translation(el, t, &tr), 0);
+    EXPECT_STREQ(tr.human_gloss, "big dog");
+    EXPECT_NEAR(tr.translation_confidence, 2.0f / 3.0f, 1e-5f);
+
+    uint32_t labeled = 0; float purity = 0.0f;
+    ASSERT_EQ(nimcp_emergent_get_vote_stats(el, &labeled, &purity), 0);
+    EXPECT_EQ(labeled, 1u);
+    EXPECT_NEAR(purity, 2.0f / 3.0f, 1e-5f);
+
+    EXPECT_EQ(nimcp_emergent_vote_human(el, 12345u, "x"), -1);  // unknown token
+    EXPECT_EQ(nimcp_emergent_vote_human(el, t, ""), -1);
+    EXPECT_EQ(nimcp_emergent_vote_human(NULL, t, "x"), -1);
+    nimcp_emergent_language_destroy(el);
+}
+
+TEST(EmergentLanguageWiring, SaveLoadKeepsMultiWordGlossAndVotes) {
+    const uint32_t dim = 16;
+    nimcp_emergent_language_t* el = small_el(dim);
+    std::vector<float> a(dim), b(dim);
+    fill_random_embedding(a.data(), dim, 0.5f);
+    for (uint32_t i = 0; i < dim; i++) b[i] = (i % 2) ? 1.0f : -1.0f;
+    uint32_t ta, tb;
+    nimcp_emergent_observe_ex(el, a.data(), dim, &ta);
+    nimcp_emergent_observe_ex(el, b.data(), dim, &tb);
+    nimcp_emergent_vote_human(el, ta, "the big dog");
+    nimcp_emergent_vote_human(el, ta, "the big dog");
+    nimcp_emergent_vote_human(el, ta, "cat");
+    nimcp_emergent_vote_human(el, tb, "red ball");
+
+    char path[] = "/tmp/emergent_wiring_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_GE(fd, 0);
+    close(fd);
+    ASSERT_EQ(nimcp_emergent_save(el, path), 0);
+
+    nimcp_emergent_language_t* el2 = small_el(dim);
+    ASSERT_EQ(nimcp_emergent_load(el2, path), 0);
+    EXPECT_EQ(nimcp_emergent_get_vocab_size(el2), 2u);
+    nimcp_emergent_translation_t tr;
+    ASSERT_EQ(nimcp_emergent_get_translation(el2, ta, &tr), 0);
+    EXPECT_STREQ(tr.human_gloss, "the big dog");
+    ASSERT_EQ(nimcp_emergent_get_translation(el2, tb, &tr), 0);
+    EXPECT_STREQ(tr.human_gloss, "red ball");
+    // Votes came back too: a further "the big dog" vote is a correct guess,
+    // and purity matches the saved counts (3 of 4 votes are top words).
+    EXPECT_EQ(nimcp_emergent_vote_human(el2, ta, "the big dog"), 1);
+    float purity = 0.0f;
+    nimcp_emergent_get_vote_stats(el2, NULL, &purity);
+    EXPECT_NEAR(purity, 4.0f / 5.0f, 1e-5f);
+
+    remove(path);
+    nimcp_emergent_language_destroy(el);
+    nimcp_emergent_language_destroy(el2);
+}
+
+TEST(EmergentLanguageWiring, MergeCombinesVotes) {
+    const uint32_t dim = 16;
+    nimcp_emergent_config_t cfg = nimcp_emergent_config_default();
+    cfg.centroid_dim = dim; cfg.embed_dim = dim; cfg.max_tokens = 64;
+    cfg.discovery_threshold = 0.001f;   // nearly every output becomes its own token
+    cfg.merge_threshold = 0.2f;         // ...and close ones merge on merge_similar
+    nimcp_emergent_language_t* el = nimcp_emergent_language_create(&cfg);
+    std::vector<float> a(dim), a2(dim);
+    fill_random_embedding(a.data(), dim, 0.5f);
+    fill_similar_embedding(a2.data(), a.data(), dim, 0.05f);
+    uint32_t t1, t2;
+    nimcp_emergent_observe_ex(el, a.data(), dim, &t1);
+    nimcp_emergent_observe_ex(el, a2.data(), dim, &t2);
+    ASSERT_NE(t1, t2);
+    nimcp_emergent_vote_human(el, t1, "dog");
+    nimcp_emergent_vote_human(el, t2, "dog");
+    nimcp_emergent_vote_human(el, t2, "cat");
+    ASSERT_GE(nimcp_emergent_merge_similar(el), 1);
+    EXPECT_EQ(nimcp_emergent_get_vocab_size(el), 1u);
+    uint32_t labeled = 0; float purity = 0.0f;
+    nimcp_emergent_get_vote_stats(el, &labeled, &purity);
+    EXPECT_EQ(labeled, 1u);
+    EXPECT_NEAR(purity, 2.0f / 3.0f, 1e-5f);   // dog 2, cat 1 on the merged token
+    nimcp_emergent_language_destroy(el);
+}
+
+TEST(EmergentLanguageWiring, ActiveTokensReflectsRecentUse) {
+    const uint32_t dim = 16;
+    nimcp_emergent_language_t* el = small_el(dim);
+    std::vector<float> a(dim), b(dim);
+    fill_random_embedding(a.data(), dim, 0.5f);
+    for (uint32_t i = 0; i < dim; i++) b[i] = (i % 2) ? 1.0f : -1.0f;
+    nimcp_emergent_observe(el, b.data(), dim);          // token B, then never again
+    for (int i = 0; i < 1100; i++) nimcp_emergent_observe(el, a.data(), dim);
+    nimcp_emergent_stats_t s;
+    ASSERT_EQ(nimcp_emergent_get_stats(el, &s), 0);
+    EXPECT_EQ(s.vocab_size, 2u);
+    EXPECT_EQ(s.active_tokens, 1u);
+    nimcp_emergent_language_destroy(el);
 }

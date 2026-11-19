@@ -489,6 +489,39 @@ nimcp_status_t nimcp_brain_get_concept_registry_stats(
     size_t* total_modality_bindings);
 
 /**
+ * @brief Emergent-language snapshot (opt-in NIMCP_EMERGENT_LANGUAGE=1).
+ *
+ * The brain clusters its own decision outputs into emergent tokens and
+ * votes training labels onto them. `hits / predictions` is how often a
+ * token's current gloss already named the label (a held-out guess, made
+ * before that vote counts); compare with `majority_hits / labeled_decides`
+ * (always guessing the most frequent label). enabled=false when the flag
+ * is off or nothing has been observed yet; all counters are then 0.
+ */
+typedef struct {
+    bool     enabled;
+    uint32_t vocab_size;
+    uint32_t active_tokens;
+    uint32_t labeled_tokens;
+    float    purity;
+    uint64_t observations;
+    uint64_t labeled_decides;
+    uint64_t predictions;
+    uint64_t hits;
+    uint64_t majority_hits;
+    uint32_t distinct_labels;
+} nimcp_brain_emergent_stats_t;
+
+nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
+                                              nimcp_brain_emergent_stats_t* out);
+
+/** Emergent symbols for an output vector (e.g. "α3 ◊1"); out_text is ""
+ *  when the module is off or has no tokens yet. */
+nimcp_status_t nimcp_brain_emergent_express(nimcp_brain_t brain,
+                                            const float* output, uint32_t output_size,
+                                            char* out_text, uint32_t text_max_len);
+
+/**
  * @brief Make a decision/prediction
  *
  * @param brain Brain handle

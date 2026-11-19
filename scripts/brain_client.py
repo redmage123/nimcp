@@ -938,6 +938,15 @@ class BrainProxy:
         resp = self._send({"cmd": "get_cognitive_stats"})
         return resp.get("stats", {})
 
+    def get_emergent_stats(self):
+        resp = self._send({"cmd": "get_emergent_stats"})
+        return resp.get("stats", {})
+
+    def emergent_express(self, output_vector):
+        resp = self._send({"cmd": "emergent_express",
+                           "output_vector": _to_list(output_vector)})
+        return resp.get("text", "")
+
     def probe(self):
         resp = self._send({"cmd": "probe"})
         return resp.get("probe", {})

@@ -1219,7 +1219,8 @@ class BrainService:
             # This prevents metrics/status queries from timing out behind learn_vector.
             if cmd in ('ping', 'status', 'get_neuron_count', 'get_snn_stats',
                        'get_network_metrics', 'get_cortex_cnn_metrics',
-                       'get_cognitive_stats', 'get_module_activity'):
+                       'get_cognitive_stats', 'get_module_activity',
+                       'get_emergent_stats'):
                 return handler(req)
 
             # All other commands (learn_vector, decide_full, save, etc.) take the lock
@@ -3710,6 +3711,18 @@ class BrainService:
         if True:  # RWLock in handle()
             return {"stats": self.brain.get_cognitive_stats()}
 
+    def _cmd_get_emergent_stats(self, _req):
+        """Emergent-language counters (NIMCP_EMERGENT_LANGUAGE=1). Read-only."""
+        if not hasattr(self.brain, "get_emergent_stats"):
+            return {"stats": {"enabled": False, "error": "binding too old"}}
+        return {"stats": self.brain.get_emergent_stats()}
+
+    def _cmd_emergent_express(self, req):
+        """Emergent symbols for an output vector. Read-only."""
+        if not hasattr(self.brain, "emergent_express"):
+            return {"text": ""}
+        return {"text": self.brain.emergent_express(req["output_vector"])}
+
     def _cmd_probe(self, _req):
         if True:  # RWLock in handle()
             return {"probe": self.brain.probe()}
@@ -4523,6 +4536,7 @@ class BrainDaemon:
         'get_emotion_state', 'get_internal_state',
         'predict_with_confidence', 'predict_with_deadline',
         'get_inner_speech_trace', 'get_hypothesis_log',
+        'get_emergent_stats', 'emergent_express',
         'audit_log_event',  # audit logging is append-only, safe on RO socket
     })
 
