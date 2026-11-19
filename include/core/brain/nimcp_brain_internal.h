@@ -3237,6 +3237,11 @@ struct brain_struct {
      * emergent_bridge_for() when NIMCP_EMERGENT_LANGUAGE=1. Appended so
      * existing offsets are unchanged. */
     void*     emergent_bridge;
+
+    /* Multimodal NLP (2026-11-19): multimodal_nlp_brain_t*, the learned
+     * spoken-word lexicon fed by staged speech + labels; created lazily by
+     * multimodal_nlp_brain_for() when NIMCP_SPEECH_UNITS=1. Appended. */
+    void*     multimodal_nlp_state;
 };
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L

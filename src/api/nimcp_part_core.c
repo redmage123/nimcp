@@ -14,6 +14,7 @@
 #include "security/nimcp_toxicity_ml.h"                      /* Task 134: ML head */
 #include "security/nimcp_audit_log.h"                        /* 2026-05-22: counterclaim audit */
 #include "cognitive/language/nimcp_emergent_language_bridge.h"  /* emergent stats */
+#include "nlp/nimcp_multimodal_nlp_bridge.h"                     /* spoken-word lexicon */
 
 
 //=============================================================================
@@ -125,8 +126,11 @@ nimcp_status_t nimcp_brain_learn_vector(
     /* Emergent language belongs to the caller-facing brain only: create it
      * here (public API), never from internal sub-brains (hemispheres etc.),
      * whose decide/learn hooks only look it up. No-op unless the flag is on. */
-    if (brain && brain->internal_brain)
+    if (brain && brain->internal_brain) {
         (void)emergent_bridge_for(&brain->internal_brain->emergent_bridge);
+        /* Same rule for the spoken-word lexicon (NIMCP_SPEECH_UNITS=1). */
+        (void)multimodal_nlp_brain_for(&brain->internal_brain->multimodal_nlp_state);
+    }
     LOG_DEBUG("Learning vector: target_size=%u, num_features=%u, confidence=%.3f",
               target_size, num_features, confidence);
 
@@ -379,6 +383,29 @@ nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
     out->hits = s.hits;
     out->majority_hits = s.majority_hits;
     out->distinct_labels = s.distinct_labels;
+    return NIMCP_OK;
+}
+
+nimcp_status_t nimcp_brain_get_speech_lexicon_stats(nimcp_brain_t brain,
+                                                    nimcp_brain_speech_lexicon_stats_t* out)
+{
+    if (!out) return NIMCP_ERROR_NULL_POINTER;
+    memset(out, 0, sizeof(*out));
+    if (!brain || !brain->internal_brain) return NIMCP_ERROR_NULL_POINTER;
+    brain_t ib = brain->internal_brain;
+    multimodal_nlp_brain_t* mb = multimodal_nlp_brain_get(&ib->multimodal_nlp_state);
+    multimodal_nlp_brain_stats_t s;
+    if (!mb || multimodal_nlp_brain_get_stats(mb, ib->speech_cortex, &s) != 0) return NIMCP_OK;
+    out->enabled = true;
+    out->clips = s.clips;
+    out->empty_clips = s.empty_clips;
+    out->predictions = s.predictions;
+    out->hits = s.hits;
+    out->majority_hits = s.majority_hits;
+    out->words = s.words;
+    out->units_seeded = s.units_seeded;
+    out->mean_units = s.mean_units;
+    snprintf(out->last_heard, sizeof(out->last_heard), "%s", s.last_heard);
     return NIMCP_OK;
 }
 

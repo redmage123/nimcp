@@ -2266,6 +2266,7 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../perception/audio_cortex_stub.c  # Stub for missing audio cortex functions
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_audio_jepa_bridge.c  # Phase 4q: audio cortex ↔ JEPA
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_speech_cortex.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_speech_units.c   # Learned sound units (NIMCP_SPEECH_UNITS=1)
 
     # Cochlear Audio Processing (Phase 3: Biologically-accurate cochlear model)
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_basilar_membrane.c      # Basilar membrane mechanics

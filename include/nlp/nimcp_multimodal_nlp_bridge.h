@@ -339,6 +339,77 @@ bool multimodal_nlp_init_phoneme_lexicon(void);
  */
 void multimodal_nlp_cleanup_phoneme_lexicon(void);
 
+//=============================================================================
+// Learned spoken-word lexicon (2026-11-19)
+//=============================================================================
+/*
+ * Replaces the 5-word hard-coded table for live use. Stores example
+ * phoneme (learned sound-unit) sequences per word and recognises a new
+ * sequence by the smallest length-normalised edit distance to any stored
+ * example. Requires NIMCP_SPEECH_UNITS=1 so speech_cortex_detect_phonemes
+ * actually returns units.
+ */
+typedef struct multimodal_nlp_lexicon multimodal_nlp_lexicon_t;
+
+/** max_words distinct words, per_word examples kept per word (ring). */
+multimodal_nlp_lexicon_t* multimodal_nlp_lexicon_create(uint32_t max_words, uint32_t per_word);
+void multimodal_nlp_lexicon_destroy(multimodal_nlp_lexicon_t* lex);
+
+/** Store an example. Returns 0, or -1 (bad args / empty / table full of other words). */
+int multimodal_nlp_lexicon_learn(multimodal_nlp_lexicon_t* lex, const phoneme_t* seq,
+                                 uint32_t len, const char* word);
+
+/** Best word for seq. Returns 1 and fills word/confidence (1 - normalised
+ *  distance) when the lexicon has any word, 0 when empty, -1 on bad args. */
+int multimodal_nlp_lexicon_recognize(const multimodal_nlp_lexicon_t* lex, const phoneme_t* seq,
+                                     uint32_t len, char* word, uint32_t word_size,
+                                     float* confidence);
+
+uint32_t multimodal_nlp_lexicon_num_words(const multimodal_nlp_lexicon_t* lex);
+int multimodal_nlp_lexicon_save(const multimodal_nlp_lexicon_t* lex, const char* path);
+int multimodal_nlp_lexicon_load(multimodal_nlp_lexicon_t* lex, const char* path);
+
+//=============================================================================
+// Brain integration: labelled real speech -> recognise, score, learn
+//=============================================================================
+/*
+ * Driven from brain_learn_vector when NIMCP_SPEECH_UNITS=1: if a fresh speech
+ * clip is staged (submit_sensory("speech", ...)) and the step carries a
+ * label, the clip goes through speech_cortex_detect_phonemes (learned
+ * units), the lexicon guesses the word, the guess is scored against the
+ * label (and against always guessing the most frequent label), and the
+ * clip is then stored under the label. Persistence:
+ * NIMCP_SPEECH_UNITS_PATH=<prefix> -> <prefix>.lex.
+ */
+typedef struct multimodal_nlp_brain multimodal_nlp_brain_t;
+
+typedef struct {
+    uint64_t clips;            /* labelled speech clips seen */
+    uint64_t empty_clips;      /* clips that produced no units */
+    uint64_t predictions;      /* clips where the lexicon could guess */
+    uint64_t hits;             /* ... and guessed the label */
+    uint64_t majority_hits;    /* baseline: most frequent label so far */
+    uint32_t words;            /* words in the lexicon */
+    uint32_t units_seeded;     /* learned sound categories so far */
+    float    mean_units;       /* mean units per non-empty clip */
+    char     last_heard[48];   /* most recent guess */
+} multimodal_nlp_brain_stats_t;
+
+/** State held in *slot, created when NIMCP_SPEECH_UNITS=1 (else NULL). */
+multimodal_nlp_brain_t* multimodal_nlp_brain_for(void** slot);
+/** State already in *slot, or NULL. Never creates. */
+multimodal_nlp_brain_t* multimodal_nlp_brain_get(void* const* slot);
+void multimodal_nlp_brain_destroy(multimodal_nlp_brain_t* mb);
+
+/** speech_cortex may be NULL: the bridge then uses its own sound-unit model
+ *  (persisted to <prefix>.bridge.units). */
+void multimodal_nlp_brain_on_learn(multimodal_nlp_brain_t* mb, speech_cortex_t* speech_cortex,
+                                   const float* speech, uint32_t num_samples,
+                                   const char* label);
+
+int multimodal_nlp_brain_get_stats(multimodal_nlp_brain_t* mb, speech_cortex_t* speech_cortex,
+                                   multimodal_nlp_brain_stats_t* out);
+
 #ifdef __cplusplus
 }
 #endif

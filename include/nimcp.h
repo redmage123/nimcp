@@ -515,6 +515,30 @@ typedef struct {
 nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
                                               nimcp_brain_emergent_stats_t* out);
 
+/**
+ * @brief Spoken-word lexicon snapshot (opt-in NIMCP_SPEECH_UNITS=1).
+ *
+ * Real speech clips staged with submit_sensory("speech") and trained with a
+ * label are segmented into learned sound units; the lexicon guesses the
+ * word before learning it. hits/predictions is held-out recognition
+ * accuracy; compare majority_hits/(clips - empty_clips).
+ */
+typedef struct {
+    bool     enabled;
+    uint64_t clips;
+    uint64_t empty_clips;
+    uint64_t predictions;
+    uint64_t hits;
+    uint64_t majority_hits;
+    uint32_t words;
+    uint32_t units_seeded;
+    float    mean_units;
+    char     last_heard[48];
+} nimcp_brain_speech_lexicon_stats_t;
+
+nimcp_status_t nimcp_brain_get_speech_lexicon_stats(nimcp_brain_t brain,
+                                                    nimcp_brain_speech_lexicon_stats_t* out);
+
 /** Emergent symbols for an output vector (e.g. "α3 ◊1"); out_text is ""
  *  when the module is off or has no tokens yet. */
 nimcp_status_t nimcp_brain_emergent_express(nimcp_brain_t brain,

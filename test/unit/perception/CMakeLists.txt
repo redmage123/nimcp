@@ -95,3 +95,26 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_lip_reading.cpp")
         TIMEOUT 180
     )
 endif()
+
+# Learned sound units + speech-cortex units + multimodal spoken-word lexicon (2026-11-19)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_speech_units.cpp")
+    add_executable(unit_perception_test_speech_units
+        test_speech_units.cpp
+    )
+    target_link_libraries(unit_perception_test_speech_units
+        PRIVATE
+            GTest::GTest
+            GTest::Main
+            nimcp
+            m
+            pthread
+    )
+    target_include_directories(unit_perception_test_speech_units
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src
+    )
+    add_test(NAME unit_perception_test_speech_units
+             COMMAND unit_perception_test_speech_units)
+    set_tests_properties(unit_perception_test_speech_units PROPERTIES LABELS "unit;perception")
+endif()

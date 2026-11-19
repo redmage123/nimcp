@@ -17,6 +17,7 @@
  */
 
 #include "perception/nimcp_speech_cortex.h"
+#include "perception/nimcp_speech_units.h"
 #include "security/nimcp_security.h"
 #include "security/nimcp_blood_brain_barrier.h"
 #include "security/nimcp_bbb_helpers.h"
@@ -81,7 +82,50 @@ struct speech_cortex {
     uint64_t mirror_activation_count;
     uint64_t burst_events;
     float avg_learning_rate;
+    /* Learned sound units (NIMCP_SPEECH_UNITS=1); created on first use. */
+    speech_units_t* units;
+    uint64_t units_segments;
 };
+
+/* NIMCP_SPEECH_UNITS=1: detect_phonemes uses learned sound units instead of
+ * the stub. NIMCP_SPEECH_UNITS_PATH=<prefix>: units persist to <prefix>.units
+ * (loaded on first use, saved every 500 clips and at destroy). */
+static bool speech_units_enabled(void) {
+    static int on = -1;
+    if (on < 0) { const char* v = getenv("NIMCP_SPEECH_UNITS"); on = (v && v[0] == '1'); }
+    return on == 1;
+}
+
+static void speech_units_path(char* buf, size_t n) {
+    const char* p = getenv("NIMCP_SPEECH_UNITS_PATH");
+    if (p && p[0]) snprintf(buf, n, "%s.units", p); else buf[0] = '\0';
+}
+
+static speech_units_t* cortex_units(speech_cortex_t* cortex) {
+    speech_units_t* su = __atomic_load_n(&cortex->units, __ATOMIC_ACQUIRE);
+    if (su) return su;
+    uint32_t sr = cortex->config.sample_rate ? cortex->config.sample_rate : 16000;
+    speech_units_t* fresh = speech_units_create(sr, SPEECH_NUM_PHONEMES);
+    if (!fresh) return NULL;
+    char path[600];
+    speech_units_path(path, sizeof(path));
+    if (path[0] && speech_units_load(fresh, path) == 0)
+        LOG_INFO("speech units loaded from %s (%u seeded)", path, speech_units_num_seeded(fresh));
+    speech_units_t* expected = NULL;
+    if (__atomic_compare_exchange_n(&cortex->units, &expected, fresh, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return fresh;
+    speech_units_destroy(fresh);
+    return expected;
+}
+
+static void cortex_units_save(speech_cortex_t* cortex) {
+    char path[600], tmp[640];
+    speech_units_path(path, sizeof(path));
+    if (!path[0] || !cortex->units) return;
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    if (speech_units_save(cortex->units, tmp) == 0) rename(tmp, path);
+}
 
 /* ============================================================================
  * Core API
@@ -115,6 +159,10 @@ speech_cortex_t* speech_cortex_create(const speech_cortex_config_t* config) {
 
 void speech_cortex_destroy(speech_cortex_t* cortex) {
     if (!cortex) return;
+    if (cortex->units) {
+        cortex_units_save(cortex);
+        speech_units_destroy(cortex->units);
+    }
     nimcp_free(cortex);
 }
 
@@ -191,10 +239,36 @@ bool speech_cortex_detect_phonemes(
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "speech_cortex_detect_phonemes: required parameter is NULL (cortex, audio_data, phonemes, num_detected)");
         return false;
     }
-    (void)num_samples;
-    (void)max_phonemes;
     *num_detected = 0;
+    if (!speech_units_enabled() || max_phonemes == 0) {
+        return true;   /* legacy behaviour: no phoneme detector */
+    }
+    speech_units_t* su = cortex_units(cortex);
+    if (!su) return true;
+
+    /* Learned sound units fill the phoneme slots. Unit ids are learned
+     * category numbers, not IPA identities (see nimcp_speech_units.h). */
+    speech_unit_seg_t segs[64];
+    uint32_t cap = max_phonemes < 64 ? max_phonemes : 64;
+    int n = speech_units_segment(su, audio_data, num_samples, true, segs, cap);
+    if (n < 0) return false;
+    for (int i = 0; i < n; i++) {
+        phoneme_event_t* ev = &phonemes[i];
+        memset(ev, 0, sizeof(*ev));
+        ev->phoneme = (phoneme_t)(segs[i].unit % SPEECH_NUM_PHONEMES);
+        ev->confidence = segs[i].confidence;
+        ev->onset_time_ms = segs[i].onset_ms;
+        ev->offset_time_ms = segs[i].onset_ms + 10u * segs[i].frames;
+        ev->sequence_position = (uint32_t)i;
+    }
+    *num_detected = (uint32_t)n;
+    uint64_t done = __atomic_add_fetch(&cortex->units_segments, 1, __ATOMIC_RELAXED);
+    if (done % 500 == 0) cortex_units_save(cortex);
     return true;
+}
+
+uint32_t speech_cortex_units_seeded(const speech_cortex_t* cortex) {
+    return (cortex && cortex->units) ? speech_units_num_seeded(cortex->units) : 0;
 }
 
 bool speech_cortex_extract_formants(

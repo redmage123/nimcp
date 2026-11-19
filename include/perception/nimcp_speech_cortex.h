@@ -342,6 +342,10 @@ bool speech_cortex_detect_phonemes(
  * @param num_formants Number of formants (typically 4)
  * @return true on success, false on failure
  */
+/** Learned sound-unit categories seeded so far (0 when
+ *  NIMCP_SPEECH_UNITS is off or no speech has been heard). */
+uint32_t speech_cortex_units_seeded(const speech_cortex_t* cortex);
+
 bool speech_cortex_extract_formants(
     speech_cortex_t* cortex,
     const float* audio_data,

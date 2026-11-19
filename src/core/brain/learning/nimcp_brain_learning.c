@@ -32,6 +32,7 @@
 #include "core/brain/nimcp_brain_decide_trace.h"
 #include "core/brain/nimcp_brain_lazy_init.h"
 #include "cognitive/language/nimcp_emergent_language_bridge.h"
+#include "nlp/nimcp_multimodal_nlp_bridge.h"
 #include "core/brain/nimcp_brain_cycle_coordinator.h"
 #include "core/brain/nimcp_brain_kg.h"  /* W17: KG consumers in training path */
 #include "core/probes/nimcp_probe_stages.h"
@@ -1650,6 +1651,20 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
     {
         emergent_bridge_t* eb = emergent_bridge_get(&brain->emergent_bridge);
         if (eb) emergent_bridge_on_learn(eb, features, num_features, label);
+    }
+
+    /* Multimodal NLP: a labelled real speech clip staged for this step
+     * (submit_sensory("speech")) -> learned sound units -> guess the word,
+     * score it, then store the clip under the label. Opt-in
+     * (NIMCP_SPEECH_UNITS=1); the staged clip is left in place for the
+     * cortex CNN / SNN paths that read it in brain_decide. */
+    {
+        multimodal_nlp_brain_t* mb = multimodal_nlp_brain_get(&brain->multimodal_nlp_state);
+        if (mb && brain->staged_sensory.speech_data &&
+            brain->staged_sensory.speech_size > 0)
+            multimodal_nlp_brain_on_learn(mb, brain->speech_cortex,
+                                          brain->staged_sensory.speech_data,
+                                          brain->staged_sensory.speech_size, label);
     }
 
     /* Phase 5A: drive the octopus module with the clean training input.

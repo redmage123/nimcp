@@ -574,3 +574,378 @@ bool multimodal_nlp_fuse_inputs(
     LOG_INFO(LOG_MODULE, "Multimodal fusion completed successfully");
     return true;
 }
+
+//=============================================================================
+// Learned spoken-word lexicon (2026-11-19)
+//=============================================================================
+
+#include "utils/thread/nimcp_thread.h"
+#include "perception/nimcp_speech_units.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+
+#define LEX_WORD_LEN 48
+#define LEX_SEQ_MAX  64
+
+typedef struct {
+    uint8_t len;
+    uint8_t seq[LEX_SEQ_MAX];
+} lex_example_t;
+
+typedef struct {
+    char word[LEX_WORD_LEN];
+    uint32_t n;          /* examples stored (<= per_word) */
+    uint32_t next;       /* ring position */
+    uint64_t seen;       /* total examples offered */
+    lex_example_t* ex;   /* [per_word] */
+} lex_entry_t;
+
+struct multimodal_nlp_lexicon {
+    uint32_t max_words, per_word, n_words;
+    lex_entry_t* entries;
+};
+
+multimodal_nlp_lexicon_t* multimodal_nlp_lexicon_create(uint32_t max_words, uint32_t per_word) {
+    if (max_words == 0 || per_word == 0) return NULL;
+    multimodal_nlp_lexicon_t* lex = nimcp_calloc(1, sizeof(*lex));
+    if (!lex) return NULL;
+    lex->max_words = max_words;
+    lex->per_word = per_word;
+    lex->entries = nimcp_calloc(max_words, sizeof(lex_entry_t));
+    if (!lex->entries) { nimcp_free(lex); return NULL; }
+    return lex;
+}
+
+void multimodal_nlp_lexicon_destroy(multimodal_nlp_lexicon_t* lex) {
+    if (!lex) return;
+    for (uint32_t i = 0; i < lex->n_words; i++) nimcp_free(lex->entries[i].ex);
+    nimcp_free(lex->entries);
+    nimcp_free(lex);
+}
+
+static lex_entry_t* lex_find(const multimodal_nlp_lexicon_t* lex, const char* word) {
+    for (uint32_t i = 0; i < lex->n_words; i++)
+        if (strcmp(lex->entries[i].word, word) == 0) return &lex->entries[i];
+    return NULL;
+}
+
+static lex_entry_t* lex_add_word(multimodal_nlp_lexicon_t* lex, const char* word) {
+    if (lex->n_words == lex->max_words) return NULL;
+    lex_entry_t* e = &lex->entries[lex->n_words];
+    e->ex = nimcp_calloc(lex->per_word, sizeof(lex_example_t));
+    if (!e->ex) return NULL;
+    snprintf(e->word, LEX_WORD_LEN, "%s", word);
+    lex->n_words++;
+    return e;
+}
+
+int multimodal_nlp_lexicon_learn(multimodal_nlp_lexicon_t* lex, const phoneme_t* seq,
+                                 uint32_t len, const char* word) {
+    if (!lex || !seq || !word || !word[0] || len == 0) return -1;
+    lex_entry_t* e = lex_find(lex, word);
+    if (!e) e = lex_add_word(lex, word);
+    if (!e) return -1;
+    lex_example_t* x = &e->ex[e->next];
+    x->len = (uint8_t)(len < LEX_SEQ_MAX ? len : LEX_SEQ_MAX);
+    for (uint32_t i = 0; i < x->len; i++) x->seq[i] = (uint8_t)seq[i];
+    e->next = (e->next + 1) % lex->per_word;
+    if (e->n < lex->per_word) e->n++;
+    e->seen++;
+    return 0;
+}
+
+/* Levenshtein distance, two-row DP. */
+static uint32_t edit_distance(const uint8_t* a, uint32_t la, const phoneme_t* b, uint32_t lb) {
+    uint32_t prev[LEX_SEQ_MAX + 1], cur[LEX_SEQ_MAX + 1];
+    if (lb > LEX_SEQ_MAX) lb = LEX_SEQ_MAX;
+    for (uint32_t j = 0; j <= lb; j++) prev[j] = j;
+    for (uint32_t i = 1; i <= la; i++) {
+        cur[0] = i;
+        for (uint32_t j = 1; j <= lb; j++) {
+            uint32_t sub = prev[j - 1] + (a[i - 1] == (uint8_t)b[j - 1] ? 0u : 1u);
+            uint32_t del = prev[j] + 1, ins = cur[j - 1] + 1;
+            cur[j] = sub < del ? (sub < ins ? sub : ins) : (del < ins ? del : ins);
+        }
+        memcpy(prev, cur, (lb + 1) * sizeof(uint32_t));
+    }
+    return prev[lb];
+}
+
+int multimodal_nlp_lexicon_recognize(const multimodal_nlp_lexicon_t* lex, const phoneme_t* seq,
+                                     uint32_t len, char* word, uint32_t word_size,
+                                     float* confidence) {
+    if (!lex || !seq || !word || word_size == 0) return -1;
+    word[0] = '\0';
+    if (lex->n_words == 0 || len == 0) return 0;
+    uint32_t lb = len < LEX_SEQ_MAX ? len : LEX_SEQ_MAX;
+    float best = 2.0f; const lex_entry_t* bw = NULL;
+    for (uint32_t i = 0; i < lex->n_words; i++) {
+        const lex_entry_t* e = &lex->entries[i];
+        for (uint32_t k = 0; k < e->n; k++) {
+            const lex_example_t* x = &e->ex[k];
+            uint32_t m = x->len > lb ? x->len : lb;
+            float d = m ? (float)edit_distance(x->seq, x->len, seq, lb) / (float)m : 1.0f;
+            /* Ties go to the word heard more often (a frequency prior). */
+            if (d < best || (d == best && bw && e->seen > bw->seen)) { best = d; bw = e; }
+        }
+    }
+    if (!bw) return 0;
+    snprintf(word, word_size, "%s", bw->word);
+    if (confidence) *confidence = 1.0f - best;
+    return 1;
+}
+
+uint32_t multimodal_nlp_lexicon_num_words(const multimodal_nlp_lexicon_t* lex) {
+    return lex ? lex->n_words : 0;
+}
+
+int multimodal_nlp_lexicon_save(const multimodal_nlp_lexicon_t* lex, const char* path) {
+    if (!lex || !path) return -1;
+    FILE* fp = fopen(path, "w");
+    if (!fp) return -1;
+    fprintf(fp, "MMLEX 1 %u %u\n", lex->n_words, lex->per_word);
+    for (uint32_t i = 0; i < lex->n_words; i++) {
+        const lex_entry_t* e = &lex->entries[i];
+        char w[LEX_WORD_LEN];
+        snprintf(w, sizeof(w), "%s", e->word);
+        for (char* c = w; *c; c++) if (*c == ' ') *c = '_';
+        fprintf(fp, "W %s %u %u %llu\n", w, e->n, e->next, (unsigned long long)e->seen);
+        for (uint32_t k = 0; k < e->n; k++) {
+            fprintf(fp, "%u", e->ex[k].len);
+            for (uint32_t j = 0; j < e->ex[k].len; j++) fprintf(fp, " %u", e->ex[k].seq[j]);
+            fprintf(fp, "\n");
+        }
+    }
+    return fclose(fp) == 0 ? 0 : -1;
+}
+
+int multimodal_nlp_lexicon_load(multimodal_nlp_lexicon_t* lex, const char* path) {
+    if (!lex || !path) return -1;
+    FILE* fp = fopen(path, "r");
+    if (!fp) return -1;
+    unsigned ver, nw, pw;
+    if (fscanf(fp, "MMLEX %u %u %u", &ver, &nw, &pw) != 3 || ver != 1) { fclose(fp); return -1; }
+    for (uint32_t i = 0; i < nw; i++) {
+        char w[LEX_WORD_LEN]; unsigned n, next; unsigned long long seen;
+        if (fscanf(fp, " W %47s %u %u %llu", w, &n, &next, &seen) != 4) break;
+        for (char* c = w; *c; c++) if (*c == '_') *c = ' ';
+        lex_entry_t* e = lex_find(lex, w);
+        if (!e) e = lex_add_word(lex, w);
+        for (uint32_t k = 0; k < n; k++) {
+            unsigned len;
+            if (fscanf(fp, "%u", &len) != 1) { fclose(fp); return -1; }
+            lex_example_t x; memset(&x, 0, sizeof(x));
+            x.len = (uint8_t)(len < LEX_SEQ_MAX ? len : LEX_SEQ_MAX);
+            for (uint32_t j = 0; j < len; j++) {
+                unsigned v;
+                if (fscanf(fp, "%u", &v) != 1) { fclose(fp); return -1; }
+                if (j < LEX_SEQ_MAX) x.seq[j] = (uint8_t)v;
+            }
+            if (e && k < lex->per_word) { e->ex[k] = x; }
+        }
+        if (e) {
+            e->n = n < lex->per_word ? n : lex->per_word;
+            e->next = next % lex->per_word;
+            e->seen = seen;
+        }
+    }
+    fclose(fp);
+    return 0;
+}
+
+//=============================================================================
+// Brain integration
+//=============================================================================
+
+#define MMB_LABELS 512
+
+struct multimodal_nlp_brain {
+    multimodal_nlp_lexicon_t* lex;
+    nimcp_mutex_t* lock;
+    uint64_t last_clip_hash;
+    uint64_t clips, empty_clips, predictions, hits, majority_hits, units_total;
+    struct { char w[LEX_WORD_LEN]; uint64_t n; } labels[MMB_LABELS];
+    uint32_t n_labels, majority;
+    char last_heard[LEX_WORD_LEN];
+    char path[600];
+    /* Own sound-unit model, used when the brain has no speech cortex
+     * (checkpoint-loaded brains often don't build one). */
+    speech_units_t* units;
+    char units_path[600];
+};
+
+static bool mmb_enabled(void) {
+    static int on = -1;
+    if (on < 0) { const char* v = getenv("NIMCP_SPEECH_UNITS"); on = (v && v[0] == '1'); }
+    return on == 1;
+}
+
+static multimodal_nlp_brain_t* mmb_create(void) {
+    multimodal_nlp_brain_t* mb = nimcp_calloc(1, sizeof(*mb));
+    if (!mb) return NULL;
+    mb->lex = multimodal_nlp_lexicon_create(1024, 16);
+    mb->lock = nimcp_mutex_create(NULL);
+    if (!mb->lex || !mb->lock) { multimodal_nlp_brain_destroy(mb); return NULL; }
+    const char* p = getenv("NIMCP_SPEECH_UNITS_PATH");
+    if (p && p[0]) {
+        snprintf(mb->path, sizeof(mb->path), "%s.lex", p);
+        if (multimodal_nlp_lexicon_load(mb->lex, mb->path) == 0)
+            LOG_INFO(LOG_MODULE, "spoken-word lexicon loaded from %s (%u words)",
+                     mb->path, multimodal_nlp_lexicon_num_words(mb->lex));
+        snprintf(mb->units_path, sizeof(mb->units_path), "%s.bridge.units", p);
+    }
+    return mb;
+}
+
+multimodal_nlp_brain_t* multimodal_nlp_brain_get(void* const* slot) {
+    return slot ? (multimodal_nlp_brain_t*)__atomic_load_n(slot, __ATOMIC_ACQUIRE) : NULL;
+}
+
+multimodal_nlp_brain_t* multimodal_nlp_brain_for(void** slot) {
+    if (!mmb_enabled() || !slot) return NULL;
+    multimodal_nlp_brain_t* mb = multimodal_nlp_brain_get(slot);
+    if (mb) return mb;
+    multimodal_nlp_brain_t* fresh = mmb_create();
+    if (!fresh) return NULL;
+    multimodal_nlp_brain_t* expected = NULL;
+    if (__atomic_compare_exchange_n((multimodal_nlp_brain_t**)slot, &expected, fresh, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return fresh;
+    multimodal_nlp_brain_destroy(fresh);
+    return expected;
+}
+
+static void mmb_save(multimodal_nlp_brain_t* mb) {
+    char tmp[700];
+    if (mb->path[0] && mb->lex) {
+        snprintf(tmp, sizeof(tmp), "%s.tmp", mb->path);
+        if (multimodal_nlp_lexicon_save(mb->lex, tmp) == 0) rename(tmp, mb->path);
+    }
+    if (mb->units_path[0] && mb->units) {
+        snprintf(tmp, sizeof(tmp), "%s.tmp", mb->units_path);
+        if (speech_units_save(mb->units, tmp) == 0) rename(tmp, mb->units_path);
+    }
+}
+
+/* Segment a clip: through the speech cortex when the brain has one
+ * (NIMCP_SPEECH_UNITS makes detect_phonemes real), else through the
+ * bridge's own unit model. Returns units written to seq. Lock held. */
+static uint32_t mmb_segment(multimodal_nlp_brain_t* mb, speech_cortex_t* sc,
+                            const float* speech, uint32_t n, phoneme_t* seq, uint32_t cap) {
+    if (sc) {
+        phoneme_event_t ev[64];
+        uint32_t nd = 0;
+        if (cap > 64) cap = 64;
+        if (!speech_cortex_detect_phonemes(sc, speech, n, ev, cap, &nd)) return 0;
+        for (uint32_t i = 0; i < nd; i++) seq[i] = ev[i].phoneme;
+        return nd;
+    }
+    if (!mb->units) {
+        mb->units = speech_units_create(16000, SPEECH_NUM_PHONEMES);
+        if (!mb->units) return 0;
+        if (mb->units_path[0] && speech_units_load(mb->units, mb->units_path) == 0)
+            LOG_INFO(LOG_MODULE, "bridge sound units loaded from %s", mb->units_path);
+    }
+    speech_unit_seg_t segs[64];
+    if (cap > 64) cap = 64;
+    int k = speech_units_segment(mb->units, speech, n, true, segs, cap);
+    if (k <= 0) return 0;
+    for (int i = 0; i < k; i++) seq[i] = (phoneme_t)(segs[i].unit % SPEECH_NUM_PHONEMES);
+    return (uint32_t)k;
+}
+
+void multimodal_nlp_brain_destroy(multimodal_nlp_brain_t* mb) {
+    if (!mb) return;
+    if (mb->lock) mmb_save(mb);
+    multimodal_nlp_lexicon_destroy(mb->lex);
+    if (mb->units) speech_units_destroy(mb->units);
+    if (mb->lock) nimcp_mutex_free(mb->lock);
+    nimcp_free(mb);
+}
+
+static uint64_t clip_hash(const float* v, uint32_t n) {
+    const unsigned char* p = (const unsigned char*)v;
+    size_t bytes = (size_t)(n < 512 ? n : 512) * sizeof(float);
+    uint64_t h = 1469598103934665603ULL ^ n;
+    for (size_t i = 0; i < bytes; i++) { h ^= p[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+static void normalise_label(const char* in, char* out, size_t n) {
+    size_t j = 0;
+    while (*in && isspace((unsigned char)*in)) in++;
+    for (; *in && j + 1 < n; in++) out[j++] = (char)tolower((unsigned char)*in);
+    while (j > 0 && isspace((unsigned char)out[j - 1])) j--;
+    out[j] = '\0';
+}
+
+void multimodal_nlp_brain_on_learn(multimodal_nlp_brain_t* mb, speech_cortex_t* speech_cortex,
+                                   const float* speech, uint32_t num_samples,
+                                   const char* label) {
+    if (!mb || !speech || num_samples == 0 || !label || !label[0]) return;
+    char word[LEX_WORD_LEN];
+    normalise_label(label, word, sizeof(word));
+    if (!word[0]) return;
+    uint64_t h = clip_hash(speech, num_samples);
+
+    nimcp_mutex_lock(mb->lock);
+    if (h == mb->last_clip_hash) {   /* same staged clip, another learn step */
+        nimcp_mutex_unlock(mb->lock);
+        return;
+    }
+    mb->last_clip_hash = h;
+    mb->clips++;
+
+    phoneme_t seq[64];
+    uint32_t nd = mmb_segment(mb, speech_cortex, speech, num_samples, seq, 64);
+    if (nd == 0) {
+        mb->empty_clips++;
+        nimcp_mutex_unlock(mb->lock);
+        return;
+    }
+    mb->units_total += nd;
+
+    /* Guess first (held-out), then learn. */
+    char guess[LEX_WORD_LEN];
+    float conf = 0.0f;
+    if (multimodal_nlp_lexicon_recognize(mb->lex, seq, nd, guess, sizeof(guess), &conf) == 1) {
+        mb->predictions++;
+        if (strcmp(guess, word) == 0) mb->hits++;
+        snprintf(mb->last_heard, sizeof(mb->last_heard), "%s", guess);
+    }
+    if (mb->n_labels > 0 && strcmp(mb->labels[mb->majority].w, word) == 0) mb->majority_hits++;
+    uint32_t li;
+    for (li = 0; li < mb->n_labels; li++) if (strcmp(mb->labels[li].w, word) == 0) break;
+    if (li == mb->n_labels && mb->n_labels < MMB_LABELS) {
+        snprintf(mb->labels[li].w, LEX_WORD_LEN, "%s", word);
+        mb->n_labels++;
+    }
+    if (li < mb->n_labels) {
+        mb->labels[li].n++;
+        if (mb->labels[li].n > mb->labels[mb->majority].n) mb->majority = li;
+    }
+    multimodal_nlp_lexicon_learn(mb->lex, seq, nd, word);
+    if (mb->clips % 500 == 0) mmb_save(mb);
+    nimcp_mutex_unlock(mb->lock);
+}
+
+int multimodal_nlp_brain_get_stats(multimodal_nlp_brain_t* mb, speech_cortex_t* speech_cortex,
+                                   multimodal_nlp_brain_stats_t* out) {
+    if (!mb || !out) return -1;
+    memset(out, 0, sizeof(*out));
+    nimcp_mutex_lock(mb->lock);
+    out->clips = mb->clips;
+    out->empty_clips = mb->empty_clips;
+    out->predictions = mb->predictions;
+    out->hits = mb->hits;
+    out->majority_hits = mb->majority_hits;
+    out->words = multimodal_nlp_lexicon_num_words(mb->lex);
+    uint64_t nonempty = mb->clips - mb->empty_clips;
+    out->mean_units = nonempty ? (float)mb->units_total / (float)nonempty : 0.0f;
+    snprintf(out->last_heard, sizeof(out->last_heard), "%s", mb->last_heard);
+    nimcp_mutex_unlock(mb->lock);
+    out->units_seeded = speech_cortex ? speech_cortex_units_seeded(speech_cortex)
+                                      : speech_units_num_seeded(mb->units);
+    return 0;
+}
