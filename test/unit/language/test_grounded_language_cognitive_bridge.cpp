@@ -198,7 +198,6 @@ TEST_F(GLCogBridge, AttachHelpersNullModuleIsSafe) {
     grounded_language_attach_narrative(gl, nullptr);
     grounded_language_attach_metacognition(gl, nullptr);
     grounded_language_attach_analogical(gl, nullptr);
-    grounded_language_attach_emergent_language(gl, nullptr);
     /* All NULL → must not crash and must not register subscribers. */
     EXPECT_EQ(0u, grounded_language_subscriber_count(gl));
 }

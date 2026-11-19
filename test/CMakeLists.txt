@@ -925,15 +925,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/networking/exception")
 endif()
 
 # ============================================================================
-# NLP Immune Bridge Tests
-# ============================================================================
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/unit/nlp/immune")
-    message(STATUS "Adding NLP immune bridge unit tests...")
-    add_subdirectory(unit/nlp/immune)
-endif()
-
-# ============================================================================
 # Brain Factory Tests
 # ============================================================================
 

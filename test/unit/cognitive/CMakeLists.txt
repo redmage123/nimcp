@@ -2748,16 +2748,6 @@ target_compile_features(unit_cognitive_test_social_interaction PRIVATE cxx_std_1
 gtest_discover_tests(unit_cognitive_test_social_interaction WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     PROPERTIES LABELS "unit;cognitive;social" TIMEOUT 60)
 
-# ============================================================================
-# Emergent Language Tests
-# ============================================================================
-add_executable(unit_cognitive_test_emergent test_emergent_language.cpp)
-target_link_libraries(unit_cognitive_test_emergent PRIVATE nimcp GTest::gtest GTest::gtest_main Threads::Threads m)
-target_include_directories(unit_cognitive_test_emergent PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src)
-target_compile_features(unit_cognitive_test_emergent PRIVATE cxx_std_17)
-gtest_discover_tests(unit_cognitive_test_emergent WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    PROPERTIES LABELS "unit;cognitive;emergent" TIMEOUT 60)
-
 # Memory Features (involuntary recall, emotional protection)
 add_executable(unit_cognitive_test_memory_features test_memory_features.cpp)
 target_link_libraries(unit_cognitive_test_memory_features PRIVATE nimcp GTest::gtest GTest::gtest_main Threads::Threads m)

@@ -94,7 +94,6 @@ struct language_orchestrator {
     broca_adapter_t* broca;
     nlp_network_t nlp_network;
     speech_cortex_t* speech_cortex;
-    multimodal_nlp_bridge_t* multimodal;
 
     /* Bridge connections */
     language_perception_bridge_t* perception_bridge;

@@ -652,8 +652,6 @@ set(NIMCP_CORE_SOURCES
     # NLP Integration - NIMCP 2.7 (combines synapses + attention + neuromodulation)
     # Note: networking/nlp version uses networking_nlp prefix to avoid conflict
     ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/nimcp_nlp.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/nimcp_spike_nlp.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/nimcp_multimodal_nlp_bridge.c
 
     # Cognitive functions
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/ethics/nimcp_ethics.c
@@ -2321,9 +2319,6 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../networking/immune/nimcp_p2p_immune_bridge.c  # P2P network-immune integration
 
     # NLP-Immune Integration (Phase BII-L: Language processing immune bridges)
-    ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_nlp_immune_bridge.c  # NLP-immune integration (language impairment)
-    ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_spike_nlp_immune_bridge.c  # Spike NLP-immune integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_multimodal_nlp_immune_bridge.c  # Multimodal NLP-immune integration
 
     # Language Layer (Phase L5: Unified language processing orchestration)
     ${CMAKE_CURRENT_SOURCE_DIR}/../language/nimcp_language_orchestrator.c     # Language layer coordinator
@@ -3246,7 +3241,6 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_native_language.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_tokenizer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_inner_speech.c       # Inner speech loop (iterative self-refinement)
-    ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/language/nimcp_emergent_language.c  # Emergent language (vocabulary from neural patterns)
 
     # Episodic Replay (sleep consolidation)
     ${CMAKE_CURRENT_SOURCE_DIR}/../cognitive/memory/nimcp_episodic_replay.c     # Episodic replay during sleep/consolidation
