@@ -47,6 +47,7 @@ struct wernicke_nlp_bridge {
     speech_cortex_t* speech_cortex;
     nlp_network_t nlp_network;           /* Already a pointer type */
     semantic_memory_system_t* semantic_memory;
+    multimodal_nlp_bridge_t* multimodal;
     brain_kg_t* knowledge_graph;
     working_memory_t* working_memory;
 
@@ -54,6 +55,7 @@ struct wernicke_nlp_bridge {
     bool speech_cortex_connected;
     bool nlp_network_connected;
     bool semantic_memory_connected;
+    bool multimodal_connected;
     bool kg_connected;
     bool wm_connected;
     bool bio_async_connected;
@@ -466,6 +468,29 @@ int wernicke_nlp_connect_semantic_memory(
 
     if (bridge->semantic_memory_connected) {
         LOG_DEBUG(LOG_MODULE, "Connected to semantic memory");
+    }
+
+    return 0;
+}
+
+int wernicke_nlp_connect_multimodal(
+    wernicke_nlp_bridge_t* bridge,
+    multimodal_nlp_bridge_t* multimodal)
+{
+    if (!bridge) {
+
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "bridge is NULL");
+
+        return -1;
+
+    }
+    if (!bridge->config.enable_multimodal) return 0;
+
+    bridge->multimodal = multimodal;
+    bridge->multimodal_connected = (multimodal != NULL);
+
+    if (bridge->multimodal_connected) {
+        LOG_DEBUG(LOG_MODULE, "Connected to multimodal NLP bridge");
     }
 
     return 0;

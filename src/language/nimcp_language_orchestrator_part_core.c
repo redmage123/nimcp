@@ -149,6 +149,21 @@ int language_orchestrator_connect_speech_cortex(
 }
 
 
+int language_orchestrator_connect_multimodal(
+    language_orchestrator_t* orchestrator,
+    multimodal_nlp_bridge_t* multimodal)
+{
+    if (!orchestrator) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "language_orchestrator_connect_multimodal: NULL orchestrator");
+        return -1;
+    }
+
+    orchestrator->multimodal = multimodal;
+
+    return 0;
+}
+
+
 //=============================================================================
 // Bridge Connection API
 //=============================================================================

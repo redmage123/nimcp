@@ -3129,6 +3129,9 @@ void grounded_language_attach_metacognition(grounded_language_t* gl, void* mod);
  *  search against existing concepts. */
 void grounded_language_attach_analogical(grounded_language_t* gl, void* mod);
 
+/** Attach emergent-language module: GROUNDED + PRODUCED events
+ *  feed the emergent-symbol learner. */
+void grounded_language_attach_emergent_language(grounded_language_t* gl, void* mod);
 
 /*--------------------------------------------------------------------------
  * Brain-region subscribers — anatomical regions that should observe

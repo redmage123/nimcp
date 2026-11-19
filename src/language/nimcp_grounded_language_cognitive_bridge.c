@@ -407,6 +407,19 @@ static int _wrap_analogical(void* ctx, const gl_event_t* ev) {
     return 0;
 }
 
+static int _wrap_emergent_language(void* ctx, const gl_event_t* ev) {
+    if (!ctx || !ev) return -1;
+    if (ev->type != GL_EVENT_GROUNDED &&
+        ev->type != GL_EVENT_PRODUCED) return 0;
+    /* Skip negative-grounding markers — emergent language learns from
+     * positive examples, not anti-pairs. */
+    if (ev->type == GL_EVENT_GROUNDED &&
+        (ev->concept_id == 0 || ev->confidence < 0.0f)) return 0;
+    LOG_DEBUG(LOG_MODULE, "emergent_lang feed type=%d word='%s'",
+               (int)ev->type, ev->word ? ev->word : "(null)");
+    return 0;
+}
+
 /*=============================================================================
  * Brain-region wrappers — anatomical regions that observe language
  * events in their own modality. Each wrapper logs the observation;
@@ -521,6 +534,7 @@ _GL_DEFINE_ATTACH(reasoning,          _wrap_reasoning)
 _GL_DEFINE_ATTACH(narrative,          _wrap_narrative)
 _GL_DEFINE_ATTACH(metacognition,      _wrap_metacognition)
 _GL_DEFINE_ATTACH(analogical,         _wrap_analogical)
+_GL_DEFINE_ATTACH(emergent_language,  _wrap_emergent_language)
 _GL_DEFINE_ATTACH(prefrontal,         _wrap_prefrontal)
 _GL_DEFINE_ATTACH(insula,             _wrap_insula)
 _GL_DEFINE_ATTACH(cingulate,          _wrap_cingulate)

@@ -91,6 +91,9 @@ target_link_libraries(test_pink_weights nimcp m)
 target_include_directories(test_pink_weights PRIVATE ${NIMCP_INCLUDE_DIR})
 
 # NIMCP 2.7 Phase 3 - Integration Test
+add_executable(test_phase3 test_phase3.c)
+target_link_libraries(test_phase3 nimcp m)
+target_include_directories(test_phase3 PRIVATE ${NIMCP_INCLUDE_DIR})
 
 # NIMCP 2.7 Phase 4 - STDP + Eligibility Traces Test (Simplified)
 add_executable(test_phase4 test_phase4_simple.c)

@@ -67,6 +67,7 @@ typedef struct broca_adapter broca_adapter_t;
 struct nlp_network_struct;
 typedef struct nlp_network_struct* nlp_network_t;
 typedef struct speech_cortex speech_cortex_t;
+typedef struct multimodal_nlp_bridge multimodal_nlp_bridge_t;
 
 /* Language Layer Bridges */
 typedef struct language_perception_bridge language_perception_bridge_t;
@@ -250,6 +251,18 @@ int language_orchestrator_connect_nlp(
 int language_orchestrator_connect_speech_cortex(
     language_orchestrator_t* orchestrator,
     speech_cortex_t* speech
+);
+
+/**
+ * @brief Connect multimodal NLP bridge
+ *
+ * @param orchestrator Orchestrator instance
+ * @param multimodal Multimodal NLP bridge instance
+ * @return 0 on success, -1 on error
+ */
+int language_orchestrator_connect_multimodal(
+    language_orchestrator_t* orchestrator,
+    multimodal_nlp_bridge_t* multimodal
 );
 
 //=============================================================================

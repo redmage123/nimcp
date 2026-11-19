@@ -77,6 +77,8 @@ struct speech_cortex;
 typedef struct speech_cortex speech_cortex_t;
 
 /* Multimodal NLP bridge */
+struct multimodal_nlp_bridge;
+typedef struct multimodal_nlp_bridge multimodal_nlp_bridge_t;
 
 /* Knowledge graph */
 struct brain_kg;
@@ -387,6 +389,22 @@ int wernicke_nlp_connect_nlp_network(
 int wernicke_nlp_connect_semantic_memory(
     wernicke_nlp_bridge_t* bridge,
     semantic_memory_system_t* semantic_memory
+);
+
+/**
+ * @brief Connect to multimodal NLP bridge
+ *
+ * WHAT: Establish connection for cross-modal integration
+ * WHY:  Language comprehension can involve audio, visual, or both
+ * HOW:  Register for multimodal fusion events
+ *
+ * @param bridge Bridge handle
+ * @param multimodal Multimodal NLP bridge instance
+ * @return 0 on success, -1 on error
+ */
+int wernicke_nlp_connect_multimodal(
+    wernicke_nlp_bridge_t* bridge,
+    multimodal_nlp_bridge_t* multimodal
 );
 
 /**
