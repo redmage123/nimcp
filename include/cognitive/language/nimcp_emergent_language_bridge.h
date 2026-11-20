@@ -23,7 +23,12 @@
  * Opt-in: NIMCP_EMERGENT_LANGUAGE=1 at brain creation (default OFF; no
  * bridge is created otherwise and the hooks are no-ops).
  * Persistence: NIMCP_EMERGENT_LANGUAGE_PATH=<file> loads at creation if
- * the file exists, saves every 5000 observations and at destroy.
+ * the file exists, saves every 5000 observations, every
+ * NIMCP_EMERGENT_SAVE_SECS (default 300; 0 = off) and at destroy.
+ * NIMCP_EMERGENT_DISCOVERY=<d> overrides the new-token cosine distance
+ * (default 0.3: a new token when the nearest is below cosine 0.7).
+ * Every 1000 observations a progress line is logged: hit rates overall and
+ * on never-seen inputs, and the nearest-token cosine histogram.
  */
 #ifndef NIMCP_EMERGENT_LANGUAGE_BRIDGE_H
 #define NIMCP_EMERGENT_LANGUAGE_BRIDGE_H
@@ -50,6 +55,14 @@ typedef struct {
     uint32_t distinct_labels;   /* labels seen (capped at the tracking table size) */
     uint64_t decide_observations; /* of observations: from brain_decide */
     uint64_t learn_observations;  /* of observations: from labelled learn steps */
+    /* Generalisation: the same scoring, restricted to inputs never observed
+     * before (replays of a seen item excluded). */
+    uint64_t novel_labeled;
+    uint64_t novel_predictions;
+    uint64_t novel_hits;
+    uint64_t novel_majority_hits;
+    uint64_t new_tokens;          /* observations that created a token */
+    uint64_t nearest_sim_hist[11];/* nearest-token cosine at observe: [none, <.1, .1-.2, ..., >=.9] */
 } emergent_bridge_stats_t;
 
 /** Create from environment. Returns NULL unless NIMCP_EMERGENT_LANGUAGE=1. */
@@ -69,7 +82,8 @@ void emergent_bridge_on_learn(emergent_bridge_t* b, const float* features,
 
 /** Observe the brain's own output for a labelled training input (read
  *  before the step's weight update) and vote the label onto its token. */
-void emergent_bridge_on_learn_output(emergent_bridge_t* b, const float* output,
+void emergent_bridge_on_learn_output(emergent_bridge_t* b, const float* features,
+                                     uint32_t num_features, const float* output,
                                      uint32_t output_size, const char* label);
 
 /** NIMCP_EMERGENT_OBSERVE_LEARN != "0" (default on, read once). */

@@ -746,16 +746,21 @@ TEST(EmergentLanguageBridge, LearnTimeOutputsCarryTheirLabels) {
     std::vector<float> cat(dim), dog(dim), v(dim);
     for (uint32_t i = 0; i < dim; i++) { cat[i] = (i < 8) ? 1.0f : 0.0f; dog[i] = (i < 8) ? 0.0f : 1.0f; }
     // Two clearly separate outputs, each always taught with its own word.
+    // Every training input is distinct, so every observation is novel.
+    std::vector<float> in_feat(4);
     for (int r = 0; r < 20; r++) {
+        in_feat = {1.0f, (float)r, 0.0f, 0.0f};
         fill_similar_embedding(v.data(), cat.data(), dim, 0.02f * (r % 3));
-        emergent_bridge_on_learn_output(b, v.data(), dim, "cat");
+        emergent_bridge_on_learn_output(b, in_feat.data(), 4, v.data(), dim, "cat");
+        in_feat = {2.0f, (float)r, 0.0f, 0.0f};
         fill_similar_embedding(v.data(), dog.data(), dim, 0.02f * (r % 3));
-        emergent_bridge_on_learn_output(b, v.data(), dim, "dog");
+        emergent_bridge_on_learn_output(b, in_feat.data(), 4, v.data(), dim, "dog");
     }
     // Unlabelled and invalid calls are ignored.
-    emergent_bridge_on_learn_output(b, cat.data(), dim, "");
-    emergent_bridge_on_learn_output(b, cat.data(), dim, nullptr);
-    emergent_bridge_on_learn_output(nullptr, cat.data(), dim, "cat");
+    emergent_bridge_on_learn_output(b, in_feat.data(), 4, cat.data(), dim, "");
+    emergent_bridge_on_learn_output(b, in_feat.data(), 4, cat.data(), dim, nullptr);
+    emergent_bridge_on_learn_output(b, nullptr, 4, cat.data(), dim, "cat");
+    emergent_bridge_on_learn_output(nullptr, in_feat.data(), 4, cat.data(), dim, "cat");
 
     emergent_bridge_stats_t s;
     ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
@@ -770,6 +775,23 @@ TEST(EmergentLanguageBridge, LearnTimeOutputsCarryTheirLabels) {
     // nearly every time; always guessing one word gets about half.
     EXPECT_GT((double)s.hits / s.predictions, 0.9);
     EXPECT_LT((double)s.majority_hits / s.labeled_decides, 0.6);
+    // All inputs were new: the novel counters equal the overall ones.
+    EXPECT_EQ(s.novel_labeled, 40u);
+    EXPECT_EQ(s.novel_predictions, s.predictions);
+    EXPECT_EQ(s.novel_hits, s.hits);
+    EXPECT_EQ(s.new_tokens, (uint64_t)s.vocab_size);
+    uint64_t hist_total = 0;
+    for (int i = 0; i < 11; i++) hist_total += s.nearest_sim_hist[i];
+    EXPECT_EQ(hist_total, s.observations);
+    EXPECT_EQ(s.nearest_sim_hist[0], 1u);          // only the very first had no token
+    EXPECT_GE(s.nearest_sim_hist[10], 30u);        // later ones sit near their token
+
+    // A replay of an input already seen counts overall but not as novel.
+    in_feat = {1.0f, 3.0f, 0.0f, 0.0f};
+    emergent_bridge_on_learn_output(b, in_feat.data(), 4, cat.data(), dim, "cat");
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.learn_observations, 41u);
+    EXPECT_EQ(s.novel_labeled, 40u);
 
     // The symbols for a cat-like output come from the cat token.
     char text[64];
@@ -784,11 +806,48 @@ TEST(EmergentLanguageBridge, LearnTimeOutputsCarryTheirLabels) {
     emergent_bridge_on_decide(b, other.data(), 4, cat.data(), dim);
     ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
     EXPECT_EQ(s.decide_observations, 2u);
-    EXPECT_EQ(s.labeled_decides, 41u);
+    EXPECT_EQ(s.labeled_decides, 42u);
     // A different output size is a different head: ignored.
     std::vector<float> wide(dim * 2, 1.0f);
-    emergent_bridge_on_learn_output(b, wide.data(), dim * 2, "cat");
+    emergent_bridge_on_learn_output(b, in_feat.data(), 4, wide.data(), dim * 2, "cat");
     ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
-    EXPECT_EQ(s.learn_observations, 40u);
+    EXPECT_EQ(s.learn_observations, 41u);
     emergent_bridge_destroy(b);
+}
+
+TEST(EmergentLanguageBridge, TimedSaveAndDiscoveryOverride) {
+    setenv("NIMCP_EMERGENT_LANGUAGE", "1", 1);
+    char path[] = "/tmp/emergent_bridge_XXXXXX";
+    int fd = mkstemp(path); ASSERT_GE(fd, 0); close(fd); remove(path);
+    setenv("NIMCP_EMERGENT_LANGUAGE_PATH", path, 1);
+    setenv("NIMCP_EMERGENT_SAVE_SECS", "1", 1);
+    setenv("NIMCP_EMERGENT_DISCOVERY", "0.9", 1);   // new token only below cosine 0.1
+    emergent_bridge_t* b = emergent_bridge_create_from_env();
+    ASSERT_NE(b, nullptr);
+    const uint32_t dim = 8;
+    std::vector<float> f(2), a(dim, 0.0f), c(dim, 0.0f);
+    a[0] = 1.0f; a[1] = 1.0f;                // cosine(a, c) = 0.5
+    c[0] = 1.0f; c[2] = 1.0f;
+    f = {1.0f, 0.0f};
+    emergent_bridge_on_learn_output(b, f.data(), 2, a.data(), dim, "x");
+    f = {2.0f, 0.0f};
+    emergent_bridge_on_learn_output(b, f.data(), 2, c.data(), dim, "y");
+    emergent_bridge_stats_t s;
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.vocab_size, 1u);             // default 0.3 would have made two
+    EXPECT_EQ(s.nearest_sim_hist[6], 1u);    // the second sat at cosine 0.5
+    FILE* probe = fopen(path, "rb");
+    EXPECT_EQ(probe, nullptr);               // nothing saved yet
+    if (probe) fclose(probe);
+    usleep(1100 * 1000);
+    f = {3.0f, 0.0f};
+    emergent_bridge_on_learn_output(b, f.data(), 2, a.data(), dim, "x");
+    probe = fopen(path, "rb");
+    EXPECT_NE(probe, nullptr);               // the timer fired on this observation
+    if (probe) fclose(probe);
+    emergent_bridge_destroy(b);
+    remove(path);
+    unsetenv("NIMCP_EMERGENT_LANGUAGE_PATH");
+    unsetenv("NIMCP_EMERGENT_SAVE_SECS");
+    unsetenv("NIMCP_EMERGENT_DISCOVERY");
 }

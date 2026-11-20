@@ -4321,8 +4321,8 @@ static PyObject* Brain_get_emergent_stats(BrainObject* self,
         PyErr_SetString(PyExc_RuntimeError, "get_emergent_stats failed");
         return NULL;
     }
-    return Py_BuildValue(
-        "{s:O,s:I,s:I,s:I,s:f,s:K,s:K,s:K,s:K,s:K,s:I,s:K,s:K}",
+    PyObject* d = Py_BuildValue(
+        "{s:O,s:I,s:I,s:I,s:f,s:K,s:K,s:K,s:K,s:K,s:I,s:K,s:K,s:K,s:K,s:K,s:K,s:K}",
         "enabled", s.enabled ? Py_True : Py_False,
         "vocab_size", s.vocab_size, "active_tokens", s.active_tokens,
         "labeled_tokens", s.labeled_tokens, "purity", (double)s.purity,
@@ -4333,7 +4333,20 @@ static PyObject* Brain_get_emergent_stats(BrainObject* self,
         "majority_hits", (unsigned long long)s.majority_hits,
         "distinct_labels", s.distinct_labels,
         "decide_observations", (unsigned long long)s.decide_observations,
-        "learn_observations", (unsigned long long)s.learn_observations);
+        "learn_observations", (unsigned long long)s.learn_observations,
+        "novel_labeled", (unsigned long long)s.novel_labeled,
+        "novel_predictions", (unsigned long long)s.novel_predictions,
+        "novel_hits", (unsigned long long)s.novel_hits,
+        "novel_majority_hits", (unsigned long long)s.novel_majority_hits,
+        "new_tokens", (unsigned long long)s.new_tokens);
+    if (!d) return NULL;
+    PyObject* hist = PyList_New(11);
+    if (!hist) { Py_DECREF(d); return NULL; }
+    for (int i = 0; i < 11; i++)
+        PyList_SET_ITEM(hist, i, PyLong_FromUnsignedLongLong(s.nearest_sim_hist[i]));
+    PyDict_SetItemString(d, "nearest_sim_hist", hist);
+    Py_DECREF(hist);
+    return d;
 }
 
 static PyObject* Brain_get_speech_lexicon_stats(BrainObject* self,

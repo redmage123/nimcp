@@ -77,6 +77,11 @@ int nimcp_emergent_observe(nimcp_emergent_language_t* el,
 int nimcp_emergent_observe_ex(nimcp_emergent_language_t* el,
     const float* brain_output, uint32_t output_dim, uint32_t* out_token_id);
 
+/* Cosine similarity between the most recently observed output and its
+ * nearest token at that moment (before any update); -2 when there was no
+ * token yet. Read under the caller's own serialisation. */
+float nimcp_emergent_last_best_similarity(const nimcp_emergent_language_t* el);
+
 /* === Express: Convert brain state to emergent token sequence === */
 int nimcp_emergent_express(nimcp_emergent_language_t* el,
     const float* brain_output, uint32_t output_dim,

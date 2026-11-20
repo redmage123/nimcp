@@ -76,6 +76,9 @@ struct nimcp_emergent_language {
 
     nimcp_mutex_t* lock;
     uint32_t rng_state;
+
+    /* Nearest-token cosine of the most recent observe (-2 = no token yet) */
+    float last_best_sim;
 };
 
 /* ======================================================================== */
@@ -257,6 +260,10 @@ static void _add_votes(_votes_t* vt, const char* word, uint32_t count) {
 /* Lifecycle                                                                  */
 /* ======================================================================== */
 
+float nimcp_emergent_last_best_similarity(const nimcp_emergent_language_t* el) {
+    return el ? el->last_best_sim : -2.0f;
+}
+
 nimcp_emergent_config_t nimcp_emergent_config_default(void) {
     nimcp_emergent_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
@@ -371,6 +378,7 @@ int nimcp_emergent_observe_ex(nimcp_emergent_language_t* el,
         }
     }
 
+    el->last_best_sim = (best_idx != UINT32_MAX) ? best_sim : -2.0f;
     float reinforce_threshold = 1.0f - el->config.discovery_threshold;
 
     if (best_idx != UINT32_MAX && best_sim > reinforce_threshold) {

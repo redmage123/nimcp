@@ -1664,7 +1664,8 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                 if (own) {
                     adaptive_network_forward_readonly(brain->network, features,
                                                       num_features, own, n_out, 0);
-                    emergent_bridge_on_learn_output(eb, own, n_out, label);
+                    emergent_bridge_on_learn_output(eb, features, num_features,
+                                                    own, n_out, label);
                     nimcp_free(own);
                 }
             }

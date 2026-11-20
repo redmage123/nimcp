@@ -513,6 +513,14 @@ typedef struct {
     uint32_t distinct_labels;
     uint64_t decide_observations;  /* of observations: from brain_decide */
     uint64_t learn_observations;   /* of observations: labelled learn steps */
+    /* Same scoring on inputs never observed before (replays excluded):
+     * generalisation rather than memorisation. */
+    uint64_t novel_labeled;
+    uint64_t novel_predictions;
+    uint64_t novel_hits;
+    uint64_t novel_majority_hits;
+    uint64_t new_tokens;           /* observations that created a token */
+    uint64_t nearest_sim_hist[11]; /* nearest-token cosine: [none, <.1, ..., >=.9] */
 } nimcp_brain_emergent_stats_t;
 
 nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,

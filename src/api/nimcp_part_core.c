@@ -389,6 +389,12 @@ nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
     out->distinct_labels = s.distinct_labels;
     out->decide_observations = s.decide_observations;
     out->learn_observations = s.learn_observations;
+    out->novel_labeled = s.novel_labeled;
+    out->novel_predictions = s.novel_predictions;
+    out->novel_hits = s.novel_hits;
+    out->novel_majority_hits = s.novel_majority_hits;
+    out->new_tokens = s.new_tokens;
+    for (int i = 0; i < 11; i++) out->nearest_sim_hist[i] = s.nearest_sim_hist[i];
     return NIMCP_OK;
 }
 

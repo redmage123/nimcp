@@ -15,12 +15,18 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
 
 #define LOG_MODULE "EMERGENT_BRIDGE"
 #define RING 16
 #define LABEL_LEN 48
 #define MAX_LABELS 512
 #define SAVE_EVERY 5000
+#define SAVE_SECS_DEFAULT 300        /* the daemon is SIGKILLed on restart: save on a timer too */
+#define SEEN_BITS 16                 /* 65536-slot set of input hashes already observed */
+#define SEEN_SLOTS (1u << SEEN_BITS)
+#define SIM_BUCKETS 11               /* [none] + cosine deciles <0.1 .. >=0.9 */
+#define SIM_LOG_EVERY 1000
 
 typedef struct {
     uint64_t hash;
@@ -46,8 +52,47 @@ struct emergent_bridge {
 
     uint64_t observations, labeled_decides, predictions, hits, majority_hits;
     uint64_t decide_observations, learn_observations;
+
+    /* Generalisation: labelled observations whose input was never observed
+     * before (not a replay of a seen item). */
+    uint64_t* seen;                  /* open-addressed input-hash set; 0 = empty */
+    uint32_t  n_seen;
+    uint64_t  novel_labeled, novel_predictions, novel_hits, novel_majority_hits;
+
+    /* Nearest-token cosine at observe time (bucket 0: no token yet). */
+    uint64_t  sim_hist[SIM_BUCKETS];
+    uint64_t  new_tokens;            /* observations that created a token */
+
+    uint64_t  last_save_ms;
+    uint32_t  save_secs;
+    float     discovery_threshold;   /* 0 = module default */
     char path[512];
 };
+
+static uint64_t _now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+/* Insert h; returns true if it was already present. Lock held. When the
+ * set is 3/4 full it is cleared (novelty becomes "not seen recently"). */
+static bool _seen_before(emergent_bridge_t* b, uint64_t h) {
+    if (!b->seen) return false;
+    if (h == 0) h = 1;
+    if (b->n_seen >= SEEN_SLOTS / 4 * 3) {
+        memset(b->seen, 0, SEEN_SLOTS * sizeof(uint64_t));
+        b->n_seen = 0;
+    }
+    uint32_t i = (uint32_t)(h ^ (h >> 32)) & (SEEN_SLOTS - 1);
+    while (b->seen[i]) {
+        if (b->seen[i] == h) return true;
+        i = (i + 1) & (SEEN_SLOTS - 1);
+    }
+    b->seen[i] = h;
+    b->n_seen++;
+    return false;
+}
 
 static uint64_t _hash(const float* v, uint32_t n) {
     const unsigned char* p = (const unsigned char*)v;
@@ -66,9 +111,20 @@ emergent_bridge_t* emergent_bridge_create_from_env(void) {
     if (!b) return NULL;
     b->lock = nimcp_mutex_create(NULL);
     if (!b->lock) { nimcp_free(b); return NULL; }
+    b->seen = nimcp_calloc(SEEN_SLOTS, sizeof(uint64_t));   /* optional: NULL disables novelty */
     const char* path = getenv("NIMCP_EMERGENT_LANGUAGE_PATH");
     if (path && path[0]) snprintf(b->path, sizeof(b->path), "%s", path);
-    LOG_INFO("[%s] enabled (persistence: %s)", LOG_MODULE, b->path[0] ? b->path : "off");
+    const char* ss = getenv("NIMCP_EMERGENT_SAVE_SECS");
+    b->save_secs = (ss && ss[0]) ? (uint32_t)strtoul(ss, NULL, 10) : SAVE_SECS_DEFAULT;
+    const char* dt = getenv("NIMCP_EMERGENT_DISCOVERY");
+    if (dt && dt[0]) {
+        float v = strtof(dt, NULL);
+        if (v > 0.0f && v < 2.0f) b->discovery_threshold = v;
+    }
+    b->last_save_ms = _now_ms();
+    LOG_INFO("[%s] enabled (persistence: %s, timed save %us, discovery %s)", LOG_MODULE,
+             b->path[0] ? b->path : "off", b->save_secs,
+             b->discovery_threshold > 0.0f ? dt : "default");
     return b;
 }
 
@@ -102,12 +158,14 @@ static void _save(emergent_bridge_t* b) {
         if (nimcp_emergent_save(b->el, tmp) == 0 && rename(tmp, b->path) != 0)
             LOG_WARN("[%s] rename %s -> %s failed", LOG_MODULE, tmp, b->path);
     }
+    b->last_save_ms = _now_ms();
 }
 
 void emergent_bridge_destroy(emergent_bridge_t* b) {
     if (!b) return;
     _save(b);
     if (b->el) nimcp_emergent_language_destroy(b->el);
+    nimcp_free(b->seen);
     nimcp_mutex_free(b->lock);
     nimcp_free(b);
 }
@@ -145,6 +203,7 @@ static bool _ensure_model_locked(emergent_bridge_t* b, uint32_t output_size) {
         cfg.centroid_dim = output_size;
         cfg.embed_dim = output_size < 256 ? output_size : 256;
         cfg.use_unicode_symbols = true;
+        if (b->discovery_threshold > 0.0f) cfg.discovery_threshold = b->discovery_threshold;
         b->el = nimcp_emergent_language_create(&cfg);
         b->output_size = output_size;
         if (b->el && b->path[0]) {
@@ -162,16 +221,37 @@ static bool _ensure_model_locked(emergent_bridge_t* b, uint32_t output_size) {
 
 /* Observe one output; when labelled, score the token's gloss against the
  * label, then vote. Lock held. */
+static void _log_progress(emergent_bridge_t* b) {
+    char h[160]; int n = 0;
+    for (int i = 0; i < SIM_BUCKETS && n < (int)sizeof(h); i++)
+        n += snprintf(h + n, sizeof(h) - (size_t)n, "%s%llu", i ? " " : "",
+                      (unsigned long long)b->sim_hist[i]);
+    LOG_INFO("[%s] obs=%llu new_tokens=%llu hit=%llu/%llu maj=%llu/%llu "
+             "novel: hit=%llu/%llu maj=%llu/%llu | nearest-cos hist [none,<.1..>=.9]: %s",
+             LOG_MODULE, (unsigned long long)b->observations, (unsigned long long)b->new_tokens,
+             (unsigned long long)b->hits, (unsigned long long)b->predictions,
+             (unsigned long long)b->majority_hits, (unsigned long long)b->labeled_decides,
+             (unsigned long long)b->novel_hits, (unsigned long long)b->novel_predictions,
+             (unsigned long long)b->novel_majority_hits, (unsigned long long)b->novel_labeled, h);
+}
+
 static void _observe_locked(emergent_bridge_t* b, const float* output,
-                            uint32_t output_size, const char* label) {
+                            uint32_t output_size, const char* label, uint64_t input_hash) {
+    uint32_t vocab_before = nimcp_emergent_get_vocab_size(b->el);
     uint32_t tok = UINT32_MAX;
     nimcp_emergent_observe_ex(b->el, output, output_size, &tok);
+    if (tok == UINT32_MAX) return;           /* near-zero output: not observed */
     b->observations++;
+    float sim = nimcp_emergent_last_best_similarity(b->el);
+    int bucket = sim < -1.5f ? 0 : 1 + (sim <= 0.0f ? 0 : sim >= 1.0f ? 9 : (int)(sim * 10.0f));
+    b->sim_hist[bucket]++;
+    if (nimcp_emergent_get_vocab_size(b->el) > vocab_before) b->new_tokens++;
+    bool novel = !_seen_before(b, input_hash);
 
-    if (label && label[0] && tok != UINT32_MAX) {
+    if (label && label[0]) {
         b->labeled_decides++;
-        if (b->n_labels > 0 && strcmp(b->labels[b->majority].label, label) == 0)
-            b->majority_hits++;
+        bool maj = b->n_labels > 0 && strcmp(b->labels[b->majority].label, label) == 0;
+        if (maj) b->majority_hits++;
         nimcp_emergent_translation_t tr;
         int had_gloss = (nimcp_emergent_get_translation(b->el, tok, &tr) == 0 &&
                          tr.human_gloss[0] != '\0');
@@ -180,9 +260,20 @@ static void _observe_locked(emergent_bridge_t* b, const float* output,
             b->predictions++;
             if (m == 1) b->hits++;
         }
+        if (novel && b->seen) {
+            b->novel_labeled++;
+            if (maj) b->novel_majority_hits++;
+            if (had_gloss) {
+                b->novel_predictions++;
+                if (m == 1) b->novel_hits++;
+            }
+        }
         _count_label(b, label);
     }
-    if (b->path[0] && b->observations % SAVE_EVERY == 0) _save(b);
+    if (b->observations % SIM_LOG_EVERY == 0) _log_progress(b);
+    if (b->path[0] && (b->observations % SAVE_EVERY == 0 ||
+        (b->save_secs > 0 && _now_ms() - b->last_save_ms >= (uint64_t)b->save_secs * 1000u)))
+        _save(b);
 }
 
 void emergent_bridge_on_decide(emergent_bridge_t* b, const float* features,
@@ -200,18 +291,22 @@ void emergent_bridge_on_decide(emergent_bridge_t* b, const float* features,
             break;
         }
     }
-    _observe_locked(b, output, output_size, label);
-    b->decide_observations++;
+    uint64_t before = b->observations;
+    _observe_locked(b, output, output_size, label, h);
+    if (b->observations > before) b->decide_observations++;
     nimcp_mutex_unlock(b->lock);
 }
 
-void emergent_bridge_on_learn_output(emergent_bridge_t* b, const float* output,
+void emergent_bridge_on_learn_output(emergent_bridge_t* b, const float* features,
+                                     uint32_t num_features, const float* output,
                                      uint32_t output_size, const char* label) {
-    if (!b || !output || output_size == 0 || !label || !label[0]) return;
+    if (!b || !features || !output || output_size == 0 || !label || !label[0]) return;
+    uint64_t h = _hash(features, num_features);
     nimcp_mutex_lock(b->lock);
     if (_ensure_model_locked(b, output_size)) {
-        _observe_locked(b, output, output_size, label);
-        b->learn_observations++;
+        uint64_t before = b->observations;
+        _observe_locked(b, output, output_size, label, h);
+        if (b->observations > before) b->learn_observations++;
     }
     nimcp_mutex_unlock(b->lock);
 }
@@ -245,6 +340,12 @@ int emergent_bridge_get_stats(emergent_bridge_t* b, emergent_bridge_stats_t* out
     out->distinct_labels = b->n_labels;
     out->decide_observations = b->decide_observations;
     out->learn_observations = b->learn_observations;
+    out->novel_labeled = b->novel_labeled;
+    out->novel_predictions = b->novel_predictions;
+    out->novel_hits = b->novel_hits;
+    out->novel_majority_hits = b->novel_majority_hits;
+    out->new_tokens = b->new_tokens;
+    for (int i = 0; i < SIM_BUCKETS; i++) out->nearest_sim_hist[i] = b->sim_hist[i];
     nimcp_mutex_unlock(b->lock);
     return 0;
 }
