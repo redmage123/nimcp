@@ -736,7 +736,24 @@ struct brain_immune_system {
      * (which includes this header). Always cast to treg_system_t* internally. */
     void* tregs;
     bool treg_storm_engaged;               /**< True while pro-cyto suppression active */
+
+    /* Cytokine clearance (2026-11-20, NIMCP_IMMUNE_CYTOKINE_CLEARANCE=1):
+     * last time concentrations were decayed. Appended. */
+    uint64_t last_cytokine_decay_ms;
 };
+
+/**
+ * @brief Whether cytokine clearance is on (NIMCP_IMMUNE_CYTOKINE_CLEARANCE=1).
+ *
+ * Without it released cytokines never decay or leave the pool: levels in
+ * brain_immune_get_stats are lifetime sums and, once the pool's
+ * BRAIN_IMMUNE_MAX_CYTOKINES slots fill, every release fails. With it,
+ * concentrations decay exponentially (half-life
+ * NIMCP_IMMUNE_CYTOKINE_HALF_LIFE_MS, default 60000) and a cytokine below
+ * 0.01 is removed. Decay is applied lazily, under the immune mutex, on each
+ * release and each stats read.
+ */
+bool brain_immune_cytokine_clearance_enabled(void);
 
 /* ============================================================================
  * Lifecycle API

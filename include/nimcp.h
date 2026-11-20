@@ -539,6 +539,30 @@ typedef struct {
 nimcp_status_t nimcp_brain_get_speech_lexicon_stats(nimcp_brain_t brain,
                                                     nimcp_brain_speech_lexicon_stats_t* out);
 
+/**
+ * @brief NLP-immune coupling snapshot (opt-in NIMCP_NLP_IMMUNE=1).
+ *
+ * Held-out language outcomes drive cytokines (IL-1 when the brain does
+ * worse than its own running baseline, IL-10 when better); current
+ * cytokine levels set grounded_language's capacity. capacity stays 1.0
+ * unless clearance (NIMCP_IMMUNE_CYTOKINE_CLEARANCE=1) is on.
+ */
+typedef struct {
+    bool     enabled;
+    bool     clearance;
+    float    capacity;
+    uint32_t inflammation_level;
+    uint64_t outcomes;
+    uint64_t successes;
+    float    last_window_error;
+    float    baseline_error;
+    uint32_t il1_releases;
+    uint32_t il10_releases;
+} nimcp_brain_nlp_immune_stats_t;
+
+nimcp_status_t nimcp_brain_get_nlp_immune_stats(nimcp_brain_t brain,
+                                                nimcp_brain_nlp_immune_stats_t* out);
+
 /** Emergent symbols for an output vector (e.g. "α3 ◊1"); out_text is ""
  *  when the module is off or has no tokens yet. */
 nimcp_status_t nimcp_brain_emergent_express(nimcp_brain_t brain,

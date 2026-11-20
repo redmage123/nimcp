@@ -447,3 +447,18 @@ gtest_discover_tests(unit_grounded_language_cortex_modulation
         LABELS "unit;language;grounded;cortex"
         TIMEOUT 60
 )
+
+# ============================================================================
+# NLP-immune coupling: cytokine clearance, outcome window, language capacity
+# ============================================================================
+add_executable(unit_nlp_immune_coupling
+    test_nlp_immune_coupling.cpp
+)
+target_link_libraries(unit_nlp_immune_coupling
+    PRIVATE nimcp GTest::gtest GTest::gtest_main Threads::Threads m
+)
+target_include_directories(unit_nlp_immune_coupling
+    PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src
+)
+add_test(NAME unit_nlp_immune_coupling COMMAND unit_nlp_immune_coupling)
+set_tests_properties(unit_nlp_immune_coupling PROPERTIES LABELS "unit;language;immune" TIMEOUT 120)

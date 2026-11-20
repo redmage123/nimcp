@@ -2,6 +2,46 @@
 // Part of nimcp_brain_immune.c (SRP #include-based split)
 // DO NOT compile separately - #included from nimcp_brain_immune.c
 
+/* ---- Cytokine clearance (NIMCP_IMMUNE_CYTOKINE_CLEARANCE=1) ------------- */
+static int g_cytokine_clearance = -1;      /* env read once; benign race */
+static float g_cytokine_half_life_ms = 60000.0f;
+
+bool brain_immune_cytokine_clearance_enabled(void) {
+    if (g_cytokine_clearance < 0) {
+        const char* v = getenv("NIMCP_IMMUNE_CYTOKINE_CLEARANCE");
+        const char* h = getenv("NIMCP_IMMUNE_CYTOKINE_HALF_LIFE_MS");
+        if (h && atof(h) > 0.0) g_cytokine_half_life_ms = (float)atof(h);
+        g_cytokine_clearance = (v && v[0] == '1') ? 1 : 0;
+    }
+    return g_cytokine_clearance == 1;
+}
+
+/* Decay every cytokine by the time elapsed since the last decay and remove
+ * those below 0.01 (swap-remove; lookups are by id, not index). Caller
+ * holds system->mutex. No-op unless clearance is enabled. */
+static void brain_immune_decay_cytokines_locked(brain_immune_system_t* system) {
+    if (!system || !system->cytokines || !brain_immune_cytokine_clearance_enabled()) return;
+    uint64_t now = get_timestamp_ms();
+    if (system->last_cytokine_decay_ms == 0 || now < system->last_cytokine_decay_ms) {
+        system->last_cytokine_decay_ms = now;
+        return;
+    }
+    uint64_t dt = now - system->last_cytokine_decay_ms;
+    if (dt < 50) return;
+    float factor = exp2f(-(float)dt / g_cytokine_half_life_ms);
+    size_t i = 0;
+    while (i < system->cytokine_count) {
+        system->cytokines[i].concentration *= factor;
+        if (system->cytokines[i].concentration < 0.01f) {
+            system->cytokines[i] = system->cytokines[system->cytokine_count - 1];
+            system->cytokine_count--;
+            continue;
+        }
+        i++;
+    }
+    system->last_cytokine_decay_ms = now;
+}
+
 
 /* ============================================================================
  * Internal Helpers - Implementation

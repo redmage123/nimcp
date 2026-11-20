@@ -328,6 +328,10 @@ struct grounded_language {
     void* immune_system;
     bool  immune_enabled;
     float immune_inflammation_level;
+    /* Systemic language capacity from the NLP-immune bridge (2026-11-20).
+     * 0 = unset (full capacity); else (0,1]. See
+     * grounded_language_set_language_capacity. */
+    float language_capacity;
     /* Welford-style running mean + sum-of-squared-diffs for
      * total_activation_per_word seen by the inspector. Used by the
      * statistical-outlier heuristic (>5σ trips inflammation). Updated

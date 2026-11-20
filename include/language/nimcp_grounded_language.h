@@ -1853,6 +1853,19 @@ int grounded_language_set_immune_system(grounded_language_t* gl,
                                           bool enabled);
 
 /**
+ * @brief Systemic language capacity (NLP-immune bridge, 2026-11-20).
+ *
+ * Distinct from the per-input inflammation above: this is the brain-wide
+ * immune state's effect on language (pro-inflammatory cytokines reduce
+ * verbal fluency and comprehension; Reichenberg et al. 2001). capacity in
+ * (0,1]: comprehension_confidence is multiplied by it, and produced
+ * utterances keep ceil(capacity x words) words with fluency scaled by it.
+ * Clamped to [0.05, 1]; 1 (the default) changes nothing.
+ */
+void  grounded_language_set_language_capacity(grounded_language_t* gl, float capacity);
+float grounded_language_get_language_capacity(const grounded_language_t* gl);
+
+/**
  * @brief Query whether Tier-3 immune content inspection is currently
  *        active.
  *

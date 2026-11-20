@@ -9,6 +9,7 @@
  * (includes inside function bodies are non-standard and cause warnings) */
 #include "cognitive/language/nimcp_emergent_language_bridge.h"
 #include "nlp/nimcp_multimodal_nlp_bridge.h"
+#include "nlp/immune/nimcp_nlp_immune_brain.h"
 #include "cognitive/analysis/nimcp_network_analysis.h"
 #include "core/brain/subcortical/nimcp_amygdala.h"  /* Phase 3c: amygdala destroy */
 #include "core/brain/factory/init/nimcp_brain_init_subsystems.h"  /* glial destroy helper */
@@ -398,6 +399,13 @@ void brain_destroy(brain_t brain)
     if (brain->multimodal_nlp_state) {
         multimodal_nlp_brain_destroy((multimodal_nlp_brain_t*)brain->multimodal_nlp_state);
         brain->multimodal_nlp_state = NULL;
+    }
+
+    /* NLP-immune coupling: frees its bridge only (the immune system is
+     * borrowed). */
+    if (brain->nlp_immune_state) {
+        nlp_immune_brain_destroy((nlp_immune_brain_t*)brain->nlp_immune_state);
+        brain->nlp_immune_state = NULL;
     }
 
     /* S2-C2 fix: destroy the arcuate-feedback lock (lazy-init'd by the

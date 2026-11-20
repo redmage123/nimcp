@@ -192,6 +192,7 @@ int brain_immune_get_stats(brain_immune_system_t* system, brain_immune_stats_t* 
 
 
     nimcp_mutex_lock(system->mutex);
+    brain_immune_decay_cytokines_locked(system);   /* no-op unless clearance on */
     *stats = system->stats;
 
     /* Compute cytokine levels from active cytokines */

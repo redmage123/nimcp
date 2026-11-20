@@ -15,6 +15,7 @@
 #include "security/nimcp_audit_log.h"                        /* 2026-05-22: counterclaim audit */
 #include "cognitive/language/nimcp_emergent_language_bridge.h"  /* emergent stats */
 #include "nlp/nimcp_multimodal_nlp_bridge.h"                     /* spoken-word lexicon */
+#include "nlp/immune/nimcp_nlp_immune_brain.h"                   /* NLP-immune coupling */
 
 
 //=============================================================================
@@ -130,6 +131,9 @@ nimcp_status_t nimcp_brain_learn_vector(
         (void)emergent_bridge_for(&brain->internal_brain->emergent_bridge);
         /* Same rule for the spoken-word lexicon (NIMCP_SPEECH_UNITS=1). */
         (void)multimodal_nlp_brain_for(&brain->internal_brain->multimodal_nlp_state);
+        /* ... and the NLP-immune coupling (NIMCP_NLP_IMMUNE=1). */
+        (void)nlp_immune_brain_for(&brain->internal_brain->nlp_immune_state,
+                                   brain->internal_brain);
     }
     LOG_DEBUG("Learning vector: target_size=%u, num_features=%u, confidence=%.3f",
               target_size, num_features, confidence);
@@ -406,6 +410,29 @@ nimcp_status_t nimcp_brain_get_speech_lexicon_stats(nimcp_brain_t brain,
     out->units_seeded = s.units_seeded;
     out->mean_units = s.mean_units;
     snprintf(out->last_heard, sizeof(out->last_heard), "%s", s.last_heard);
+    return NIMCP_OK;
+}
+
+nimcp_status_t nimcp_brain_get_nlp_immune_stats(nimcp_brain_t brain,
+                                                nimcp_brain_nlp_immune_stats_t* out)
+{
+    if (!out) return NIMCP_ERROR_NULL_POINTER;
+    memset(out, 0, sizeof(*out));
+    out->capacity = 1.0f;
+    if (!brain || !brain->internal_brain) return NIMCP_ERROR_NULL_POINTER;
+    nlp_immune_brain_t* nb = nlp_immune_brain_get(&brain->internal_brain->nlp_immune_state);
+    nlp_immune_brain_stats_t s;
+    if (!nb || nlp_immune_brain_get_stats(nb, &s) != 0) return NIMCP_OK;
+    out->enabled = true;
+    out->clearance = s.clearance;
+    out->capacity = s.capacity;
+    out->inflammation_level = s.inflammation_level;
+    out->outcomes = s.outcomes;
+    out->successes = s.successes;
+    out->last_window_error = s.last_window_error;
+    out->baseline_error = s.baseline_error;
+    out->il1_releases = s.il1_releases;
+    out->il10_releases = s.il10_releases;
     return NIMCP_OK;
 }
 

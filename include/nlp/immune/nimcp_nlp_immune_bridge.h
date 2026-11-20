@@ -178,6 +178,11 @@ extern "C" {
 #define LANGUAGE_SUCCESS_IL10_BOOST       0.25f    /**< Success → IL-10 */
 #define LANGUAGE_COMPLEXITY_THRESHOLD     0.7f     /**< Complexity → stress */
 
+/* Outcome-driven signalling (nlp_immune_record_outcomes) */
+#define NLP_IMMUNE_OUTCOME_WINDOW    50      /**< outcomes per comparison window */
+#define NLP_IMMUNE_DEVIATION_MARGIN  0.10f   /**< error-rate deviation that signals */
+#define NLP_IMMUNE_BASELINE_ALPHA    0.10f   /**< baseline EMA rate per window */
+
 /* ============================================================================
  * Structures
  * ============================================================================ */
@@ -309,6 +314,12 @@ typedef struct {
     uint32_t success_boosts;
     uint32_t complexity_inflammation_events;
 
+    /* Outcome window vs running baseline (appended 2026-11-20) */
+    uint32_t window_successes;
+    uint32_t window_failures;
+    uint32_t baseline_windows;
+    float    baseline_error;
+    float    last_window_error;
     } nlp_immune_bridge_t;
 
 /* ============================================================================
@@ -530,6 +541,21 @@ int nlp_immune_get_inflammation_state(
  * @param bridge NLP-immune bridge
  * @return true if significant deficit (>30% capacity loss)
  */
+/**
+ * @brief Record language outcomes (held-out guesses right / wrong)
+ *
+ * WHAT: Accumulates outcomes; every NLP_IMMUNE_OUTCOME_WINDOW of them the
+ *       window error rate is compared with this learner's own running
+ *       baseline. Worse by more than NLP_IMMUNE_DEVIATION_MARGIN releases
+ *       IL-1 (concentration = deviation); better releases IL-10.
+ * WHY:  A fixed error threshold would keep a learner that is still
+ *       improving permanently inflamed; stress follows doing worse than
+ *       expected, not being imperfect.
+ * @return 1 if IL-1 was released, 2 if IL-10, 0 if neither, -1 on NULL.
+ */
+int nlp_immune_record_outcomes(nlp_immune_bridge_t* bridge,
+                               uint32_t successes, uint32_t failures);
+
 bool nlp_immune_has_language_deficit(const nlp_immune_bridge_t* bridge);
 
 /**

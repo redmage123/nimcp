@@ -4356,6 +4356,28 @@ static PyObject* Brain_get_speech_lexicon_stats(BrainObject* self,
         "mean_units", (double)s.mean_units, "last_heard", s.last_heard);
 }
 
+static PyObject* Brain_get_nlp_immune_stats(BrainObject* self,
+                                            PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    nimcp_brain_nlp_immune_stats_t s;
+    if (nimcp_brain_get_nlp_immune_stats(self->brain, &s) != NIMCP_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "get_nlp_immune_stats failed");
+        return NULL;
+    }
+    return Py_BuildValue(
+        "{s:O,s:O,s:f,s:I,s:K,s:K,s:f,s:f,s:I,s:I}",
+        "enabled", s.enabled ? Py_True : Py_False,
+        "clearance", s.clearance ? Py_True : Py_False,
+        "capacity", (double)s.capacity, "inflammation_level", s.inflammation_level,
+        "outcomes", (unsigned long long)s.outcomes,
+        "successes", (unsigned long long)s.successes,
+        "last_window_error", (double)s.last_window_error,
+        "baseline_error", (double)s.baseline_error,
+        "il1_releases", s.il1_releases, "il10_releases", s.il10_releases);
+}
+
 static PyObject* Brain_emergent_express(BrainObject* self, PyObject* args) {
     if (!self->brain) {
         PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
@@ -13429,6 +13451,8 @@ static PyMethodDef Brain_methods[] = {
      "Emergent language (NIMCP_EMERGENT_LANGUAGE=1): {'enabled', 'vocab_size', 'active_tokens', 'labeled_tokens', 'purity', 'observations', 'labeled_decides', 'predictions', 'hits', 'majority_hits', 'distinct_labels'}. hits/predictions = brain's own token already named the training label; majority_hits/labeled_decides = baseline."},
     {"get_speech_lexicon_stats", (PyCFunction)Brain_get_speech_lexicon_stats, METH_NOARGS,
      "Spoken-word lexicon (NIMCP_SPEECH_UNITS=1): {'enabled', 'clips', 'empty_clips', 'predictions', 'hits', 'majority_hits', 'words', 'units_seeded', 'mean_units', 'last_heard'}. hits/predictions = held-out recognition of labelled real speech clips."},
+    {"get_nlp_immune_stats", (PyCFunction)Brain_get_nlp_immune_stats, METH_NOARGS,
+     "NLP-immune coupling (NIMCP_NLP_IMMUNE=1): {'enabled', 'clearance', 'capacity', 'inflammation_level', 'outcomes', 'successes', 'last_window_error', 'baseline_error', 'il1_releases', 'il10_releases'}."},
     {"emergent_express", (PyCFunction)Brain_emergent_express, METH_VARARGS,
      "Emergent-language symbols for an output vector (str; '' when off or empty)."},
     {"get_concept_registry_stats", (PyCFunction)Brain_get_concept_registry_stats, METH_NOARGS,

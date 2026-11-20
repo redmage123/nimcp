@@ -1220,7 +1220,8 @@ class BrainService:
             if cmd in ('ping', 'status', 'get_neuron_count', 'get_snn_stats',
                        'get_network_metrics', 'get_cortex_cnn_metrics',
                        'get_cognitive_stats', 'get_module_activity',
-                       'get_emergent_stats', 'get_speech_lexicon_stats'):
+                       'get_emergent_stats', 'get_speech_lexicon_stats',
+                       'get_nlp_immune_stats'):
                 return handler(req)
 
             # All other commands (learn_vector, decide_full, save, etc.) take the lock
@@ -3723,6 +3724,12 @@ class BrainService:
             return {"stats": {"enabled": False, "error": "binding too old"}}
         return {"stats": self.brain.get_speech_lexicon_stats()}
 
+    def _cmd_get_nlp_immune_stats(self, _req):
+        """NLP-immune coupling counters (NIMCP_NLP_IMMUNE=1). Read-only."""
+        if not hasattr(self.brain, "get_nlp_immune_stats"):
+            return {"stats": {"enabled": False, "error": "binding too old"}}
+        return {"stats": self.brain.get_nlp_immune_stats()}
+
     def _cmd_emergent_express(self, req):
         """Emergent symbols for an output vector. Read-only."""
         if not hasattr(self.brain, "emergent_express"):
@@ -4543,6 +4550,7 @@ class BrainDaemon:
         'predict_with_confidence', 'predict_with_deadline',
         'get_inner_speech_trace', 'get_hypothesis_log',
         'get_emergent_stats', 'emergent_express', 'get_speech_lexicon_stats',
+        'get_nlp_immune_stats',
         'audit_log_event',  # audit logging is append-only, safe on RO socket
     })
 

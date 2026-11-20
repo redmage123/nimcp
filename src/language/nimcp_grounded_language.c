@@ -3086,6 +3086,9 @@ int grounded_language_comprehend(grounded_language_t* gl, const char* text,
         if (result->comprehension_confidence < 0.0f)
             result->comprehension_confidence = 0.0f;
     }
+    /* Systemic immune state (NLP-immune bridge): capacity < 1 under
+     * brain-wide inflammation. 1 when unset. */
+    result->comprehension_confidence *= grounded_language_get_language_capacity(gl);
 
     /* Normalize semantic vector */
     normalize_vector(result->semantic_vector, gl->semantic_dim);
@@ -5794,7 +5797,52 @@ int grounded_language_produce(grounded_language_t* gl, const float* intent,
     return gl_produce_impl(gl, intent, intent_dim, mode, NULL, NULL, 0, result);
 }
 
+static int gl_produce_core(grounded_language_t* gl, const float* intent,
+                           uint32_t intent_dim, gl_production_mode_t mode,
+                           const uint64_t* seed_concepts, const float* seed_acts,
+                           uint32_t seed_count, gl_production_result_t* result);
+
+/* Production under reduced systemic language capacity (NLP-immune
+ * bridge): keep ceil(capacity x words) words, scale fluency. A no-op at
+ * capacity 1 (the default). */
+static void gl_apply_capacity(const grounded_language_t* gl, gl_production_result_t* r) {
+    float cap = grounded_language_get_language_capacity(gl);
+    if (cap >= 1.0f || !r->text || r->word_count <= 1) return;
+    uint32_t keep = (uint32_t)ceilf(cap * (float)r->word_count);
+    if (keep < 1) keep = 1;
+    r->fluency *= cap;
+    if (keep >= r->word_count) return;
+    uint32_t words = 0;
+    for (char* c = r->text; *c; c++) {
+        if (*c == ' ' && c > r->text && c[-1] != ' ' && ++words == keep) { *c = '\0'; break; }
+    }
+    r->word_count = keep;
+}
+
 static int gl_produce_impl(grounded_language_t* gl, const float* intent,
+                           uint32_t intent_dim, gl_production_mode_t mode,
+                           const uint64_t* seed_concepts, const float* seed_acts,
+                           uint32_t seed_count, gl_production_result_t* result) {
+    int rc = gl_produce_core(gl, intent, intent_dim, mode, seed_concepts, seed_acts,
+                             seed_count, result);
+    if (rc == 0 && gl && result) gl_apply_capacity(gl, result);
+    return rc;
+}
+
+void grounded_language_set_language_capacity(grounded_language_t* gl, float capacity) {
+    if (!gl) return;
+    if (capacity > 1.0f) capacity = 1.0f;
+    if (capacity < 0.05f) capacity = 0.05f;
+    gl->language_capacity = capacity;   /* single float; a stale read is harmless */
+}
+
+float grounded_language_get_language_capacity(const grounded_language_t* gl) {
+    if (!gl) return 1.0f;
+    float c = gl->language_capacity;
+    return (c > 0.0f && c < 1.0f) ? c : 1.0f;
+}
+
+static int gl_produce_core(grounded_language_t* gl, const float* intent,
                            uint32_t intent_dim, gl_production_mode_t mode,
                            const uint64_t* seed_concepts, const float* seed_acts,
                            uint32_t seed_count, gl_production_result_t* result) {

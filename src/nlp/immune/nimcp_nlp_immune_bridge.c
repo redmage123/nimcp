@@ -90,10 +90,11 @@ nlp_immune_bridge_t* nlp_immune_bridge_create(
     brain_immune_system_t* immune_system,
     nlp_network_t nlp_network
 ) {
-    /* Guard: require immune system and NLP network */
-    if (!immune_system || !nlp_network) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nlp_immune_bridge_create: immune_system and nlp_network required");
-        NIMCP_LOGGING_ERROR("nlp_immune_bridge_create: immune_system and nlp_network required");
+    /* Guard: require the immune system. The NLP network is optional: only
+     * nlp_immune_apply_modulation uses it. */
+    if (!immune_system) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nlp_immune_bridge_create: immune_system required");
+        NIMCP_LOGGING_ERROR("nlp_immune_bridge_create: immune_system required");
         return NULL;
     }
 
@@ -106,6 +107,7 @@ nlp_immune_bridge_t* nlp_immune_bridge_create(
     }
 
     memset(bridge, 0, sizeof(nlp_immune_bridge_t));
+    bridge->inflammation_state.capacity_factor = 1.0f;   /* full until first update */
 
     /* Apply configuration */
     nlp_immune_config_t default_config;
@@ -164,113 +166,83 @@ void nlp_immune_bridge_destroy(nlp_immune_bridge_t* bridge) {
  * ============================================================================ */
 
 int nlp_immune_apply_cytokine_effects(nlp_immune_bridge_t* bridge) {
-    /* Guard clause */
     if (!bridge || !bridge->immune_system) {
         NIMCP_THROW(NIMCP_ERROR_NULL_POINTER, "nlp_immune_apply_cytokine_effects: NULL bridge or immune_system");
         return -1;
     }
-
     if (!bridge->enable_cytokine_language_impairment) {
         return 0;
     }
-
-    /* Get immune stats to estimate cytokine levels */
+    /* Without cytokine clearance the immune levels are lifetime sums, so
+     * reading them would ratchet language into permanent impairment.
+     * Leave capacity at full until clearance is on. */
+    if (!brain_immune_cytokine_clearance_enabled()) {
+        memset(&bridge->cytokine_effects, 0, sizeof(bridge->cytokine_effects));
+        return 0;
+    }
     brain_immune_stats_t stats;
     if (brain_immune_get_stats(bridge->immune_system, &stats) != 0) {
         NIMCP_THROW(NIMCP_ERROR_OPERATION_FAILED, "nlp_immune_apply_cytokine_effects: failed to get immune stats");
         return -1;
     }
-
-    /* Compute cytokine effects (proportional to inflammation sites) */
-    float inflammation_factor = (float)stats.inflammation_sites / 10.0f;
-    inflammation_factor = nimcp_clamp01(inflammation_factor);
-
-    /* Apply cytokine impacts */
-    bridge->cytokine_effects.il1_language_deficit =
-        CYTOKINE_IL1_LANGUAGE_IMPACT * inflammation_factor * bridge->config.cytokine_sensitivity;
-    bridge->cytokine_effects.il6_language_deficit =
-        CYTOKINE_IL6_LANGUAGE_IMPACT * inflammation_factor * bridge->config.cytokine_sensitivity;
-    bridge->cytokine_effects.tnf_language_deficit =
-        CYTOKINE_TNF_LANGUAGE_IMPACT * inflammation_factor * bridge->config.cytokine_sensitivity;
-    bridge->cytokine_effects.ifn_gamma_language_deficit =
-        CYTOKINE_IFN_GAMMA_LANGUAGE_IMPACT * inflammation_factor * bridge->config.cytokine_sensitivity;
-
-    /* IL-10 provides recovery */
-    bridge->cytokine_effects.il10_language_recovery =
-        CYTOKINE_IL10_LANGUAGE_IMPACT * (1.0f - inflammation_factor);
-
-    /* Aggregate effects */
-    bridge->cytokine_effects.total_capacity_reduction = nimcp_clamp01(
-        -(bridge->cytokine_effects.il1_language_deficit +
-          bridge->cytokine_effects.il6_language_deficit +
-          bridge->cytokine_effects.tnf_language_deficit +
-          bridge->cytokine_effects.ifn_gamma_language_deficit -
-          bridge->cytokine_effects.il10_language_recovery)
-    );
-
-    /* Specific impairments */
-    bridge->cytokine_effects.vocab_access_impairment =
-        bridge->cytokine_effects.total_capacity_reduction * 0.8f;
-    bridge->cytokine_effects.semantic_error_rate =
-        bridge->cytokine_effects.total_capacity_reduction * 0.6f;
-    bridge->cytokine_effects.syntactic_impairment =
-        bridge->cytokine_effects.total_capacity_reduction * 0.5f;
-    bridge->cytokine_effects.comprehension_deficit =
-        bridge->cytokine_effects.total_capacity_reduction * 0.7f;
-
-    bridge->cytokine_impairments++;
+    /* Current (decaying) cytokine levels, each clamped to [0,1]. */
+    float sens = bridge->config.cytokine_sensitivity;
+    nlp_cytokine_effects_t* e = &bridge->cytokine_effects;
+    e->il1_language_deficit = CYTOKINE_IL1_LANGUAGE_IMPACT * nimcp_clamp01(stats.cytokine_il1) * sens;
+    e->il6_language_deficit = CYTOKINE_IL6_LANGUAGE_IMPACT * nimcp_clamp01(stats.cytokine_il6) * sens;
+    e->tnf_language_deficit = CYTOKINE_TNF_LANGUAGE_IMPACT * nimcp_clamp01(stats.cytokine_tnf) * sens;
+    e->ifn_gamma_language_deficit =
+        CYTOKINE_IFN_GAMMA_LANGUAGE_IMPACT * nimcp_clamp01(stats.cytokine_ifn_gamma) * sens;
+    e->il10_language_recovery = CYTOKINE_IL10_LANGUAGE_IMPACT * nimcp_clamp01(stats.cytokine_il10);
+    /* Deficits are negative; IL-10 recovery offsets them (it used to be
+     * added to the loss). */
+    float loss = -(e->il1_language_deficit + e->il6_language_deficit +
+                   e->tnf_language_deficit + e->ifn_gamma_language_deficit);
+    e->total_capacity_reduction = nimcp_clamp01(loss - e->il10_language_recovery);
+    e->vocab_access_impairment = e->total_capacity_reduction * 0.8f;
+    e->semantic_error_rate = e->total_capacity_reduction * 0.6f;
+    e->syntactic_impairment = e->total_capacity_reduction * 0.5f;
+    e->comprehension_deficit = e->total_capacity_reduction * 0.7f;
+    if (e->total_capacity_reduction > 0.0f) bridge->cytokine_impairments++;
     return 0;
 }
 
 int nlp_immune_apply_inflammation_effects(nlp_immune_bridge_t* bridge) {
-    /* Guard clause */
     if (!bridge || !bridge->immune_system) {
         NIMCP_THROW(NIMCP_ERROR_NULL_POINTER, "nlp_immune_apply_inflammation_effects: NULL bridge or immune_system");
         return -1;
     }
-
     if (!bridge->enable_inflammation_errors) {
         return 0;
     }
-
-    /* Get current inflammation level */
-    brain_immune_stats_t stats;
-    if (brain_immune_get_stats(bridge->immune_system, &stats) != 0) {
-        NIMCP_THROW(NIMCP_ERROR_OPERATION_FAILED, "nlp_immune_apply_inflammation_effects: failed to get immune stats");
-        return -1;
+    nlp_inflammation_state_t* st = &bridge->inflammation_state;
+    float level_c = 0.0f;   /* continuous inflammation from current cytokines */
+    if (brain_immune_cytokine_clearance_enabled()) {
+        brain_immune_stats_t stats;
+        if (brain_immune_get_stats(bridge->immune_system, &stats) != 0) {
+            NIMCP_THROW(NIMCP_ERROR_OPERATION_FAILED, "nlp_immune_apply_inflammation_effects: failed to get immune stats");
+            return -1;
+        }
+        float pro = stats.cytokine_il1 + stats.cytokine_il6 + stats.cytokine_tnf +
+                    0.5f * stats.cytokine_ifn_gamma;
+        level_c = nimcp_clamp01(0.5f * (pro - stats.cytokine_il10));
     }
-
-    /* Estimate inflammation level from stats */
-    brain_inflammation_level_t level;
-    if (stats.inflammation_sites == 0) {
-        level = INFLAMMATION_NONE;
-    } else if (stats.inflammation_sites < 3) {
-        level = INFLAMMATION_LOCAL;
-    } else if (stats.inflammation_sites < 10) {
-        level = INFLAMMATION_REGIONAL;
-    } else if (stats.inflammation_sites < 20) {
-        level = INFLAMMATION_SYSTEMIC;
-    } else {
-        level = INFLAMMATION_STORM;
-    }
-
-    bridge->inflammation_state.current_level = level;
-
-    /* Compute capacity factor */
-    bridge->inflammation_state.capacity_factor =
-        get_inflammation_language_capacity(level) * bridge->config.inflammation_sensitivity;
-
-    /* Compute error rate based on level */
-    bridge->inflammation_state.error_rate =
-        INFLAMMATION_ERROR_BASE +
-        (float)level * INFLAMMATION_ERROR_PER_LEVEL * bridge->config.inflammation_sensitivity;
-    bridge->inflammation_state.error_rate = nimcp_clamp01(bridge->inflammation_state.error_rate);
-
-    /* Specific impairments */
-    bridge->inflammation_state.vocab_reduction = 1.0f - bridge->inflammation_state.capacity_factor;
-    bridge->inflammation_state.fluency_impairment = 1.0f - bridge->inflammation_state.capacity_factor;
-    bridge->inflammation_state.complexity_reduction = 1.0f - bridge->inflammation_state.capacity_factor;
-
+    brain_inflammation_level_t level =
+        level_c < 0.05f ? INFLAMMATION_NONE :
+        level_c < 0.25f ? INFLAMMATION_LOCAL :
+        level_c < 0.50f ? INFLAMMATION_REGIONAL :
+        level_c < 0.80f ? INFLAMMATION_SYSTEMIC : INFLAMMATION_STORM;
+    st->current_level = level;
+    /* Sensitivity scales the capacity LOSS (it used to multiply the
+     * capacity itself, so sensitivity > 1 gave capacity > 100%). */
+    st->capacity_factor = nimcp_clamp01(
+        1.0f - (1.0f - get_inflammation_language_capacity(level)) *
+               bridge->config.inflammation_sensitivity);
+    st->error_rate = nimcp_clamp01(INFLAMMATION_ERROR_BASE +
+        (float)level * INFLAMMATION_ERROR_PER_LEVEL * bridge->config.inflammation_sensitivity);
+    st->vocab_reduction = 1.0f - st->capacity_factor;
+    st->fluency_impairment = 1.0f - st->capacity_factor;
+    st->complexity_reduction = 1.0f - st->capacity_factor;
     return 0;
 }
 
@@ -521,6 +493,55 @@ int nlp_immune_get_inflammation_state(
 
     *state = bridge->inflammation_state;
     return 0;
+}
+
+int nlp_immune_record_outcomes(nlp_immune_bridge_t* bridge,
+                               uint32_t successes, uint32_t failures) {
+    if (!bridge) return -1;
+    if (successes == 0 && failures == 0) return 0;
+    nimcp_mutex_t* mutex = (nimcp_mutex_t*)bridge->base.mutex;
+    if (mutex) nimcp_mutex_lock(mutex);
+    bridge->nlp_modulation.total_processed += successes + failures;
+    bridge->nlp_modulation.successful_parses += successes;
+    bridge->nlp_modulation.failed_parses += failures;
+    bridge->window_successes += successes;
+    bridge->window_failures += failures;
+    uint32_t n = bridge->window_successes + bridge->window_failures;
+    int fired = 0;
+    if (n >= NLP_IMMUNE_OUTCOME_WINDOW) {
+        float err = (float)bridge->window_failures / (float)n;
+        if (bridge->baseline_windows == 0) {
+            bridge->baseline_error = err;          /* first window sets the baseline */
+        } else {
+            float dev = err - bridge->baseline_error;
+            uint32_t cid = 0;
+            if (dev > NLP_IMMUNE_DEVIATION_MARGIN && bridge->enable_error_immune_activation) {
+                /* Worse than this learner's own norm: stress -> IL-1. */
+                float conc = nimcp_clamp01(dev * bridge->config.error_immune_sensitivity);
+                if (brain_immune_release_cytokine(bridge->immune_system, BRAIN_CYTOKINE_IL1,
+                                                  0, conc, 0, &cid) == 0) {
+                    bridge->error_triggers++;
+                    bridge->nlp_modulation.error_induced_inflammation = true;
+                    fired = 1;
+                }
+            } else if (dev < -NLP_IMMUNE_DEVIATION_MARGIN && bridge->enable_success_il10_release) {
+                /* Better than its norm: success -> anti-inflammatory IL-10. */
+                float conc = nimcp_clamp01(-dev * LANGUAGE_SUCCESS_IL10_BOOST * 4.0f);
+                if (brain_immune_release_cytokine(bridge->immune_system, BRAIN_CYTOKINE_IL10,
+                                                  0, conc, 0, &cid) == 0) {
+                    bridge->success_boosts++;
+                    bridge->nlp_modulation.il10_release_from_success = conc;
+                    fired = 2;
+                }
+            }
+            bridge->baseline_error += NLP_IMMUNE_BASELINE_ALPHA * (err - bridge->baseline_error);
+        }
+        bridge->last_window_error = err;
+        bridge->baseline_windows++;
+        bridge->window_successes = bridge->window_failures = 0;
+    }
+    if (mutex) nimcp_mutex_unlock(mutex);
+    return fired;
 }
 
 bool nlp_immune_has_language_deficit(const nlp_immune_bridge_t* bridge) {

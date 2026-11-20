@@ -3242,6 +3242,10 @@ struct brain_struct {
      * spoken-word lexicon fed by staged speech + labels; created lazily by
      * multimodal_nlp_brain_for() when NIMCP_SPEECH_UNITS=1. Appended. */
     void*     multimodal_nlp_state;
+
+    /* NLP-immune coupling (2026-11-20): nlp_immune_brain_t*, created
+     * lazily when NIMCP_NLP_IMMUNE=1. Appended. */
+    void*     nlp_immune_state;
 };
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L

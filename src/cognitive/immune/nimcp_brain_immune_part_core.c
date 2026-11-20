@@ -1573,6 +1573,7 @@ int brain_immune_release_cytokine(
     }
 
     nimcp_mutex_lock(system->mutex);
+    brain_immune_decay_cytokines_locked(system);   /* no-op unless clearance on */
 
     /* W7: Capacity check under lock to prevent TOCTOU race */
     if (system->cytokine_count >= system->cytokine_capacity) {
@@ -1628,30 +1629,20 @@ int brain_immune_release_cytokine(
             total_pro_inflammatory += system->cytokines[i].concentration;
         }
     }
-    if (total_pro_inflammatory >= system->config.cytokine_storm_threshold) {
-        LOG_MODULE_WARN(BRAIN_IMMUNE_MODULE_NAME, "Cytokine storm risk detected!");
-
-        /* Phase C.2: Engage Tregs to actively suppress further pro-cytokine
-         * release. treg_update() pushes a delta-aware suppression factor
-         * proportional to inflammation; we feed it the current pro-cyto
-         * sum (mapped to ~storm level) so it picks the right band.
-         * One-shot log on storm onset; cleared when suppression decays. */
-        if (system->tregs) {
-            (void)treg_update((treg_system_t*)system->tregs, 0);
-            if (!system->treg_storm_engaged) {
-                float damp = treg_get_suppression_factor(
-                    (const treg_system_t*)system->tregs);
-                LOG_MODULE_WARN(BRAIN_IMMUNE_MODULE_NAME,
-                    "Treg engaged: damping pro-inflammatory cytokines by %.0f%%",
-                    damp * 100.0f);
-                system->treg_storm_engaged = true;
-            }
-        }
-    } else if (system->treg_storm_engaged &&
-               total_pro_inflammatory < (system->config.cytokine_storm_threshold * 0.5f)) {
+    /* Storm decision under the lock; Treg engagement happens AFTER unlock.
+     * treg_update() -> get_max_inflammation() -> brain_immune_get_stats()
+     * takes system->mutex, so calling it here (as this code used to)
+     * self-deadlocked the releasing thread on the first storm-level
+     * release (fixed 2026-11-20). */
+    bool storm = total_pro_inflammatory >= system->config.cytokine_storm_threshold;
+    bool storm_onset = storm && system->tregs && !system->treg_storm_engaged;
+    if (storm_onset) system->treg_storm_engaged = true;
+    if (!storm && system->treg_storm_engaged &&
+        total_pro_inflammatory < (system->config.cytokine_storm_threshold * 0.5f)) {
         /* Storm has resolved — allow another onset log next time it spikes. */
         system->treg_storm_engaged = false;
     }
+    treg_system_t* storm_tregs = storm ? (treg_system_t*)system->tregs : NULL;
 
     /* Copy callback data before unlock to prevent race condition */
     brain_immune_cytokine_cb_t callback = system->on_cytokine;
@@ -1669,6 +1660,22 @@ int brain_immune_release_cytokine(
     brain_cytokine_t cytokine_copy = *cytokine;
 
     nimcp_mutex_unlock(system->mutex);
+
+    if (storm) {
+        LOG_MODULE_WARN(BRAIN_IMMUNE_MODULE_NAME, "Cytokine storm risk detected!");
+        /* Phase C.2: Engage Tregs to actively suppress further pro-cytokine
+         * release (delta-aware suppression proportional to inflammation).
+         * One-shot log on storm onset; cleared when suppression decays. */
+        if (storm_tregs) {
+            (void)treg_update(storm_tregs, 0);
+            if (storm_onset) {
+                float damp = treg_get_suppression_factor((const treg_system_t*)storm_tregs);
+                LOG_MODULE_WARN(BRAIN_IMMUNE_MODULE_NAME,
+                    "Treg engaged: damping pro-inflammatory cytokines by %.0f%%",
+                    damp * 100.0f);
+            }
+        }
+    }
 
     /* Bio-async message sending would happen here (outside lock) */
     /* The delivered flag was already set inside the critical section */

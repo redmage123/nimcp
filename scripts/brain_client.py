@@ -946,6 +946,10 @@ class BrainProxy:
         resp = self._send({"cmd": "get_speech_lexicon_stats"})
         return resp.get("stats", {})
 
+    def get_nlp_immune_stats(self):
+        resp = self._send({"cmd": "get_nlp_immune_stats"})
+        return resp.get("stats", {})
+
     def emergent_express(self, output_vector):
         resp = self._send({"cmd": "emergent_express",
                            "output_vector": _to_list(output_vector)})

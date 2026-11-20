@@ -33,6 +33,7 @@
 #include "core/brain/nimcp_brain_lazy_init.h"
 #include "cognitive/language/nimcp_emergent_language_bridge.h"
 #include "nlp/nimcp_multimodal_nlp_bridge.h"
+#include "nlp/immune/nimcp_nlp_immune_brain.h"
 #include "core/brain/nimcp_brain_cycle_coordinator.h"
 #include "core/brain/nimcp_brain_kg.h"  /* W17: KG consumers in training path */
 #include "core/probes/nimcp_probe_stages.h"
@@ -1665,6 +1666,13 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             multimodal_nlp_brain_on_learn(mb, brain->speech_cortex,
                                           brain->staged_sensory.speech_data,
                                           brain->staged_sensory.speech_size, label);
+    }
+
+    /* NLP-immune coupling (NIMCP_NLP_IMMUNE=1): every 32 steps, language
+     * outcomes -> cytokines and current cytokines -> language capacity. */
+    {
+        nlp_immune_brain_t* nb = nlp_immune_brain_get(&brain->nlp_immune_state);
+        if (nb) nlp_immune_brain_tick(nb, brain);
     }
 
     /* Phase 5A: drive the octopus module with the clean training input.

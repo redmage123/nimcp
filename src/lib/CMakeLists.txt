@@ -2323,6 +2323,7 @@ set(NIMCP_CORE_SOURCES
 
     # NLP-Immune Integration (Phase BII-L: Language processing immune bridges)
     ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_nlp_immune_bridge.c  # NLP-immune integration (language impairment)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_nlp_immune_brain.c  # NLP-immune live driver (NIMCP_NLP_IMMUNE=1)
     ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_spike_nlp_immune_bridge.c  # Spike NLP-immune integration
     ${CMAKE_CURRENT_SOURCE_DIR}/../nlp/immune/nimcp_multimodal_nlp_immune_bridge.c  # Multimodal NLP-immune integration
 
