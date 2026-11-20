@@ -4322,7 +4322,7 @@ static PyObject* Brain_get_emergent_stats(BrainObject* self,
         return NULL;
     }
     return Py_BuildValue(
-        "{s:O,s:I,s:I,s:I,s:f,s:K,s:K,s:K,s:K,s:K,s:I}",
+        "{s:O,s:I,s:I,s:I,s:f,s:K,s:K,s:K,s:K,s:K,s:I,s:K,s:K}",
         "enabled", s.enabled ? Py_True : Py_False,
         "vocab_size", s.vocab_size, "active_tokens", s.active_tokens,
         "labeled_tokens", s.labeled_tokens, "purity", (double)s.purity,
@@ -4331,7 +4331,9 @@ static PyObject* Brain_get_emergent_stats(BrainObject* self,
         "predictions", (unsigned long long)s.predictions,
         "hits", (unsigned long long)s.hits,
         "majority_hits", (unsigned long long)s.majority_hits,
-        "distinct_labels", s.distinct_labels);
+        "distinct_labels", s.distinct_labels,
+        "decide_observations", (unsigned long long)s.decide_observations,
+        "learn_observations", (unsigned long long)s.learn_observations);
 }
 
 static PyObject* Brain_get_speech_lexicon_stats(BrainObject* self,

@@ -387,6 +387,8 @@ nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
     out->hits = s.hits;
     out->majority_hits = s.majority_hits;
     out->distinct_labels = s.distinct_labels;
+    out->decide_observations = s.decide_observations;
+    out->learn_observations = s.learn_observations;
     return NIMCP_OK;
 }
 

@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #define LOG_MODULE "EMERGENT_BRIDGE"
 #define RING 16
@@ -44,6 +45,7 @@ struct emergent_bridge {
     uint32_t  majority;              /* index into labels */
 
     uint64_t observations, labeled_decides, predictions, hits, majority_hits;
+    uint64_t decide_observations, learn_observations;
     char path[512];
 };
 
@@ -135,13 +137,9 @@ static void _count_label(emergent_bridge_t* b, const char* label) {
     if (b->labels[i].count > b->labels[b->majority].count) b->majority = i;
 }
 
-void emergent_bridge_on_decide(emergent_bridge_t* b, const float* features,
-                               uint32_t num_features, const float* output,
-                               uint32_t output_size) {
-    if (!b || !features || !output || output_size == 0) return;
-    uint64_t h = _hash(features, num_features);
-
-    nimcp_mutex_lock(b->lock);
+/* Lazy model creation (first output fixes the dimension). Lock held.
+ * Returns false when this output belongs to a different head. */
+static bool _ensure_model_locked(emergent_bridge_t* b, uint32_t output_size) {
     if (!b->el) {
         nimcp_emergent_config_t cfg = nimcp_emergent_config_default();
         cfg.centroid_dim = output_size;
@@ -157,25 +155,20 @@ void emergent_bridge_on_decide(emergent_bridge_t* b, const float* features,
                     LOG_WARN("[%s] could not load %s; starting empty", LOG_MODULE, b->path);
             }
         }
-        if (!b->el) { nimcp_mutex_unlock(b->lock); return; }
+        if (!b->el) return false;
     }
-    if (output_size != b->output_size) {     /* a different head; not this vocabulary */
-        nimcp_mutex_unlock(b->lock);
-        return;
-    }
-    char label[LABEL_LEN] = {0};
-    for (uint32_t i = 0; i < RING; i++) {
-        if (b->recent[i].label[0] && b->recent[i].hash == h) {
-            snprintf(label, LABEL_LEN, "%s", b->recent[i].label);
-            break;
-        }
-    }
+    return output_size == b->output_size;
+}
 
+/* Observe one output; when labelled, score the token's gloss against the
+ * label, then vote. Lock held. */
+static void _observe_locked(emergent_bridge_t* b, const float* output,
+                            uint32_t output_size, const char* label) {
     uint32_t tok = UINT32_MAX;
     nimcp_emergent_observe_ex(b->el, output, output_size, &tok);
     b->observations++;
 
-    if (label[0] && tok != UINT32_MAX) {
+    if (label && label[0] && tok != UINT32_MAX) {
         b->labeled_decides++;
         if (b->n_labels > 0 && strcmp(b->labels[b->majority].label, label) == 0)
             b->majority_hits++;
@@ -190,7 +183,46 @@ void emergent_bridge_on_decide(emergent_bridge_t* b, const float* features,
         _count_label(b, label);
     }
     if (b->path[0] && b->observations % SAVE_EVERY == 0) _save(b);
+}
+
+void emergent_bridge_on_decide(emergent_bridge_t* b, const float* features,
+                               uint32_t num_features, const float* output,
+                               uint32_t output_size) {
+    if (!b || !features || !output || output_size == 0) return;
+    uint64_t h = _hash(features, num_features);
+
+    nimcp_mutex_lock(b->lock);
+    if (!_ensure_model_locked(b, output_size)) { nimcp_mutex_unlock(b->lock); return; }
+    char label[LABEL_LEN] = {0};
+    for (uint32_t i = 0; i < RING; i++) {
+        if (b->recent[i].label[0] && b->recent[i].hash == h) {
+            snprintf(label, LABEL_LEN, "%s", b->recent[i].label);
+            break;
+        }
+    }
+    _observe_locked(b, output, output_size, label);
+    b->decide_observations++;
     nimcp_mutex_unlock(b->lock);
+}
+
+void emergent_bridge_on_learn_output(emergent_bridge_t* b, const float* output,
+                                     uint32_t output_size, const char* label) {
+    if (!b || !output || output_size == 0 || !label || !label[0]) return;
+    nimcp_mutex_lock(b->lock);
+    if (_ensure_model_locked(b, output_size)) {
+        _observe_locked(b, output, output_size, label);
+        b->learn_observations++;
+    }
+    nimcp_mutex_unlock(b->lock);
+}
+
+bool emergent_bridge_observe_learn_enabled(void) {
+    static int on = -1;                      /* env read once; benign race */
+    if (on < 0) {
+        const char* v = getenv("NIMCP_EMERGENT_OBSERVE_LEARN");
+        on = (v && v[0] == '0') ? 0 : 1;
+    }
+    return on == 1;
 }
 
 int emergent_bridge_get_stats(emergent_bridge_t* b, emergent_bridge_stats_t* out) {
@@ -211,6 +243,8 @@ int emergent_bridge_get_stats(emergent_bridge_t* b, emergent_bridge_stats_t* out
     out->hits = b->hits;
     out->majority_hits = b->majority_hits;
     out->distinct_labels = b->n_labels;
+    out->decide_observations = b->decide_observations;
+    out->learn_observations = b->learn_observations;
     nimcp_mutex_unlock(b->lock);
     return 0;
 }

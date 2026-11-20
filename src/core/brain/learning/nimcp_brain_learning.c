@@ -1646,12 +1646,29 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         }
     }
 
-    /* Emergent language: remember this input's label so a later decide on
-     * the same input can vote it onto the brain's own token. Opt-in
+    /* Emergent language: (a) remember this input's label so a later decide
+     * on the same input can vote it onto the brain's own token; (b) read the
+     * ANN's own output for this input BEFORE this step's weight update and
+     * vote the label onto the token it falls into (exact pairing; the
+     * trainer recomposes inputs between learn and decide, so (a) rarely
+     * matches). One read-only forward per labelled step. Opt-in
      * (NIMCP_EMERGENT_LANGUAGE=1); no-op otherwise. */
     {
         emergent_bridge_t* eb = emergent_bridge_get(&brain->emergent_bridge);
-        if (eb) emergent_bridge_on_learn(eb, features, num_features, label);
+        if (eb) {
+            emergent_bridge_on_learn(eb, features, num_features, label);
+            uint32_t n_out = brain->config.num_outputs;
+            if (label && label[0] && brain->network && n_out > 0 &&
+                emergent_bridge_observe_learn_enabled()) {
+                float* own = (float*)nimcp_calloc(n_out, sizeof(float));
+                if (own) {
+                    adaptive_network_forward_readonly(brain->network, features,
+                                                      num_features, own, n_out, 0);
+                    emergent_bridge_on_learn_output(eb, own, n_out, label);
+                    nimcp_free(own);
+                }
+            }
+        }
     }
 
     /* Multimodal NLP: a labelled real speech clip staged for this step

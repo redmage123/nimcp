@@ -726,3 +726,69 @@ TEST(EmergentLanguageWiring, ActiveTokensReflectsRecentUse) {
     EXPECT_EQ(s.active_tokens, 1u);
     nimcp_emergent_language_destroy(el);
 }
+
+// ============================================================================
+// Bridge: labels voted onto the brain's own output at learn time
+// ============================================================================
+
+extern "C" {
+#include "cognitive/language/nimcp_emergent_language_bridge.h"
+}
+
+TEST(EmergentLanguageBridge, LearnTimeOutputsCarryTheirLabels) {
+    setenv("NIMCP_EMERGENT_LANGUAGE", "1", 1);
+    unsetenv("NIMCP_EMERGENT_LANGUAGE_PATH");
+    void* slot = nullptr;
+    emergent_bridge_t* b = emergent_bridge_for(&slot);
+    ASSERT_NE(b, nullptr);
+    EXPECT_TRUE(emergent_bridge_observe_learn_enabled());   // default on
+    const uint32_t dim = 16;
+    std::vector<float> cat(dim), dog(dim), v(dim);
+    for (uint32_t i = 0; i < dim; i++) { cat[i] = (i < 8) ? 1.0f : 0.0f; dog[i] = (i < 8) ? 0.0f : 1.0f; }
+    // Two clearly separate outputs, each always taught with its own word.
+    for (int r = 0; r < 20; r++) {
+        fill_similar_embedding(v.data(), cat.data(), dim, 0.02f * (r % 3));
+        emergent_bridge_on_learn_output(b, v.data(), dim, "cat");
+        fill_similar_embedding(v.data(), dog.data(), dim, 0.02f * (r % 3));
+        emergent_bridge_on_learn_output(b, v.data(), dim, "dog");
+    }
+    // Unlabelled and invalid calls are ignored.
+    emergent_bridge_on_learn_output(b, cat.data(), dim, "");
+    emergent_bridge_on_learn_output(b, cat.data(), dim, nullptr);
+    emergent_bridge_on_learn_output(nullptr, cat.data(), dim, "cat");
+
+    emergent_bridge_stats_t s;
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.learn_observations, 40u);
+    EXPECT_EQ(s.decide_observations, 0u);
+    EXPECT_EQ(s.observations, 40u);
+    EXPECT_EQ(s.labeled_decides, 40u);
+    EXPECT_EQ(s.distinct_labels, 2u);
+    EXPECT_GE(s.labeled_tokens, 2u);
+    ASSERT_GE(s.predictions, 30u);
+    // After the first sighting of each, the token's gloss names the word
+    // nearly every time; always guessing one word gets about half.
+    EXPECT_GT((double)s.hits / s.predictions, 0.9);
+    EXPECT_LT((double)s.majority_hits / s.labeled_decides, 0.6);
+
+    // The symbols for a cat-like output come from the cat token.
+    char text[64];
+    EXPECT_GT(emergent_bridge_express(b, cat.data(), dim, text, sizeof text), 0);
+
+    // A decide is counted separately; it is labelled only if the same
+    // input was trained recently.
+    std::vector<float> in(4, 0.25f);
+    emergent_bridge_on_learn(b, in.data(), 4, "dog");
+    emergent_bridge_on_decide(b, in.data(), 4, dog.data(), dim);
+    std::vector<float> other(4, 0.5f);
+    emergent_bridge_on_decide(b, other.data(), 4, cat.data(), dim);
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.decide_observations, 2u);
+    EXPECT_EQ(s.labeled_decides, 41u);
+    // A different output size is a different head: ignored.
+    std::vector<float> wide(dim * 2, 1.0f);
+    emergent_bridge_on_learn_output(b, wide.data(), dim * 2, "cat");
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.learn_observations, 40u);
+    emergent_bridge_destroy(b);
+}

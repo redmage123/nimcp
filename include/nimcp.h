@@ -491,8 +491,9 @@ nimcp_status_t nimcp_brain_get_concept_registry_stats(
 /**
  * @brief Emergent-language snapshot (opt-in NIMCP_EMERGENT_LANGUAGE=1).
  *
- * The brain clusters its own decision outputs into emergent tokens and
- * votes training labels onto them. `hits / predictions` is how often a
+ * The brain clusters its own outputs (decisions, and its pre-update output
+ * on each labelled training step) into emergent tokens and votes training
+ * labels onto them. `hits / predictions` is how often a
  * token's current gloss already named the label (a held-out guess, made
  * before that vote counts); compare with `majority_hits / labeled_decides`
  * (always guessing the most frequent label). enabled=false when the flag
@@ -510,6 +511,8 @@ typedef struct {
     uint64_t hits;
     uint64_t majority_hits;
     uint32_t distinct_labels;
+    uint64_t decide_observations;  /* of observations: from brain_decide */
+    uint64_t learn_observations;   /* of observations: labelled learn steps */
 } nimcp_brain_emergent_stats_t;
 
 nimcp_status_t nimcp_brain_get_emergent_stats(nimcp_brain_t brain,
