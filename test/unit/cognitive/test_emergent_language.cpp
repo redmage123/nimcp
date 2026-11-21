@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <string>
 #include <cstdlib>
 #include <cstdio>
 #include <unistd.h>
@@ -850,4 +851,67 @@ TEST(EmergentLanguageBridge, TimedSaveAndDiscoveryOverride) {
     unsetenv("NIMCP_EMERGENT_LANGUAGE_PATH");
     unsetenv("NIMCP_EMERGENT_SAVE_SECS");
     unsetenv("NIMCP_EMERGENT_DISCOVERY");
+}
+
+TEST(EmergentLanguageBridge, LabelsVoteTheirContentWords) {
+    setenv("NIMCP_EMERGENT_LANGUAGE", "1", 1);
+    unsetenv("NIMCP_EMERGENT_LANGUAGE_PATH");
+    unsetenv("NIMCP_EMERGENT_DISCOVERY");
+    const uint32_t dim = 16;
+    std::vector<float> ball(dim), cup(dim), v(dim), f(4);
+    for (uint32_t i = 0; i < dim; i++) { ball[i] = (i < 8) ? 1.0f : 0.0f; cup[i] = (i < 8) ? 0.0f : 1.0f; }
+    // Every label is unique ("ball_moda", "ball_modb", ...), but each output
+    // cluster shares one word; the modifiers are shared across clusters.
+    auto run = [&](emergent_bridge_t* b) {
+        for (int r = 0; r < 20; r++) {
+            std::string mod = std::string("mod") + (char)('a' + r);
+            f = {1.0f, (float)r, 0.0f, 0.0f};
+            fill_similar_embedding(v.data(), ball.data(), dim, 0.02f * (r % 3));
+            emergent_bridge_on_learn_output(b, f.data(), 4, v.data(), dim, ("ball_" + mod).c_str());
+            f = {2.0f, (float)r, 0.0f, 0.0f};
+            fill_similar_embedding(v.data(), cup.data(), dim, 0.02f * (r % 3));
+            emergent_bridge_on_learn_output(b, f.data(), 4, v.data(), dim, ("cup_" + mod).c_str());
+        }
+        emergent_bridge_stats_t s;
+        EXPECT_EQ(emergent_bridge_get_stats(b, &s), 0);
+        return s;
+    };
+
+    unsetenv("NIMCP_EMERGENT_LABEL_WORDS");             // default: per word
+    emergent_bridge_t* b = emergent_bridge_create_from_env();
+    ASSERT_NE(b, nullptr);
+    emergent_bridge_stats_t s = run(b);
+    EXPECT_EQ(s.labeled_decides, 40u);
+    EXPECT_EQ(s.distinct_labels, 22u);                   // ball, cup, moda..modt
+    ASSERT_GE(s.predictions, 30u);
+    EXPECT_GT((double)s.novel_hits / s.novel_predictions, 0.9);   // gloss = ball / cup
+    EXPECT_LT((double)s.majority_hits / s.labeled_decides, 0.6);
+    char text[64];
+    EXPECT_GT(emergent_bridge_express(b, ball.data(), dim, text, sizeof text), 0);
+    emergent_bridge_destroy(b);
+
+    // Whole labels never repeat, so a token can never predict the next one.
+    setenv("NIMCP_EMERGENT_LABEL_WORDS", "0", 1);
+    b = emergent_bridge_create_from_env();
+    ASSERT_NE(b, nullptr);
+    s = run(b);
+    EXPECT_EQ(s.distinct_labels, 40u);
+    EXPECT_EQ(s.hits, 0u);
+    emergent_bridge_destroy(b);
+    unsetenv("NIMCP_EMERGENT_LABEL_WORDS");
+
+    // Splitting: lowercase letter runs >= 3, no digit runs, no function
+    // words, no repeats; a label with no content word is kept whole.
+    b = emergent_bridge_create_from_env();
+    ASSERT_NE(b, nullptr);
+    f = {9.0f, 0.0f, 0.0f, 0.0f};
+    emergent_bridge_on_learn_output(b, f.data(), 4, ball.data(), dim, "The_Sensor_sensor_imu_of_video_s1");
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.distinct_labels, 3u);                    // sensor, imu, video
+    f = {9.0f, 1.0f, 0.0f, 0.0f};
+    emergent_bridge_on_learn_output(b, f.data(), 4, ball.data(), dim, "s1");
+    ASSERT_EQ(emergent_bridge_get_stats(b, &s), 0);
+    EXPECT_EQ(s.distinct_labels, 4u);                    // + "s1" whole
+    EXPECT_EQ(s.labeled_decides, 2u);
+    emergent_bridge_destroy(b);
 }

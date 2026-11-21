@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <time.h>
+#include <ctype.h>
 
 #define LOG_MODULE "EMERGENT_BRIDGE"
 #define RING 16
@@ -27,6 +28,7 @@
 #define SEEN_SLOTS (1u << SEEN_BITS)
 #define SIM_BUCKETS 11               /* [none] + cosine deciles <0.1 .. >=0.9 */
 #define SIM_LOG_EVERY 1000
+#define MAX_LABEL_WORDS 8            /* content words voted per label */
 
 typedef struct {
     uint64_t hash;
@@ -66,6 +68,7 @@ struct emergent_bridge {
     uint64_t  last_save_ms;
     uint32_t  save_secs;
     float     discovery_threshold;   /* 0 = module default */
+    bool      label_words;           /* vote each content word, not the whole label */
     char path[512];
 };
 
@@ -104,6 +107,52 @@ static uint64_t _hash(const float* v, uint32_t n) {
     return h ^ n;
 }
 
+/* Function words never make a gloss. */
+static bool _stopword(const char* w) {
+    static const char* const stop[] = {
+        "the", "and", "for", "with", "from", "into", "onto", "over", "under",
+        "that", "this", "its", "are", "was", "were", "has", "have", "had",
+        "not", "but", "you", "his", "her", "their", "they", "them", "who",
+        "what", "when", "where", "which", "while", "then", "than", "there",
+        "some", "any", "all", "each", "very", "out", "off", "about", NULL };
+    for (int i = 0; stop[i]; i++)
+        if (strcmp(w, stop[i]) == 0) return true;
+    return false;
+}
+
+/* Split a label into its distinct content words: lowercase runs of letters
+ * (labels are identifiers like "spotted_cocoon" or plain phrases), at least
+ * 3 letters, no digits in the run ("s1" in "video_s1" is dropped), no
+ * function words, no repeats ("sensor_sensor_imu" -> sensor, imu is too
+ * short). A label with no content word is used whole (lowercased). */
+static uint32_t _label_words(const char* label, char out[][LABEL_LEN], uint32_t max) {
+    uint32_t n = 0;
+    const char* p = label;
+    while (*p && n < max) {
+        while (*p && !isalnum((unsigned char)*p)) p++;
+        const char* start = p;
+        bool digit = false;
+        while (*p && isalnum((unsigned char)*p)) { if (isdigit((unsigned char)*p)) digit = true; p++; }
+        size_t len = (size_t)(p - start);
+        if (len < 3 || digit) continue;
+        if (len >= LABEL_LEN) len = LABEL_LEN - 1;
+        char w[LABEL_LEN];
+        for (size_t i = 0; i < len; i++) w[i] = (char)tolower((unsigned char)start[i]);
+        w[len] = '\0';
+        if (_stopword(w)) continue;
+        bool dup = false;
+        for (uint32_t i = 0; i < n; i++) if (strcmp(out[i], w) == 0) { dup = true; break; }
+        if (!dup) memcpy(out[n++], w, len + 1);
+    }
+    if (n == 0 && max > 0) {
+        size_t i = 0;
+        for (; label[i] && i < LABEL_LEN - 1; i++) out[0][i] = (char)tolower((unsigned char)label[i]);
+        out[0][i] = '\0';
+        n = out[0][0] ? 1 : 0;
+    }
+    return n;
+}
+
 emergent_bridge_t* emergent_bridge_create_from_env(void) {
     const char* on = getenv("NIMCP_EMERGENT_LANGUAGE");
     if (!on || on[0] != '1') return NULL;
@@ -121,10 +170,13 @@ emergent_bridge_t* emergent_bridge_create_from_env(void) {
         float v = strtof(dt, NULL);
         if (v > 0.0f && v < 2.0f) b->discovery_threshold = v;
     }
+    const char* lw = getenv("NIMCP_EMERGENT_LABEL_WORDS");
+    b->label_words = !(lw && lw[0] == '0');
     b->last_save_ms = _now_ms();
-    LOG_INFO("[%s] enabled (persistence: %s, timed save %us, discovery %s)", LOG_MODULE,
+    LOG_INFO("[%s] enabled (persistence: %s, timed save %us, discovery %s, labels %s)", LOG_MODULE,
              b->path[0] ? b->path : "off", b->save_secs,
-             b->discovery_threshold > 0.0f ? dt : "default");
+             b->discovery_threshold > 0.0f ? dt : "default",
+             b->label_words ? "per content word" : "whole");
     return b;
 }
 
@@ -249,27 +301,45 @@ static void _observe_locked(emergent_bridge_t* b, const float* output,
     bool novel = !_seen_before(b, input_hash);
 
     if (label && label[0]) {
+        /* The label's content words (or the whole label when label_words is
+         * off). A prediction hits when the token's gloss before this vote is
+         * one of them; the baseline guesses the most-counted word. */
+        char words[MAX_LABEL_WORDS][LABEL_LEN];
+        uint32_t nw;
+        if (b->label_words) {
+            nw = _label_words(label, words, MAX_LABEL_WORDS);
+        } else {
+            snprintf(words[0], LABEL_LEN, "%s", label);
+            nw = 1;
+        }
+        if (nw == 0) goto scored;
         b->labeled_decides++;
-        bool maj = b->n_labels > 0 && strcmp(b->labels[b->majority].label, label) == 0;
+        bool maj = false;
+        for (uint32_t i = 0; i < nw && b->n_labels > 0; i++)
+            if (strcmp(b->labels[b->majority].label, words[i]) == 0) { maj = true; break; }
         if (maj) b->majority_hits++;
         nimcp_emergent_translation_t tr;
-        int had_gloss = (nimcp_emergent_get_translation(b->el, tok, &tr) == 0 &&
-                         tr.human_gloss[0] != '\0');
-        int m = nimcp_emergent_vote_human(b->el, tok, label);
+        bool had_gloss = (nimcp_emergent_get_translation(b->el, tok, &tr) == 0 &&
+                          tr.human_gloss[0] != '\0');
+        bool hit = false;
+        for (uint32_t i = 0; had_gloss && i < nw; i++)
+            if (strncmp(tr.human_gloss, words[i], LABEL_LEN - 1) == 0) { hit = true; break; }
+        for (uint32_t i = 0; i < nw; i++) nimcp_emergent_vote_human(b->el, tok, words[i]);
         if (had_gloss) {
             b->predictions++;
-            if (m == 1) b->hits++;
+            if (hit) b->hits++;
         }
         if (novel && b->seen) {
             b->novel_labeled++;
             if (maj) b->novel_majority_hits++;
             if (had_gloss) {
                 b->novel_predictions++;
-                if (m == 1) b->novel_hits++;
+                if (hit) b->novel_hits++;
             }
         }
-        _count_label(b, label);
+        for (uint32_t i = 0; i < nw; i++) _count_label(b, words[i]);
     }
+scored:
     if (b->observations % SIM_LOG_EVERY == 0) _log_progress(b);
     if (b->path[0] && (b->observations % SAVE_EVERY == 0 ||
         (b->save_secs > 0 && _now_ms() - b->last_save_ms >= (uint64_t)b->save_secs * 1000u)))

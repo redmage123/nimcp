@@ -12,9 +12,14 @@
  *         same input vector was recently trained with a label.
  * WHY:  Gives the brain its own symbols for its output space, and a
  *       measure of whether those symbols line up with human words:
- *       before each vote, does the token's current gloss already equal the
- *       label? That running hit rate is reported against a majority-label
+ *       before each vote, is the token's current gloss one of the label's
+ *       words? That running hit rate is reported against a majority-word
  *       baseline.
+ *       Labels are split into content words ("spotted_cocoon" -> spotted,
+ *       cocoon; >= 3 letters, no digits, no function words, no repeats) and
+ *       each word is voted, so a token can learn a word shared by many
+ *       inputs instead of one near-unique label string.
+ *       NIMCP_EMERGENT_LABEL_WORDS=0 votes the whole label instead.
  * HOW:  brain_learn_vector -> emergent_bridge_on_learn (hash of input +
  *       label into a small ring) and emergent_bridge_on_learn_output (one
  *       read-only ANN forward); brain_decide -> emergent_bridge_on_decide
@@ -50,9 +55,9 @@ typedef struct {
     uint64_t observations;      /* outputs observed (decide + learn) */
     uint64_t labeled_decides;   /* observations that carried a training label */
     uint64_t predictions;       /* labelled observations whose token already had a gloss */
-    uint64_t hits;              /* ... where the gloss equalled the label */
-    uint64_t majority_hits;     /* baseline: always guess the most frequent label so far */
-    uint32_t distinct_labels;   /* labels seen (capped at the tracking table size) */
+    uint64_t hits;              /* ... where the gloss was one of the label's words */
+    uint64_t majority_hits;     /* baseline: always guess the most frequent word so far */
+    uint32_t distinct_labels;   /* label words seen (capped at the tracking table size) */
     uint64_t decide_observations; /* of observations: from brain_decide */
     uint64_t learn_observations;  /* of observations: from labelled learn steps */
     /* Generalisation: the same scoring, restricted to inputs never observed
