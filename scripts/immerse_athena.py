@@ -540,7 +540,8 @@ _NEXT_FRAME_PROJ = None       # fixed 1024 x D projection of cortex embeddings
 # no_embed: the cortex returned no embedding (shot abandoned); blank: frame
 # t+1's embedding was all zero, e.g. a fade to black (that pair skipped).
 _VIDEO_PHASE_STATS = {"shots": 0, "frames": 0, "full": 0, "loss_sum": 0.0,
-                      "no_embed": 0, "blank": 0}
+                      "no_embed": 0, "blank": 0,
+                      "loss_full_sum": 0.0, "loss_tiled_sum": 0.0, "n_full_loss": 0, "n_tiled_loss": 0}
 
 
 def _next_frame_tile(emb, tile_rms):
@@ -588,7 +589,8 @@ def _learn_video_shot(brain, rs, seq, composer, lr):
             # Blank next frame (all-zero embedding): skip this pair only.
             _VIDEO_PHASE_STATS["blank"] += 1
             continue
-        if random.random() < VIDEO_TARGET_FULL_PROB:
+        full = random.random() < VIDEO_TARGET_FULL_PROB
+        if full:
             target = np.tile(nxt, 4)
             _VIDEO_PHASE_STATS["full"] += 1
         else:
@@ -601,6 +603,9 @@ def _learn_video_shot(brain, rs, seq, composer, lr):
         if loss is not None and np.isfinite(loss):
             losses.append(float(loss))
             _VIDEO_PHASE_STATS["loss_sum"] += float(loss)
+            kind = "full" if full else "tiled"
+            _VIDEO_PHASE_STATS[f"loss_{kind}_sum"] += float(loss)
+            _VIDEO_PHASE_STATS[f"n_{kind}_loss"] += 1
         _VIDEO_PHASE_STATS["frames"] += 1
     _VIDEO_PHASE_STATS["shots"] += 1
     return losses
@@ -896,6 +901,243 @@ def _video_temporal_probe(brain, composer, n_shots=VIDEO_PROBE_SHOTS, seed=0):
           f"lnn-readout-only={res['motion_lnn_only']:.3e} | lnn state ordered-vs-still "
           f"rel.dist={res['lnn_state_dist']:.3e} saturated={res['lnn_saturated']:.2f}", flush=True)
     return res
+
+
+# Video monitor + video-phase exit rule (2026-11-07). Every VIDEO_PROBE_EVERY
+# stage-0 steps the monitor plays the held-out shots in order and asks of each
+# frame t's response: does output tile 4 (where training puts the projected
+# next frame) predict frame t+1 better than simply repeating frame t would?
+#   pred_cos  = cos(tile4(t), P·emb(t+1))     the prediction
+#   copy_cos  = cos(P·emb(t),  P·emb(t+1))    "next = current" baseline
+#   track_cos = cos(tile4(t), P·emb(t))       does the output follow the frame at all
+#   skill     = pred_cos - copy_cos           > 0 only by beating the baseline
+# It also records the LNN state (norm, fraction at the ±10 clamp, change per
+# frame), the LNN readout's share of the decision, the LNN gradient counters,
+# the SNN rate, the training losses since the last record (split by target
+# type) and the temporal probe, one JSON line per run in VIDEO_MONITOR_LOG.
+#
+# The video phase ends at the earlier of
+#   - VIDEO_EXIT_CONSECUTIVE monitor runs in a row with skill > VIDEO_EXIT_SKILL_MIN
+#     and temporal(order) >= VIDEO_EXIT_TEMPORAL_MIN, or
+#   - stage-0 step VIDEO_PHASE_MAX_STEP (--video-phase-max-step, 0 = none),
+# after which the StageGate decides the move to stage 1 as usual. The end is
+# recorded in VIDEO_PHASE_DONE_FILE so a restart with --video-phase still on
+# does not reopen it.
+VIDEO_MONITOR_LOG = "checkpoints/athena/video_monitor.jsonl"
+VIDEO_PHASE_DONE_FILE = "checkpoints/athena/video_phase_done.json"
+VIDEO_PHASE_MAX_STEP = 115000
+VIDEO_EXIT_SKILL_MIN = 0.0
+VIDEO_EXIT_TEMPORAL_MIN = 1e-3
+VIDEO_EXIT_CONSECUTIVE = 3
+_VIDEO_TRAIN_SNAPSHOT = {}
+
+
+def _video_train_window():
+    """Training stats since the previous monitor run."""
+    global _VIDEO_TRAIN_SNAPSHOT
+    cur = dict(_VIDEO_PHASE_STATS)
+    prev = _VIDEO_TRAIN_SNAPSHOT or {k: 0 for k in cur}
+    d = {k: cur[k] - prev.get(k, 0) for k in cur}
+    _VIDEO_TRAIN_SNAPSHOT = cur
+
+    def _mean(s, n):
+        return d[s] / d[n] if d[n] else None
+    return {"shots": d["shots"], "frames": d["frames"],
+            "loss_mean": (d["loss_sum"] / d["frames"]) if d["frames"] else None,
+            "loss_full_mean": _mean("loss_full_sum", "n_full_loss"),
+            "loss_tiled_mean": _mean("loss_tiled_sum", "n_tiled_loss"),
+            "blank": d["blank"], "no_embed": d["no_embed"]}
+
+
+def _video_prediction_probe(brain, composer, n_shots=VIDEO_PROBE_SHOTS, seed=0):
+    """Next-frame prediction skill, LNN state and readout share on held-out
+    shots under controlled inference (see the block comment above)."""
+    rs = _get_real_sensory()
+    shots = list(rs.heldout_sequences) if rs else []
+    if not shots:
+        return {}
+    rng = random.Random(seed)
+    rng.shuffle(shots)
+    shots = shots[:n_shots]
+    neutral = composer.compose(text="look at this", modality="text")
+    side = rs.resolution
+
+    def _cos(a, b):
+        return float(a @ b / max(1e-30, np.linalg.norm(a) * np.linalg.norm(b)))
+
+    def _proj(emb):
+        y = _next_frame_tile(emb, 1.0)
+        return None if y is None else y.astype(np.float64)
+
+    try:
+        readout0 = float((brain.lnn_tune_get() or {}).get("decide_readout"))
+    except Exception:
+        readout0 = None
+
+    pred, copy, track, out_step = [], [], [], []
+    lnn_norm, lnn_sat, lnn_step, readout_share = [], [], [], []
+    with _ControlledInference(brain) as ci:
+        for s in shots:
+            staged = [list(rs.to_stage_frame(f)) for f in s["frames"]]
+            if len(staged) < 3:
+                continue
+            embs = [brain.cortex_embed_visual(f, side, side, 3) for f in staged]
+            P = [(_proj(e) if e else None) for e in embs]
+            ci.reset()
+            outs, states = [], []
+            for f in staged:
+                brain.submit_sensory("visual", f, width=side, height=side, channels=3)
+                o = (brain.decide_full(neutral) or {}).get("output_vector")
+                outs.append(None if o is None else np.asarray(o, dtype=np.float64))
+                try:
+                    st = brain.lnn_get_state()
+                    states.append(None if st is None else np.asarray(st, dtype=np.float64))
+                except Exception:
+                    states.append(None)
+            for t in range(len(staged) - 1):
+                o = outs[t]
+                if o is None or o.size < 4096 or P[t] is None or P[t + 1] is None:
+                    continue
+                tile = o[3072:4096]
+                pred.append(_cos(tile, P[t + 1]))
+                copy.append(_cos(P[t], P[t + 1]))
+                track.append(_cos(tile, P[t]))
+                if t > 0 and outs[t - 1] is not None:
+                    prev = outs[t - 1][3072:4096]
+                    out_step.append(float(np.linalg.norm(tile - prev) / max(1e-30, np.linalg.norm(tile))))
+            for t, st in enumerate(states):
+                if st is None or not st.size:
+                    continue
+                lnn_norm.append(float(np.linalg.norm(st)))
+                lnn_sat.append(float(np.mean(np.abs(st) >= 9.9)))
+                if t > 0 and states[t - 1] is not None and states[t - 1].size == st.size:
+                    lnn_step.append(float(np.linalg.norm(st - states[t - 1]) / max(1e-30, np.linalg.norm(st))))
+            # LNN readout share of the decision after the last frame
+            if readout0 and outs[-1] is not None:
+                try:
+                    brain.lnn_tune("decide_readout", 0.0)
+                    ci.reset()
+                    o_off = None
+                    for f in staged:
+                        brain.submit_sensory("visual", f, width=side, height=side, channels=3)
+                        o_off = (brain.decide_full(neutral) or {}).get("output_vector")
+                    if o_off is not None:
+                        o_off = np.asarray(o_off, dtype=np.float64)
+                        readout_share.append(float(np.linalg.norm(outs[-1] - o_off)
+                                                   / max(1e-30, np.linalg.norm(outs[-1]))))
+                finally:
+                    brain.lnn_tune("decide_readout", readout0)
+
+    def _m(v):
+        return float(np.mean(v)) if v else None
+    res = {"pairs": len(pred), "pred_cos": _m(pred), "copy_cos": _m(copy),
+           "track_cos": _m(track), "out_step": _m(out_step),
+           "skill": (_m(pred) - _m(copy)) if pred else None,
+           "lnn_state_norm": _m(lnn_norm), "lnn_saturated": _m(lnn_sat),
+           "lnn_state_step": _m(lnn_step), "lnn_readout_share": _m(readout_share)}
+    return res
+
+
+def _video_phase_ended():
+    """(True, record) when VIDEO_PHASE_DONE_FILE says the video phase is over."""
+    try:
+        with open(VIDEO_PHASE_DONE_FILE) as f:
+            return True, json.load(f)
+    except (OSError, ValueError):
+        return False, None
+
+
+def _end_video_phase(step, reason):
+    """Switch the video phase off for good (this process and later restarts)."""
+    global VIDEO_PHASE
+    VIDEO_PHASE = False
+    rec = {"step": int(step), "reason": reason, "timestamp": time.time()}
+    try:
+        os.makedirs(os.path.dirname(VIDEO_PHASE_DONE_FILE), exist_ok=True)
+        with open(VIDEO_PHASE_DONE_FILE, "w") as f:
+            json.dump(rec, f)
+    except OSError as e:
+        print(f"  [VideoPhase] could not record the end: {e}", flush=True)
+    print(f"  [VideoPhase] ENDED at step {step}: {reason} — the StageGate now decides "
+          "the move to stage 1", flush=True)
+
+
+def _video_exit_streak():
+    """Consecutive passing monitor records at the end of VIDEO_MONITOR_LOG."""
+    streak = 0
+    try:
+        with open(VIDEO_MONITOR_LOG) as f:
+            lines = f.readlines()[-50:]
+    except OSError:
+        return 0
+    for line in lines:
+        try:
+            ok = bool(json.loads(line).get("exit_pass"))
+        except ValueError:
+            continue
+        streak = streak + 1 if ok else 0
+    return streak
+
+
+def _video_monitor(brain, composer, step, stage=0):
+    """Run every monitor probe, log one JSON line, apply the exit rule."""
+    t0 = time.time()
+    rec = {"timestamp": t0, "stage": stage, "step": int(step), "video_phase": bool(VIDEO_PHASE)}
+    try:
+        rec["prediction"] = _video_prediction_probe(brain, composer)
+    except Exception as e:
+        rec["prediction"] = {"error": str(e)}
+    try:
+        rec["temporal_probe"] = _video_temporal_probe(brain, composer, seed=0) or {}
+    except Exception as e:
+        rec["temporal_probe"] = {"error": str(e)}
+    rec["train"] = _video_train_window()
+    try:
+        ls = brain.lnn_get_stats() or {}
+        rec["lnn"] = {k: ls.get(k) for k in ("gradient_norm", "backward_steps", "forward_steps",
+                                             "state_norm", "avg_tau", "nan_count", "inf_count")}
+    except Exception as e:
+        rec["lnn"] = {"error": str(e)}
+    try:
+        ss = brain.snn_get_stats() if hasattr(brain, "snn_get_stats") else None
+        rec["snn_rate_hz"] = float((ss or {}).get("mean_firing_rate", 0.0) or 0.0)
+    except Exception:
+        rec["snn_rate_hz"] = None
+
+    p, tp = rec["prediction"], rec["temporal_probe"]
+    skill, temporal = p.get("skill"), tp.get("temporal")
+    rec["exit_pass"] = bool(skill is not None and temporal is not None
+                            and skill > VIDEO_EXIT_SKILL_MIN
+                            and temporal >= VIDEO_EXIT_TEMPORAL_MIN)
+    rec["seconds"] = round(time.time() - t0, 1)
+    try:
+        os.makedirs(os.path.dirname(VIDEO_MONITOR_LOG), exist_ok=True)
+        with open(VIDEO_MONITOR_LOG, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError as e:
+        print(f"    [VideoMonitor] log write failed: {e}", flush=True)
+
+    def _f(v, fmt=".3e"):
+        return "n/a" if v is None else format(v, fmt)
+    tr = rec["train"]
+    print(f"    [VideoMonitor] step {step} | next-frame pred_cos={_f(p.get('pred_cos'), '.4f')} "
+          f"copy_cos={_f(p.get('copy_cos'), '.4f')} skill={_f(p.get('skill'), '+.4f')} "
+          f"track_cos={_f(p.get('track_cos'), '.4f')} (pairs={p.get('pairs', 0)})", flush=True)
+    print(f"    [VideoMonitor] lnn state norm={_f(p.get('lnn_state_norm'), '.2f')} "
+          f"sat={_f(p.get('lnn_saturated'), '.2f')} step={_f(p.get('lnn_state_step'))} "
+          f"readout share={_f(p.get('lnn_readout_share'))} | grad={_f(rec['lnn'].get('gradient_norm'))} "
+          f"| snn={_f(rec['snn_rate_hz'], '.1f')} Hz | train frames={tr['frames']} "
+          f"loss full={_f(tr['loss_full_mean'], '.4f')} tiled={_f(tr['loss_tiled_mean'], '.4f')} "
+          f"| exit_pass={rec['exit_pass']} ({rec['seconds']} s)", flush=True)
+
+    if VIDEO_PHASE and stage == 0:
+        streak = _video_exit_streak()
+        print(f"    [VideoMonitor] exit rule: {streak}/{VIDEO_EXIT_CONSECUTIVE} consecutive passes "
+              f"(skill > {VIDEO_EXIT_SKILL_MIN}, temporal >= {VIDEO_EXIT_TEMPORAL_MIN:g}); "
+              f"ceiling step {VIDEO_PHASE_MAX_STEP or 'none'}", flush=True)
+        if streak >= VIDEO_EXIT_CONSECUTIVE:
+            _end_video_phase(step, f"temporal learning shown on {streak} consecutive monitor runs")
+    return rec
 
 
 NOISE_PROBE_FLAG = "/tmp/athena_noise_probe"
@@ -7819,6 +8061,11 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
     # stimulus stream comes from the prefetcher, not an index, so running
     # past num_stimuli is safe.
     if VIDEO_PHASE:
+        _vp_done, _vp_rec = _video_phase_ended()
+        if _vp_done:
+            _end_video_phase(_vp_rec.get("step", start_from),
+                             f"already ended earlier ({_vp_rec.get('reason')})")
+    if VIDEO_PHASE:
         print(f"  [VideoPhase] on: video rate {STAGE0_VIDEO_RATE:.2f}, full next-frame "
               f"target probability {VIDEO_TARGET_FULL_PROB:.2f}; stage 0 is held", flush=True)
     gate = None
@@ -7835,6 +8082,8 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
     for i in _it.count(start_from):
         TRAINING_PROGRESS[0], TRAINING_PROGRESS[1] = 0, i
         if i >= num_stimuli:
+            if VIDEO_PHASE and VIDEO_PHASE_MAX_STEP and i >= VIDEO_PHASE_MAX_STEP:
+                _end_video_phase(i, f"step ceiling {VIDEO_PHASE_MAX_STEP} reached")
             if VIDEO_PHASE:
                 # Video phase replaces moving on to stage 1 for now (user,
                 # 2026-11-05): hold stage 0 until the phase is switched off.
@@ -8224,9 +8473,9 @@ def run_stage_0(brain, composer, parent, clock, source, decoder,
         # never races learn_vector): touch /tmp/athena_noise_probe.
         if VIDEO_PROBE_EVERY and (i + 1) % VIDEO_PROBE_EVERY == 0:
             try:
-                _video_temporal_probe(brain, composer, seed=0)   # same shots every time: comparable trend
+                _video_monitor(brain, composer, i + 1, stage=0)   # same shots every time: comparable trend
             except Exception as _vpe:
-                print(f"    [VideoProbe] failed: {_vpe}", flush=True)
+                print(f"    [VideoMonitor] failed: {_vpe}", flush=True)
 
         if (i + 1) % 10 == 0 and os.path.exists(NOISE_PROBE_FLAG):
             try:
@@ -12140,6 +12389,9 @@ def main():
     parser.add_argument("--video-phase", action="store_true",
                         help="Stage-0 video phase: learn each shot frame by frame against "
                              "next-frame targets (pair with a higher --stage0-video-rate)")
+    parser.add_argument("--video-phase-max-step", type=int, default=115000,
+                        help="Video phase: stage-0 step at which it ends even without "
+                             "temporal learning (0 = no ceiling); see VIDEO_EXIT_*")
     parser.add_argument("--video-target-full-prob", type=float, default=0.3,
                         help="Video phase: probability a frame's whole target is the next "
                              "frame (else caption in tiles 1-3, next frame in tile 4)")
@@ -12278,6 +12530,7 @@ def main():
                      STAGE0_VIDEO_RATE=max(0.0, min(1.0, args.stage0_video_rate)),
                      VIDEO_INTERLUDE_EVERY=max(0, args.video_interlude_every),
                      VIDEO_PHASE=bool(args.video_phase),
+                     VIDEO_PHASE_MAX_STEP=max(0, args.video_phase_max_step),
                      VIDEO_TARGET_FULL_PROB=max(0.0, min(1.0, args.video_target_full_prob)))
     if args.no_real_sensory:
         os.environ["NIMCP_REAL_SENSORY"] = "0"

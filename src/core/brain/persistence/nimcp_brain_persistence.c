@@ -340,6 +340,7 @@ static void update_stats_checksum_failure(void)
 #include "utils/bridge/nimcp_bridge_boilerplate.h"
 #include "mesh/nimcp_mesh_participant.h"
 #include "mesh/nimcp_mesh_adapter.h"
+#include <unistd.h>   /* access() for cortex sidecars */
 
 BRIDGE_BOILERPLATE_MESH_ONLY(brain_persistence, MESH_ADAPTER_CATEGORY_COGNITIVE)
 
@@ -2066,12 +2067,23 @@ brain_t brain_load(const char* filepath)
         }
 
         /* Cortex CNN loader threads (up to 4) */
+        bool cortex_created_on_load = false;
         {
             const char* cortex_suffixes[4] = {".cortex_visual", ".cortex_audio",
                                                ".cortex_speech", ".cortex_somato"};
             for (int ci = 0; ci < 4; ci++) {
+                /* The cortexes are created lazily on the first learn step with
+                 * staged sensory data, so at load time they usually do not
+                 * exist yet and their sidecars were skipped: every resume
+                 * restarted all four cortexes from scratch (2026-11-05).
+                 * Create a cortex here when its sidecar exists. */
+                snprintf(cortex_paths[ci], sizeof(cortex_paths[ci]), "%s%s", filepath, cortex_suffixes[ci]);
+                if (!brain->cortex_cnns[ci] && access(cortex_paths[ci], R_OK) == 0) {
+                    extern struct cortex_cnn_processor* cortex_cnn_create(uint32_t type, uint32_t embed_dim);
+                    brain->cortex_cnns[ci] = cortex_cnn_create((uint32_t)ci, 0);
+                    if (brain->cortex_cnns[ci]) cortex_created_on_load = true;
+                }
                 if (brain->cortex_cnns[ci]) {
-                    snprintf(cortex_paths[ci], sizeof(cortex_paths[ci]), "%s%s", filepath, cortex_suffixes[ci]);
                     sidecar_args[n_sidecars] = (sidecar_load_arg_t){ .path = cortex_paths[ci], .result = NULL, .type = 3 + ci, .brain = brain };
                     if (pthread_create(&sidecar_threads[n_sidecars], NULL, _sidecar_load_cortex, &sidecar_args[n_sidecars]) == 0)
                         sidecar_launched[n_sidecars] = true;
@@ -2170,7 +2182,17 @@ brain_t brain_load(const char* filepath)
                     if ((intptr_t)sidecar_args[i].result == 0)
                         fprintf(stderr, "[INFO] Restored %s cortex CNN from %s\n",
                                 cortex_names[ci], cortex_paths[ci]);
+                    else
+                        fprintf(stderr, "[WARN] %s cortex CNN sidecar %s failed to load "
+                                "(rc=%d) — this cortex starts untrained\n",
+                                cortex_names[ci], cortex_paths[ci],
+                                (int)(intptr_t)sidecar_args[i].result);
                 }
+            }
+            /* Cortexes created above for their sidecars need the substrate +
+             * thalamic wiring the lazy-creation path gives them (idempotent). */
+            if (cortex_created_on_load) {
+                nimcp_brain_attach_substrate_thalamic(brain);
             }
         }
 

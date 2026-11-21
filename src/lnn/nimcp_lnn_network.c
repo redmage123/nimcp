@@ -22,6 +22,7 @@
 #include "utils/thread/nimcp_atomic.h"
 #include "utils/exception/nimcp_exception_macros.h"
 #include "gpu/lnn/nimcp_lnn_gpu.h"
+#include "lnn/nimcp_lnn_bptt.h"
 /* W5 KG-integration: brain_internal MUST be included before thalamic_channel.h
  * to avoid a cognitive/parietal/nimcp_parietal.h vs nimcp_thalamic_router.h
  * double-typedef of thalamic_router_t. */
@@ -318,6 +319,7 @@ void lnn_network_destroy(lnn_network_t* network) {
     }
 
     lnn_network_readout_free(network);
+    lnn_bptt_free(network);
 
     // Destroy GPU LNN layers before CPU layers
     if (network->layers) {
@@ -600,6 +602,9 @@ int lnn_network_forward_step(
     // Temporary storage for layer outputs
     const nimcp_tensor_t* layer_input =
         gated_input ? gated_input : input;
+    /* BPTT recording (training forwards only — see nimcp_lnn_bptt.h). */
+    void* bptt_rec = lnn_bptt_record_begin(network, dt,
+                                           gated_input ? thal_gate : 1.0f);
     nimcp_tensor_t* layer_output = NULL;
     int forward_rc = LNN_SUCCESS;
 
@@ -630,7 +635,9 @@ int lnn_network_forward_step(
         }
 
         // Forward through layer
+        if (bptt_rec) lnn_bptt_record_layer_pre(network, bptt_rec, i, layer_input);
         int result = lnn_layer_forward(network->layers[i], layer_input, layer_output, dt);
+        if (bptt_rec && result == LNN_SUCCESS) lnn_bptt_record_layer_post(network, bptt_rec, i);
         if (result != LNN_SUCCESS) {
             NIMCP_LOGGING_ERROR("lnn_network_forward_step: Layer %u forward failed", i);
             forward_rc = result;
@@ -667,6 +674,7 @@ int lnn_network_forward_step(
     }
 
     // Record state if training
+    if (bptt_rec) lnn_bptt_record_commit(network, bptt_rec, true);
     if (network->is_training) {
         lnn_network_record_state(network);
     }
@@ -1701,12 +1709,18 @@ int lnn_network_zero_gradients(lnn_network_t* network) {
         lnn_layer_t* layer = network->layers[i];
         if (!layer) continue;
 
-        if (layer->grad_W_in) nimcp_tensor_zero_grad(layer->grad_W_in);
-        if (layer->grad_W_rec) nimcp_tensor_zero_grad(layer->grad_W_rec);
-        if (layer->grad_W_tau) nimcp_tensor_zero_grad(layer->grad_W_tau);
-        if (layer->grad_b_in) nimcp_tensor_zero_grad(layer->grad_b_in);
-        if (layer->grad_b_tau) nimcp_tensor_zero_grad(layer->grad_b_tau);
-        if (layer->grad_tau_base) nimcp_tensor_zero_grad(layer->grad_tau_base);
+        /* The grad_* tensors ARE the gradients, so clear their data.
+         * nimcp_tensor_zero_grad only clears a tensor's autograd ->grad
+         * buffer, which these never have: before 2026-11-07 this was a
+         * no-op and LNN gradients accumulated across every training step
+         * (pinned at the ±10 element clamp, norm always at the ceiling). */
+        nimcp_tensor_t* grads[6] = { layer->grad_W_in, layer->grad_W_rec, layer->grad_W_tau,
+                                     layer->grad_b_in, layer->grad_b_tau, layer->grad_tau_base };
+        for (int g = 0; g < 6; g++) {
+            if (!grads[g]) continue;
+            float* d = (float*)nimcp_tensor_data(grads[g]);
+            if (d) memset(d, 0, nimcp_tensor_numel(grads[g]) * sizeof(float));
+        }
     }
 
     /* Readout gradients are NOT zeroed here: lnn_gradient_reset calls this

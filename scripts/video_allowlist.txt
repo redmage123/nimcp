@@ -89,3 +89,30 @@ EnglishC1949                     0  # English Children: Life in the City
 GoodNeig1943                     0  # Good Neighbor Family
 LimaFami1944                     0  # Lima Family
 Exercise1949                     0  # Exercise and Health
+
+# Prelinger home movies (2026-11-05). Only items with an explicit licence on
+# archive.org (CC BY 3.0 "BY", public-domain mark "PD"); unlicensed home
+# movies (925 of 971) are unpublished works and are not used. Every film was
+# reviewed on contact sheets (one frame per 8 s) before listing, with 1 fps
+# checks of segments with children. Excluded on review: any swimming, beach,
+# bath or undressed-child scene (colachi_home_movies_2, Can 11230, 11269,
+# 11281, sIvanBes1938_4), hunting / weapons / animal carcasses
+# (colachi_home_movies_1, sIvanBes1938, sIvanBes1938_9) and cemetery or
+# military ceremonies (sIvanBes1938_7). Attribution for BY items: Prelinger
+# Archives home movie collection, archive.org.
+amateur_northwest                0  # PD Amateur Film: Northwest (Badlands, Rushmore, bears, Yellowstone)
+HomeMovieCan11314JohnRiederCollectionFromTheAtlanticToTheBlue  0  # BY flight, San Francisco, Lake Tahoe (mid-1950s)
+HomeMoviesCan11229SanFranciscoTourism  0  # BY San Francisco wharf and streets (early 1960s)
+HomeMoviesCan11243DetroitMichiganFamilyAndTravelFilm  0  # BY Detroit family, steamer, horses (ca. 1929)
+HomeMoviesCan11272DetroitMichigan200thAnniversaryCelebrationParade  0  # BY Detroit 1951 parade, floats, bands
+HomeMoviesCan11274MonnierSchoolDetroitMichiganCa.1947  0  # BY school, children drawing in class
+HomeMoviesCan11303DetroitMichiganHighSchoolFootballGameAndYoung  0  # BY football game, young people (1940s)
+HomeMoviesCan11309VisitToDetroitMichiganAndMilwaukeeWisconsin  0  # BY parks, river, buildings (1951)
+HomeMoviesCan11340OaklandCaliforniaCa.1930s  0  # BY trains, small airplane, Lake Merritt
+HomeMoviesDetroitMichiganAreaCa.1941  0  # BY river, boats, children with a dog
+sIvanBes1938_2                   0  # PD Britton SD 1938: children, town, parade
+sIvanBes1938_3                   0  # PD Britton SD 1938: townspeople, football, parade
+sIvanBes1938_5                   0  # PD Britton SD 1938: town, track meet
+sIvanBes1938_6                   0  # PD Britton SD 1938: parade floats, basketball, band
+sIvanBes1938_8                   0  # PD Britton SD 1938: house moving, schoolchildren
+sIvanBes1938_10                  0  # PD Britton SD 1938: small children, town, horse

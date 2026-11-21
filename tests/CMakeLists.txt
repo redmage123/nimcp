@@ -67,6 +67,8 @@ set(NIMCP_STANDALONE_LANG_TESTS
     test_cortex_fusion_scale
     test_cortex_visual_sizes
     test_cortex_dense_target
+    test_cnn_global_pool_backward
+    test_lnn_bptt
     test_snn_window_stats
     test_snn_forward_carry
     test_lnn_decide_readout

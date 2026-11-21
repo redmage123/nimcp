@@ -52,7 +52,7 @@
  *==========================================================================*/
 static float g_rstdp_lr               = 0.0001f;  /* R-STDP learning rate */
 static float g_rstdp_baseline_alpha   = 0.001f;   /* reward EMA alpha (slower = less whiplash) */
-static float g_homeo_target_rate      = 0.03f;    /* biological 3% firing target */
+static float g_homeo_target_rate      = 0.005f;   /* 5 Hz at 1 ms steps (cortical 0.5-20 Hz) */
 static float g_homeo_min_scale        = 0.98f;    /* per-apply scale-down floor */
 static float g_homeo_max_scale        = 1.02f;    /* per-apply scale-up ceiling (normal) */
 static float g_homeo_max_scale_dead   = 1.05f;    /* scale-up ceiling for pops < 10% of target */
@@ -68,13 +68,14 @@ static float g_snn_noise_rate_hz      = 20.0f;    /* Poisson baseline firing flo
 static float g_snn_noise_pulse_mv     = 30.0f;    /* mV kick injected into I_syn per noise spike */
 static float g_snn_intrinsic_alpha    = 0.8f;     /* reward mix: 1.0 = pure intrinsic (rate-match), 0 = pure ANN-loss */
 /* Structural issue #4: per-layer firing targets. Input pops are driven
- * by external cortex current at high rate, so 3% is unnaturally low for
- * them — they sit at 10-40% naturally, and forcing them to 3% collapses
- * the cascade. Hidden + output pops should track 3% biological target.
- * Pop name prefix selects the target. */
-static float g_target_rate_input      = 0.05f;    /* input_* pops — looser since they're cortex-driven */
-/* g_homeo_target_rate (defined above) stays at 0.03 as the default for
- * everything else (L1_feature_*, L2_pattern_*, ..., output_*). */
+ * by external cortex current, so they get their own (higher) target;
+ * hidden + output pops track g_homeo_target_rate. Pop name prefix selects
+ * the target. Rates are spikes per neuron per 1 ms step, so 0.03 meant
+ * 30 Hz — above the StageGate's 0.5-20 Hz band, which homeostasis then
+ * pushed every pop toward (2026-11-07). Hidden/output now 5 Hz; input
+ * 15 Hz, about where the input pops already fire. Intrinsic plasticity
+ * uses the same per-pop target (snn_homeo_target_rate_for_name). */
+static float g_target_rate_input      = 0.015f;   /* input_* pops — 15 Hz, cortex-driven */
 
 /* Anti-reward: when a population's firing rate exceeds
  * threshold_ratio × target, the intrinsic reward goes negative so
@@ -370,17 +371,17 @@ static inline bool _pop_is_sparse_language(const snn_population_t* pop) {
 
 /*============================================================================
  * Pop-class target rate selector. Pops with names starting with "input"
- * get the looser input target; everything else gets the default biological
- * 3% target.
+ * get the input target; everything else gets g_homeo_target_rate.
  *==========================================================================*/
-static inline float _target_rate_for_pop(const snn_population_t* pop) {
-    /* Use strncmp for a proper bounded name-prefix match. pop->name is
-     * char[64] so read is always defined, but strncmp is clearer and
-     * robust against future struct changes. */
-    if (pop && strncmp(pop->name, "input", 5) == 0) {
+float snn_homeo_target_rate_for_name(const char* name) {
+    if (name && strncmp(name, "input", 5) == 0) {
         return g_target_rate_input;
     }
     return g_homeo_target_rate;
+}
+
+static inline float _target_rate_for_pop(const snn_population_t* pop) {
+    return snn_homeo_target_rate_for_name(pop ? pop->name : NULL);
 }
 
 /*============================================================================

@@ -391,6 +391,7 @@ typedef struct {
     float    pump_gain;   /**< mV per unit pump variable */
     float    pump_decay;  /**< exp(-dt / tau_pump) */
     float    pump_bump;   /**< Pump increment on spike */
+    float    ip_target;   /**< IP target per-step firing probability */
     uint32_t flags;       /**< NIMCP_SNN_HOMEO_* bits */
 } nimcp_snn_homeo_pop_params_t;
 
@@ -399,7 +400,6 @@ typedef struct {
     float pump_factor;    /**< ATP coupling on AHP + pump hyperpolarization */
     float ip_alpha;       /**< Rate EMA coefficient */
     float ip_gain;        /**< Threshold offset gain per unit rate error */
-    float ip_target;      /**< Target per-step firing probability */
     float ip_cap;         /**< |threshold offset| cap (mV) */
     float dep_decay;      /**< exp(-dt / tau_depression) */
     float dep_inc;        /**< Depression increment on spike */

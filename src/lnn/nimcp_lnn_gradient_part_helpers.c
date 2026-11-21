@@ -293,11 +293,11 @@ static int accumulate_parameter_gradients(
 
         uint32_t n = layer->n_neurons;
 
-        /* Skip layers larger than the adjoint — reading adjoint_data[j] for
-         * j >= adjoint_numel would be a buffer overread. In a multi-layer LNN,
-         * only the output layer's gradients can be directly accumulated from
-         * the output-space adjoint. */
-        if (n > adjoint_numel) continue;
+        /* The adjoint lives in the OUTPUT layer's state space, so only the
+         * output layer can use it. Hidden layers used to receive it indexed as
+         * if it were theirs whenever they were no wider (2026-11-07). Exact
+         * multi-layer gradients come from nimcp_lnn_bptt.c. */
+        if (layer_idx != network->n_layers - 1 || n != adjoint_numel) continue;
 
         const float* adjoint_data = (const float*)nimcp_tensor_data_const(adjoint);
         const float* x_data = (const float*)nimcp_tensor_data_const(layer->x);

@@ -578,9 +578,20 @@ brain_t brain_load_unified(const char* filepath)
     };
     for (int ci = 0; ci < 4; ci++) {
         EXTRACT_SECTION(cortex_sections[ci], tmp_path);
+        /* Cortexes are created lazily on the first learn step, so they are
+         * usually absent at load time: create one for its saved section
+         * instead of silently discarding it (2026-11-05). */
+        if (tmp_path[0] && !brain->cortex_cnns[ci]) {
+            extern struct cortex_cnn_processor* cortex_cnn_create(uint32_t type, uint32_t embed_dim);
+            brain->cortex_cnns[ci] = cortex_cnn_create((uint32_t)ci, 0);
+        }
         if (tmp_path[0] && brain->cortex_cnns[ci]) {
-            cortex_cnn_load(brain->cortex_cnns[ci], tmp_path);
-            LOG_INFO("Loaded %s cortex from unified checkpoint", cortex_sections[ci]);
+            if (cortex_cnn_load(brain->cortex_cnns[ci], tmp_path) == 0) {
+                LOG_INFO("Loaded %s cortex from unified checkpoint", cortex_sections[ci]);
+            } else {
+                LOG_WARN("%s cortex section failed to load — this cortex starts untrained",
+                         cortex_sections[ci]);
+            }
         }
         if (tmp_path[0]) unlink(tmp_path);
     }

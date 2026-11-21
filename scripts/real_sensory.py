@@ -199,6 +199,10 @@ class RealSensoryBank:
         self._speech: Optional[dict[str, list[np.ndarray]]] = None
         self._sequences: Optional[list[dict]] = None
         self._all_sequences: Optional[list[dict]] = None
+        self._synthetic_all: Optional[list[dict]] = None   # kubric cache, as stored
+        self._synthetic: Optional[list[dict]] = None       # at the current frame rate
+        self.synthetic_weight = self.SYNTHETIC_VIDEO_WEIGHT
+        self.synthetic_hits = 0
         self.max_maturity = 0               # highest film maturity level played (set_stage)
         self.stage = 0
         self.resolution, self.video_fps = self.STAGE_ACUITY[0]
@@ -261,6 +265,14 @@ class RealSensoryBank:
         import zlib
         return zlib.crc32(str(item).encode()) % self.HELDOUT_FILM_MOD == 0
 
+    # Synthetic physics video (2026-11-05, scripts/build_kubric_cache.py):
+    # Kubric MOVi-C clips of real scanned household objects falling,
+    # colliding and rolling. No content risk, so they bypass the film
+    # allowlist; never held out (the video probe uses held-out films).
+    # get_sequence draws from them with probability synthetic_weight.
+    SYNTHETIC_VIDEO_CACHE = "kubric_sequences.pkl"
+    SYNTHETIC_VIDEO_WEIGHT = 0.3
+
     # Film maturity levels: the second column of scripts/video_allowlist.txt.
     # Each stage plays films up to its cap (STAGE_MAX_MATURITY). Explicit
     # sexual content has no level: it is never listed and EXCLUDED_FILMS
@@ -301,6 +313,7 @@ class RealSensoryBank:
             if self._video_cache_name() != old_src:
                 self._all_sequences = None   # switch video source
             self._sequences = None
+            self._synthetic = None           # re-thin to the new frame rate
         return cap
 
     # ---- acuity ------------------------------------------------------------
@@ -384,14 +397,29 @@ class RealSensoryBank:
         self._split_sequences()
         return self._heldout_sequences
 
+    @property
+    def synthetic_sequences(self) -> list[dict]:
+        """Kubric physics clips at the current frame rate ([] when absent)."""
+        if self._synthetic_all is None:
+            self._synthetic_all = [q for q in (self._load_pkl(self.SYNTHETIC_VIDEO_CACHE) or [])
+                                   if len(q.get("frames") or []) >= 2]
+        if self._synthetic is None:
+            self._synthetic = [self._fps_view(q) for q in self._synthetic_all]
+        return self._synthetic
+
     def available(self) -> bool:
-        return bool(self.images) or bool(self.sequences)
+        return bool(self.images) or bool(self.sequences) or bool(self.synthetic_sequences)
 
     # ---- motion sequences -------------------------------------------------
     def get_sequence(self) -> Optional[dict]:
         """A random sequence dict ({"frames": [bytes...], "description", ...})
         or None when no video cache is present."""
         seqs = self.sequences
+        synth = self.synthetic_sequences
+        if synth and (not seqs or self.rng.random() < self.synthetic_weight):
+            self.synthetic_hits += 1
+            self.sequence_hits += 1
+            return self.rng.choice(synth)
         if not seqs:
             return None
         self.sequence_hits += 1
@@ -438,6 +466,8 @@ class RealSensoryBank:
     @staticmethod
     def sequence_label(seq: dict) -> str:
         """What a sequence shows, as a short phrase for the visual target."""
+        if seq.get("source") == "kubric":
+            return seq.get("description") or "objects falling and rolling"
         t = (seq.get("title") or "").strip()
         return f"a scene from the film {t}" if t else "a moving scene"
 
@@ -560,5 +590,6 @@ class RealSensoryBank:
         rate = (self.hits / tot * 100.0) if tot else 0.0
         return (f"real-images: {self.hits}/{tot} matched ({rate:.0f}%), "
                 f"{len(self.images)} labels; real-speech clips: {self.speech_hits}; "
-                f"motion sequences: {self.sequence_hits} ({len(self.sequences)} available); "
+                f"motion sequences: {self.sequence_hits} ({len(self.sequences)} available), "
+                f"kubric {self.synthetic_hits} of {len(self.synthetic_sequences)}; "
                 f"acuity {self.resolution}x{self.resolution} @ {self.video_fps:g} fps")

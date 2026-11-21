@@ -95,6 +95,37 @@ float lnn_tune_get_decide_readout(void) { return g_lnn_decide_readout; }
 float lnn_tune_get_decide_weight(void)  { return g_lnn_decide_weight; }
 float lnn_tune_get_decide_dt(void)      { return g_lnn_decide_dt; }
 
+/* GPU LNN forward (2026-11-07). Off by default: the GPU layer copies the
+ * CPU weights once, when the network is created (before a checkpoint load
+ * writes the saved weights into the CPU tensors), and nothing re-uploads
+ * them, so the GPU forward ran creation-time weights forever and ignored
+ * every optimizer update. It also integrates with RK4 and its own tau
+ * clamp, which the CPU BPTT (nimcp_lnn_bptt.c) does not model. */
+static float g_lnn_gpu_forward = 0.0f;
+void  lnn_tune_set_gpu_forward(float v) { g_lnn_gpu_forward = (v != 0.0f) ? 1.0f : 0.0f; }
+float lnn_tune_get_gpu_forward(void)    { return g_lnn_gpu_forward; }
+
+/* CPU LTC integrator (2026-11-07). 1 = exponential Euler
+ *   x' = x·e^(-dt/τ) + τ·(1 - e^(-dt/τ))·f(h)
+ * (exact for the decay term, stable for any dt/τ); 0 = explicit Euler
+ * x' = x + dt·(-x/τ + f(h)), which oscillates and saturates once dt/τ > 2 —
+ * at the production dt = 1 every neuron with τ < 0.5 (tau_base starts at
+ * 0.5..50 log-uniform, τ = tau_base·sigmoid) flipped sign each step and
+ * layer norm spread that through the layer. */
+static float g_lnn_cpu_integrator = 1.0f;
+void  lnn_tune_set_cpu_integrator(float v) { g_lnn_cpu_integrator = (v != 0.0f) ? 1.0f : 0.0f; }
+float lnn_tune_get_cpu_integrator(void)    { return g_lnn_cpu_integrator; }
+
+/* BPTT horizon (2026-11-07): most recorded steps one backward walks through
+ * (the trace holds up to bptt_truncation). 0 = all recorded steps. On a
+ * delay task (target = input k steps back, test_lnn_bptt / scratch grid)
+ * horizon 2 learned k=1 on 5 of 6 seeds; 4 learned k=2 on 2 of 6 but k=1 on
+ * 1 of 6; 8 and 16 rarely learned anything — longer windows add credit-
+ * assignment noise faster than signal here. Raise it to look further back. */
+static float g_lnn_bptt_steps = 2.0f;
+void  lnn_tune_set_bptt_steps(float v) { if (v >= 0.0f && v <= 10000.0f) g_lnn_bptt_steps = v; }
+float lnn_tune_get_bptt_steps(void)    { return g_lnn_bptt_steps; }
+
 static float compute_step_schedule_lr(
     float base_lr,
     uint64_t step,

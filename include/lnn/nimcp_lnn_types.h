@@ -447,6 +447,12 @@ struct lnn_network_s {
     nimcp_tensor_t* readout_grad_W;  /**< Accumulated dL/dW, same shape */
     nimcp_tensor_t* readout_grad_b;  /**< Accumulated dL/db */
     uint32_t        readout_dim;     /**< 0 = readout disabled */
+
+    /* Exact truncated BPTT (2026-11-07, nimcp_lnn_bptt.h). Recording is
+     * switched on by the training adapter around its forward only, so
+     * decide/inference forwards never enter the trace. Not persisted. */
+    void* bptt_trace;                /**< bptt_trace_t*, NULL until first recorded forward */
+    bool  bptt_record;               /**< Record the next forward steps */
 };
 
 /**

@@ -266,7 +266,7 @@ static snn_population_t* snn_population_create_internal(
             "plasticity / depression buffers for pop '%s' (%u neurons); "
             "mechanism will be no-op", name ? name : "unnamed", n_neurons);
     } else {
-        const float ip_target = 0.03f;
+        const float ip_target = snn_homeo_target_rate_for_name(name);
         for (uint32_t i = 0; i < n_neurons; i++) {
             pop->neuron_rate_ema[i] = ip_target;
         }
@@ -1584,7 +1584,6 @@ static int snn_cb_integrate_neuron(
  */
 /* Intrinsic-plasticity constants, shared by the host post-spike pass and
  * the device homeostasis path. */
-#define SNN_IP_TARGET_RATE 0.03f
 #define SNN_IP_ALPHA       0.01f
 #define SNN_IP_GAIN        0.5f
 #define SNN_IP_CAP         10.0f
@@ -1621,7 +1620,7 @@ static void snn_cb_post_spike_pop(snn_population_t* pop, float dt_ms,
      * target_neuron_rate; depression factor exponentially decays to 0
      * with tau ~50 ms and jumps by dep_inc on firing. */
     if (pop->threshold_offset && pop->neuron_rate_ema && pop->depression) {
-        const float target_neuron_rate = SNN_IP_TARGET_RATE;
+        const float target_neuron_rate = snn_homeo_target_rate_for_name(pop->name);
         const float ip_alpha = SNN_IP_ALPHA;
         const float ip_gain  = SNN_IP_GAIN;
         const float ip_cap   = SNN_IP_CAP;
@@ -1971,6 +1970,7 @@ static bool snn_gpu_homeo_device_prepare(snn_network_t* network,
         }
         if (pop->threshold_offset && pop->neuron_rate_ema && pop->depression) {
             flags |= NIMCP_SNN_HOMEO_IP;
+            pp[p].ip_target = snn_homeo_target_rate_for_name(pop->name);
         }
         if (snn_gpu_homeo_pop_basket_on(pop)) {
             pp[p].basket = pop->basket->gain_inhib_to_parent
@@ -1994,7 +1994,6 @@ static bool snn_gpu_homeo_device_prepare(snn_network_t* network,
     g.pump_factor = pump_factor;
     g.ip_alpha    = SNN_IP_ALPHA;
     g.ip_gain     = SNN_IP_GAIN;
-    g.ip_target   = SNN_IP_TARGET_RATE;
     g.ip_cap      = SNN_IP_CAP;
     g.dep_decay   = expf(-dt_ms / snn_tune_get_depression_tau_ms());
     g.dep_inc     = snn_tune_get_depression_inc();

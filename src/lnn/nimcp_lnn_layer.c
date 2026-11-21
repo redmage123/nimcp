@@ -11,6 +11,7 @@
 #include "lnn/nimcp_lnn_neuron.h"
 #include "lnn/nimcp_lnn_wiring.h"
 #include "lnn/nimcp_lnn_ode.h"
+#include "lnn/nimcp_lnn_training.h"   /* lnn_tune_get_gpu_forward */
 #include "gpu/lnn/nimcp_lnn_gpu.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/logging/nimcp_logging.h"
@@ -669,6 +670,32 @@ int lnn_layer_step(lnn_layer_t* layer, float dt, lnn_ode_method_t method)
     return LNN_SUCCESS;
 }
 
+/* Exponential-Euler LTC step (2026-11-07): with a = f(h) recovered from the
+ * computed derivative (a = dx/dt + x/τ),
+ *   x' = x·E + τ·(1 - E)·a,  E = exp(-dt/τ)
+ * exact for the linear decay, stable for any dt/τ. Same ±10 / NaN guard as
+ * lnn_layer_step. nimcp_lnn_bptt.c differentiates exactly this map. */
+static int lnn_layer_step_exponential(lnn_layer_t* layer, float dt)
+{
+    float* x = (float*)nimcp_tensor_data(layer->x);
+    const float* dx = (const float*)nimcp_tensor_data_const(layer->dx_dt);
+    const float* tau = (const float*)nimcp_tensor_data_const(layer->tau);
+    if (!x || !dx || !tau) return LNN_ERROR_NULL_POINTER;
+    const uint32_t n = layer->n_neurons;
+    for (uint32_t i = 0; i < n; i++) {
+        const float t = tau[i];
+        const float a = dx[i] + x[i] / t;
+        const float E = expf(-dt / t);
+        float v = x[i] * E + t * (1.0f - E) * a;
+        if (!isfinite(v))      v = 0.0f;
+        else if (v > 10.0f)    v = 10.0f;
+        else if (v < -10.0f)   v = -10.0f;
+        x[i] = v;
+    }
+    layer->step_count++;
+    return LNN_SUCCESS;
+}
+
 int lnn_layer_forward(
     lnn_layer_t* layer,
     const nimcp_tensor_t* input,
@@ -689,7 +716,7 @@ int lnn_layer_forward(
     }
 
     /* GPU LNN dispatch — upload input to GPU, run ODE step, sync back */
-    if (layer->gpu_lnn_layer && layer->gpu_ctx) {
+    if (layer->gpu_lnn_layer && layer->gpu_ctx && lnn_tune_get_gpu_forward() != 0.0f) {
         nimcp_gpu_context_t* gpu_ctx = (nimcp_gpu_context_t*)layer->gpu_ctx;
         nimcp_lnn_layer_gpu_t* gpu_layer = (nimcp_lnn_layer_gpu_t*)layer->gpu_lnn_layer;
 
@@ -755,7 +782,11 @@ int lnn_layer_forward(
     if (ret != LNN_SUCCESS) return ret;
 
     /* 3. Take ODE step */
-    ret = lnn_layer_step(layer, dt, LNN_ODE_METHOD_COUNT);  /* Use layer default */
+    if (lnn_tune_get_cpu_integrator() != 0.0f && layer->tau && layer->dx_dt && layer->x) {
+        ret = lnn_layer_step_exponential(layer, (dt > 0.0f) ? dt : layer->dt);
+    } else {
+        ret = lnn_layer_step(layer, dt, LNN_ODE_METHOD_COUNT);  /* Use layer default */
+    }
     if (ret != LNN_SUCCESS) return ret;
 
     /* 3b. Apply layer normalization to prevent activation collapse */
