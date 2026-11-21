@@ -54,6 +54,7 @@
 #include "cognitive/kg/nimcp_wave13_metacog_kg.h"  /* W13: curriculum/analogy/multiscale/contrastive events */
 #include <math.h>
 #include <string.h>
+#include <unistd.h>   /* ftruncate: learn recorder */
 #include "utils/math/nimcp_math_helpers.h"
 #include <ctype.h>
 #include <stdbool.h>
@@ -1123,8 +1124,9 @@ static void learn_lnn_task(void* arg)
  * actually feeds it. This writes exactly what adaptive_network_learn gets
  * so the replay ladder can train on it offline.
  *
- * HOW: NIMCP_LEARN_RECORD=<path> enables it; NIMCP_LEARN_RECORD_N (default
- * 2000) caps the number of records, after which the file is closed. File:
+ * HOW: NIMCP_LEARN_RECORD=<path> enables it (appends across restarts); NIMCP_LEARN_RECORD_N (default
+ * 2000) caps the records each process writes; a record cut short by a kill
+ * is trimmed before appending. File:
  * "NLRC", uint32 version (1), then per record:
  *   uint32 nf, uint32 ts, uint64 step, float lr, float confidence,
  *   float fusion_scale, float loss, uint32 flags (bit0 ANN frozen this step,
@@ -1139,6 +1141,36 @@ static void learn_lnn_task(void* arg)
 static FILE*    g_blv_rec_fp      = NULL;
 static uint32_t g_blv_rec_left    = 0;
 static int      g_blv_rec_state   = 0;   /* 0 unchecked, 1 on, -1 off/done */
+
+/* Byte offset just past the last complete record of an existing NLRC file,
+ * or -1 when the file is missing, empty or not an NLRC v1 file (it is then
+ * rewritten from scratch). A record is 100 header bytes + 4*(2*nf + ts). */
+static long blv_record_valid_end(const char* path)
+{
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    char magic[4];
+    uint32_t version = 0;
+    long end = -1;
+    if (fread(magic, 1, 4, f) == 4 && memcmp(magic, "NLRC", 4) == 0 &&
+        fread(&version, sizeof(version), 1, f) == 1 && version == 1) {
+        if (fseek(f, 0, SEEK_END) == 0) {
+            long size = ftell(f);
+            long off = 8;
+            end = off;
+            while (off + 8 <= size) {
+                uint32_t dims[2];
+                if (fseek(f, off, SEEK_SET) != 0 || fread(dims, sizeof(uint32_t), 2, f) != 2) break;
+                long rec = 100L + 4L * (2L * (long)dims[0] + (long)dims[1]);
+                if (off + rec > size) break;
+                off += rec;
+                end = off;
+            }
+        }
+    }
+    fclose(f);
+    return end;
+}
 
 static void blv_record_step(uint64_t step, const float* raw, const float* blended,
                             uint32_t nf, const float* target, uint32_t ts,
@@ -1164,18 +1196,32 @@ static void blv_record_step(uint64_t step, const float* raw, const float* blende
         }
         const char* n_env = getenv("NIMCP_LEARN_RECORD_N");
         long n = n_env ? strtol(n_env, NULL, 10) : 2000;
-        FILE* fp = (n > 0) ? fopen(path, "wb") : NULL;
+        /* Append: the daemon restarts often, and opening with "wb" threw
+         * away every earlier record (2026-11-21: 233 of ~10000 survived).
+         * Records are self-contained, so a new process continues the file;
+         * the header is written only when the file is new or empty. */
+        long existing = (n > 0) ? blv_record_valid_end(path) : -1;
+        FILE* fp = NULL;
+        if (n > 0) fp = fopen(path, existing > 0 ? "r+b" : "wb");
         if (!fp) {
             NIMCP_LOGGING_WARN("[LEARN-RECORD] cannot open %s; recorder off", path);
             __atomic_store_n(&g_blv_rec_state, -1, __ATOMIC_RELEASE);
             return;
         }
-        const uint32_t version = 1;
-        fwrite("NLRC", 1, 4, fp);
-        fwrite(&version, sizeof(version), 1, fp);
+        if (existing > 0) {
+            /* Drop a record cut short by a kill, then continue after it. */
+            if (ftruncate(fileno(fp), (off_t)existing) != 0)
+                NIMCP_LOGGING_WARN("[LEARN-RECORD] could not trim %s to %ld bytes", path, existing);
+            fseek(fp, existing, SEEK_SET);
+        } else {
+            const uint32_t version = 1;
+            fwrite("NLRC", 1, 4, fp);
+            fwrite(&version, sizeof(version), 1, fp);
+        }
         g_blv_rec_fp = fp;
         g_blv_rec_left = (uint32_t)n;
-        NIMCP_LOGGING_INFO("[LEARN-RECORD] recording %ld learn steps to %s", n, path);
+        NIMCP_LOGGING_INFO("[LEARN-RECORD] recording %ld learn steps to %s (%s)", n, path,
+                           existing > 0 ? "appending" : "new file");
         __atomic_store_n(&g_blv_rec_state, 1, __ATOMIC_RELEASE);
     } else if (state != 1) {
         return;  /* still opening */
