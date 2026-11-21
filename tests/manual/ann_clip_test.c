@@ -42,7 +42,8 @@
  *     t' = o + (1 - lambda)(t - o) - lambda |t - o| g/|g|, so the step length
  *     is unchanged and lambda 0 is the plain loss. Targets within cos 0.999 of
  *     the own target count as the own target (records repeat labels).
- * lr "rec" uses each step's recorded effective lr (the live schedule).
+ * lr "rec" uses each step's recorded effective lr (the live schedule);
+ * NLRC_LR_SCALE=<x> multiplies it (default 1).
  * Every report also prints base = cos(mean target of the set, own target),
  * the score of an output that ignores its input.
  * Scores come from the GPU forward (nimcp_gpu_forward_pass on the weight
@@ -557,6 +558,10 @@ int main(int argc, char** argv)
     uint32_t* order = malloc((K ? K : 1) * sizeof(uint32_t));
     for (uint32_t k = 0; k < K; k++) order[k] = k;
     bool is_nlrc = nlrc_path != NULL;
+    const char* scale_env = getenv("NLRC_LR_SCALE");
+    float rec_scale = scale_env ? strtof(scale_env, NULL) : 1.0f;
+    if (!(rec_scale > 0.0f)) rec_scale = 1.0f;
+    if (rec_lr && rec_scale != 1.0f) printf("recorded lr scaled x%g\n", rec_scale);
     uint32_t nK = K < 256 ? K : 256, nH = H < 256 ? H : 256;   /* scored for spec/top1 */
 
     for (int e = 0; e <= epochs; e++) {
@@ -579,7 +584,7 @@ int main(int argc, char** argv)
                 for (uint32_t k = 0; k < K; k++) {
                     uint32_t kk = k;
                     if (shuffled) kk = order[k];
-                    float step_lr = rec_lr ? rlr[kk] : lr;
+                    float step_lr = rec_lr ? rlr[kk] * rec_scale : lr;
                     if (rank) {
                         nimcp_gpu_weight_cache_t* rcache = adaptive_network_get_gpu_weight_cache(net);
                         if (!rcache || !nimcp_gpu_forward_pass(rcache, ex[kk].input, in, o, out)) {
