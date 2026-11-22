@@ -425,14 +425,19 @@ nimcp_error_t anf_bank_process(
                 ((float)pop->num_high_sr * high_sr_rate +
                  (float)pop->num_med_sr  * med_sr_rate  +
                  (float)pop->num_low_sr  * low_sr_rate) * dt_ms / 1000.0f;
-            const float p0 = expf(-lambda);
+            /* Inverse-CDF Poisson draw in double precision (in float,
+             * RAND_MAX/(RAND_MAX+1) rounds to 1.0 and the search would run
+             * to the cap). At most one spike per fibre per sample. */
+            const uint32_t n_fibers = pop->num_high_sr + pop->num_med_sr + pop->num_low_sr;
+            const uint32_t k_max = (n_fibers > 0 && n_fibers < 255u) ? n_fibers : 255u;
+            const double p0 = exp(-(double)lambda);
             for (uint32_t s = 0; s < output->num_samples; s++) {
-                float u = (float)NIMCP_THREAD_RAND() / ((float)RAND_MAX + 1.0f);
+                const double u = (double)NIMCP_THREAD_RAND() / ((double)RAND_MAX + 1.0);
                 uint32_t k = 0;
-                float p = p0, cdf = p0;
-                while (u > cdf && k < 255u) {
+                double p = p0, cdf = p0;
+                while (u > cdf && k < k_max) {
                     k++;
-                    p *= lambda / (float)k;
+                    p *= (double)lambda / (double)k;
                     cdf += p;
                 }
                 output->spike_trains[ch][s] = (uint8_t)k;
