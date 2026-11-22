@@ -57,6 +57,24 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_cochlea_core.cpp")
     )
 endif()
 
+# Cochlea responsiveness regression (the cochlea must respond to sound)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_cochlea_responsiveness.cpp")
+    add_executable(unit_perception_test_cochlea_responsiveness
+        test_cochlea_responsiveness.cpp
+    )
+    target_link_libraries(unit_perception_test_cochlea_responsiveness
+        PRIVATE GTest::GTest GTest::Main nimcp m pthread
+    )
+    target_include_directories(unit_perception_test_cochlea_responsiveness
+        PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+    )
+    add_test(NAME unit_perception_test_cochlea_responsiveness
+             COMMAND unit_perception_test_cochlea_responsiveness)
+    set_tests_properties(unit_perception_test_cochlea_responsiveness PROPERTIES
+        LABELS "unit;perception;cochlea;regression"
+    )
+endif()
+
 # Bridges subdirectory
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bridges/CMakeLists.txt")
     add_subdirectory(bridges)
