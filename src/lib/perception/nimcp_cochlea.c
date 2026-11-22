@@ -177,6 +177,22 @@ cochlea_t* cochlea_create(const cochlea_config_t* config)
     cochlea->config = *config;
     cochlea_heartbeat("create", 0.1f);
 
+    /* The three stages must agree with the cochlea on sample rate and
+     * channel count (callers often change num_channels after
+     * cochlea_config_default, and the component defaults assume 44.1 kHz /
+     * 128 channels). Spike trains are produced only with spike encoding. */
+    cochlea_config_t* cc = &cochlea->config;
+    cc->bm_config.sample_rate = cc->sample_rate;
+    cc->bm_config.num_channels = cc->num_channels;
+    cc->hc_config.ihc_config.num_channels = cc->num_channels;
+    cc->hc_config.ihc_config.sample_rate = cc->sample_rate;
+    cc->hc_config.ohc_config.num_channels = cc->num_channels;
+    cc->hc_config.ohc_config.sample_rate = cc->sample_rate;
+    cc->anf_config.num_channels = cc->num_channels;
+    if (cc->hearing_mode != BM_MODE_BAT) cc->anf_config.sample_rate = cc->sample_rate;
+    if (cc->output_spikes) cc->anf_config.encoding = ANF_ENCODE_SPIKE_TRAIN;
+    config = cc;
+
     /* Create basilar membrane */
     cochlea->bm = basilar_membrane_create(&config->bm_config);
     if (!cochlea->bm) {
@@ -287,6 +303,14 @@ nimcp_error_t cochlea_process(
 
     cochlea_heartbeat("process", 0.0f);
 
+    if (output->max_samples > 0 && num_samples > output->max_samples) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM,
+            "cochlea_process: more samples than the output was created for");
+        return NIMCP_ERROR_INVALID_PARAM;
+    }
+    output->num_samples = num_samples;
+    if (output->anf_output) output->anf_output->num_samples = num_samples;
+
     uint32_t nc = cochlea->config.num_channels;
 
     /* Stage 1: Basilar membrane processing */
@@ -295,6 +319,17 @@ nimcp_error_t cochlea_process(
         basilar_membrane_process(cochlea->bm, audio_in, num_samples, output->bm_output);
     }
     cochlea_heartbeat("process_bm", 0.3f);
+
+    /* Gain control on the basilar-membrane envelope: per-channel gains
+     * (attention, efferent/MOC suppression) and the global gain. */
+    if (output->bm_output && output->bm_output->envelope) {
+        const float g_global = powf(10.0f, cochlea->global_gain_db / 20.0f);
+        uint32_t nbm = output->bm_output->num_channels < nc ? output->bm_output->num_channels : nc;
+        for (uint32_t ch = 0; ch < nbm; ch++) {
+            float g = g_global * (cochlea->channel_gains ? cochlea->channel_gains[ch] : 1.0f);
+            output->bm_output->envelope[ch] *= g;
+        }
+    }
 
     /* Stage 2: Hair cell transduction */
     cochlea_heartbeat("process_hc", 0.3f);
@@ -327,9 +362,10 @@ nimcp_error_t cochlea_process(
                 output->channel_energy[ch] = energy;
             }
             if (output->channel_db) {
-                /* Convert to dB SPL: 20*log10(rate/ref), ref=1.0 */
-                output->channel_db[ch] = (rate > 1e-10f) ?
-                    20.0f * log10f(rate) : -100.0f;
+                /* Level in dB SPL from the hair cells (94 dB at amplitude 1) */
+                output->channel_db[ch] = (output->hc_output && output->hc_output->ihc.receptor_potential
+                                          && ch < output->hc_output->num_channels)
+                    ? output->hc_output->ihc.receptor_potential[ch] : -100.0f;
             }
             total_energy += energy;
 
@@ -481,6 +517,7 @@ cochlea_output_t* cochlea_output_create(
     uint32_t nc = cochlea->config.num_channels;
     output->num_channels = nc;
     output->num_samples  = 0;
+    output->max_samples  = max_samples;
 
     /* Allocate BM output */
     if (cochlea->bm) {

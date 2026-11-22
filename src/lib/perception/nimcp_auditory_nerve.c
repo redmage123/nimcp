@@ -18,6 +18,10 @@
  */
 
 #include "perception/nimcp_auditory_nerve.h"
+
+/* Must match HC_DRIVE_DB_SCALE in nimcp_hair_cells.c:
+ * glutamate_release 1.0 == 100 dB SPL. */
+#define ANF_DRIVE_DB_SCALE 100.0f
 #include "utils/memory/nimcp_memory.h"
 #include "utils/logging/nimcp_logging.h"
 #include "utils/exception/nimcp_exception_macros.h"
@@ -340,25 +344,43 @@ nimcp_error_t anf_bank_process(
     uint32_t nc = bank->config.num_channels;
 
     /*
-     * Basic Poisson model stub:
-     * For each channel, compute population firing rate from HC glutamate.
-     * Firing rate = spontaneous_rate + driven_rate * glutamate_level
+     * Level-coded Poisson population per channel.
+     * The hair cells report glutamate_release = level / ANF_DRIVE_DB_SCALE
+     * (see nimcp_hair_cells.c). Each fibre type maps level to rate with its
+     * own threshold and dynamic range (Liberman 1978; Sachs & Abbas 1974):
+     *   d_t    = clamp((dB - threshold_t) / dynamic_range_t, 0, 1)
+     *   rate_t = spont_t + d_t * (saturation_t - spont_t)
+     * High-SR fibres (threshold 0 dB, 25 dB range) code quiet sounds,
+     * low-SR fibres (30 dB, 60 dB range) keep coding loud ones.
      */
+    static const float k_thr_db[3]   = { 0.0f, 15.0f, 30.0f };
+    static const float k_range_db[3] = { 25.0f, 40.0f, 60.0f };
+    static const float k_spont[3]    = { 50.0f, 5.0f, 0.1f };
+    static const float k_sat_frac[3] = { 1.0f, 0.9f, 0.8f };
+    const uint32_t block_samples = (output->num_samples > 0) ? output->num_samples : 1;
+
     for (uint32_t ch = 0; ch < nc; ch++) {
         anf_population_t* pop = &bank->populations[ch];
 
-        /* Use glutamate release from HC output as drive signal */
         float drive = 0.0f;
         if (hc_output->ihc.glutamate_release && ch < hc_output->num_channels) {
             drive = hc_output->ihc.glutamate_release[ch];
         }
-        if (drive < 0.0f) drive = 0.0f;
+        if (!(drive >= 0.0f)) drive = 0.0f;
         if (drive > 1.0f) drive = 1.0f;
+        const float level_db = drive * ANF_DRIVE_DB_SCALE;
 
-        /* Compute population rate: weighted sum of fiber types */
-        float high_sr_rate = 50.0f + drive * (ANF_MAX_SPIKE_RATE - 50.0f);
-        float med_sr_rate  = 5.0f  + drive * (ANF_MAX_SPIKE_RATE * 0.9f - 5.0f);
-        float low_sr_rate  = 0.1f  + drive * (ANF_MAX_SPIKE_RATE * 0.8f - 0.1f);
+        float rate_t[3];
+        for (int t = 0; t < 3; t++) {
+            float d = (level_db - k_thr_db[t]) / k_range_db[t];
+            if (d < 0.0f) d = 0.0f;
+            if (d > 1.0f) d = 1.0f;
+            const float sat = ANF_MAX_SPIKE_RATE * k_sat_frac[t];
+            rate_t[t] = k_spont[t] + d * (sat - k_spont[t]);
+        }
+        const float high_sr_rate = rate_t[0];
+        const float med_sr_rate  = rate_t[1];
+        const float low_sr_rate  = rate_t[2];
 
         float weighted_rate =
             bank->config.high_sr_fraction * high_sr_rate +
@@ -394,22 +416,33 @@ nimcp_error_t anf_bank_process(
             output->low_sr_rate[ch] = low_sr_rate;
         }
 
-        /* Generate Poisson spikes for spike train output */
+        /* Spike train: per sample, the number of spikes across this
+         * channel's fibres (num_high_sr + num_med_sr + num_low_sr),
+         * drawn as a Poisson count with mean sum_t n_t * rate_t * dt.
+         * Refractoriness is ignored (rates <= 400 sp/s, dt << 1 ms). */
         if (output->spike_trains && output->spike_trains[ch] && output->num_samples > 0) {
-            float dt_per_sample = dt_ms; /* ms per sample */
+            const float lambda =
+                ((float)pop->num_high_sr * high_sr_rate +
+                 (float)pop->num_med_sr  * med_sr_rate  +
+                 (float)pop->num_low_sr  * low_sr_rate) * dt_ms / 1000.0f;
+            const float p0 = expf(-lambda);
             for (uint32_t s = 0; s < output->num_samples; s++) {
-                float prob = weighted_rate * dt_per_sample / 1000.0f;
-                float r = (float)NIMCP_THREAD_RAND() / (float)RAND_MAX;
-                output->spike_trains[ch][s] = (r < prob) ? 1 : 0;
-                if (output->spike_trains[ch][s]) {
-                    bank->stats.spikes_generated++;
+                float u = (float)NIMCP_THREAD_RAND() / ((float)RAND_MAX + 1.0f);
+                uint32_t k = 0;
+                float p = p0, cdf = p0;
+                while (u > cdf && k < 255u) {
+                    k++;
+                    p *= lambda / (float)k;
+                    cdf += p;
                 }
+                output->spike_trains[ch][s] = (uint8_t)k;
+                bank->stats.spikes_generated += k;
             }
         }
     }
 
     /* Update timing and stats */
-    bank->time_elapsed_ms += dt_ms;
+    bank->time_elapsed_ms += dt_ms * (float)block_samples;   /* dt_ms is per sample */
     bank->stats.samples_processed++;
 
     /* Compute average stats */

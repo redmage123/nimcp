@@ -157,6 +157,7 @@ typedef struct {
     uint32_t num_channels;          /**< Number of channels */
     uint32_t num_samples;           /**< Samples processed */
     uint64_t timestamp_ms;          /**< Processing timestamp */
+    uint32_t max_samples;           /**< Capacity: most samples per cochlea_process call */
 
 } cochlea_output_t;
 

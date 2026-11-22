@@ -41,6 +41,56 @@ struct basilar_membrane {
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(basilar_membrane)
 
 //=============================================================================
+// Gammatone filter design (complex one-pole cascade, Hohmann 2002)
+//=============================================================================
+/*
+ * Each channel is a 4th-order gammatone: four identical complex one-pole
+ * stages z_k[n] = c*z_{k-1}[n] + lambda*z_k[n-1] with z_0 = x (real input),
+ * lambda = r*exp(i*2*pi*cf/fs), r = exp(-2*pi*b/fs), b = 1.019*ERB(cf) and
+ * c = 1 - r, which gives unity gain per stage at the centre frequency.
+ * The complex output z_4 is the analytic (positive-frequency) response, so
+ * 2*Re(z_4) is the band-limited basilar-membrane motion and 2*|z_4| its
+ * Hilbert envelope (amplitude A for a sinusoid of amplitude A at CF).
+ * Coefficients live in the existing bm_filter_t fields:
+ *   a_coeffs[0..1] = Re/Im(lambda), b_coeffs[0] = c.
+ */
+#define BM_TWO_PI 6.28318530717958647692
+#define BM_NYQUIST_FRACTION 0.45f   /* highest CF as a fraction of fs */
+
+static void bm_design_filter(bm_filter_t* f, float cf, float fs) {
+    double erb = (double)bm_erb_at_freq(cf);
+    double b   = 1.019 * erb;
+    double r   = exp(-BM_TWO_PI * b / (double)fs);
+    double th  = BM_TWO_PI * (double)cf / (double)fs;
+    f->center_freq_hz = cf;
+    f->bandwidth_hz   = (float)erb;
+    f->a_coeffs[0] = (float)(r * cos(th));
+    f->a_coeffs[1] = (float)(r * sin(th));
+    f->b_coeffs[0] = (float)(1.0 - r);
+    memset(f->state_real, 0, sizeof(f->state_real));
+    memset(f->state_imag, 0, sizeof(f->state_imag));
+    f->envelope = 0.0f;
+    f->phase = 0.0f;
+}
+
+/* Advance one channel by one real sample; returns the complex output. */
+static inline void bm_filter_step(bm_filter_t* f, float x, float* out_re, float* out_im) {
+    const float lr = f->a_coeffs[0], li = f->a_coeffs[1], c = f->b_coeffs[0];
+    float in_re = x, in_im = 0.0f;
+    for (int k = 0; k < BM_GAMMATONE_ORDER; k++) {
+        const float pr = f->state_real[k], pi = f->state_imag[k];
+        const float zr = c * in_re + lr * pr - li * pi;
+        const float zi = c * in_im + lr * pi + li * pr;
+        f->state_real[k] = zr;
+        f->state_imag[k] = zi;
+        in_re = zr;
+        in_im = zi;
+    }
+    *out_re = in_re;
+    *out_im = in_im;
+}
+
+//=============================================================================
 // Core API Implementation
 //=============================================================================
 
@@ -115,14 +165,36 @@ basilar_membrane_t* basilar_membrane_create(const bm_config_t* config) {
         return NULL;
     }
 
+    /* Centre frequencies: ERB-spaced (or linear) between min and max,
+     * with max capped below Nyquist so every filter is realisable. */
+    float fs = (float)(config->sample_rate > 0 ? config->sample_rate : 44100);
+    float f_max = config->max_freq_hz;
+    if (f_max > BM_NYQUIST_FRACTION * fs) f_max = BM_NYQUIST_FRACTION * fs;
+    float f_min = config->min_freq_hz;
+    if (f_min >= f_max) f_min = 0.5f * f_max;
+    bm->config.max_freq_hz = f_max;
+    bm->config.min_freq_hz = f_min;
+    float* cfs = (float*)nimcp_calloc(config->num_channels, sizeof(float));
+    if (!cfs) {
+        nimcp_free(bm->filters);
+        nimcp_free(bm);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "basilar_membrane_create: cfs is NULL");
+        return NULL;
+    }
+    if (config->spacing == BM_SPACING_ERB) {
+        bm_compute_erb_spaced_freqs(f_min, f_max, config->num_channels, cfs);
+    } else {
+        for (uint32_t i = 0; i < config->num_channels; i++) {
+            float frac = (config->num_channels > 1)
+                ? (float)i / (float)(config->num_channels - 1) : 0.0f;
+            cfs[i] = f_min + frac * (f_max - f_min);
+        }
+    }
     for (uint32_t i = 0; i < config->num_channels; i++) {
-        float frac = (config->num_channels > 1)
-            ? (float)i / (float)(config->num_channels - 1)
-            : 0.0f;
-        bm->filters[i].center_freq_hz = config->min_freq_hz +
-            frac * (config->max_freq_hz - config->min_freq_hz);
+        bm_design_filter(&bm->filters[i], cfs[i], fs);
         bm->filters[i].gain = 1.0f;
     }
+    nimcp_free(cfs);
 
     basilar_membrane_heartbeat("basilar_membrane_create", 1.0f);
     return bm;
@@ -159,6 +231,29 @@ nimcp_error_t basilar_membrane_process(basilar_membrane_t* bm,
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "basilar_membrane_reset: required parameter is NULL (bm, audio_in, output)");
         return -1;
     }
+    /* Filter every sample; report per channel the block-mean envelope
+     * (2|z|), the last motion sample (2 Re z), and optionally phase/TFS. */
+    const uint32_t nc = (output->num_channels < bm->config.num_channels)
+                        ? output->num_channels : bm->config.num_channels;
+    const float inv_n = (num_samples > 0) ? 1.0f / (float)num_samples : 0.0f;
+    for (uint32_t ch = 0; ch < nc; ch++) {
+        bm_filter_t* f = &bm->filters[ch];
+        float env_sum = 0.0f, zr = 0.0f, zi = 0.0f;
+        for (uint32_t n = 0; n < num_samples; n++) {
+            bm_filter_step(f, audio_in[n], &zr, &zi);
+            env_sum += 2.0f * sqrtf(zr * zr + zi * zi);
+        }
+        const float env = env_sum * inv_n * f->gain;
+        f->envelope = env;
+        output->envelope[ch] = env;
+        output->channel_output[ch] = 2.0f * zr * f->gain;
+        const float mag = sqrtf(zr * zr + zi * zi);
+        f->phase = atan2f(zi, zr);
+        output->phase[ch] = bm->config.enable_phase ? f->phase : 0.0f;
+        output->fine_structure[ch] = (bm->config.enable_fine_structure && mag > 0.0f)
+                                     ? zr / mag : 0.0f;
+    }
+    output->num_samples = num_samples;
     bm->samples_processed += num_samples;
     bm->frames_processed++;
     basilar_membrane_heartbeat("basilar_membrane_process", 0.5f);
@@ -173,7 +268,9 @@ nimcp_error_t basilar_membrane_process_sample(basilar_membrane_t* bm,
         return -1;
     }
     for (uint32_t i = 0; i < bm->config.num_channels; i++) {
-        channel_outputs[i] = sample * bm->filters[i].gain;
+        float zr, zi;
+        bm_filter_step(&bm->filters[i], sample, &zr, &zi);
+        channel_outputs[i] = 2.0f * zr * bm->filters[i].gain;
     }
     bm->samples_processed++;
     return NIMCP_SUCCESS;
@@ -218,9 +315,14 @@ int32_t basilar_membrane_freq_to_channel(const basilar_membrane_t* bm,
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "basilar_membrane_get_num_channels: validation failed");
         return -1;
     }
-    float frac = (freq_hz - bm->config.min_freq_hz) /
-                 (bm->config.max_freq_hz - bm->config.min_freq_hz);
-    return (int32_t)(frac * (bm->config.num_channels - 1));
+    /* Nearest centre frequency (channels are ERB- or linearly spaced). */
+    int32_t best = 0;
+    float best_d = fabsf(bm->filters[0].center_freq_hz - freq_hz);
+    for (uint32_t i = 1; i < bm->config.num_channels; i++) {
+        float d = fabsf(bm->filters[i].center_freq_hz - freq_hz);
+        if (d < best_d) { best_d = d; best = (int32_t)i; }
+    }
+    return best;
 }
 
 nimcp_error_t basilar_membrane_get_stats(const basilar_membrane_t* bm,

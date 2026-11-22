@@ -17,6 +17,13 @@
  */
 
 #include "perception/nimcp_hair_cells.h"
+#include <math.h>
+
+/* Level calibration shared with the auditory nerve (nimcp_auditory_nerve.c
+ * reads glutamate_release * HC_DRIVE_DB_SCALE back as dB SPL). */
+#define HC_REFERENCE_DB   94.0f    /* dB SPL at basilar-membrane amplitude 1.0 */
+#define HC_DRIVE_DB_SCALE 100.0f   /* glutamate_release 1.0 == 100 dB SPL */
+#define HC_MIN_ENVELOPE   1e-7f    /* floor (-140 dB re 1.0) before the log */
 #include "utils/memory/nimcp_memory.h"
 #include "utils/logging/nimcp_logging.h"
 #include "utils/exception/nimcp_exception_macros.h"
@@ -177,7 +184,41 @@ nimcp_error_t hair_cell_bank_process(hair_cell_bank_t* bank,
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "hair_cell_bank_destroy: required parameter is NULL (bank, bm_output, output)");
         return NIMCP_ERROR_NULL_POINTER;
     }
+    /*
+     * Inner-hair-cell transduction, block level. The basilar-membrane
+     * envelope (amplitude) is converted to a level in dB SPL with the
+     * calibration HC_REFERENCE_DB at amplitude 1.0 (0.01 RMS speech is then
+     * ~54 dB SPL). The logarithm stands in for the compressive OHC
+     * amplifier and IHC transduction; the auditory nerve applies each fibre
+     * type's threshold and dynamic range to this level.
+     *   receptor_potential[ch] = level (dB SPL)
+     *   glutamate_release[ch]  = level / HC_DRIVE_DB_SCALE in [0, 1]
+     *                            (x IHC efficiency, so damage lowers drive)
+     */
     hair_cells_heartbeat("hair_cell_bank_process", 0.5f);
+    uint32_t nc = output->num_channels;
+    if (bm_output->num_channels < nc) nc = bm_output->num_channels;
+    for (uint32_t ch = 0; ch < nc; ch++) {
+        float env = bm_output->envelope ? bm_output->envelope[ch] : 0.0f;
+        if (!(env > HC_MIN_ENVELOPE)) env = HC_MIN_ENVELOPE;
+        float db = HC_REFERENCE_DB + 20.0f * log10f(env);
+        if (db < 0.0f) db = 0.0f;
+        if (db > HC_DRIVE_DB_SCALE) db = HC_DRIVE_DB_SCALE;
+        float eff = 1.0f;
+        if (bank->ihc && bank->ihc->cells && ch < bank->config.ihc_config.num_channels) {
+            eff = bank->ihc->cells[ch].efficiency;
+            if (!(eff >= 0.0f && eff <= 1.0f)) eff = 1.0f;
+        }
+        float release = eff * db / HC_DRIVE_DB_SCALE;
+        output->ihc.receptor_potential[ch] = db;
+        output->ihc.glutamate_release[ch] = release;
+        output->ihc.adaptation_state[ch] = 0.0f;
+        output->neural_drive[ch] = release;
+        if (bank->ihc && bank->ihc->cells && ch < bank->config.ihc_config.num_channels) {
+            bank->ihc->cells[ch].receptor_potential = db;
+            bank->ihc->cells[ch].glutamate_release = release;
+        }
+    }
     bank->samples_processed += bm_output->num_samples;
     return NIMCP_SUCCESS;
 }
