@@ -1,0 +1,6 @@
+# 09 security/swarm/mesh/networking/edge/middleware (light)
+- Hot-path safety cost: a few µs/step (ethics ptr check learning.c:1281; toxicity_classify per labelled step 1303; LGSS guard 1516-1595 -> symbolic_logic_safety_evaluate calloc+linear scan; audit every 1000th). decide: 4 LGSS evals (1188,1258,3858,4649) + ethics 3801. Negligible vs SNN.
+- Real streaming/distributed: cloud distillation cloud_inference.c:271 (brain_learn_vector on teacher output conf>0.6), batched :314; TCP/UDP length-prefixed framing swarm_edge_runtime.c:147-228, p2pnode.c, msg_framing.c.
+- STATUES: gossip learning (nimcp_brain_apply_weight_delta no-op stub swarm_edge_runtime.c:62-69; gradients sent = zeros 790-800); swarm_brain_collective_learn only logs (swarm_brain_part_core.c:356-380); replication Redis/Postgres TODO.
+- FedAvg/FedProx/median math real (federated.c:37,65,93) but no path into the brain.
+- WARNINGS: LGSS fail-safe DENY drops EVERY learn step silently if LGSS not ACTIVE/DEGRADED (lgss.c:419-431; learning.c:1586-1594) -> watch lgss_training_blocks counter. toxicity -> p_harm (1555). toxic labels -> negative R-STDP reward (1453) + lexicon valence tags (1466+). brain_learn_example rejects labels matching "; delete ", "; update ", "%s%s%s" (4556-4600). NaN scan only first 512 dims (1546). kg_loss_gate_tripped skips plasticity (2456).
