@@ -2296,7 +2296,12 @@ brain_t brain_load(const char* filepath)
     // (Handles case where brain was saved with glial but loaded without it)
     if (brain->config.enable_glial && !brain->glial) {
         fprintf(stderr, "[INFO] Re-initializing glial subsystem from config (enable_glial=true but not in save file)\n");
-        if (!init_glial_subsystem(brain)) {
+        /* The factory initializer creates the astrocyte / oligodendrocyte /
+         * microglia networks, attaches and populates them. The old call
+         * (init_glial_subsystem) created only the integration layer, so every
+         * resumed brain ran with empty glial networks (2026-11-23). */
+        extern bool nimcp_brain_factory_init_glial_subsystem(brain_t brain);
+        if (!nimcp_brain_factory_init_glial_subsystem(brain)) {
             fprintf(stderr, "[WARN] Failed to re-initialize glial subsystem\n");
             brain->config.enable_glial = false;
         } else {

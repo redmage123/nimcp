@@ -4894,6 +4894,14 @@ float brain_learn_example(brain_t brain, const float* features, uint32_t num_fea
         } else {
             attended_features = nimcp_calloc(num_features, sizeof(float));
         }
+        /* The module expects one token of input_dim floats and writes
+         * output_dim floats: skip on any size mismatch (heap overflow). */
+        if (attended_features &&
+            (multihead_attention_get_input_dim(brain->multihead_attention) != num_features ||
+             multihead_attention_get_output_dim(brain->multihead_attention) != num_features)) {
+            if (!attended_from_scratch) nimcp_free(attended_features);
+            attended_features = NULL;
+        }
         if (attended_features) {
             bool attn_ok = multihead_attention_forward(
                 brain->multihead_attention,

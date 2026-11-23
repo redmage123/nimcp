@@ -1845,20 +1845,22 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
                                 1, local_features, true);
     }
     if (brain->multihead_attention) {
-        float* attended = nimcp_malloc(num_features * sizeof(float));
+        /* One token of num_features values: the module is created with
+         * input_dim = output_dim = num_inputs. This used to pass
+         * num_features/64 "tokens of 64", so the forward pass read and wrote
+         * seq_len x input_dim floats into num_features-sized buffers — a heap
+         * overflow that aborted the daemon (munmap_chunk) the first time
+         * attention existed in production (2026-11-23). */
+        const uint32_t attn_dim = multihead_attention_get_input_dim(brain->multihead_attention);
+        float* attended = (attn_dim == num_features &&
+                           multihead_attention_get_output_dim(brain->multihead_attention) == num_features)
+                          ? nimcp_malloc(num_features * sizeof(float)) : NULL;
         if (attended) {
-            // Use chunked sequence: each 64-dim slice is a "token"
-            // For 1024-dim input: 16 tokens × 64 dims = cross-attention over 16 positions
-            uint32_t chunk_dim = 64;
-            uint32_t seq_len = num_features / chunk_dim;
-            if (seq_len < 2) seq_len = 1;  // Fall back to single token for small inputs
-            if (seq_len * chunk_dim > num_features) seq_len = 1;  // Safety
-
+            uint32_t seq_len = 1;
             if (multihead_attention_forward(brain->multihead_attention,
                                            features, seq_len, NULL, attended)) {
                 // Blend attended features with original (residual connection)
-                uint32_t blend_len = seq_len * chunk_dim;
-                if (blend_len > num_features) blend_len = num_features;
+                uint32_t blend_len = num_features;
                 for (uint32_t i = 0; i < blend_len; i++) {
                     local_features[i] = 0.6f * local_features[i] + 0.4f * attended[i];
                 }

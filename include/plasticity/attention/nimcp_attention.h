@@ -209,6 +209,12 @@ bool multihead_attention_set_gate(multihead_attention_t mha, float gate_signal);
  */
 bool multihead_attention_get_stats(multihead_attention_t mha, attention_stats_t* stats);
 
+/** Per-token input dimension (= output dimension) the module was created
+ *  with; 0 for NULL. Callers pass sequence_length tokens of this many
+ *  floats and must size the output buffer to sequence_length x output_dim. */
+uint32_t multihead_attention_get_input_dim(multihead_attention_t mha);
+uint32_t multihead_attention_get_output_dim(multihead_attention_t mha);
+
 /**
  * WHAT: Reset attention statistics
  * WHY:  Clear accumulated statistics for new measurement period

@@ -2932,3 +2932,11 @@ uint32_t* attention_get_mc_seed(void)
     }
     return &g_attention_mc_seed;
 }
+
+uint32_t multihead_attention_get_input_dim(multihead_attention_t mha) {
+    return mha ? mha->config.input_dim : 0;
+}
+
+uint32_t multihead_attention_get_output_dim(multihead_attention_t mha) {
+    return mha ? mha->config.output_dim : 0;
+}
