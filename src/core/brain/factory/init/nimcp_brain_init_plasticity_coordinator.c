@@ -44,8 +44,55 @@
 #include "utils/bridge/nimcp_bridge_boilerplate.h"
 #include "mesh/nimcp_mesh_participant.h"
 #include "mesh/nimcp_mesh_adapter.h"
+#include "utils/time/nimcp_time.h"
+
+#include <pthread.h>
 
 BRIDGE_BOILERPLATE_MESH_ONLY(brain_init_plasticity_coordinator, MESH_ADAPTER_CATEGORY_SYSTEM)
+
+//=============================================================================
+// Structural plasticity update adapter (real elapsed time)
+//=============================================================================
+
+/* WHY: every caller of plasticity_coordinator_update() passes a fixed dt
+ * (1.0f, or even a prediction error), and structural_plasticity_update()
+ * treats it as seconds, so each 100 ms tick advanced spine maturation/decay
+ * by a full second (10x too fast). The adapter measures the true monotonic
+ * elapsed time per structural system instead of trusting the caller's dt. */
+#define SP_DT_SLOTS        16
+#define SP_DT_MAX_SEC      60.0f   /* cap = one maturation period; bounds stale/first-call gaps */
+#define SP_DT_DEFAULT_SEC  0.1f    /* registered update interval (100 ms) */
+
+static pthread_mutex_t g_sp_dt_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct { void* system; uint64_t last_us; } g_sp_dt_slots[SP_DT_SLOTS];
+
+static int structural_plasticity_update_realtime(void* handle, float dt_unused) {
+    (void)dt_unused;
+    uint64_t now_us = nimcp_time_monotonic_us();
+    float dt_sec = SP_DT_DEFAULT_SEC;
+
+    pthread_mutex_lock(&g_sp_dt_lock);
+    int slot = -1, free_slot = -1;
+    for (int i = 0; i < SP_DT_SLOTS; i++) {
+        if (g_sp_dt_slots[i].system == handle) { slot = i; break; }
+        if (!g_sp_dt_slots[i].system && free_slot < 0) free_slot = i;
+    }
+    if (slot >= 0) {
+        uint64_t last = g_sp_dt_slots[slot].last_us;
+        dt_sec = (now_us > last) ? (float)((double)(now_us - last) / 1e6) : 0.0f;
+        if (dt_sec > SP_DT_MAX_SEC) dt_sec = SP_DT_MAX_SEC;
+        g_sp_dt_slots[slot].last_us = now_us;
+    } else if (free_slot >= 0) {
+        /* First call for this system: assume one registered interval elapsed. */
+        g_sp_dt_slots[free_slot].system = handle;
+        g_sp_dt_slots[free_slot].last_us = now_us;
+    }
+    /* Table full: fall back to the registered interval (still far closer
+     * to reality than the caller's fixed 1.0 s). */
+    pthread_mutex_unlock(&g_sp_dt_lock);
+
+    return structural_plasticity_update((structural_plasticity_system_t*)handle, dt_sec);
+}
 
 
 //=============================================================================
@@ -138,8 +185,11 @@ bool nimcp_brain_factory_init_plasticity_coordinator_subsystem(brain_t brain) {
     }
 
     /* Register biological plasticity mechanisms with their update intervals.
-     * These drive real-time STDP, BCM, homeostatic scaling, eligibility traces,
-     * dendritic computation, STP, adaptive thresholds, and predictive coding. */
+     * NOTE: the eight entries below are DECLARATION-ONLY (NULL handle and
+     * update_fn): plasticity_coordinator_update() skips them, so they only
+     * provide registry/priority bookkeeping. The real STDP/BCM/homeostatic/
+     * eligibility/STP updates run in each network's own learning path, not
+     * through this coordinator. Only "structural" (below) has a callback. */
     uint32_t mech_id = 0;
     plasticity_coordinator_register_mechanism(
         brain->plasticity_coordinator, "stdp", PLASTICITY_TYPE_STDP,
@@ -179,14 +229,18 @@ bool nimcp_brain_factory_init_plasticity_coordinator_subsystem(brain_t brain) {
         brain->structural_plasticity_enabled = true;
         plasticity_coordinator_register_mechanism(
             brain->plasticity_coordinator, "structural", PLASTICITY_TYPE_STRUCTURAL,
-            sp, (plasticity_mechanism_update_fn_t)structural_plasticity_update,
+            sp, structural_plasticity_update_realtime,
             NULL, 0.9f, 0.3f, 100, &mech_id);
         NIMCP_LOGGING_INFO("Structural plasticity (synaptogenesis) registered");
     } else {
         NIMCP_LOGGING_WARN("Failed to create structural plasticity — continuing without");
     }
 
-    NIMCP_LOGGING_INFO("Registered 9 biological plasticity mechanisms in coordinator");
+    /* 8 declaration-only entries + structural (callback-driven) when created. */
+    NIMCP_LOGGING_INFO("Registered %d plasticity mechanisms in coordinator "
+                       "(%d with update callbacks)",
+                       brain->structural_plasticity ? 9 : 8,
+                       brain->structural_plasticity ? 1 : 0);
 
     /* Log success */
     plasticity_coordinator_stats_t stats;

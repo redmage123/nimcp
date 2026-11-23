@@ -42,6 +42,7 @@ static void nimcp_brain_factory_toxicity_tick(void* ctx);
  * init AND from nimcp_brain_load on --resume. Idempotent — register_driven
  * returns non-zero on duplicate registration which we treat as success. */
 int nimcp_brain_factory_register_toxicity_cycle(brain_t brain);
+int nimcp_brain_factory_unregister_toxicity_cycle(brain_t brain);
 #include "utils/time/nimcp_time.h"
 #include "utils/exception/nimcp_exception_macros.h"
 
@@ -309,25 +310,50 @@ load_tox_curriculum(const char* path,
  * registered on fresh init — on --resume the brain came up with the
  * toxicity classifier alive but the cycle tick (which runs ML training
  * and valence decay) never fired. */
+/* Brain whose toxicity cycle is registered (process-wide, like the tick's
+ * statics below); lets unregister skip a never-registered slot. */
+static brain_t s_tox_cycle_brain = NULL;
+
 int nimcp_brain_factory_register_toxicity_cycle(brain_t brain)
 {
     if (!brain) return -1;
     if (!brain->cycle_coordinator_enabled || !brain->cycle_coordinator) {
         return -1;
     }
-    int rc = brain_cycle_coordinator_register_driven(
+    /* Observation-only: the tick trains the toxicity ML head and decays
+     * lexicon valence while learn/decide classify with the same head, so it
+     * runs inline from brain_learn_vector at <= 1 Hz (single owner, under
+     * the daemon's brain lock) via nimcp_brain_toxicity_tick_inline, not on
+     * a driver thread (2026-11-23 walkthrough). */
+    int rc = brain_cycle_coordinator_register(
         (brain_cycle_coordinator_t*)brain->cycle_coordinator,
         BRAIN_CYCLE_TOXICITY,
-        1000000ull /* 1s */,
-        nimcp_brain_factory_toxicity_tick,
         (void*)brain,
         NULL);
     if (rc == 0) {
+        __atomic_store_n(&s_tox_cycle_brain, brain, __ATOMIC_RELEASE);
         LOG_INFO("Toxicity cycle: registered (1Hz observation + ML train + decay)");
     } else {
         LOG_WARN("Toxicity cycle: register_driven returned %d "
                  "(usually means already registered)", rc);
     }
+    return rc;
+}
+
+/* Counterpart of register_toxicity_cycle for brain_destroy: the tick reads
+ * grounded_lang / toxicity_* without a lock, so its driver thread must be
+ * stopped + joined BEFORE those subsystems are destroyed (their NULL checks
+ * in the tick are TOCTOU). Safe if the cycle was never registered. */
+int nimcp_brain_factory_unregister_toxicity_cycle(brain_t brain)
+{
+    if (!brain || !brain->cycle_coordinator) return -1;
+    /* coordinator_unregister throws to immune on an unregistered slot, so
+     * only call it for the brain we actually registered. */
+    if (__atomic_load_n(&s_tox_cycle_brain, __ATOMIC_ACQUIRE) != brain) return -1;
+    int rc = brain_cycle_coordinator_unregister(
+        (brain_cycle_coordinator_t*)brain->cycle_coordinator,
+        BRAIN_CYCLE_TOXICITY);
+    __atomic_store_n(&s_tox_cycle_brain, NULL, __ATOMIC_RELEASE);
     return rc;
 }
 
@@ -719,4 +745,16 @@ bool nimcp_brain_run_safety_probes(brain_t brain)
     }
 
     return all_passed;
+}
+
+/* Inline 1 Hz driver for the toxicity cycle (see register_toxicity_cycle):
+ * called from brain_learn_vector; runs only on the registered brain. */
+void nimcp_brain_toxicity_tick_inline(brain_t brain)
+{
+    if (!brain || __atomic_load_n(&s_tox_cycle_brain, __ATOMIC_ACQUIRE) != brain) return;
+    static uint64_t s_last_us = 0;
+    uint64_t now = nimcp_time_now_us();
+    if (now - s_last_us < 1000000ull) return;
+    s_last_us = now;
+    nimcp_brain_factory_toxicity_tick((void*)brain);
 }

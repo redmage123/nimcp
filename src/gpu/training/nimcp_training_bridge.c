@@ -646,13 +646,15 @@ static void* dl_writeback_worker(void* arg) {
 /* Run `fn` over the slices in parallel (calling thread takes slice 0). */
 static void coo_run_slices(coo_slice_t* slices, uint32_t n, void* (*fn)(void*)) {
     pthread_t tids[COO_BUILD_THREADS];
-    uint32_t spawned = 0;
+    /* Track creation per slot: a mid-range pthread_create failure made the old
+     * 1..spawned join loop join an uninitialised tid and skip the last thread. */
+    bool created[COO_BUILD_THREADS] = {false};
     for (uint32_t t = 1; t < n; t++) {
-        if (pthread_create(&tids[t], NULL, fn, &slices[t]) == 0) spawned++;
+        if (pthread_create(&tids[t], NULL, fn, &slices[t]) == 0) created[t] = true;
         else fn(&slices[t]);  /* thread creation failed: do it inline */
     }
     fn(&slices[0]);
-    for (uint32_t t = 1; t <= spawned; t++) pthread_join(tids[t], NULL);
+    for (uint32_t t = 1; t < n; t++) if (created[t]) pthread_join(tids[t], NULL);
 }
 
 static bool weight_cache_upload_impl(nimcp_gpu_weight_cache_t* cache, neural_network_t net)
@@ -976,7 +978,10 @@ bool nimcp_gpu_weight_cache_download(nimcp_gpu_weight_cache_t* cache, neural_net
             if (n_slices < 1) n_slices = 1;
             dl_slice_t slices[COO_BUILD_THREADS];
             pthread_t tids[COO_BUILD_THREADS];
-            uint32_t spawned = 0;
+            /* Per-slot creation flags: joining 1..spawned assumed contiguous
+             * successes, so a mid-range EAGAIN joined a garbage tid and left
+             * the last writer running after this function returned. */
+            bool created[COO_BUILD_THREADS] = {false};
             for (uint32_t t = 0; t < n_slices; t++) {
                 slices[t] = (dl_slice_t){
                     .cache = cache, .net = net,
@@ -987,11 +992,11 @@ bool nimcp_gpu_weight_cache_download(nimcp_gpu_weight_cache_t* cache, neural_net
                 };
             }
             for (uint32_t t = 1; t < n_slices; t++) {
-                if (pthread_create(&tids[t], NULL, dl_writeback_worker, &slices[t]) == 0) spawned++;
+                if (pthread_create(&tids[t], NULL, dl_writeback_worker, &slices[t]) == 0) created[t] = true;
                 else dl_writeback_worker(&slices[t]);
             }
             dl_writeback_worker(&slices[0]);
-            for (uint32_t t = 1; t <= spawned; t++) pthread_join(tids[t], NULL);
+            for (uint32_t t = 1; t < n_slices; t++) if (created[t]) pthread_join(tids[t], NULL);
         }
     }
 

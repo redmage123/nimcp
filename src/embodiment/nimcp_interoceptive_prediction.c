@@ -773,7 +773,11 @@ nimcp_intero_error_t nimcp_intero_process_signal(
         ctx->signal_valid[signal->type] = signal->is_valid;
     }
 
-    /* Update prediction model */
+    /* Update prediction model (same bound as the store above: an
+     * out-of-range type indexed past predictions[]) */
+    if (signal->type <= 0 || signal->type >= NIMCP_SIGNAL_COUNT) {
+        return NIMCP_INTERO_ERROR_INVALID_SIGNAL;
+    }
     nimcp_prediction_model_t* model = &ctx->predictions[signal->type];
     double prediction_error = signal->value - model->predicted_value;
 

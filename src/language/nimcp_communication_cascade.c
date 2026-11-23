@@ -50,6 +50,7 @@
 /* Emotional state + attention + motor integration (2026-10-21) */
 #include "cognitive/nimcp_emotion_tensor.h"       /* emotion_tensor_get_valence/arousal */
 #include "core/brain/regions/motor/nimcp_motor_adapter.h"  /* motor_adapter_get_current_output */
+#include "edge/nimcp_sensorimotor.h"  /* nimcp_sensorimotor_get_observation (stage 5j) */
 /* Note: cannot include core/brain/regions/broca/nimcp_phonological.h here
  * because Wernicke's perception/nimcp_speech_cortex.h (pulled in
  * transitively via grounded_language + brain_internal headers) also
@@ -1231,11 +1232,13 @@ static int cascade_stage_content(brain_t brain,
      * language. Weight 0.17 — sensorimotor provides embodied context. */
     const float w_sensorimotor = 0.17f;
     if (brain->sensorimotor && dim >= 128) {
-        /* Get sensorimotor state vector */
-        extern int sensorimotor_get_state(void* sensorimotor,
-                                            float* state, uint32_t max_dim);
+        /* Get sensorimotor state vector. brain->sensorimotor is a
+         * nimcp_sensorimotor_t (lifecycle frees it with
+         * nimcp_sensorimotor_destroy); the old extern sensorimotor_get_state
+         * resolved to a 1-arg void* stub (ABI mismatch, always 0). */
         float sm_buf[32];
-        int n_sm = sensorimotor_get_state(brain->sensorimotor, sm_buf, 32);
+        int n_sm = nimcp_sensorimotor_get_observation(
+            (const nimcp_sensorimotor_t*)brain->sensorimotor, sm_buf, 32);
         if (n_sm > 0) {
             /* Map sensorimotor dimensions to semantic space (dimensions 96-127) */
             uint32_t sm_base = 96;

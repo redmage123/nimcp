@@ -8,8 +8,9 @@
  *       learned from (and had no callers). Hearing is the consumer.
  * HOW:  brain_hearing_feed() cuts the audio into 40 ms blocks (a remainder
  *       is carried into the next call), runs each block through the
- *       cochlea into brain->cochlea_output_buffer (so the cochlea bridges
- *       see real sound), sums each channel's spikes over the block and
+ *       cochlea into hearing's own private cochlea output (not the shared
+ *       brain->cochlea_output_buffer: feed runs lock-free and that buffer's
+ *       readers take no lock), sums each channel's spikes over the block and
  *       steps the predictor. Created at brain init with the cochlea;
  *       its learned state is saved as the checkpoint's .hear sidecar.
  *       Thread-safe: an internal mutex serialises feed/save/load/stats,

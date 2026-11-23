@@ -1180,7 +1180,10 @@ nimcp_error_t nimcp_bio_promise_complete_sized(
     NIMCP_CHECK_THROW(result_size == 0 || result != NULL,
                        NIMCP_ERROR_NULL_POINTER, "nimcp_bio_promise_complete_sized: result required but NULL");
 
-    /* Enforce refractory period: check if minimum time has passed since last completion */
+    /* Refractory period is tracked per channel but NOT enforced here: the window
+     * is global to the channel, so rejecting would refuse delivery of unrelated
+     * promises and leave them PENDING forever (waiters hang or time out). A
+     * refractory period shapes signalling, it must not drop a result. */
     nimcp_bio_channel_type_t channel = shared->channel;
     if (channel < BIO_CHANNEL_COUNT) {
         float refractory_ms = g_bio_async.config.channel_configs[channel].refractory_period_ms;
@@ -1188,16 +1191,13 @@ nimcp_error_t nimcp_bio_promise_complete_sized(
             uint64_t current_time = bio_time_ms();
             nimcp_mutex_lock(&g_bio_async.channel_state[channel].mutex);
             uint64_t last_completion = g_bio_async.channel_state[channel].last_completion_ms;
-            uint64_t elapsed = current_time - last_completion;
-            if (last_completion > 0 && elapsed < (uint64_t)refractory_ms) {
-                nimcp_mutex_unlock(&g_bio_async.channel_state[channel].mutex);
-                LOG_DEBUG("nimcp_bio_promise_complete: refractory period not elapsed "
-                          "(channel=%s, elapsed=%lu ms, required=%.1f ms)",
-                          nimcp_bio_channel_name(channel), (unsigned long)elapsed, refractory_ms);
-                NIMCP_CHECK_THROW(false, NIMCP_ERROR_INVALID_STATE,
-                                  "nimcp_bio_promise_complete: refractory period not elapsed");
-            }
             nimcp_mutex_unlock(&g_bio_async.channel_state[channel].mutex);
+            if (last_completion > 0 && current_time - last_completion < (uint64_t)refractory_ms) {
+                LOG_DEBUG("nimcp_bio_promise_complete: completing within refractory window "
+                          "(channel=%s, elapsed=%lu ms, window=%.1f ms)",
+                          nimcp_bio_channel_name(channel),
+                          (unsigned long)(current_time - last_completion), refractory_ms);
+            }
         }
     }
 

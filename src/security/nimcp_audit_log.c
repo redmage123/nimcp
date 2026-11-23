@@ -103,6 +103,17 @@ static void _write_entry_to_disk(nimcp_safety_audit_log_t* log,
                                   const nimcp_safety_audit_entry_t* entry) {
     if (log->log_fd < 0) return;
 
+    /* Descriptions embed external text (e.g. training labels); a raw '\n'
+     * could forge a well-formed "[seq] ts sev= evt=" line in the disk log.
+     * Replace control/non-printable bytes before formatting. */
+    char safe_desc[sizeof(entry->description)];
+    size_t di = 0;
+    for (; di < sizeof(safe_desc) - 1 && entry->description[di]; di++) {
+        unsigned char c = (unsigned char)entry->description[di];
+        safe_desc[di] = (c >= 0x20 && c < 0x7F) ? (char)c : '?';
+    }
+    safe_desc[di] = '\0';
+
     /* Format: [seq] timestamp severity event description\n */
     char line[512];
     int len = snprintf(line, sizeof(line),
@@ -111,7 +122,7 @@ static void _write_entry_to_disk(nimcp_safety_audit_log_t* log,
         (unsigned long long)entry->timestamp_us,
         entry->severity,
         (int)entry->event,
-        entry->description);
+        safe_desc);
 
     if (len > 0 && len < (int)sizeof(line)) {
         /* Best-effort write — if it fails, entry stays in memory ring */

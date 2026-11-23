@@ -114,7 +114,12 @@ int brain_vision_see(struct brain_struct* b, const uint8_t* pixels, uint32_t w, 
     if (on && optic_nerve_get_stats(on, &ons) == 0) v->st.mean_myelination = ons.mean_myelination;
     nimcp_mutex_unlock(v->mu);
 
-    brain_sensory_hub_post_visual(b, &f);   /* the brain sees it on its next tick */
+    brain_sensory_hub_post_visual(b, &f);
+    {   /* echolocation / eagle vision take the retinotopic ON/OFF maps */
+        extern void brain_nonhuman_post_visual(struct brain_struct*, const float*, const float*,
+                                               uint32_t, uint32_t);
+        brain_nonhuman_post_visual(b, f.on_map, f.off_map, f.map_w, f.map_h);
+    }   /* the brain sees it on its next tick */
     return 0;
 }
 

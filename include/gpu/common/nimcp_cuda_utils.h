@@ -607,6 +607,19 @@ static inline void nimcp_cuda_print_device_info(void) {}
                 "GPU kernel error (unrecoverable): %s", _err_str); \
             return false; \
         } \
+        /* "Recovered" (e.g. STREAM_SYNC) never re-launches the kernel, so the \
+         * work did not happen: report failure (no throw, rate-limited log) so \
+         * callers fall back instead of treating a skipped kernel as success. */ \
+        { \
+            static unsigned _nimcp_rl_count = 0; \
+            if (_nimcp_rl_count < 8) { \
+                _nimcp_rl_count++; \
+                fprintf(stderr, "[NIMCP CUDA] %s:%d: kernel launch failed - %s " \
+                        "(reported as failure)\n", __FILE__, __LINE__, \
+                        cudaGetErrorString(_err)); \
+            } \
+        } \
+        return false; \
     } \
 } while(0)
 
@@ -626,6 +639,19 @@ static inline void nimcp_cuda_print_device_info(void) {}
                 "GPU kernel error (unrecoverable): %s", _err_str); \
             return NULL; \
         } \
+        /* "Recovered" (e.g. STREAM_SYNC) never re-launches the kernel, so the \
+         * work did not happen: report failure (no throw, rate-limited log) so \
+         * callers fall back instead of treating a skipped kernel as success. */ \
+        { \
+            static unsigned _nimcp_rl_count = 0; \
+            if (_nimcp_rl_count < 8) { \
+                _nimcp_rl_count++; \
+                fprintf(stderr, "[NIMCP CUDA] %s:%d: kernel launch failed - %s " \
+                        "(reported as failure)\n", __FILE__, __LINE__, \
+                        cudaGetErrorString(_err)); \
+            } \
+        } \
+        return NULL; \
     } \
 } while(0)
 

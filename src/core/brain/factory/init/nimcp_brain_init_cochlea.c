@@ -224,54 +224,12 @@ static void cochlea_bridges_tick_wrapper(void* ctx) {
      * (update its predictions/precision/free-energy/etc.) on every tick. */
     const cochlea_output_t* cb = (const cochlea_output_t*)brain->cochlea_output_buffer;
 
-    if (brain->cochlea_audio_cortex_bridge) {
-        (void)cochlea_audio_cortex_bridge_update(
-            brain->cochlea_audio_cortex_bridge, cb, NULL, dt_ms);
-    }
-    if (brain->cochlea_bio_async_bridge) {
-        (void)cochlea_bio_async_bridge_update(
-            brain->cochlea_bio_async_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_broca_bridge) {
-        (void)cochlea_broca_bridge_update(
-            brain->cochlea_broca_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_collective_bridge) {
-        (void)cochlea_collective_bridge_update(
-            brain->cochlea_collective_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_cortical_deep_bridge) {
-        (void)cochlea_cortical_deep_bridge_update(
-            brain->cochlea_cortical_deep_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_fep_bridge) {
-        (void)cochlea_fep_bridge_update(
-            brain->cochlea_fep_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_immune_bridge) {
-        (void)cochlea_immune_bridge_update(
-            brain->cochlea_immune_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_medulla_bridge) {
-        (void)cochlea_medulla_bridge_update(
-            brain->cochlea_medulla_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_occipital_bridge) {
-        (void)cochlea_occipital_bridge_update(
-            brain->cochlea_occipital_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_rcog_bridge) {
-        (void)cochlea_rcog_bridge_update(
-            brain->cochlea_rcog_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_substrate_bridge) {
-        (void)cochlea_substrate_bridge_update(
-            brain->cochlea_substrate_bridge, cb, dt_ms);
-    }
-    if (brain->cochlea_verification_bridge) {
-        (void)cochlea_verification_bridge_update(
-            brain->cochlea_verification_bridge, dt_ms);
-    }
+    /* Single-owner policy (2026-11-23): the 12 bridges audio_cortex,
+     * bio_async, broca, collective, cortical_deep, fep, immune, medulla,
+     * occipital, rcog, substrate and verification are updated inline in
+     * brain_decide / brain_learn_vector under the daemon's brain lock.
+     * Updating them here as well raced those calls with no lock, so this
+     * cycle now only drives the bridges that have no inline caller. */
     if (brain->cochlea_thalamic_bridge) {
         (void)cochlea_thalamic_bridge_update(
             (cochlea_thalamic_bridge_t*)brain->cochlea_thalamic_bridge,

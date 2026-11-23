@@ -365,7 +365,11 @@ apply_antiframe_swap(const toxicity_response_t* tr,
 
     /* Phase 1: working buffer = input. */
     size_t L = strlen(text);
-    char* buf = (char*)nimcp_malloc(L + 1);
+    /* Multi-word swaps can lengthen the text (e.g. "my property" ->
+     * "her own person"), so buf must hold any Phase-2 result (<= tmp size). */
+    char tmp[1024];
+    size_t buf_cap = (L + 1 > sizeof(tmp)) ? L + 1 : sizeof(tmp);
+    char* buf = (char*)nimcp_malloc(buf_cap);
     if (!buf) return 0;
     memcpy(buf, text, L + 1);
 
@@ -374,7 +378,6 @@ apply_antiframe_swap(const toxicity_response_t* tr,
     int swaps = 0;
     /* For each multi-word antiframe, find all case-insensitive occurrences
      * in buf and rebuild. */
-    char tmp[1024];
     for (size_t a = 0; a < tr->num_antiframes; a++) {
         const tr_antiframe_t* af = &tr->antiframes[a];
         if (!af->multi_word) continue;
@@ -412,7 +415,12 @@ apply_antiframe_swap(const toxicity_response_t* tr,
         if (out < sizeof(tmp)) tmp[out] = '\0';
         else tmp[sizeof(tmp) - 1] = '\0';
         if (hit_this) {
-            strncpy(buf, tmp, L + 1);
+            /* tmp is NUL-terminated and < buf_cap; the old strncpy(.., L+1)
+             * left buf unterminated when the swap grew the text. */
+            size_t tL = strlen(tmp);
+            if (tL > buf_cap - 1) tL = buf_cap - 1;
+            memcpy(buf, tmp, tL);
+            buf[tL] = '\0';
             swaps++;
         }
     }

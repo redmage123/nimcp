@@ -1354,8 +1354,14 @@ int retina_circuit_get_counts(const retina_circuit_t* r, retina_circuit_counts_t
 int retina_circuit_save(const retina_circuit_t* r, const char* path)
 {
     if (!r || !path) return -1;
-    FILE* fp = fopen(path, "wb");
-    if (!fp) return -1;
+    /* Write to path.tmp and rename on success: a kill mid-save must not leave
+     * a truncated .retina in place of the last good one. */
+    size_t tlen = strlen(path) + 5;
+    char* tmp = (char*)nimcp_malloc(tlen);
+    if (!tmp) return -1;
+    snprintf(tmp, tlen, "%s.tmp", path);
+    FILE* fp = fopen(tmp, "wb");
+    if (!fp) { nimcp_free(tmp); return -1; }
     uint32_t hdr[8] = { RETINA_MAGIC, RETINA_VERSION, r->n_pr, r->n_h, r->n_bc, r->n_aii,
                         r->n_rgc, r->nerve ? 1u : 0u };
     int ok = fwrite(hdr, sizeof(hdr), 1, fp) == 1;
@@ -1367,6 +1373,9 @@ int retina_circuit_save(const retina_circuit_t* r, const char* path)
     ok = ok && fwrite(r->aii_V, sizeof(float), r->n_aii, fp) == r->n_aii;
     if (ok && r->nerve) ok = optic_nerve_write(r->nerve, fp) == 0;
     if (fclose(fp) != 0) ok = 0;
+    if (ok && rename(tmp, path) != 0) ok = 0;
+    if (!ok) remove(tmp);
+    nimcp_free(tmp);
     return ok ? 0 : -1;
 }
 
@@ -1380,14 +1389,35 @@ int retina_circuit_load(retina_circuit_t* r, const char* path)
              hdr[1] == RETINA_VERSION && hdr[2] == r->n_pr && hdr[3] == r->n_h &&
              hdr[4] == r->n_bc && hdr[5] == r->n_aii && hdr[6] == r->n_rgc;
     uint64_t t_us = 0;
+    /* Read everything into scratch first and commit only after the whole file
+     * (nerve included) has read back: a truncated sidecar must leave the live
+     * retina untouched, not half-overwritten. */
+    size_t n_all = (size_t)2 * r->n_pr + r->n_h + r->n_bc + r->n_aii;
+    float* buf = ok ? (float*)nimcp_malloc((n_all ? n_all : 1) * sizeof(float)) : NULL;
+    if (!buf) ok = 0;
+    float* pr_A = buf;
+    float* pr_r = pr_A ? pr_A + r->n_pr : NULL;
+    float* h_V = pr_r ? pr_r + r->n_pr : NULL;
+    float* bc_V = h_V ? h_V + r->n_h : NULL;
+    float* aii_V = bc_V ? bc_V + r->n_bc : NULL;
     ok = ok && fread(&t_us, sizeof(t_us), 1, fp) == 1;
-    ok = ok && fread(r->pr_A, sizeof(float), r->n_pr, fp) == r->n_pr;
-    ok = ok && fread(r->pr_r, sizeof(float), r->n_pr, fp) == r->n_pr;
-    ok = ok && fread(r->h_V, sizeof(float), r->n_h, fp) == r->n_h;
-    ok = ok && fread(r->bc_V, sizeof(float), r->n_bc, fp) == r->n_bc;
-    ok = ok && fread(r->aii_V, sizeof(float), r->n_aii, fp) == r->n_aii;
+    ok = ok && fread(pr_A, sizeof(float), r->n_pr, fp) == r->n_pr;
+    ok = ok && fread(pr_r, sizeof(float), r->n_pr, fp) == r->n_pr;
+    ok = ok && fread(h_V, sizeof(float), r->n_h, fp) == r->n_h;
+    ok = ok && fread(bc_V, sizeof(float), r->n_bc, fp) == r->n_bc;
+    ok = ok && fread(aii_V, sizeof(float), r->n_aii, fp) == r->n_aii;
+    /* optic_nerve_read is itself all-or-nothing, and it is the last read, so
+     * a failure here still leaves the retina arrays uncommitted. */
     if (ok && hdr[7] && r->nerve) ok = optic_nerve_read(r->nerve, fp) == 0;
     fclose(fp);
+    if (ok) {
+        memcpy(r->pr_A, pr_A, r->n_pr * sizeof(float));
+        memcpy(r->pr_r, pr_r, r->n_pr * sizeof(float));
+        memcpy(r->h_V, h_V, r->n_h * sizeof(float));
+        memcpy(r->bc_V, bc_V, r->n_bc * sizeof(float));
+        memcpy(r->aii_V, aii_V, r->n_aii * sizeof(float));
+    }
+    nimcp_free(buf);
     if (!ok) return -1;
     /* the nerve and STP clocks keep running forward; only the retina clock is restored
        if it is ahead, so stp timestamps never go backwards */

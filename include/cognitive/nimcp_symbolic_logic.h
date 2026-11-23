@@ -428,6 +428,15 @@ bool symbolic_logic_to_cnf(
     int* num_clauses
 );
 
+/**
+ * @brief Free a clause returned by symbolic_logic_to_cnf (literals included).
+ *
+ * The caller owns each clause and the clauses array (free the array with
+ * nimcp_free). symbolic_logic_add_fact stores its own copy, so clauses must
+ * be destroyed after adding them.
+ */
+void symbolic_logic_clause_destroy(logic_clause_t* clause);
+
 //=============================================================================
 // Brain Integration Helpers
 //=============================================================================

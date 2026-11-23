@@ -107,6 +107,50 @@
  * Best-effort: if coordinator is NULL, do nothing — better to skip a sweep
  * than to crash the trainer worker thread. The next call after coordinator
  * comes online will run the sweep. */
+/* W17-B familiarity table: bounded replacement for per-sample KG nodes.
+ * File-static (one brain per daemon); written under the brain lock, atomics
+ * only keep concurrent readers well-defined. 64K slots = 256 KB. */
+#define TRAIN_FAMILIARITY_SLOTS 65536u
+static uint32_t g_train_familiarity[TRAIN_FAMILIARITY_SLOTS];
+
+/* Remove legacy "train_familiarity_*" KG nodes, at most 256 per call so a
+ * saturated KG (16K nodes) is drained over a few learn steps instead of one
+ * long stall. Stops scanning a KG once a pass finds none. */
+static void train_familiarity_prune_kg(brain_t brain)
+{
+    static const void* s_clean_kg = NULL;
+    if (__atomic_load_n(&s_clean_kg, __ATOMIC_RELAXED) == (const void*)brain->internal_kg) return;
+
+    brain_kg_node_list_t* list = brain_kg_get_nodes_by_type(
+        brain->internal_kg, BRAIN_KG_NODE_COGNITIVE);
+    if (!list) return;
+
+    enum { PRUNE_BUDGET = 256 };
+    brain_kg_node_id_t ids[PRUNE_BUDGET];
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < list->count && n < PRUNE_BUDGET; i++) {
+        const brain_kg_node_t* nd = list->nodes[i];
+        if (nd && strncmp(nd->name, "train_familiarity_", 18) == 0) {
+            ids[n++] = nd->id;
+        }
+    }
+    brain_kg_node_list_destroy(list);
+
+    if (n == 0) {
+        __atomic_store_n(&s_clean_kg, (const void*)brain->internal_kg, __ATOMIC_RELAXED);
+        return;
+    }
+    uint64_t tok = brain->internal_kg_admin_token;
+    brain_kg_set_access_level(brain->internal_kg, BRAIN_KG_ACCESS_ADMIN, tok);
+    for (uint32_t i = 0; i < n; i++) {
+        (void)brain_kg_remove_node(brain->internal_kg, ids[i]);
+    }
+    brain_kg_set_access_level(brain->internal_kg, BRAIN_KG_ACCESS_READ, 0);
+    if (n < PRUNE_BUDGET) {
+        LOG_MODULE_INFO("BRAIN", "W17-B: pruned legacy train_familiarity KG nodes");
+    }
+}
+
 static void brain_enforce_dales_law(brain_t brain)
 {
     if (!brain || !brain->enforce_dales_law) return;
@@ -1751,6 +1795,18 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         nimcp_octopus_tick(brain, features, num_features);
     }
 
+    /* Non-human modules (dragonfly + medulla bridge + LNN, portia,
+     * echolocation, eagle vision, time dilation, savant, synesthesia,
+     * hyperthymesia, precognition, interoception): self rate-limited, no-op
+     * until eager init created them (2026-11-23 walkthrough). */
+    {
+        extern void brain_tick_nonhuman(brain_t, const float*, uint32_t, const char*);
+        brain_tick_nonhuman(brain, features, num_features, label);
+        /* Toxicity cycle (ML head training + valence decay), <= 1 Hz. */
+        extern void nimcp_brain_toxicity_tick_inline(brain_t);
+        nimcp_brain_toxicity_tick_inline(brain);
+    }
+
     /* Phase 4n-t: drive all JEPA bridges. Pair-driven ones (omni,
      * engram, consolidation, cerebellum) use features as the current
      * state vector via each bridge's tick_from_vec self-drive wrapper
@@ -2194,20 +2250,24 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
      * If truly novel (no recall): boost learning rate slightly. */
     float lr_memory_factor = 1.0f;
     if (brain->engram_system && brain->engram_system->active_count > 10) {
-        /* Use feature indices as cue pattern */
-        uint32_t cue_count = num_features < 64 ? num_features : 64;
+        /* Cue = indices of the active input features (up to 64). The old
+         * cue was the constant ramp 0..63, so the LR factor never depended
+         * on the current input. No active feature -> no evidence, LR x1. */
+        uint32_t cue_count = 0;
         uint32_t cue_ids[64];
-        for (uint32_t ci = 0; ci < cue_count; ci++) {
-            cue_ids[ci] = ci;
+        for (uint32_t ci = 0; ci < num_features && cue_count < 64; ci++) {
+            if (features[ci] > 0.1f) cue_ids[cue_count++] = ci;
         }
         float recall_conf = 0.0f;
         uint32_t recall_out[256];
         float recall_act[256];
-        uint64_t recalled = engram_recall(
+        uint64_t recalled = (cue_count > 0) ? engram_recall(
             brain->engram_system, cue_ids, cue_count,
-            recall_out, recall_act, 256, &recall_conf);
+            recall_out, recall_act, 256, &recall_conf) : 0;
 
-        if (recalled > 0 && recall_conf > 0.6f) {
+        if (cue_count == 0) {
+            /* keep lr_memory_factor = 1.0 */
+        } else if (recalled > 0 && recall_conf > 0.6f) {
             /* Familiar input: reduce LR to avoid overwriting */
             lr_memory_factor = 0.7f;
         } else if (recalled == 0) {
@@ -2285,29 +2345,26 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
                 hash ^= bits;
                 hash *= 16777619u;
             }
-            char fam_name[64];
-            snprintf(fam_name, sizeof(fam_name),
-                     "train_familiarity_%08x", hash);
-            brain_kg_node_id_t fam = brain_kg_find_node(
-                brain->internal_kg, fam_name);
-            if (fam != BRAIN_KG_INVALID_NODE) {
+            /* One KG node per novel sample (non-evictable name) filled the
+             * 16384-node KG within minutes, after which every subsystem's
+             * brain_kg_add_node failed. Familiarity now lives in a bounded
+             * direct-mapped table (collisions just overwrite = forget). */
+            if (hash == 0u) hash = 1u;  /* 0 marks an empty slot */
+            uint32_t* slot = &g_train_familiarity[hash & (TRAIN_FAMILIARITY_SLOTS - 1u)];
+            if (__atomic_load_n(slot, __ATOMIC_RELAXED) == hash) {
                 kg_plasticity_scale = 0.8f;  /* dampen on familiar */
-                __atomic_add_fetch(&brain->kg_training_consumer_hits, 1,
-                                   __ATOMIC_RELAXED);
             } else {
-                uint64_t tok = brain->internal_kg_admin_token;
-                brain_kg_set_access_level(brain->internal_kg,
-                    BRAIN_KG_ACCESS_ADMIN, tok);
-                brain_kg_add_node(brain->internal_kg, fam_name,
-                    BRAIN_KG_NODE_COGNITIVE,
-                    "training pattern fingerprint (W17-B)");
-                brain_kg_set_access_level(brain->internal_kg,
-                    BRAIN_KG_ACCESS_READ, 0);
+                __atomic_store_n(slot, hash, __ATOMIC_RELAXED);
                 kg_plasticity_scale = 1.2f;  /* boost on novel */
-                __atomic_add_fetch(&brain->kg_training_consumer_hits, 1,
-                                   __ATOMIC_RELAXED);
             }
+            __atomic_add_fetch(&brain->kg_training_consumer_hits, 1,
+                               __ATOMIC_RELAXED);
         }
+    }
+    /* Reclaim train_familiarity_* nodes left by the old W17-B scheme (they
+     * were persisted in the .kg sidecar and saturate the KG on resume). */
+    if (brain->internal_kg_enabled && brain->internal_kg) {
+        train_familiarity_prune_kg(brain);
     }
     /* Combine and clamp to [0.1, 3.0] to prevent runaway scaling. */
     float kg_combined_scale = kg_lr_scale * kg_plasticity_scale;
@@ -2472,18 +2529,10 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
          * then falls through to CPU coordinator for registered mechanism callbacks. */
         if (brain->plasticity_coordinator && brain->plasticity_coordinator_enabled) {
             uint64_t now_ms = nimcp_time_get_us() / 1000;
-            if (brain->gpu_enabled && brain->gpu_ctx && brain->gpu_plasticity_state) {
-                gpu_plasticity_coordinator_update(
-                    (nimcp_gpu_context_t*)brain->gpu_ctx,
-                    brain->gpu_plasticity_state,
-                    brain->plasticity_coordinator,
-                    now_ms, 1.0f);
-
-                /* GPU-side plasticity DISABLED — suspected NaN source.
-                 * The STDP/BCM/homeostatic kernels may produce NaN when
-                 * pre_traces/post_traces contain extreme values.
-                 * CPU plasticity coordinator still runs below. */
-            }
+            /* The GPU plasticity coordinator update was removed (2026-11-23
+             * walkthrough #39): its outputs (traces / BCM thresholds /
+             * avg_rates) are read only by GPU weight-update helpers that have
+             * no callers, and the GPU-side plasticity is disabled anyway. */
             /* CPU coordinator still runs for registered mechanism callbacks */
             struct timespec _pc0, _pc1, _pc2;
             clock_gettime(CLOCK_MONOTONIC, &_pc0);
@@ -2503,8 +2552,12 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
             float activity_hz = (loss < 0.5f) ? 30.0f : 5.0f;
             if (structural_plasticity_should_form(brain->structural_plasticity, activity_hz)
                 && brain->config.num_inputs > 0 && brain->config.num_outputs > 0) {
-                uint32_t pre = (uint32_t)(features[0] * 997.0f) % brain->config.num_inputs;
-                uint32_t post = (uint32_t)(features[1] * 991.0f) % brain->config.num_outputs;
+                float f0 = isfinite(features[0]) ? fabsf(features[0]) : 0.0f;
+                float f1 = (num_features >= 2 && isfinite(features[1])) ? fabsf(features[1]) : f0;
+                /* fmodf keeps the index in range without the UB of casting a
+                 * negative or huge float to uint32_t (walkthrough #22). */
+                uint32_t pre = (uint32_t)fmodf(f0 * 997.0f, (float)brain->config.num_inputs);
+                uint32_t post = (uint32_t)fmodf(f1 * 991.0f, (float)brain->config.num_outputs);
                 uint32_t syn_id = 0;
                 structural_plasticity_form_synapse(
                     brain->structural_plasticity, pre, post, activity_hz, &syn_id);
@@ -4031,7 +4084,9 @@ sequential_training:
             det.id = 1;
 
             dragonfly_process_detection(brain->dragonfly, &det);
-            dragonfly_update(brain->dragonfly, 0.033f);  /* ~30 Hz update */
+            /* The dragonfly clock is advanced by brain_tick_nonhuman ->
+             * brain_step_dragonfly (with medulla gating); a raw update here
+             * would double-step it (2026-11-23). */
         }
     }
 
@@ -4459,9 +4514,13 @@ sequential_training:
     PROF_PHASE_START();
         NIMCP_LOGGING_INFO("[BLV-PHASE] step %llu: cognitive/meta_learning",
                            (unsigned long long)_blv_step_tracker);
-        (void)meta_adapt_learning_rate(brain->meta_learner,
-                                       META_REGION_ASSOCIATION,
-                                       loss);
+        /* Skip frozen/invalid steps (loss forced to 0.0 or NaN): a 0 loss
+         * would halve the LR and poison previous_loss for the next step. */
+        if (isfinite(loss) && loss > 0.0f) {
+            (void)meta_adapt_learning_rate(brain->meta_learner,
+                                           META_REGION_ASSOCIATION,
+                                           loss);
+        }
     }
 
     clear_cache(brain);
@@ -5157,13 +5216,7 @@ float brain_learn_example(brain_t brain, const float* features, uint32_t num_fea
     if (brain->plasticity_coordinator && brain->plasticity_coordinator_enabled) {
         uint64_t now_ms = nimcp_time_get_us() / 1000;
         /* GPU path: batch STDP trace decay + BCM threshold + homeostatic rate */
-        if (brain->gpu_enabled && brain->gpu_ctx && brain->gpu_plasticity_state) {
-            gpu_plasticity_coordinator_update(
-                (nimcp_gpu_context_t*)brain->gpu_ctx,
-                brain->gpu_plasticity_state,
-                brain->plasticity_coordinator,
-                now_ms, 1.0f);
-        }
+        /* (GPU plasticity coordinator update removed: outputs unused, #39.) */
         /* CPU coordinator still runs for registered mechanism callbacks */
         plasticity_coordinator_update(brain->plasticity_coordinator, now_ms, 1.0f);
         /* Dale's principle enforcement (post-plasticity weight sign clip). */
@@ -5172,9 +5225,14 @@ float brain_learn_example(brain_t brain, const float* features, uint32_t num_fea
     /* Structural plasticity: form new synapses for high-activity pairs */
     if (brain->structural_plasticity && brain->structural_plasticity_enabled) {
         float activity_hz = (network_loss < 0.5f) ? 30.0f : 5.0f;
-        if (structural_plasticity_should_form(brain->structural_plasticity, activity_hz)) {
-            uint32_t pre = (uint32_t)(features[0] * 997.0f) % brain->config.num_inputs;
-            uint32_t post = (uint32_t)(features[1] * 991.0f) % brain->config.num_outputs;
+        if (structural_plasticity_should_form(brain->structural_plasticity, activity_hz)
+            && brain->config.num_inputs > 0 && brain->config.num_outputs > 0) {
+            float f0 = isfinite(features[0]) ? fabsf(features[0]) : 0.0f;
+            float f1 = (num_features >= 2 && isfinite(features[1])) ? fabsf(features[1]) : f0;
+            /* fmodf keeps the index in range without the UB of casting a
+             * negative or huge float to uint32_t (walkthrough #22). */
+            uint32_t pre = (uint32_t)fmodf(f0 * 997.0f, (float)brain->config.num_inputs);
+            uint32_t post = (uint32_t)fmodf(f1 * 991.0f, (float)brain->config.num_outputs);
             uint32_t syn_id = 0;
             structural_plasticity_form_synapse(
                 brain->structural_plasticity, pre, post, activity_hz, &syn_id);
@@ -5931,11 +5989,14 @@ float brain_learn_example(brain_t brain, const float* features, uint32_t num_fea
                         firing_rates, homeo_cap,
                         10.0f,  /* target_rate: 10 Hz default */
                         DT_MS);
-                    if (gpu_rc != 0) {
-                        // GPU failed — fall back to CPU homeostatic controller
-                        homeostatic_controller_update(brain->homeostatic,
-                                                     firing_rates, NULL, 0, DT_MS);
-                    }
+                    /* The controller (rate stability, intrinsic plasticity,
+                     * metaplasticity) always runs: the GPU call only updates
+                     * GPU-side rates that nothing reads, so on success the
+                     * CPU controller used to be skipped and homeostasis was a
+                     * no-op on GPU brains (walkthrough #28). */
+                    (void)gpu_rc;
+                    homeostatic_controller_update(brain->homeostatic,
+                                                 firing_rates, NULL, 0, DT_MS);
                 } else {
                     // CPU path: rate-based only, no weight access
                     // WHY:  Extracting a flat weight array from sparse synapse storage

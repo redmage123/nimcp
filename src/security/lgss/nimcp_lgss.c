@@ -400,6 +400,16 @@ lgss_status_t lgss_get_status(const lgss_context_t* lgss)
  * EVALUATION FUNCTIONS
  *============================================================================*/
 
+/* Free the heap array symbolic_logic_safety_evaluate() allocates into the
+ * result. num_triggered is kept so callers can still report the count. */
+static void lgss_release_triggered_ids(safety_evaluation_t* result)
+{
+    if (result->triggered_rule_ids) {
+        nimcp_free(result->triggered_rule_ids);
+        result->triggered_rule_ids = NULL;
+    }
+}
+
 int lgss_evaluate(
     lgss_context_t* lgss,
     const safety_action_context_t* context,
@@ -428,7 +438,8 @@ int lgss_evaluate(
                 "LGSS not active (status=%s) - fail-safe DENY",
                 lgss_status_name(lgss->status));
             result->confidence = 1.0f;
-            lgss->stats.actions_denied++;
+            /* Atomic like the other stats: decide (RO socket) and learn run concurrently */
+            __atomic_fetch_add(&lgss->stats.actions_denied, 1, __ATOMIC_RELAXED);
             return 0;
         }
     }
@@ -455,6 +466,7 @@ int lgss_evaluate(
     }
     if (!eval_ok) {
         LGSS_LOG_ERROR("Safety evaluation failed");
+        lgss_release_triggered_ids(result);
         result->action = SAFETY_ACTION_DENY;
         __atomic_fetch_add(&lgss->stats.actions_denied, 1, __ATOMIC_RELAXED);
         /* P2-SEC-9: Return correct error code for evaluation failure */
@@ -487,6 +499,10 @@ int lgss_evaluate(
         lgss_telemetry_log_evaluation(lgss->telemetry, context, result,
             context->source[0] ? context->source : "unknown");
     }
+
+    /* Telemetry is the only reader of triggered_rule_ids; every caller passes
+     * a stack result and drops it, so free here to stop a per-call leak. */
+    lgss_release_triggered_ids(result);
 
     return 0;
 }
@@ -580,7 +596,8 @@ int lgss_get_stats(const lgss_context_t* lgss, lgss_stats_t* stats)
 
     /* Get hash prefix */
     uint8_t hash[SAFETY_HASH_SIZE];
-    if (symbolic_logic_safety_get_hash(lgss->safety_kb, hash) == 0) {
+    /* get_hash returns bool (true on success); was compared to 0 = copied on failure */
+    if (symbolic_logic_safety_get_hash(lgss->safety_kb, hash)) {
         memcpy(&stats->kb_hash_prefix, hash, sizeof(uint64_t));
     }
 

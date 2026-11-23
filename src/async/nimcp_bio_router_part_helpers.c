@@ -95,16 +95,21 @@ static nimcp_error_t bio_msg_queue_grow(bio_msg_queue_t* queue) {
     // trylock returning non-zero (EBUSY) is expected - mutex is properly held
 #endif
 
+    /* Per-queue ceiling (not the global MAX_INBOX_MESSAGES) so a module with no
+     * drain loop cannot accumulate 16384 broadcast copies. */
+    uint32_t max_cap = queue->max_capacity ? queue->max_capacity : MAX_INBOX_MESSAGES;
+    if (max_cap > MAX_INBOX_MESSAGES) max_cap = MAX_INBOX_MESSAGES;
+
     // Check if already at max capacity — return error, don't THROW (this is normal backpressure)
-    if (queue->capacity >= MAX_INBOX_MESSAGES) {
-        LOG_DEBUG("Queue at max capacity %u, cannot grow further", MAX_INBOX_MESSAGES);
+    if (queue->capacity >= max_cap) {
+        LOG_DEBUG("Queue at max capacity %u, cannot grow further", max_cap);
         return NIMCP_ERROR_OUT_OF_RANGE;
     }
 
     // Calculate new capacity (double, but cap at max)
     uint32_t new_capacity = queue->capacity * 2;
-    if (new_capacity > MAX_INBOX_MESSAGES) {
-        new_capacity = MAX_INBOX_MESSAGES;
+    if (new_capacity > max_cap) {
+        new_capacity = max_cap;
     }
 
     // Allocate new entries array
@@ -170,6 +175,13 @@ static nimcp_error_t bio_msg_queue_enqueue(bio_msg_queue_t* queue,
                           "bio_msg_queue_enqueue: shutdown requested");
     }
 
+    /* Inbox is being torn down by unregister (sender raced the lookup); refuse
+     * quietly so the unregister can finish once in-flight senders drain. */
+    if (queue->closed) {
+        nimcp_platform_mutex_unlock(&queue->mutex);
+        return NIMCP_ERROR_CANCELLED;
+    }
+
     // Handle full queue - try to grow or wait
     while (queue->count >= queue->capacity) {
         // DEADLOCK FIX: Check shutdown flag after waking from wait
@@ -200,6 +212,11 @@ static nimcp_error_t bio_msg_queue_enqueue(bio_msg_queue_t* queue,
             nimcp_platform_mutex_unlock(&queue->mutex);
             NIMCP_CHECK_THROW(false, NIMCP_ERROR_CANCELLED,
                               "bio_msg_queue_enqueue: shutdown requested after wait");
+        }
+        /* Woken by unregister closing the inbox: give up instead of re-waiting. */
+        if (queue->closed) {
+            nimcp_platform_mutex_unlock(&queue->mutex);
+            return NIMCP_ERROR_CANCELLED;
         }
 
         if (wait_result != 0) {
@@ -349,6 +366,27 @@ static bio_module_entry_t* bio_router_find_module(bio_module_id_t module_id) {
 
 
 /**
+ * WHAT: Make an entry's inbox safe to destroy
+ * WHY:  Unicast/promise/KG senders copy &entry->inbox under modules_mutex and
+ *       enqueue after releasing it; destroying the inbox under them is a UAF.
+ * HOW:  Caller holds modules_mutex and has already cleared entry->magic (no new
+ *       lookups). Close the queue, wake blocked senders, wait for inflight == 0.
+ *       Senders never take modules_mutex while pinned, so this cannot deadlock.
+ */
+static void bio_router_quiesce_entry(bio_module_entry_t* entry) {
+    if (!entry->inbox.entries) return;
+    nimcp_platform_mutex_lock(&entry->inbox.mutex);
+    entry->inbox.closed = true;
+    nimcp_platform_cond_broadcast(&entry->inbox.not_full);
+    nimcp_platform_cond_broadcast(&entry->inbox.not_empty);
+    nimcp_platform_mutex_unlock(&entry->inbox.mutex);
+    while (atomic_load(&entry->inflight) > 0) {
+        nimcp_platform_sleep_ms(1);
+    }
+}
+
+
+/**
  * @brief Internal send with optional response promise
  */
 static nimcp_error_t bio_router_send_with_promise(bio_module_context_t ctx,
@@ -432,13 +470,17 @@ static nimcp_error_t bio_router_send_with_promise(bio_module_context_t ctx,
                           "bio_router_send_with_promise: target module not found");
     }
     bio_msg_queue_t* target_inbox = &target->inbox;
+    /* Pin the entry so a concurrent unregister/shutdown waits before freeing the inbox. */
+    atomic_fetch_add(&target->inflight, 1);
     nimcp_platform_mutex_unlock(&g_router->modules_mutex);
 
     nimcp_error_t result = bio_msg_queue_enqueue(target_inbox, msg, msg_size,
                                                   response_promise, timeout_ms);
     if (result == NIMCP_SUCCESS) {
         atomic_fetch_add(&target->messages_received, 1);
-    } else {
+    }
+    atomic_fetch_sub(&target->inflight, 1);
+    if (result != NIMCP_SUCCESS) {
         LOG_WARN("Failed to enqueue to module %u inbox (type=0x%04X)", target_id, header->type);
 
         /* Dead-letter tracking: record dropped message type */
@@ -537,6 +579,8 @@ static int bio_router_kg_dispatch_internal(
 
         target_inboxes[target_count] = &target->inbox;
         target_entries[target_count] = target;
+        /* Pin until enqueued (see bio_router_quiesce_entry). */
+        atomic_fetch_add(&target->inflight, 1);
         target_count++;
     }
 
@@ -553,6 +597,7 @@ static int bio_router_kg_dispatch_internal(
         } else {
             LOG_DEBUG("KG dispatch: failed to enqueue to module %u", target_entries[i]->module_id);
         }
+        atomic_fetch_sub(&target_entries[i]->inflight, 1);
     }
     brain_kg_handler_list_destroy(handlers);
 

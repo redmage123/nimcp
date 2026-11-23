@@ -17,6 +17,7 @@
 #include "utils/time/nimcp_time.h"
 #include "utils/exception/nimcp_exception_macros.h"
 #include "utils/memory/nimcp_memory.h"
+#include "utils/thread/nimcp_thread.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -77,14 +78,19 @@ struct lgss_telemetry {
     /* File handle (if logging to file) */
     FILE* log_file;
 
-    /* Thread safety */
-    void* mutex;
+    /* Thread safety: lgss_evaluate runs concurrently from brain_decide (RO
+     * socket, no brain lock) and brain_learn_vector, so sequence/hash-chain/
+     * ring-buffer updates must be serialized or the chain forks. Leaf lock. */
+    nimcp_mutex_t* mutex;
 
     /* Async logging state */
     bool async_running;
     void* async_thread;
     void* async_queue;
 };
+
+#define TELEM_LOCK(t)   do { if ((t)->mutex) nimcp_mutex_lock((t)->mutex); } while (0)
+#define TELEM_UNLOCK(t) do { if ((t)->mutex) nimcp_mutex_unlock((t)->mutex); } while (0)
 
 /*=============================================================================
  * HASH FUNCTIONS (Simple implementation - in production use crypto lib)
@@ -207,6 +213,11 @@ lgss_telemetry_t* lgss_telemetry_create(const lgss_telemetry_config_t* config)
         }
     }
 
+    telem->mutex = nimcp_mutex_create(NULL);
+    if (!telem->mutex) {
+        TELEM_LOG_WARN("Failed to create telemetry mutex; logging unserialized");
+    }
+
     telem->sequence = 0;
     telem->has_last_hash = false;
     memset(&telem->stats, 0, sizeof(lgss_telemetry_stats_t));
@@ -242,6 +253,11 @@ void lgss_telemetry_destroy(lgss_telemetry_t* telemetry)
     /* Free buffer */
     if (telemetry->buffer.entries) {
         nimcp_free(telemetry->buffer.entries);
+    }
+
+    if (telemetry->mutex) {
+        nimcp_mutex_free(telemetry->mutex);
+        telemetry->mutex = NULL;
     }
 
     telemetry->magic = 0;
@@ -386,8 +402,6 @@ int lgss_telemetry_log(
     lgss_telemetry_entry_t entry;
     memset(&entry, 0, sizeof(entry));
 
-    entry.sequence = ++telemetry->sequence;
-    entry.timestamp_us = nimcp_time_now_us();
     entry.event_type = event;
     entry.severity = severity;
 
@@ -403,14 +417,17 @@ int lgss_telemetry_log(
         va_end(args);
     }
 
+    /* Sequence, timestamp, chain link, buffer slot and stats are assigned
+     * atomically so concurrent evaluations cannot fork the hash chain. */
+    TELEM_LOCK(telemetry);
+    entry.sequence = ++telemetry->sequence;
+    entry.timestamp_us = nimcp_time_now_us();
+
     /* Add to buffer */
     add_entry_to_buffer(telemetry, &entry);
 
     /* Write to file */
     write_entry_to_file(telemetry, &entry);
-
-    /* Invoke callback */
-    invoke_callback(telemetry, &entry);
 
     /* Update stats */
     telemetry->stats.entries_logged++;
@@ -419,6 +436,10 @@ int lgss_telemetry_log(
         telemetry->stats.oldest_entry_timestamp = entry.timestamp_us;
     }
     telemetry->stats.newest_entry_timestamp = entry.timestamp_us;
+    TELEM_UNLOCK(telemetry);
+
+    /* Invoke callback outside the lock (it may log again) */
+    invoke_callback(telemetry, &entry);
 
     return 0;
 }
@@ -463,8 +484,6 @@ int lgss_telemetry_log_evaluation(
     lgss_telemetry_entry_t entry;
     memset(&entry, 0, sizeof(entry));
 
-    entry.sequence = ++telemetry->sequence;
-    entry.timestamp_us = nimcp_time_now_us();
     entry.event_type = event;
     entry.severity = severity;
     entry.action = result->action;
@@ -488,18 +507,24 @@ int lgss_telemetry_log_evaluation(
         result->evaluation_time_us,
         result->explanation);
 
+    /* Serialize sequence + chain + buffer + stats (see TELEM_LOCK note) */
+    TELEM_LOCK(telemetry);
+    entry.sequence = ++telemetry->sequence;
+    entry.timestamp_us = nimcp_time_now_us();
+
     /* Add to buffer */
     add_entry_to_buffer(telemetry, &entry);
 
     /* Write to file */
     write_entry_to_file(telemetry, &entry);
 
-    /* Invoke callback */
-    invoke_callback(telemetry, &entry);
-
     /* Update stats */
     telemetry->stats.entries_logged++;
     telemetry->stats.newest_entry_timestamp = entry.timestamp_us;
+    TELEM_UNLOCK(telemetry);
+
+    /* Invoke callback outside the lock (it may log again) */
+    invoke_callback(telemetry, &entry);
 
     return 0;
 }
@@ -574,7 +599,7 @@ int lgss_telemetry_log_system(
  * QUERY FUNCTIONS
  *============================================================================*/
 
-int lgss_telemetry_get_recent(
+static int lgss_telemetry_get_recent_unlocked(
     lgss_telemetry_t* telemetry,
     lgss_telemetry_entry_t* entries,
     size_t max_entries,
@@ -609,7 +634,23 @@ int lgss_telemetry_get_recent(
     return (int)to_copy;
 }
 
-int lgss_telemetry_query_by_type(
+/* Locked wrapper: readers must not see a half-written ring slot/chain link. */
+int lgss_telemetry_get_recent(
+    lgss_telemetry_t* telemetry,
+    lgss_telemetry_entry_t* entries,
+    size_t max_entries,
+    size_t offset)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_get_recent_unlocked(telemetry, entries, max_entries, offset);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_get_recent_unlocked(telemetry, entries, max_entries, offset);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
+static int lgss_telemetry_query_by_type_unlocked(
     lgss_telemetry_t* telemetry,
     lgss_telemetry_event_t event_type,
     lgss_telemetry_entry_t* entries,
@@ -638,7 +679,23 @@ int lgss_telemetry_query_by_type(
     return (int)found;
 }
 
-int lgss_telemetry_query_by_time(
+/* Locked wrapper: readers must not see a half-written ring slot/chain link. */
+int lgss_telemetry_query_by_type(
+    lgss_telemetry_t* telemetry,
+    lgss_telemetry_event_t event_type,
+    lgss_telemetry_entry_t* entries,
+    size_t max_entries)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_query_by_type_unlocked(telemetry, event_type, entries, max_entries);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_query_by_type_unlocked(telemetry, event_type, entries, max_entries);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
+static int lgss_telemetry_query_by_time_unlocked(
     lgss_telemetry_t* telemetry,
     uint64_t start_us,
     uint64_t end_us,
@@ -669,11 +726,28 @@ int lgss_telemetry_query_by_time(
     return (int)found;
 }
 
+/* Locked wrapper: readers must not see a half-written ring slot/chain link. */
+int lgss_telemetry_query_by_time(
+    lgss_telemetry_t* telemetry,
+    uint64_t start_us,
+    uint64_t end_us,
+    lgss_telemetry_entry_t* entries,
+    size_t max_entries)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_query_by_time_unlocked(telemetry, start_us, end_us, entries, max_entries);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_query_by_time_unlocked(telemetry, start_us, end_us, entries, max_entries);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
 /*=============================================================================
  * VERIFICATION FUNCTIONS
  *============================================================================*/
 
-int lgss_telemetry_verify_chain(lgss_telemetry_t* telemetry)
+static int lgss_telemetry_verify_chain_unlocked(lgss_telemetry_t* telemetry)
 {
     if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
         return NIMCP_ERROR_NULL_POINTER;
@@ -707,7 +781,19 @@ int lgss_telemetry_verify_chain(lgss_telemetry_t* telemetry)
     return 0;
 }
 
-int lgss_telemetry_find_chain_break(
+/* Locked wrapper: serialize against concurrent lgss_telemetry_log*(). */
+int lgss_telemetry_verify_chain(lgss_telemetry_t* telemetry)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_verify_chain_unlocked(telemetry);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_verify_chain_unlocked(telemetry);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
+static int lgss_telemetry_find_chain_break_unlocked(
     lgss_telemetry_t* telemetry,
     lgss_telemetry_entry_t* entry)
 {
@@ -739,11 +825,25 @@ int lgss_telemetry_find_chain_break(
     return 1; /* No break found */
 }
 
+/* Locked wrapper: readers must not see a half-written ring slot/chain link. */
+int lgss_telemetry_find_chain_break(
+    lgss_telemetry_t* telemetry,
+    lgss_telemetry_entry_t* entry)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_find_chain_break_unlocked(telemetry, entry);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_find_chain_break_unlocked(telemetry, entry);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
 /*=============================================================================
  * STATISTICS FUNCTIONS
  *============================================================================*/
 
-int lgss_telemetry_get_stats(
+static int lgss_telemetry_get_stats_unlocked(
     lgss_telemetry_t* telemetry,
     lgss_telemetry_stats_t* stats)
 {
@@ -755,7 +855,21 @@ int lgss_telemetry_get_stats(
     return 0;
 }
 
-int lgss_telemetry_flush(lgss_telemetry_t* telemetry)
+/* Locked wrapper: readers must not see a half-written ring slot/chain link. */
+int lgss_telemetry_get_stats(
+    lgss_telemetry_t* telemetry,
+    lgss_telemetry_stats_t* stats)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_get_stats_unlocked(telemetry, stats);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_get_stats_unlocked(telemetry, stats);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
+static int lgss_telemetry_flush_unlocked(lgss_telemetry_t* telemetry)
 {
     if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
         return NIMCP_ERROR_NULL_POINTER;
@@ -769,7 +883,19 @@ int lgss_telemetry_flush(lgss_telemetry_t* telemetry)
     return 0;
 }
 
-int lgss_telemetry_clear(lgss_telemetry_t* telemetry)
+/* Locked wrapper: serialize against concurrent lgss_telemetry_log*(). */
+int lgss_telemetry_flush(lgss_telemetry_t* telemetry)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_flush_unlocked(telemetry);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_flush_unlocked(telemetry);
+    TELEM_UNLOCK(telemetry);
+    return rc;
+}
+
+static int lgss_telemetry_clear_unlocked(lgss_telemetry_t* telemetry)
 {
     if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
         return NIMCP_ERROR_NULL_POINTER;
@@ -791,6 +917,18 @@ int lgss_telemetry_clear(lgss_telemetry_t* telemetry)
     telemetry->stats.chain_valid = true;
 
     return 0;
+}
+
+/* Locked wrapper: serialize against concurrent lgss_telemetry_log*(). */
+int lgss_telemetry_clear(lgss_telemetry_t* telemetry)
+{
+    if (!telemetry || telemetry->magic != NIMCP_LGSS_TELEMETRY_MAGIC) {
+        return lgss_telemetry_clear_unlocked(telemetry);
+    }
+    TELEM_LOCK(telemetry);
+    int rc = lgss_telemetry_clear_unlocked(telemetry);
+    TELEM_UNLOCK(telemetry);
+    return rc;
 }
 
 /*=============================================================================

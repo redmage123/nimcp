@@ -226,10 +226,46 @@ void brain_destroy(brain_t brain)
         brain->inference_pool = NULL;
     }
 
+    /* Stop EVERY background driver before any subsystem is freed: the
+     * coordinator's cc-* threads (region/biology/chemistry/cochlea/
+     * predictive-immune/safety/LONG_TERM_MEMORY) and the PR-memory driver
+     * hold `brain` and tick snn_lang_bridge, broca, grounded_lang, Z-ladder…
+     * Previously they were joined only after those were freed (UAF at exit).
+     * Entries stay registered, so the per-subsystem unregisters below still
+     * succeed quietly. */
+    if (brain->cycle_coordinator) {
+        extern int brain_cycle_coordinator_stop_all_drivers(
+            struct brain_cycle_coordinator* coord);
+        (void)brain_cycle_coordinator_stop_all_drivers(
+            (struct brain_cycle_coordinator*)brain->cycle_coordinator);
+    }
+    {
+        /* Self-driven fallback thread (no coordinator) is stopped here too. */
+        extern void nimcp_brain_pr_memory_driver_stop(struct brain_struct* brain);
+        nimcp_brain_pr_memory_driver_stop(brain);
+    }
+    {
+        /* Toxicity 1 Hz cycle reads grounded_lang (destroyed below), and the
+         * non-human side-table state holds a pointer to this brain: drop both
+         * once no driver thread can still tick them (2026-11-23). */
+        extern int nimcp_brain_factory_unregister_toxicity_cycle(struct brain_struct* brain);
+        (void)nimcp_brain_factory_unregister_toxicity_cycle(brain);
+        extern void brain_nonhuman_destroy(struct brain_struct* brain);
+        brain_nonhuman_destroy(brain);
+    }
+
     // Save final snapshot if configured (BEFORE destroying anything)
     if (brain->config.snapshot_dir && brain->config.save_final_snapshot) {
         brain_save_snapshot(brain, "final", "Snapshot at brain destruction");
         // Non-fatal if snapshot fails
+    }
+
+    /* PR memory (Z-ladder, theta-gamma, entanglement) was never destroyed by
+     * the compiled brain_destroy — only by the uncompiled nimcp_brain_lifecycle.c
+     * — so it leaked on every destroy. Driver already stopped above. */
+    {
+        extern void nimcp_brain_factory_destroy_pr_memory_subsystem(struct brain_struct* brain);
+        nimcp_brain_factory_destroy_pr_memory_subsystem(brain);
     }
 
     /* Destroy unified training manager (before networks it references) */
@@ -1373,6 +1409,14 @@ void brain_destroy(brain_t brain)
     if (brain->bio_async_enabled) {
         brain_bio_async_shutdown(brain);
         brain->bio_async_enabled = false;
+    }
+
+    /* The coordinator had no destroy caller (leaked every brain). Destroy it
+     * last: all driver threads were joined at the top of brain_destroy, and
+     * subsystem destroys above may still unregister from it. */
+    {
+        extern void nimcp_brain_factory_destroy_cycle_coordinator_subsystem(brain_t);
+        nimcp_brain_factory_destroy_cycle_coordinator_subsystem(brain);
     }
 
     nimcp_free(brain);

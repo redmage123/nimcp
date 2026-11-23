@@ -1104,8 +1104,10 @@ bool nimcp_gpu_sparse_backward_accumulate(
     if (cudaMalloc(&d_delta_prev, max_layer * sizeof(float)) != cudaSuccess) {
         cudaFree(d_delta_cur); cudaFree(d_target); cudaFree(d_output); return false;
     }
-    cudaMemset(d_delta_cur, 0, max_layer * sizeof(float));
-    cudaMemset(d_delta_prev, 0, max_layer * sizeof(float));
+    /* Zero on the pool stream, not the legacy default stream: pool streams are
+     * cudaStreamNonBlocking, so a plain cudaMemset would race the kernels below. */
+    cudaMemsetAsync(d_delta_cur, 0, max_layer * sizeof(float), stream);
+    cudaMemsetAsync(d_delta_prev, 0, max_layer * sizeof(float), stream);
 
     /* FP16 delta computation — saves memory bandwidth */
     kernel_compute_deltas_mse_fp16<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
@@ -1130,7 +1132,7 @@ bool nimcp_gpu_sparse_backward_accumulate(
 
         nimcp_sparse_tensor_t* W = sparse_weights[layer - 1];
         if (!W || W->format != SPARSE_FORMAT_CSR) {
-            cudaMemset(d_delta_cur, 0, max_layer * sizeof(float));
+            cudaMemsetAsync(d_delta_cur, 0, max_layer * sizeof(float), stream);
             continue;
         }
 
@@ -1155,7 +1157,7 @@ bool nimcp_gpu_sparse_backward_accumulate(
 
         /* Propagate deltas backward */
         if (layer > 1) {
-            cudaMemset(d_delta_prev, 0, prev_size * sizeof(float));
+            cudaMemsetAsync(d_delta_prev, 0, prev_size * sizeof(float), stream);
 
             kernel_sparse_delta_propagate<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
                 W->data.csr.values, W->data.csr.row_ptrs, W->data.csr.col_indices,
@@ -1233,8 +1235,10 @@ extern "C" bool nimcp_gpu_bsr_backward_accumulate(
     if (cudaMalloc(&d_delta_prev, max_layer * sizeof(float)) != cudaSuccess) {
         cudaFree(d_delta_cur); cudaFree(d_target); cudaFree(d_output); return false;
     }
-    cudaMemset(d_delta_cur, 0, max_layer * sizeof(float));
-    cudaMemset(d_delta_prev, 0, max_layer * sizeof(float));
+    /* Zero on the pool stream, not the legacy default stream: pool streams are
+     * cudaStreamNonBlocking, so a plain cudaMemset would race the kernels below. */
+    cudaMemsetAsync(d_delta_cur, 0, max_layer * sizeof(float), stream);
+    cudaMemsetAsync(d_delta_prev, 0, max_layer * sizeof(float), stream);
 
     /* FP16 delta computation */
     kernel_compute_deltas_mse_fp16<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
@@ -1272,7 +1276,7 @@ extern "C" bool nimcp_gpu_bsr_backward_accumulate(
 
         /* Delta propagation — use BSR with cuSPARSE transpose SpMV (tensor cores!) */
         if (layer > 1) {
-            cudaMemset(d_delta_prev, 0, prev_size * sizeof(float));
+            cudaMemsetAsync(d_delta_prev, 0, prev_size * sizeof(float), stream);
 
             nimcp_sparse_tensor_t* W_bsr = bsr_weights[layer - 1];
             bool bsr_ok = false;
@@ -1443,8 +1447,10 @@ bool nimcp_gpu_sparse_backward_pass(
         cudaFree(d_delta_cur); cudaFree(d_target); cudaFree(d_output); cudaFree(d_grad_norm);
         return false;
     }
-    cudaMemset(d_delta_cur, 0, max_layer * sizeof(float));
-    cudaMemset(d_delta_prev, 0, max_layer * sizeof(float));
+    /* Zero on the pool stream, not the legacy default stream: pool streams are
+     * cudaStreamNonBlocking, so a plain cudaMemset would race the kernels below. */
+    cudaMemsetAsync(d_delta_cur, 0, max_layer * sizeof(float), stream);
+    cudaMemsetAsync(d_delta_prev, 0, max_layer * sizeof(float), stream);
 
     kernel_compute_deltas_mse<<<GRID_SIZE(bp_size), BLOCK_SIZE, 0, stream>>>(
         d_delta_cur, d_target, d_output, bp_size, mse_delta_scale(bp_size));
@@ -1468,7 +1474,7 @@ bool nimcp_gpu_sparse_backward_pass(
 
         nimcp_sparse_tensor_t* W = sparse_weights[layer - 1];
         if (!W || W->format != SPARSE_FORMAT_CSR) {
-            cudaMemset(d_delta_cur, 0, max_layer * sizeof(float));
+            cudaMemsetAsync(d_delta_cur, 0, max_layer * sizeof(float), stream);
             continue;
         }
 
@@ -1489,7 +1495,7 @@ bool nimcp_gpu_sparse_backward_pass(
             layer_lr, min_weight, max_weight, d_grad_norm);
 
         if (layer > 1) {
-            cudaMemset(d_delta_prev, 0, prev_size * sizeof(float));
+            cudaMemsetAsync(d_delta_prev, 0, prev_size * sizeof(float), stream);
 
             kernel_sparse_delta_propagate<<<GRID_SIZE(nnz), BLOCK_SIZE, 0, stream>>>(
                 W->data.csr.values, W->data.csr.row_ptrs, W->data.csr.col_indices,

@@ -317,14 +317,15 @@ static uint32_t extract_concepts_optimized(const char* text, char concepts[][256
     const char* delimiters = " .,;:!?\n\t\"'()[]{}";
     uint32_t num_concepts = 0;
 
-    char* token = strtok(text_copy, delimiters);
+    char* saveptr = NULL;   /* strtok_r: decide may run on several threads */
+    char* token = strtok_r(text_copy, delimiters, &saveptr);
     while (token && num_concepts < max_concepts) {
         if (!should_skip_word(token)) {
             strncpy(concepts[num_concepts], token, 255);
             concepts[num_concepts][255] = '\0';
             num_concepts++;
         }
-        token = strtok(NULL, delimiters);
+        token = strtok_r(NULL, delimiters, &saveptr);
     }
 
     nimcp_free(text_copy);

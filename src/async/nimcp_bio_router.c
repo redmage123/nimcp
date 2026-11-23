@@ -68,6 +68,11 @@ static void bio_router_reset_subsystem_statics(void);
 #define BIO_MODULE_MAGIC 0x424D4F44  // 'BMOD'
 #define MAX_HANDLERS_PER_MODULE 256
 #define MAX_INBOX_MESSAGES 16384
+/* Per-inbox growth bound: an inbox may grow to GROWTH_FACTOR x its initial
+ * capacity (floor MIN_GROWTH_CAP), not straight to MAX_INBOX_MESSAGES, so
+ * modules that never drain stop hoarding up to 16384 malloc'd broadcast copies. */
+#define BIO_INBOX_GROWTH_FACTOR 8
+#define BIO_INBOX_MIN_GROWTH_CAP 1024
 #define MAX_WORKER_THREADS 8
 #define DEFAULT_TIMEOUT_MS NIMCP_DEFAULT_TIMEOUT_MS
 #define MAX_MODULE_NAME 64
@@ -95,6 +100,8 @@ typedef struct {
     uint32_t read_idx;
     uint32_t write_idx;
     uint32_t count;
+    uint32_t max_capacity;          /**< Growth ceiling (<= MAX_INBOX_MESSAGES) */
+    bool closed;                    /**< Set (under mutex) before destroy; enqueue refuses */
     nimcp_platform_mutex_t mutex;
     nimcp_platform_cond_t not_empty;
     nimcp_platform_cond_t not_full;
@@ -108,6 +115,11 @@ typedef struct {
     uint32_t category_mask;         /**< Category mask (0 = specific type) */
     bio_message_handler_t handler;  /**< Handler callback */
     bool is_category_handler;       /**< true if category, false if specific */
+    /* Several contexts can share one entry (same module_id); each handler keeps
+     * the user_data / owner of the context that registered it so co-owners'
+     * handlers never receive each other's user_data. */
+    void* user_data;                /**< user_data of the registering context */
+    const void* owner;              /**< Registering context (for per-ctx unregister) */
 } bio_handler_entry_t;
 
 /**
@@ -133,6 +145,13 @@ typedef struct {
     // Deadlock prevention: re-entrancy detection flag
     atomic_bool in_handler;           /**< true while handler is executing */
     uint32_t in_handler_source;       /**< source module of message being handled */
+
+    /* Number of live contexts sharing this entry (duplicate module_id
+     * registrations); inbox is destroyed only when it reaches 0. modules_mutex. */
+    uint32_t refcount;
+    /* Senders that looked the entry up under modules_mutex and are enqueueing
+     * after releasing it; destroy waits for 0 so the inbox is not freed under them. */
+    atomic_uint inflight;
 } bio_module_entry_t;
 
 /**
@@ -141,6 +160,7 @@ typedef struct {
 struct bio_module_context_struct {
     uint32_t magic;
     bio_module_entry_t* entry;  /**< Back-reference to registry entry */
+    void* user_data;            /**< This context's own user_data (entry may be shared) */
 };
 
 /**
@@ -453,7 +473,8 @@ static nimcp_error_t bio_msg_queue_dequeue(bio_msg_queue_t* queue, void** out_ms
 static uint32_t bio_msg_queue_count(bio_msg_queue_t* queue);
 static bio_module_entry_t* bio_router_find_module(bio_module_id_t module_id);
 static nimcp_error_t bio_router_send_with_promise(bio_module_context_t ctx, const void* msg, size_t msg_size, nimcp_bio_promise_t response_promise, uint32_t timeout_ms);
-static bio_message_handler_t bio_router_find_handler(bio_module_entry_t* entry, bio_message_type_t msg_type);
+static bio_message_handler_t bio_router_find_handler(bio_module_entry_t* entry, bio_message_type_t msg_type, void** out_user_data);
+static void bio_router_quiesce_entry(bio_module_entry_t* entry);
 static void init_signal_mutex_once(void);
 static void init_wave_mutex_once(void);
 static void subscription_init(void);

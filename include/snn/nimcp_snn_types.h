@@ -620,6 +620,12 @@ struct snn_population_s {
     float*    g_gaba_b_apical;       /**< [n_neurons] GABA_B on apical */
     uint8_t*  plateau_active;        /**< [n_neurons] 1 = plateau on */
     uint64_t* plateau_t0;            /**< [n_neurons] tick of plateau onset */
+
+    /* Set once the build/load-time inhibition rebalance has examined this
+     * pop; persisted (bit 1 of the checkpoint's has_homeostatic byte) so the
+     * load hook does not rescale — and shrink excitation — again on every
+     * restart. Explicit rebalance calls ignore it. */
+    bool      inh_rebalanced;
 };
 
 /* Wave E FFI conduction-delay limits. Header-visible so tests can pin
@@ -914,6 +920,12 @@ struct snn_network_s {
      * host→device upload after a host path changed them. */
     void* gpu_homeo;                   /**< nimcp_snn_homeo_gpu_t*, owned */
     bool  gpu_homeo_host_dirty;
+
+    /* The CB-GPU step overwrites the lif_state's per-neuron v_thresh with
+     * the step's effective threshold (base + IP offset + AHP/pump term).
+     * When set, the current-based GPU step re-uploads its base per-neuron
+     * params before running. Runtime-only (not checkpointed). */
+    bool  gpu_vthr_holds_cb_eff;
 };
 
 //=============================================================================

@@ -33,8 +33,10 @@
 #include "cognitive/free_energy/nimcp_free_energy.h"
 #include "snn/nimcp_snn_fno.h"
 #include "snn/bridges/nimcp_snn_language_bridge.h"
+#include "snn/nimcp_snn_network.h"
 
 #include <math.h>
+#include <stdlib.h>   /* getenv */
 #include <string.h>
 
 #define LOG_MODULE "COG_DISPATCH"
@@ -49,10 +51,131 @@ extern int creative_training_submit_feedback(creative_training_bridge_t* bridge,
                                               const char* feedback);
 
 /*=============================================================================
+ * Shared dispatch block — refcounted ownership of task state
+ *
+ * WHY: the coordinators wait at most 30s for their actors. Previously they
+ * then freed args/promises unconditionally, so a slow actor (e.g. a wedged
+ * grounded_language_learn_from_text, a stuck reasoning engine) completed a
+ * freed promise and read freed args + the caller's (already returned)
+ * features/label buffers. Now the coordinator and every submitted task each
+ * hold one reference on a block that owns the args, promises, futures and
+ * private copies of all caller inputs; the last reference frees it.
+ *=============================================================================*/
+
+typedef struct dispatch_block {
+    uint32_t          refcount;     /* __atomic; coordinator + 1 per task */
+    uint32_t          n;
+    void*             args;         /* cog_task_arg_t[] or decide_task_arg_t[] */
+    nimcp_promise_t*  promises;
+    nimcp_future_t*   futures;
+    void*             owned[3];     /* private copies of caller inputs */
+} dispatch_block_t;
+
+/* Per-slot lifecycle, so a timed-out ("abandoned") task can be tracked.  */
+enum {
+    SLOT_QUEUED = 0, SLOT_RUNNING = 1, SLOT_DONE = 2, SLOT_ABANDONED = 3
+};
+
+/* Common header — MUST be the first member of every task-arg type. */
+typedef struct {
+    dispatch_block_t* block;
+    nimcp_task_fn     fn;            /* real actor body */
+    void            (*skip)(void*);  /* complete promise as "not executed" */
+    uint32_t*         straggler_ctr; /* per-module count of abandoned tasks */
+    uint32_t          state;         /* SLOT_*, __atomic */
+} dispatch_slot_t;
+
+static dispatch_block_t* dispatch_block_create(uint32_t n, size_t arg_size)
+{
+    dispatch_block_t* b = (dispatch_block_t*)nimcp_calloc(1, sizeof(*b));
+    if (!b) return NULL;
+    b->n = n;
+    b->refcount = 1;  /* coordinator's reference */
+    b->args = nimcp_calloc(n, arg_size);
+    b->promises = (nimcp_promise_t*)nimcp_calloc(n, sizeof(nimcp_promise_t));
+    b->futures = (nimcp_future_t*)nimcp_calloc(n, sizeof(nimcp_future_t));
+    if (!b->args || !b->promises || !b->futures) {
+        nimcp_free(b->args); nimcp_free(b->promises); nimcp_free(b->futures);
+        nimcp_free(b);
+        return NULL;
+    }
+    return b;
+}
+
+static void dispatch_block_release(dispatch_block_t* b)
+{
+    if (!b) return;
+    if (__atomic_sub_fetch(&b->refcount, 1, __ATOMIC_ACQ_REL) != 0) return;
+    for (uint32_t i = 0; i < b->n; i++) {
+        if (b->futures[i]) nimcp_future_destroy(b->futures[i]);
+        if (b->promises[i]) nimcp_promise_destroy(b->promises[i]);
+    }
+    for (uint32_t k = 0; k < 3; k++) nimcp_free(b->owned[k]);
+    nimcp_free(b->args);
+    nimcp_free(b->promises);
+    nimcp_free(b->futures);
+    nimcp_free(b);
+}
+
+/* Pool entry point for every actor: runs the body unless the coordinator
+ * already abandoned the slot, then drops the task's block reference. */
+static void dispatch_trampoline(void* arg)
+{
+    dispatch_slot_t* slot = (dispatch_slot_t*)arg;
+    dispatch_block_t* b = slot->block;
+    uint32_t expect = SLOT_QUEUED;
+    if (__atomic_compare_exchange_n(&slot->state, &expect, SLOT_RUNNING, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        slot->fn(arg);
+        expect = SLOT_RUNNING;
+        if (!__atomic_compare_exchange_n(&slot->state, &expect, SLOT_DONE, false,
+                                         __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            /* Abandoned while running: no longer a straggler. */
+            __atomic_sub_fetch(slot->straggler_ctr, 1, __ATOMIC_ACQ_REL);
+        }
+    } else {
+        /* Abandoned while still queued: the coordinator moved on, so don't
+         * do stale work; just fire the promise so combinator callbacks run. */
+        slot->skip(arg);
+        __atomic_sub_fetch(slot->straggler_ctr, 1, __ATOMIC_ACQ_REL);
+    }
+    dispatch_block_release(b);
+}
+
+/* Coordinator, after a timed-out barrier: mark a not-ready slot abandoned.
+ * Returns true if the task is still queued/running (now a straggler). */
+static bool dispatch_slot_abandon(dispatch_slot_t* slot)
+{
+    /* Count first so the task's decrement can never precede our increment. */
+    __atomic_add_fetch(slot->straggler_ctr, 1, __ATOMIC_ACQ_REL);
+    uint32_t old = __atomic_exchange_n(&slot->state, SLOT_ABANDONED, __ATOMIC_ACQ_REL);
+    if (old == SLOT_DONE) {
+        /* Finished in the meantime: restore DONE and undo the count. */
+        __atomic_store_n(&slot->state, SLOT_DONE, __ATOMIC_RELEASE);
+        __atomic_sub_fetch(slot->straggler_ctr, 1, __ATOMIC_ACQ_REL);
+        return false;
+    }
+    return true;
+}
+
+/* Submit one slot to the pool, taking the task's block reference first
+ * (the task may finish before nimcp_pool_submit even returns). */
+static bool dispatch_slot_submit(nimcp_thread_pool_t* pool, dispatch_slot_t* slot)
+{
+    __atomic_add_fetch(&slot->block->refcount, 1, __ATOMIC_ACQ_REL);
+    if (nimcp_pool_submit(pool, dispatch_trampoline, slot) == NIMCP_SUCCESS) {
+        return true;
+    }
+    __atomic_sub_fetch(&slot->block->refcount, 1, __ATOMIC_ACQ_REL);
+    return false;
+}
+
+/*=============================================================================
  * Task Argument — passed to each actor via thread pool
  *=============================================================================*/
 
 typedef struct {
+    dispatch_slot_t      slot;   /* must be first — see dispatch_trampoline */
     brain_t              brain;
     const float*         features;
     uint32_t             num_features;
@@ -64,6 +187,10 @@ typedef struct {
     cognitive_module_id_t module_id;
 } cog_task_arg_t;
 
+/* Abandoned-task counts per training module. Process-global (not per brain):
+ * a stall in one brain only makes the others skip that module meanwhile. */
+static uint32_t g_cog_stragglers[COG_MODULE_COUNT];
+
 /*=============================================================================
  * Helper: create a "not executed" result and complete promise
  *=============================================================================*/
@@ -74,6 +201,12 @@ static void complete_skip(nimcp_promise_t promise, cognitive_module_id_t id)
         .module_id = id, .executed = false, .success = true, .loss = NAN
     };
     nimcp_promise_complete(promise, &r);
+}
+
+static void cog_skip_slot(void* arg)
+{
+    cog_task_arg_t* a = (cog_task_arg_t*)arg;
+    complete_skip(a->promise, a->module_id);
 }
 
 /*=============================================================================
@@ -90,6 +223,11 @@ static void task_grounded_lang(void* arg)
     if (a->brain->grounded_lang && a->label && a->label[0]) {
         grounded_language_learn_from_text(a->brain->grounded_lang, a->label);
         grounded_language_learn_syntax(a->brain->grounded_lang, a->label);
+        /* Bridge bigram/trigram STDP — previously only the sequential path
+         * (nimcp_brain_learning.c) ran this, and production always takes this
+         * parallel path, so it never fired from training. Same lr as there. */
+        (void)grounded_language_learn_text_bigrams(a->brain->grounded_lang,
+                                                    a->label, 0.02f);
         r.executed = true;
         r.success = true;
     }
@@ -442,6 +580,58 @@ static void dispatch_update_stats(brain_t brain, const cognitive_batch_result_t*
 }
 
 /*=============================================================================
+ * Coordinator: Phase-3 concept→word SNN projection training
+ *
+ * Mirrors step 1b of brain_train_cognitive_subsystems_sequential
+ * (nimcp_brain_learning.c). Production always has inference_pool, so this
+ * parallel path is the live one and previously never ran learn_pair, leaving
+ * NIMCP_TRAIN_SNN_PROJECTION=1 dead. Env-gated + throttled exactly as there.
+ * Called single-threaded on the coordinator, so the statics need no atomics.
+ *=============================================================================*/
+
+static void dispatch_train_snn_projection(brain_t brain)
+{
+    if (!brain->grounded_lang || !brain->snn_lang_bridge || !brain->snn_network) {
+        return;
+    }
+    static int      s_proj_train_on = -1;   /* -1=unknown 0=off 1=on */
+    static uint64_t s_proj_train_step = 0;
+    if (s_proj_train_on < 0) {
+        const char* e = getenv("NIMCP_TRAIN_SNN_PROJECTION");
+        s_proj_train_on = (e && e[0] == '1') ? 1 : 0;
+    }
+    if (s_proj_train_on != 1 || (s_proj_train_step++ % 500u) != 0u) return;
+
+    int wid = snn_network_find_pop_by_name(brain->snn_network, "wernicke_substrate");
+    int bid = snn_network_find_pop_by_name(brain->snn_network, "broca_substrate");
+    if (wid < 0 || bid < 0) return;
+
+    const uint32_t cap = SNN_LANG_MAX_WORD_POPS;
+    gl_warmstart_binding_t* binds = (gl_warmstart_binding_t*)
+        nimcp_calloc(cap, sizeof(*binds));
+    if (!binds) return;
+    const uint32_t nb = grounded_language_collect_warmstart_bindings(
+        brain->grounded_lang, binds, cap);
+    int trained = 0;
+    for (uint32_t i = 0; i < nb; i++) {
+        const uint32_t word_pop = binds[i].form_hash % SNN_LANG_MAX_WORD_POPS;
+        /* Scale by W_MAX so confident bindings become supra-threshold. */
+        const float w_target = binds[i].strength * SNN_LANG_PROJ_W_MAX;
+        if (snn_language_bridge_learn_pair(
+                brain->snn_lang_bridge, brain->snn_network,
+                wid, bid, binds[i].concept_id, word_pop,
+                w_target, 0.05f /*lr EMA*/) > 0) {
+            trained++;
+        }
+    }
+    nimcp_free(binds);
+    if (trained > 0 && (s_proj_train_step % 50000u) < 500u) {
+        LOG_INFO("[snn-lang] projection training: %d/%u concept→word pairs "
+                 "strengthened (supra-threshold)", trained, nb);
+    }
+}
+
+/*=============================================================================
  * Main Parallel Dispatch Function
  *=============================================================================*/
 
@@ -483,18 +673,50 @@ cognitive_batch_result_t brain_train_cognitive_parallel(
      * be called from workers). This ensures it's valid before dispatch. */
     BRAIN_ENSURE_FEP_ORCHESTRATOR(brain);
 
-    /* Allocate task arguments on heap (freed after barrier) */
-    cog_task_arg_t* args = (cog_task_arg_t*)nimcp_calloc(
-        COG_MODULE_COUNT, sizeof(cog_task_arg_t));
-    if (!args) {
+    /* Task state lives in a refcounted block (see dispatch_block_t) so an
+     * actor that outlives the 30s barrier never touches freed memory. */
+    dispatch_block_t* blk = dispatch_block_create(COG_MODULE_COUNT,
+                                                  sizeof(cog_task_arg_t));
+    if (!blk) {
+        brain_train_cognitive_subsystems_sequential(
+            brain, features, num_features, target, target_size, label, loss);
+        batch.total_elapsed_us = nimcp_time_get_us() - t0;
+        return batch;
+    }
+    cog_task_arg_t* args = (cog_task_arg_t*)blk->args;
+    nimcp_promise_t* promises = blk->promises;
+    nimcp_future_t*  futures  = blk->futures;
+
+    /* Private copies of caller-owned inputs: brain_learn_vector's buffers are
+     * gone once it returns, but a timed-out actor may still be reading. */
+    const float* feat_c = NULL;
+    const float* tgt_c = NULL;
+    const char*  label_c = NULL;
+    if (features && num_features > 0) {
+        float* c = (float*)nimcp_malloc(num_features * sizeof(float));
+        if (c) { memcpy(c, features, num_features * sizeof(float)); feat_c = c; }
+        blk->owned[0] = c;
+    }
+    if (target && target_size > 0) {
+        float* c = (float*)nimcp_malloc(target_size * sizeof(float));
+        if (c) { memcpy(c, target, target_size * sizeof(float)); tgt_c = c; }
+        blk->owned[1] = c;
+    }
+    if (label) {
+        size_t L = strlen(label);
+        char* c = (char*)nimcp_malloc(L + 1);
+        if (c) { memcpy(c, label, L + 1); label_c = c; }
+        blk->owned[2] = c;
+    }
+    if ((features && num_features > 0 && !feat_c) ||
+        (target && target_size > 0 && !tgt_c) || (label && !label_c)) {
+        dispatch_block_release(blk);
         brain_train_cognitive_subsystems_sequential(
             brain, features, num_features, target, target_size, label, loss);
         batch.total_elapsed_us = nimcp_time_get_us() - t0;
         return batch;
     }
 
-    nimcp_promise_t promises[COG_MODULE_COUNT] = {0};
-    nimcp_future_t  futures[COG_MODULE_COUNT]  = {0};
     uint32_t submitted = 0;
 
     /* Create promises and submit tasks */
@@ -513,18 +735,32 @@ cognitive_batch_result_t brain_train_cognitive_parallel(
         }
 
         /* Populate task argument — immutable input for this actor */
+        args[i].slot.block = blk;
+        args[i].slot.fn = TASK_FNS[i];
+        args[i].slot.skip = cog_skip_slot;
+        args[i].slot.straggler_ctr = &g_cog_stragglers[i];
+        args[i].slot.state = SLOT_QUEUED;
         args[i].brain = brain;
-        args[i].features = features;
-        args[i].num_features = num_features;
-        args[i].target = target;
-        args[i].target_size = target_size;
-        args[i].label = label;
+        args[i].features = feat_c;
+        args[i].num_features = feat_c ? num_features : 0;
+        args[i].target = tgt_c;
+        args[i].target_size = tgt_c ? target_size : 0;
+        args[i].label = label_c;
         args[i].loss = loss;
         args[i].promise = promises[i];
         args[i].module_id = (cognitive_module_id_t)i;
 
-        if (nimcp_pool_submit(brain->inference_pool,
-                              TASK_FNS[i], &args[i]) == NIMCP_SUCCESS) {
+        /* A task abandoned by an earlier timed-out dispatch may still be
+         * mutating this module; running a second one concurrently would
+         * race on its weights, so skip the module until the straggler ends. */
+        if (__atomic_load_n(&g_cog_stragglers[i], __ATOMIC_ACQUIRE) > 0) {
+            LOG_WARN("Cognitive dispatch: module %u still busy from a timed-out "
+                     "dispatch — skipping it this step", i);
+            complete_skip(promises[i], (cognitive_module_id_t)i);
+            continue;
+        }
+
+        if (dispatch_slot_submit(brain->inference_pool, &args[i].slot)) {
             submitted++;
         } else {
             /* Pool full or error — complete promise as skipped */
@@ -547,7 +783,8 @@ cognitive_batch_result_t brain_train_cognitive_parallel(
              * 30s is generous — modules normally complete in <5s total. */
             if (!nimcp_future_wait_timeout(all_future, 30000)) {
                 LOG_WARN("Cognitive parallel dispatch timed out after 30s "
-                         "(%u/%u modules may be stuck)", valid_count - submitted, valid_count);
+                         "(late modules are abandoned; their state is freed "
+                         "when they finish)");
             }
             nimcp_future_destroy(all_future);
         } else {
@@ -558,21 +795,29 @@ cognitive_batch_result_t brain_train_cognitive_parallel(
         }
     }
 
-    /* Coordinator: collect results single-threaded */
+    /* Coordinator: collect results single-threaded. Futures/promises are
+     * destroyed by the block's last reference, not here. */
     for (uint32_t i = 0; i < COG_MODULE_COUNT; i++) {
         if (futures[i]) {
             /* Only get result if future completed (avoids THROW_TO_IMMUNE on timeout) */
             if (nimcp_future_is_ready(futures[i])) {
                 nimcp_future_get(futures[i], &batch.results[i]);
                 if (batch.results[i].executed) batch.num_executed++;
+            } else if (dispatch_slot_abandon(&args[i].slot)) {
+                /* batch.results[i] stays zero-initialized (executed=false) */
+                LOG_WARN("Cognitive module %u exceeded 30s — abandoned", i);
             }
-            /* else: batch.results[i] stays zero-initialized (executed=false) */
-            nimcp_future_destroy(futures[i]);
         }
-        if (promises[i]) nimcp_promise_destroy(promises[i]);
     }
 
-    nimcp_free(args);
+    /* Phase-3 concept→word projection training. Runs here, single-threaded
+     * after the barrier, because learn_pair writes SNN synapses; only when the
+     * grounded-language actor finished (else it may still mutate the lexicon). */
+    if (batch.results[COG_MODULE_GROUNDED_LANG].executed) {
+        dispatch_train_snn_projection(brain);
+    }
+
+    dispatch_block_release(blk);
 
     /* Update brain stats from collected results — single-threaded, no contention */
     dispatch_update_stats(brain, &batch);
@@ -647,6 +892,7 @@ extern action_t brain_decision_to_action(brain_decision_t* decision,
 
 /* Task argument for inference stage actors */
 typedef struct {
+    dispatch_slot_t      slot;         /* must be first — see dispatch_trampoline */
     brain_t              brain;
     decide_snapshot_t    snap;         /* immutable snapshot */
     const float*         features;
@@ -660,6 +906,29 @@ static void decide_skip(nimcp_promise_t promise, decide_stage_id_t id) {
     decide_stage_result_t r = {0};
     r.stage_id = id;
     nimcp_promise_complete(promise, &r);
+}
+
+static void decide_skip_slot(void* arg) {
+    decide_task_arg_t* a = (decide_task_arg_t*)arg;
+    decide_skip(a->promise, a->stage_id);
+}
+
+/* Abandoned-task counts per decide stage (process-global, see g_cog_stragglers). */
+static uint32_t g_decide_stragglers[DECIDE_STAGE_COUNT];
+
+/* Ethics/LGSS is a non-removable safety gate: when its actor produced no
+ * result (timeout, still busy, or could not be dispatched) the decision must
+ * be blocked, not silently allowed (fail closed). */
+static void decide_ethics_fail_closed(decide_stage_result_t* r, const char* why) {
+    memset(r, 0, sizeof(*r));
+    r->stage_id = DECIDE_STAGE_ETHICS;
+    r->executed = true;
+    r->success = false;
+    r->should_block = true;
+    strncpy(r->label_suffix, " [BLOCKED-ETHICS-UNAVAILABLE]", sizeof(r->label_suffix) - 1);
+    snprintf(r->explanation_append, sizeof(r->explanation_append),
+             " | ETHICS: no evaluation (%s) - failing closed", why);
+    LOG_WARN("Ethics/LGSS stage produced no result (%s) — blocking decision", why);
 }
 
 /*=============================================================================
@@ -1091,43 +1360,97 @@ static decide_batch_result_t dispatch_decide_stages(
 {
     decide_batch_result_t batch = {0};
     if (!brain || !snap || num_stages == 0) return batch;
+    if (num_stages > DECIDE_STAGE_COUNT) num_stages = DECIDE_STAGE_COUNT;
+
+    /* Index of the ethics/LGSS stage in this group, if any (fail-closed). */
+    int ethics_idx = -1;
+    for (uint32_t i = 0; i < num_stages; i++) {
+        if (stage_ids[i] == DECIDE_STAGE_ETHICS) { ethics_idx = (int)i; break; }
+    }
 
     /* Fallback to sequential if no pool */
     if (!brain->inference_pool) return batch;
 
     uint64_t t0 = nimcp_time_get_us();
 
-    decide_task_arg_t* args = (decide_task_arg_t*)nimcp_calloc(
-        num_stages, sizeof(decide_task_arg_t));
-    if (!args) return batch;
+    /* Refcounted block: a stage that outlives the 30s barrier must not touch
+     * freed args/promises or the caller's features/output buffers. */
+    dispatch_block_t* blk = dispatch_block_create(num_stages, sizeof(decide_task_arg_t));
+    if (!blk) {
+        if (ethics_idx >= 0) {
+            decide_ethics_fail_closed(&batch.results[ethics_idx], "out of memory");
+        }
+        return batch;
+    }
+    decide_task_arg_t* args = (decide_task_arg_t*)blk->args;
+    nimcp_promise_t* promises = blk->promises;
+    nimcp_future_t*  futures  = blk->futures;
 
-    nimcp_promise_t* promises = (nimcp_promise_t*)nimcp_calloc(num_stages, sizeof(nimcp_promise_t));
-    nimcp_future_t* futures = (nimcp_future_t*)nimcp_calloc(num_stages, sizeof(nimcp_future_t));
-    if (!promises || !futures) {
-        nimcp_free(args); nimcp_free(promises); nimcp_free(futures);
+    /* Private copies of caller-owned buffers (features, decision output). */
+    const float* feat_c = NULL;
+    float* out_c = NULL;
+    if (features && num_features > 0) {
+        float* c = (float*)nimcp_malloc(num_features * sizeof(float));
+        if (c) { memcpy(c, features, num_features * sizeof(float)); feat_c = c; }
+        blk->owned[0] = c;
+    }
+    if (snap->output_vector && snap->output_size > 0) {
+        out_c = (float*)nimcp_malloc(snap->output_size * sizeof(float));
+        if (out_c) memcpy(out_c, snap->output_vector, snap->output_size * sizeof(float));
+        blk->owned[1] = out_c;
+    }
+    if ((features && num_features > 0 && !feat_c) ||
+        (snap->output_vector && snap->output_size > 0 && !out_c)) {
+        dispatch_block_release(blk);
+        if (ethics_idx >= 0) {
+            decide_ethics_fail_closed(&batch.results[ethics_idx], "out of memory");
+        }
         return batch;
     }
 
     uint32_t submitted = 0;
+    bool ethics_busy = false;  /* ethics skipped: previous run still going */
     for (uint32_t i = 0; i < num_stages; i++) {
         promises[i] = nimcp_promise_create(sizeof(decide_stage_result_t));
         if (!promises[i]) continue;
         futures[i] = nimcp_promise_get_future(promises[i]);
         if (!futures[i]) { nimcp_promise_destroy(promises[i]); promises[i] = NULL; continue; }
 
+        uint32_t sid = (uint32_t)stage_ids[i];
+        args[i].slot.block = blk;
+        args[i].slot.fn = task_fns[i];
+        args[i].slot.skip = decide_skip_slot;
+        args[i].slot.straggler_ctr = &g_decide_stragglers[sid < DECIDE_STAGE_COUNT ? sid : 0];
+        args[i].slot.state = SLOT_QUEUED;
         args[i].brain = brain;
         args[i].snap = *snap;
-        args[i].features = features;
-        args[i].num_features = num_features;
+        args[i].snap.output_vector = out_c;
+        args[i].snap.output_size = out_c ? snap->output_size : 0;
+        args[i].features = feat_c;
+        args[i].num_features = feat_c ? num_features : 0;
         args[i].promise = promises[i];
         args[i].stage_id = stage_ids[i];
 
-        if (nimcp_pool_submit(brain->inference_pool, task_fns[i], &args[i]) == NIMCP_SUCCESS) {
+        /* Don't start a second copy of a stage whose previous run was
+         * abandoned and is still executing (it would race on module state). */
+        if (__atomic_load_n(args[i].slot.straggler_ctr, __ATOMIC_ACQUIRE) > 0) {
+            if ((int)i == ethics_idx) ethics_busy = true;
+            decide_skip(promises[i], stage_ids[i]);
+            continue;
+        }
+
+        if (dispatch_slot_submit(brain->inference_pool, &args[i].slot)) {
             submitted++;
+        } else if ((int)i == ethics_idx) {
+            /* Safety gate must run: evaluate ethics/LGSS inline instead. */
+            args[i].slot.state = SLOT_RUNNING;
+            task_fns[i](&args[i]);
+            args[i].slot.state = SLOT_DONE;
         } else {
             decide_skip(promises[i], stage_ids[i]);
         }
     }
+    (void)submitted;
 
     /* Barrier with timeout */
     nimcp_future_t valid[DECIDE_STAGE_COUNT];
@@ -1145,19 +1468,30 @@ static decide_batch_result_t dispatch_decide_stages(
         }
     }
 
-    /* Collect results */
+    /* Collect results. Futures/promises are freed by the block's last ref. */
+    bool ethics_ok = false;
     for (uint32_t i = 0; i < num_stages; i++) {
         if (futures[i] && nimcp_future_is_ready(futures[i])) {
             nimcp_future_get(futures[i], &batch.results[i]);
             if (batch.results[i].executed) batch.num_executed++;
+            /* A busy-skip is ready too but is not an evaluation. */
+            if ((int)i == ethics_idx && !ethics_busy) ethics_ok = true;
+        } else if (futures[i]) {
+            if (dispatch_slot_abandon(&args[i].slot)) {
+                LOG_WARN("Decide stage %u exceeded 30s — abandoned",
+                         (unsigned)stage_ids[i]);
+            }
         }
-        if (futures[i]) nimcp_future_destroy(futures[i]);
-        if (promises[i]) nimcp_promise_destroy(promises[i]);
+    }
+    if (ethics_idx >= 0 && !ethics_ok) {
+        decide_ethics_fail_closed(&batch.results[ethics_idx],
+                                  !futures[ethics_idx] ? "dispatch failed" :
+                                  ethics_busy ? "previous run still busy" :
+                                                "timed out");
+        batch.num_executed++;
     }
 
-    nimcp_free(args);
-    nimcp_free(promises);
-    nimcp_free(futures);
+    dispatch_block_release(blk);
 
     batch.total_elapsed_us = nimcp_time_get_us() - t0;
     return batch;

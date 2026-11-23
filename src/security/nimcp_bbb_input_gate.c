@@ -322,20 +322,28 @@ static bool detect_shellcode(const void* data, size_t size)
             null_count++;
         }
 
-        /* Common shellcode opcodes */
-        switch (bytes[i]) {
-            case 0xCD:  /* int instruction */
-            case 0x80:  /* syscall interrupt */
-            case 0x0F:  /* syscall/sysenter prefix */
-            case 0xCC:  /* int3 debug */
-                suspicious_opcodes++;
-                break;
+        /* Count whole trap/syscall instruction sequences, not single bytes:
+         * lone 0xCD/0xCC/0x80/0x0F bytes are everywhere in IEEE floats
+         * (0.1f = CD CC CC 3D, 1.0f = 00 00 80 3F), which made every float
+         * bio-message payload look like shellcode and get dropped. */
+        if (i + 1 < size) {
+            uint8_t b0 = bytes[i], b1 = bytes[i + 1];
+            if ((b0 == 0xCD && b1 == 0x80) ||   /* int 0x80 */
+                (b0 == 0x0F && b1 == 0x05) ||   /* syscall */
+                (b0 == 0x0F && b1 == 0x34)) {   /* sysenter */
+                suspicious_opcodes += 2;
+            }
+        }
+        if (i + 3 < size && bytes[i] == 0xCC && bytes[i + 1] == 0xCC &&
+            bytes[i + 2] == 0xCC && bytes[i + 3] == 0xCC) {
+            suspicious_opcodes++;              /* int3 padding run */
         }
     }
 
-    /* High ratio of suspicious bytes indicates shellcode */
+    /* Density of instruction-sequence bytes indicates shellcode (a classic
+     * 23-byte execve stub with one int 0x80 is ~8.7%). */
     float suspicious_ratio = (float)suspicious_opcodes / size;
-    if (suspicious_ratio > 0.1F && size > 10) {
+    if (suspicious_ratio > 0.05F && size > 10) {
         return true;
     }
 

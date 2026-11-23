@@ -671,6 +671,35 @@ size_t signal_handler_get_pending_exception_count(void);
 //=============================================================================
 
 /**
+ * @brief Arm a recovery point with sigsetjmp in the CALLER's own frame.
+ *
+ * signal_handler_set_recovery_point_ex() calls sigsetjmp and then returns,
+ * so a later siglongjmp would land in a dead stack frame (C11 7.13.2.1 UB:
+ * crash elsewhere or skip SIGNAL_ON_CRASH). The macros below use this
+ * statement expression instead so the jump target stays live while the
+ * guarded code runs. With no recovery context, nothing is armed (the code
+ * runs unprotected rather than relying on the equally-broken legacy point).
+ *
+ * @return RECOVERY_INITIAL on the arming pass, ctx->result after a jump.
+ */
+#define SIGNAL_RECOVERY_POINT_HERE(ctx, _srp_max_retries, _srp_label) \
+    ({ \
+        int _srp_r = RECOVERY_INITIAL; \
+        if ((ctx) != NULL) { \
+            (ctx)->max_retries = (_srp_max_retries); \
+            (ctx)->label = (_srp_label); \
+            if (sigsetjmp((ctx)->jmp_buf, 1) == 0) { \
+                (ctx)->result = RECOVERY_INITIAL; \
+                (ctx)->valid = 1; \
+            } else { \
+                (ctx)->retry_count++; \
+                _srp_r = (ctx)->result; \
+            } \
+        } \
+        _srp_r; \
+    })
+
+/**
  * @brief Macro for wrapping crash-prone code with recovery
  *
  * USAGE:
@@ -689,7 +718,7 @@ size_t signal_handler_get_pending_exception_count(void);
 #define SIGNAL_TRY_RECOVER(max_retries, label) \
     do { \
         signal_recovery_ctx_t* _sig_ctx = signal_handler_get_recovery_ctx(); \
-        int _sig_result = signal_handler_set_recovery_point_ex(_sig_ctx, max_retries, label); \
+        int _sig_result = SIGNAL_RECOVERY_POINT_HERE(_sig_ctx, max_retries, label); \
         if (_sig_result == RECOVERY_INITIAL) {
 
 #define SIGNAL_ON_CRASH \
@@ -714,7 +743,7 @@ size_t signal_handler_get_pending_exception_count(void);
     ({ \
         signal_recovery_ctx_t* _sig_ctx = signal_handler_get_recovery_ctx(); \
         typeof(expr) _sig_val; \
-        int _sig_result = signal_handler_set_recovery_point_ex(_sig_ctx, 0, #expr); \
+        int _sig_result = SIGNAL_RECOVERY_POINT_HERE(_sig_ctx, 0, #expr); \
         if (_sig_result == RECOVERY_INITIAL) { \
             _sig_val = (expr); \
             signal_handler_clear_recovery_point_ex(_sig_ctx); \
@@ -758,7 +787,7 @@ size_t signal_handler_get_pending_exception_count(void);
 #define SIGNAL_TRY_RECOVER_EX(max_retries, label) \
     do { \
         signal_recovery_ctx_t* _sig_ctx_ex = signal_handler_get_recovery_ctx(); \
-        int _sig_result_ex = signal_handler_set_recovery_point_ex(_sig_ctx_ex, max_retries, label); \
+        int _sig_result_ex = SIGNAL_RECOVERY_POINT_HERE(_sig_ctx_ex, max_retries, label); \
         if (_sig_result_ex == RECOVERY_INITIAL) {
 
 #define SIGNAL_ON_CRASH_EX \
@@ -801,7 +830,7 @@ size_t signal_handler_get_pending_exception_count(void);
     ({ \
         signal_recovery_ctx_t* _sig_ctx_ex = signal_handler_get_recovery_ctx(); \
         typeof(expr) _sig_val_ex; \
-        int _sig_result_ex = signal_handler_set_recovery_point_ex(_sig_ctx_ex, 0, #expr); \
+        int _sig_result_ex = SIGNAL_RECOVERY_POINT_HERE(_sig_ctx_ex, 0, #expr); \
         if (_sig_result_ex == RECOVERY_INITIAL) { \
             _sig_val_ex = (expr); \
             signal_handler_clear_recovery_point_ex(_sig_ctx_ex); \

@@ -122,6 +122,10 @@ void w11_safety_ensure_roots(struct brain_struct* brain) {
         "Mental health monitor — disorder detection + intervention");
     w11_ensure_root(kg, "brain_immune",
         "Brain immune system — antigen detection + response");
+    /* Parent of w11_emit_toxicity_detection events; without it every
+     * toxicity/heartbeat node was orphaned (no produced_by edge). */
+    w11_ensure_root(kg, "toxicity_module",
+        "Toxicity classifier — content-semantics gate");
 
     brain_kg_set_access_level(kg, BRAIN_KG_ACCESS_READ, 0);
 }

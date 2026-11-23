@@ -404,7 +404,7 @@ bool brain_add_fact(
 
             // Clean up remaining clauses
             for (int j = i; j < num_clauses; j++) {
-                nimcp_free(clauses[j]);
+                symbolic_logic_clause_destroy(clauses[j]);   /* frees literals too */
             }
             nimcp_free(clauses);
             clauses = NULL;
@@ -664,7 +664,7 @@ bool brain_query_knowledge(
                              (float)(i + 1) / (float)num_clauses);
         }
 
-        nimcp_free(clauses[i]);
+        symbolic_logic_clause_destroy(clauses[i]);   /* nimcp_free leaked the literals */
     }
     nimcp_free(clauses);
     clauses = NULL;

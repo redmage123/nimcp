@@ -79,6 +79,11 @@ bool nimcp_brain_factory_init_dragonfly_subsystem(brain_t brain) {
             return false;
     }
 
+    /* Idempotent: eager init (nimcp_part_core.c) now also calls this on
+     * resumed and already-built brains; resetting the fields below would
+     * leak the live dragonfly, its LNN and its medulla bridge. */
+    if (brain->dragonfly) return true;
+
     /* Initialize dragonfly fields to defaults */
     brain->dragonfly = NULL;
     brain->dragonfly_enabled = false;

@@ -21,13 +21,10 @@ void brain_tick_meta_learning(brain_t brain, float dt_ms)
         return;
     }
 
-    /* Placeholder loss = 0.0f. meta_adapt_learning_rate treats a zero loss
-     * as "no new error signal" and returns the current LR unchanged. The
-     * primary call site in brain_learn_vector still passes the real loss;
-     * this tick is for the inference + coordinator paths where we have no
-     * fresh error signal but still want the module exercised (e.g. for
-     * internal state-decay or stats accumulation within the meta module). */
-    (void)meta_adapt_learning_rate(brain->meta_learner,
-                                   META_REGION_ASSOCIATION,
-                                   0.0f);
+    /* No error signal is available on the tick path, so do NOT call
+     * meta_adapt_learning_rate here. The old placeholder loss=0.0f was not a
+     * no-op: the bold-driver rule halves the LR whenever loss >= prev_loss
+     * and then stores 0 as prev_loss, so every later real loss also counted
+     * as "worse" and pinned the region LR at LR_MIN. The real-loss update
+     * lives in brain_learn_vector. Kept as a tick-uniform entry point. */
 }

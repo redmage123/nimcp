@@ -1106,6 +1106,12 @@ bool nimcp_brain_parallel_init_subsystems(brain_t brain, const brain_config_t* c
     // WAVE 29: Edge/robot integration (sensor hub, safety, swarm bridges)
     // DEPENDS ON: Dragonfly (wave 20), Swarm (wave 26), Portia (global)
     // ========================================================================
+    /* Portia is a process singleton that nothing initialized, so the
+     * Portia-Swarm bridge below was never built (2026-11-23). Non-fatal. */
+    {
+        extern bool nimcp_brain_factory_init_portia_subsystem(brain_t);
+        (void)nimcp_brain_factory_init_portia_subsystem(brain);
+    }
     ok = run_serial(&ctx, nimcp_brain_factory_init_edge_subsystem, "edge");
     if (!ok) goto cleanup;
 

@@ -6915,6 +6915,18 @@ float nimcp_brain_get_ensemble_warmup_scale(nimcp_brain_t brain) {
     return brain->internal_brain->config.ensemble_warmup_scale;
 }
 
+/* NIMCP_EAGER_SKIP is a comma-separated list of names; true if name is one. */
+static bool eager_skip_listed(const char* list, const char* name) {
+    if (!list || !name || !*name) return false;
+    size_t n = strlen(name);
+    for (const char* p = list; (p = strstr(p, name)) != NULL; p += n) {
+        bool start_ok = (p == list) || p[-1] == ',' || p[-1] == ' ';
+        bool end_ok = p[n] == '\0' || p[n] == ',' || p[n] == ' ';
+        if (start_ok && end_ok) return true;
+    }
+    return false;
+}
+
 int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
     if (!brain || !brain->internal_brain) return -1;
     brain_t b = brain->internal_brain;
@@ -7131,7 +7143,9 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
     if (!b->dormant_subsystems_initialized) {
         b->dormant_subsystems_initialized = true;
         const char* skip = getenv("NIMCP_EAGER_SKIP");
-        #define EAGER_SKIPPED(name) (skip && strstr(skip, name) != NULL)
+        /* Whole-token match in the comma list (strstr made "hearing" also
+         * skip "ext_hearing"). */
+        #define EAGER_SKIPPED(name) eager_skip_listed(skip, name)
         #define EAGER_TRY(name, present, fn) do { \
             extern bool fn(brain_t); \
             if (EAGER_SKIPPED(name)) { \
@@ -7187,6 +7201,12 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
          * predictive immune and region cycles register driven ticks on it. */
         EAGER_TRY("cycle_coordinator", b->cycle_coordinator,
                   nimcp_brain_factory_init_cycle_coordinator_subsystem);
+        /* Toxicity 1 Hz cycle: its registration at toxicity init ran before
+         * any coordinator existed, so it never ran (walkthrough #8). */
+        if (b->cycle_coordinator && b->toxicity_classifier) {
+            extern int nimcp_brain_factory_register_toxicity_cycle(brain_t);
+            (void)nimcp_brain_factory_register_toxicity_cycle(b);
+        }
         /* KG / health agent / symbolic logic: resumed brains had none (the
          * .kg sidecar could never load); the sensory hub registers into them. */
         EAGER_TRY("internal_kg", b->internal_kg, nimcp_brain_factory_init_internal_kg_subsystem);
@@ -7246,6 +7266,30 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
         EAGER_TRY("world_model", b->multimodal_world_model, nimcp_brain_factory_init_world_model_subsystem);
         EAGER_TRY("pr_memory", b->pr_memory_enabled, nimcp_brain_factory_init_pr_memory_subsystem);
 
+        /* Non-human biological modules (2026-11-23): Portia, dragonfly,
+         * octopus and the edge cognitive enhancements (episodic replay,
+         * self-curriculum, contrastive self, dynamic arch, ...) were built
+         * only by the fresh-construction waves, so every resumed brain had
+         * none of them. Order: Portia + dragonfly before "edge_enhancements"
+         * so its Portia-Swarm / Dragonfly-Swarm bridges see them; dragonfly
+         * after medulla (INIT_IF_DISABLED above) for its medulla bridge. */
+        extern bool portia_is_initialized(void);
+        extern bool nimcp_brain_ext_hearing_present(brain_t);
+        extern bool nimcp_brain_nonhuman_present(brain_t);
+        b->config.enable_dragonfly = true;
+        EAGER_TRY("portia", portia_is_initialized(), nimcp_brain_factory_init_portia_subsystem);
+        EAGER_TRY("dragonfly", b->dragonfly, nimcp_brain_factory_init_dragonfly_subsystem);
+        EAGER_TRY("octopus", b->octopus, nimcp_brain_factory_init_octopus_subsystem);
+        EAGER_TRY("edge_enhancements", b->episodic_replay, nimcp_brain_factory_init_edge_subsystem);
+        /* After "cochlea" above: dog-mode extended hearing on the brain cochlea. */
+        EAGER_TRY("ext_hearing", nimcp_brain_ext_hearing_present(b),
+                  nimcp_brain_factory_init_ext_hearing_subsystem);
+        /* Superhuman perception (echolocation, eagle vision, time dilation,
+         * savant, hyperthymesia, precognition, synesthesia) + interoception;
+         * driven by brain_tick_nonhuman (~3 MB, <=24 MB; not per-neuron). */
+        EAGER_TRY("nonhuman", nimcp_brain_nonhuman_present(b),
+                  nimcp_brain_factory_init_nonhuman_subsystem);
+
         b->config.lazy_init_mode = saved_lazy;
         b->config.lazy_cortical_init = saved_lazy_cort;
         b->config.lazy_creative_init = saved_lazy_creat;
@@ -7277,7 +7321,7 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
     {
         const char* skip = getenv("NIMCP_EAGER_SKIP");
         extern int brain_sensory_hub_attach(brain_t);
-        if (!(skip && strstr(skip, "sensory_hub")) && !b->sensory_hub &&
+        if (!eager_skip_listed(skip, "sensory_hub") && !b->sensory_hub &&
             brain_sensory_hub_attach(b) == 0) count++;
     }
 

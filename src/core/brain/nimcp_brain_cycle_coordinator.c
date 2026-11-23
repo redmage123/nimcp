@@ -1047,6 +1047,55 @@ int brain_cycle_coordinator_register_driven(
     return 0;
 }
 
+/* Shutdown helper: signal every driver, then join them all outside the
+ * mutex (drivers take it in notify_tick). brain_destroy calls this first so
+ * no cc-* thread can tick a subsystem that is being freed (UAF at exit).
+ * Entries stay `registered` (now observation-only) so later per-subsystem
+ * unregister calls still succeed without throwing. */
+int brain_cycle_coordinator_stop_all_drivers(brain_cycle_coordinator_t* coord) {
+    if (!coord) return 0;
+
+    nimcp_thread_t threads[BRAIN_CYCLE_COUNT];
+    int idx[BRAIN_CYCLE_COUNT];
+    int n = 0;
+
+    nimcp_mutex_lock(coord->mutex);
+    for (int i = 0; i < BRAIN_CYCLE_COUNT; i++) {
+        cycle_entry_t* e = &coord->cycles[i];
+        if (e->registered && e->driven) {
+            __atomic_store_n(&e->driver_stop_flag, 1, __ATOMIC_RELEASE);
+            threads[n] = e->driver_thread;
+            idx[n] = i;
+            n++;
+        }
+    }
+    nimcp_mutex_unlock(coord->mutex);
+
+    for (int k = 0; k < n; k++) {
+        (void)nimcp_thread_join(threads[k], NULL);
+    }
+
+    nimcp_mutex_lock(coord->mutex);
+    for (int k = 0; k < n; k++) {
+        cycle_entry_t* e = &coord->cycles[idx[k]];
+        e->driven = false;
+        e->running = false;
+        e->tick_fn = NULL;
+        e->tick_ctx = NULL;
+        e->cycle_handle = NULL;
+        e->health_fn = NULL;   /* handle may be freed during teardown */
+        e->tick_interval_us = 0;
+        __atomic_store_n(&e->driver_stop_flag, 0, __ATOMIC_RELEASE);
+    }
+    nimcp_mutex_unlock(coord->mutex);
+
+    if (n > 0 && coord->config.enable_logging) {
+        LOG_MODULE_INFO(CYCLE_COORD_LOG_MODULE,
+            "Stopped %d driver thread(s) for shutdown", n);
+    }
+    return n;
+}
+
 int brain_cycle_coordinator_unregister(
     brain_cycle_coordinator_t* coord,
     brain_cycle_type_t type)

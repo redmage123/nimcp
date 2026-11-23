@@ -77,7 +77,8 @@ void* bio_module_context_get_user_data(bio_module_context_t ctx) {
         return NULL;
     }
 
-    return entry->user_data;
+    /* Per-ctx: a shared entry's user_data is whichever owner registered last. */
+    return ctx->user_data;
 }
 
 

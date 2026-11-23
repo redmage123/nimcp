@@ -499,6 +499,16 @@ bool nimcp_brain_pr_memory_driver_start(struct brain_struct* brain) {
     if (!brain) return false;
     if (brain->pr_memory_driver_thread) return true;  /* idempotent */
 
+    /* Single owner (2026-11-23 walkthrough): nimcp_brain_pr_memory_tick
+     * already runs inline in brain_learn_vector under the brain lock; a
+     * 100 ms driver (coordinator or fallback pthread) ticked it a second
+     * time concurrently. NIMCP_PR_MEMORY_DRIVER=1 restores the driver for
+     * brains that are never trained (no learn_vector calls). */
+    {
+        const char* drv = getenv("NIMCP_PR_MEMORY_DRIVER");
+        if (!drv || strcmp(drv, "1") != 0) return true;
+    }
+
     /* Primary: hand the cycle off to the coordinator. It owns the thread,
      * calls pr_memory_tick_wrapper every 100ms, and records duration via
      * notify_tick automatically. */

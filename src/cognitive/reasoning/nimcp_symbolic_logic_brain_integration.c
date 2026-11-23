@@ -126,6 +126,21 @@ bool brain_create_symbolic_logic(
         return false;
     }
 
+    /* Wire the engine the same way brain_attach_symbolic_logic does. Without
+     * this, brains that create the engine here (eager init on resume) never
+     * set gl->logic_enabled, so the language<->logic gates in learn_vector,
+     * brain_decide and the cascade stayed permanently off, and facts never
+     * mirrored into the internal KG. */
+    symbolic_logic_kg_register(brain->symbolic_logic, brain);
+    if (brain->grounded_lang) {
+        extern int grounded_language_set_symbolic_logic(void* gl, void* logic, bool enabled);
+        if (grounded_language_set_symbolic_logic(brain->grounded_lang,
+                                                 brain->symbolic_logic, true) != 0) {
+            NIMCP_LOGGING_WARN("brain_create_symbolic_logic: failed to connect "
+                               "symbolic logic to grounded language");
+        }
+    }
+
     NIMCP_LOGGING_INFO("Symbolic logic engine created: max_facts=%u, max_rules=%u, depth=%u",
                        actual_config.max_facts,
                        actual_config.max_rules,
@@ -217,9 +232,9 @@ bool brain_add_logical_fact(
 
         if (!symbolic_logic_add_fact(brain->symbolic_logic, clauses[i], salience)) {
             set_error("Failed to add fact clause %d to knowledge base", i);
-            // Clean up remaining clauses
-            for (int j = i; j < num_clauses; j++) {
-                nimcp_free(clauses[j]);
+            // Clean up all clauses (add_fact copies; we still own every one)
+            for (int j = 0; j < num_clauses; j++) {
+                symbolic_logic_clause_destroy(clauses[j]);
             }
             nimcp_free(clauses);
             clauses = NULL;
@@ -228,6 +243,11 @@ bool brain_add_logical_fact(
         }
     }
 
+    /* add_fact stored deep copies — destroy ours (clause, literals, terms)
+     * instead of freeing only the array, which leaked them on every call. */
+    for (int i = 0; i < num_clauses; i++) {
+        symbolic_logic_clause_destroy(clauses[i]);
+    }
     nimcp_free(clauses);
     clauses = NULL;
 
@@ -433,7 +453,7 @@ bool brain_query_knowledge(
                              (float)(i + 1) / (float)num_clauses);
         }
 
-        nimcp_free(clauses[i]);
+        symbolic_logic_clause_destroy(clauses[i]);  /* was nimcp_free: leaked literals */
     }
     nimcp_free(clauses);
     clauses = NULL;
@@ -698,7 +718,7 @@ bool brain_backward_chain(
                              (float)(i + 1) / (float)num_clauses);
         }
 
-        nimcp_free(clauses[i]);
+        symbolic_logic_clause_destroy(clauses[i]);  /* was nimcp_free: leaked literals */
     }
     nimcp_free(clauses);
     clauses = NULL;

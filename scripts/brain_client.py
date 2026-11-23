@@ -45,6 +45,14 @@ def _resend_safe(cmd):
             or cmd.endswith(("_get", "_stats", "_metrics", "_diag")))
 
 
+class _ReplyTimeout(socket.timeout):
+    """A delivered request timed out waiting for its reply. The daemon worker
+    is still queued on (or running under) the brain lock, so re-sending would
+    only stack another blocked worker in its 4-thread pool (starving lock-free
+    ping/feed_audio) and later re-run the command. _send never retries it.
+    Still a socket.timeout, so existing callers' except clauses are unchanged."""
+
+
 class DaemonResponseLost(RuntimeError):
     """A non-idempotent request reached the daemon but its reply did not come
     back. The daemon may still be running it, so it is NOT re-sent."""
@@ -116,6 +124,12 @@ class BrainProxy:
             except self._TRANSIENT as e:
                 cmd = req.get("cmd", "?")
                 if _resend_safe(cmd):
+                    # Reset/closed reply (daemon restarted) is safe to resend;
+                    # a timeout is not — the original is still pending.
+                    if isinstance(e, socket.timeout):
+                        raise _ReplyTimeout(
+                            f"'{cmd}' was delivered but no reply within the "
+                            f"timeout ({e}); not re-sending it") from e
                     raise
                 raise DaemonResponseLost(
                     f"'{cmd}' was delivered but its reply was lost "
@@ -162,7 +176,8 @@ class BrainProxy:
         flaky" failures (ConnectionReset, recv-timeout, etc.).
 
         Only failures before the request is delivered, or on _resend_safe
-        commands, are retried; see _send_once and DaemonResponseLost.
+        commands, are retried; see _send_once and DaemonResponseLost. A reply
+        timeout after delivery is never retried (_ReplyTimeout).
         """
         last_exc = None
         backoff = self.INITIAL_BACKOFF
@@ -179,6 +194,8 @@ class BrainProxy:
                 self._consecutive_failures = 0
                 return resp
             except self._TRANSIENT as e:
+                if isinstance(e, _ReplyTimeout):
+                    raise  # delivered + still pending daemon-side: no resend
                 last_exc = e
                 self._consecutive_failures += 1
                 cmd = req.get("cmd", "?")

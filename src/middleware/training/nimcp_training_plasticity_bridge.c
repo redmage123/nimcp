@@ -140,7 +140,7 @@ static float tpb_apply_stdp_rule(tpb_context_t* ctx, uint32_t region_id,
 static float tpb_apply_bcm_rule(tpb_context_t* ctx, uint32_t region_id,
                                  float pre, float post, float threshold);
 static uint32_t tpb_find_region_for_neuron(tpb_context_t* ctx, uint32_t neuron_id);
-static void tpb_update_neuromod_from_rpe(tpb_context_t* ctx, float rpe);
+static void tpb_update_neuromod_from_rpe(tpb_context_t* ctx, float rpe, bool gain_applied);
 
 //=============================================================================
 // Default Configuration
@@ -595,8 +595,10 @@ nimcp_result_t tpb_report_loss(tpb_context_t* ctx, float loss, float* rpe_out)
 
     nimcp_mutex_unlock(&ctx->rpe_mutex);
 
-    /* Update neuromodulator levels based on RPE */
-    tpb_update_neuromod_from_rpe(ctx, rpe);
+    /* Update neuromodulator levels based on RPE.
+     * The tpb_compute_rpe_* helpers already multiply by rpe_to_da_gain, so tell
+     * the updater not to scale again (it was applying gain^2 to the DA delta). */
+    tpb_update_neuromod_from_rpe(ctx, rpe, true);
 
     /* Update statistics */
     nimcp_mutex_lock(&ctx->stats_mutex);
@@ -637,7 +639,7 @@ nimcp_result_t tpb_inject_reward(tpb_context_t* ctx, float da_delta)
     if (da_delta < -1.0F) da_delta = -1.0F;
 
     /* Direct neuromodulator update */
-    tpb_update_neuromod_from_rpe(ctx, da_delta);
+    tpb_update_neuromod_from_rpe(ctx, da_delta, false);
 
     LOG_DEBUG("[%s] ", TPB_LOG_MODULE, "Injected reward signal: DA delta = %.3f", da_delta);
 
@@ -779,7 +781,7 @@ static float tpb_compute_rpe_adaptive(tpb_context_t* ctx, float current_loss)
     return rpe * ctx->config.rpe_to_da_gain;
 }
 
-static void tpb_update_neuromod_from_rpe(tpb_context_t* ctx, float rpe)
+static void tpb_update_neuromod_from_rpe(tpb_context_t* ctx, float rpe, bool gain_applied)
 {
     if (!ctx->neuromod_system) {
         return;
@@ -789,7 +791,9 @@ static void tpb_update_neuromod_from_rpe(tpb_context_t* ctx, float rpe)
      * Positive RPE → DA burst
      * Negative RPE → DA dip
      */
-    float da_delta = rpe * ctx->config.rpe_to_da_gain;
+    /* Apply rpe_to_da_gain exactly once: loss-derived RPE arrives pre-scaled,
+     * raw injected rewards (tpb_inject_reward) do not. */
+    float da_delta = gain_applied ? rpe : rpe * ctx->config.rpe_to_da_gain;
 
     /* Get current levels */
     neuromodulator_pool_t pool = neuromodulator_pool_create();

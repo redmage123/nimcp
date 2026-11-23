@@ -62,6 +62,9 @@ typedef struct {
     float skill_total;       /**< 1 - MSE/MSE(copy) since creation (or load) */
     float mse_recent;
     float copy_mse_recent;
+    uint64_t nonfinite_resets; /**< frames whose error was non-finite: listening state
+                                    was dropped and restarted (not persisted). Rising
+                                    every frame means the weights themselves diverged. */
 } auditory_predictor_stats_t;
 
 typedef struct auditory_predictor auditory_predictor_t;

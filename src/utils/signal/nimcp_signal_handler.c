@@ -1710,6 +1710,10 @@ signal_recovery_ctx_t* signal_handler_get_recovery_ctx(void)
  * NOTE: This function uses sigsetjmp internally. The caller should
  *       check the return value to determine if this is the initial
  *       call or a recovery jump.
+ * WARNING: sigsetjmp's frame is THIS function, which has returned by the
+ *       time guarded code runs, so a crash jump lands in a dead frame (UB).
+ *       Kept for ABI compatibility only; the SIGNAL_TRY_* macros now use
+ *       SIGNAL_RECOVERY_POINT_HERE, which arms the point in the caller.
  */
 int signal_handler_set_recovery_point_ex(
     signal_recovery_ctx_t* ctx,

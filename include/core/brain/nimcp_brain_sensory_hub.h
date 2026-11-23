@@ -21,6 +21,12 @@
  *       feed thread; the tick chain is where they are normally driven.
  * HOW:  posts accumulate under a mutex; a tick processes the accumulated
  *       frames as one event. Every target is optional (NULL-safe).
+ *       The tick is single-entry: a caller that finds another tick running
+ *       returns at once (frames stay queued). Bio-async: scalar signals
+ *       ("sensory.audio.surprise|loudness|onset", "sensory.visual.change|
+ *       luminance|contrast") are published every tick for any observer; the
+ *       inbox broadcasts / onset sends are opt-in via
+ *       NIMCP_SENSORY_HUB_ROUTER_FANOUT=1 until modules register handlers.
  */
 #ifndef NIMCP_BRAIN_SENSORY_HUB_H
 #define NIMCP_BRAIN_SENSORY_HUB_H

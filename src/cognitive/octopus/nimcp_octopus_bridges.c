@@ -34,6 +34,8 @@
 #include "core/brain/subcortical/nimcp_amygdala.h"
 #include "cognitive/omni/nimcp_omni_world_model.h"
 #include "core/brain/regions/occipital/nimcp_occipital_adapter.h"
+#include <stdatomic.h>
+#include "utils/time/nimcp_time.h"
 #include "perception/nimcp_audio_cortex.h"
 #include "core/brain/regions/somatosensory/nimcp_somatosensory.h"
 #include "snn/nimcp_snn_network.h"
@@ -1242,6 +1244,17 @@ void nimcp_octopus_tick(brain_t brain,
     if (!brain->octopus || !brain->octopus_enabled) return;
 
     octopus_system_t* ctx = (octopus_system_t*)brain->octopus;
+
+    /* Rate-limit to ~20 Hz of wall clock: one explore costs ~11 ms (8 arm
+     * LNN forward steps) and this runs on every learn_vector and
+     * brain_decide once the octopus exists on resumed brains (2026-11-23). */
+    {
+        static _Atomic uint64_t s_last_us = 0;
+        uint64_t now = nimcp_time_now_us();
+        uint64_t last = atomic_load(&s_last_us);
+        if (now - last < 50000u ||
+            !atomic_compare_exchange_strong(&s_last_us, &last, now)) return;
+    }
 
     NIMCP_LOGGING_TRACE("nimcp_octopus_tick: features_len=%u", num_features);
 

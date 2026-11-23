@@ -282,7 +282,12 @@ typedef struct {
  * WHY:  Clean up resources when Python object is garbage collected
  * HOW:  Call nimcp_brain_destroy, free Python object memory
  */
+/* Defined with the edge bindings below: unhooks binding-owned sensor hub /
+ * watchdog from a brain before it is destroyed (brain destroy frees them). */
+static void edge_detach_globals_from_brain(brain_t ib);
+
 static void Brain_dealloc(BrainObject* self) {
+    if (self->brain) edge_detach_globals_from_brain(self->brain->internal_brain);
     Py_XDECREF(self->cloud_brain_ref);
     self->cloud_brain_ref = NULL;
     if (self->community_cache) {
@@ -718,6 +723,21 @@ static PyObject* Brain_learn_vector_batch(BrainObject* self, PyObject* args, PyO
         }
 
         if (i == 0) { num_features = nf; target_size = nt; }
+        /* C side reads num_features/target_size floats from EVERY example;
+         * a shorter later item would be a heap over-read, so reject it. */
+        else if (nf != num_features || nt != target_size) {
+            for (Py_ssize_t j = 0; j <= i; j++) {
+                nimcp_free((void*)features_array[j]);
+                nimcp_free((void*)targets_array[j]);
+            }
+            nimcp_free(features_array);
+            nimcp_free(targets_array);
+            PyErr_Format(PyExc_ValueError,
+                "learn_vector_batch: item %zd has %zd features / %zd targets, "
+                "expected %zd / %zd (all items must match item 0)",
+                i, nf, nt, num_features, target_size);
+            return NULL;
+        }
     }
 
     float loss;
@@ -2341,6 +2361,24 @@ static PyObject* Brain_get_neuron_count(BrainObject* self, PyObject* args) {
  * src/api/nimcp_part_alloc_stats.c. Used to attribute RSS growth.
  */
 #include "api/nimcp_alloc_stats.h"
+
+/* Insert a NEW reference into a result dict and drop our ref:
+ * PyDict_SetItemString does not steal, so the bare idiom leaked every value
+ * (e.g. ~55 objects incl. two 2 KB strings per produce_cascade call). A NULL value
+ * (failed alloc/decode) is stored as None instead of being dereferenced. */
+static void pyd_set_steal(PyObject* d, const char* key, PyObject* v) {
+    if (!v) { PyErr_Clear(); v = Py_NewRef(Py_None); }
+    PyDict_SetItemString(d, key, v);
+    Py_DECREF(v);
+}
+
+/* C-string -> str with invalid UTF-8 replaced (prompt_subject[32] can be
+ * truncated mid-codepoint), so a bad byte never yields a NULL value. */
+static PyObject* pyd_str_lossy(const char* s) {
+    if (!s) s = "";
+    return PyUnicode_DecodeUTF8(s, (Py_ssize_t)strlen(s), "replace");
+}
+
 static PyObject* Brain_get_alloc_stats(BrainObject* self, PyObject* args) {
     nimcp_alloc_stats_t s;
     nimcp_status_t st;
@@ -3523,11 +3561,11 @@ static PyObject* Brain_classify_toxicity(BrainObject* self, PyObject* args) {
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "predicted_harm",     PyFloat_FromDouble(harm));
-    PyDict_SetItemString(d, "fairness_violation", PyFloat_FromDouble(fair));
-    PyDict_SetItemString(d, "anti_toxic_signal",  PyFloat_FromDouble(anti));
-    PyDict_SetItemString(d, "would_block",        PyBool_FromLong(would_block));
-    PyDict_SetItemString(d, "category",           PyUnicode_FromString(category));
+    pyd_set_steal(d, "predicted_harm",     PyFloat_FromDouble(harm));
+    pyd_set_steal(d, "fairness_violation", PyFloat_FromDouble(fair));
+    pyd_set_steal(d, "anti_toxic_signal",  PyFloat_FromDouble(anti));
+    pyd_set_steal(d, "would_block",        PyBool_FromLong(would_block));
+    pyd_set_steal(d, "category",           PyUnicode_FromString(category));
     return d;
 }
 
@@ -3768,6 +3806,7 @@ static PyObject* Brain_echo_and_correct(BrainObject* self, PyObject* args, PyObj
     return PyLong_FromLong(pairs);
 }
 
+
 /* Phase 2A-2D: multi-region production cascade. Returns dict with
  * utterance + diagnostics from all stages. The diag fields (self_match,
  * self_grammaticality, prompt_is_question, etc.) come from the
@@ -3804,10 +3843,10 @@ static PyObject* Brain_produce_cascade_recurrent(BrainObject* self, PyObject* ar
 
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "utterance",      PyUnicode_FromString(buf));
-    PyDict_SetItemString(d, "word_count",     PyLong_FromUnsignedLong(word_count));
-    PyDict_SetItemString(d, "confidence",     PyFloat_FromDouble((double)confidence));
-    PyDict_SetItemString(d, "settling_steps", PyLong_FromUnsignedLong(settling_steps));
+    pyd_set_steal(d, "utterance",      pyd_str_lossy(buf));
+    pyd_set_steal(d, "word_count",     PyLong_FromUnsignedLong(word_count));
+    pyd_set_steal(d, "confidence",     PyFloat_FromDouble((double)confidence));
+    pyd_set_steal(d, "settling_steps", PyLong_FromUnsignedLong(settling_steps));
     return d;
 }
 
@@ -3952,59 +3991,59 @@ static PyObject* Brain_produce_cascade(BrainObject* self, PyObject* args, PyObje
     }
 
     /* Back-compat: keep the original 8 keys with the same names. */
-    PyDict_SetItemString(d, "utterance",            PyUnicode_FromString(text));
-    PyDict_SetItemString(d, "word_count",           PyLong_FromLong((long)s.word_count));
-    PyDict_SetItemString(d, "confidence",           PyFloat_FromDouble((double)s.content_confidence));
-    PyDict_SetItemString(d, "self_match",           PyFloat_FromDouble((double)s.self_match));
-    PyDict_SetItemString(d, "self_grammaticality",  PyFloat_FromDouble((double)s.self_grammaticality));
-    PyDict_SetItemString(d, "prompt_is_question",   PyBool_FromLong(s.prompt_is_question));
-    PyDict_SetItemString(d, "prompt_is_imperative", PyBool_FromLong(s.prompt_is_imperative));
-    PyDict_SetItemString(d, "wernicke_parsed",      PyBool_FromLong(s.wernicke_parsed));
+    pyd_set_steal(d, "utterance",            pyd_str_lossy(text));
+    pyd_set_steal(d, "word_count",           PyLong_FromLong((long)s.word_count));
+    pyd_set_steal(d, "confidence",           PyFloat_FromDouble((double)s.content_confidence));
+    pyd_set_steal(d, "self_match",           PyFloat_FromDouble((double)s.self_match));
+    pyd_set_steal(d, "self_grammaticality",  PyFloat_FromDouble((double)s.self_grammaticality));
+    pyd_set_steal(d, "prompt_is_question",   PyBool_FromLong(s.prompt_is_question));
+    pyd_set_steal(d, "prompt_is_imperative", PyBool_FromLong(s.prompt_is_imperative));
+    pyd_set_steal(d, "wernicke_parsed",      PyBool_FromLong(s.wernicke_parsed));
 
     /* Stage 0 — Wernicke extras */
-    PyDict_SetItemString(d, "prompt_is_garden_path",PyBool_FromLong(s.prompt_is_garden_path));
-    PyDict_SetItemString(d, "prompt_word_count",    PyLong_FromLong((long)s.prompt_word_count));
-    PyDict_SetItemString(d, "prompt_complexity",    PyFloat_FromDouble((double)s.prompt_complexity));
-    PyDict_SetItemString(d, "prompt_subject",       PyUnicode_FromString(s.prompt_subject));
-    PyDict_SetItemString(d, "prompt_verb",          PyUnicode_FromString(s.prompt_verb));
-    PyDict_SetItemString(d, "prompt_object",        PyUnicode_FromString(s.prompt_object));
+    pyd_set_steal(d, "prompt_is_garden_path",PyBool_FromLong(s.prompt_is_garden_path));
+    pyd_set_steal(d, "prompt_word_count",    PyLong_FromLong((long)s.prompt_word_count));
+    pyd_set_steal(d, "prompt_complexity",    PyFloat_FromDouble((double)s.prompt_complexity));
+    pyd_set_steal(d, "prompt_subject",       pyd_str_lossy(s.prompt_subject));
+    pyd_set_steal(d, "prompt_verb",          pyd_str_lossy(s.prompt_verb));
+    pyd_set_steal(d, "prompt_object",        pyd_str_lossy(s.prompt_object));
 
     /* Stage 1 — Drive */
-    PyDict_SetItemString(d, "drive_magnitude",      PyFloat_FromDouble((double)s.drive_magnitude));
-    PyDict_SetItemString(d, "drive_valence",        PyFloat_FromDouble((double)s.drive_valence));
-    PyDict_SetItemString(d, "drive_arousal",        PyFloat_FromDouble((double)s.drive_arousal));
-    PyDict_SetItemString(d, "dominant_drive",       PyLong_FromLong((long)s.dominant_drive));
+    pyd_set_steal(d, "drive_magnitude",      PyFloat_FromDouble((double)s.drive_magnitude));
+    pyd_set_steal(d, "drive_valence",        PyFloat_FromDouble((double)s.drive_valence));
+    pyd_set_steal(d, "drive_arousal",        PyFloat_FromDouble((double)s.drive_arousal));
+    pyd_set_steal(d, "dominant_drive",       PyLong_FromLong((long)s.dominant_drive));
 
     /* Stage 2 — Goal + Pragmatics */
-    PyDict_SetItemString(d, "act_type",             PyLong_FromLong((long)s.act_type));
-    PyDict_SetItemString(d, "pragmatic_is_indirect",PyBool_FromLong(s.pragmatic_is_indirect));
-    PyDict_SetItemString(d, "topic_count",          PyLong_FromLong((long)s.topic_count));
-    PyDict_SetItemString(d, "goal_priority",        PyFloat_FromDouble((double)s.goal_priority));
+    pyd_set_steal(d, "act_type",             PyLong_FromLong((long)s.act_type));
+    pyd_set_steal(d, "pragmatic_is_indirect",PyBool_FromLong(s.pragmatic_is_indirect));
+    pyd_set_steal(d, "topic_count",          PyLong_FromLong((long)s.topic_count));
+    pyd_set_steal(d, "goal_priority",        PyFloat_FromDouble((double)s.goal_priority));
 
     /* Stage 3 — Listener */
-    PyDict_SetItemString(d, "listener_known",            PyBool_FromLong(s.listener_known));
-    PyDict_SetItemString(d, "listener_belief_confidence",PyFloat_FromDouble((double)s.listener_belief_confidence));
-    PyDict_SetItemString(d, "listener_emotion_valence",  PyFloat_FromDouble((double)s.listener_emotion_valence));
-    PyDict_SetItemString(d, "audience_familiarity",      PyFloat_FromDouble((double)s.audience_familiarity));
+    pyd_set_steal(d, "listener_known",            PyBool_FromLong(s.listener_known));
+    pyd_set_steal(d, "listener_belief_confidence",PyFloat_FromDouble((double)s.listener_belief_confidence));
+    pyd_set_steal(d, "listener_emotion_valence",  PyFloat_FromDouble((double)s.listener_emotion_valence));
+    pyd_set_steal(d, "audience_familiarity",      PyFloat_FromDouble((double)s.audience_familiarity));
 
     /* Stage 4 — Episodic */
-    PyDict_SetItemString(d, "episodic_count",       PyLong_FromLong((long)s.episodic_count));
+    pyd_set_steal(d, "episodic_count",       PyLong_FromLong((long)s.episodic_count));
 
     /* Stage 5 — Content */
-    PyDict_SetItemString(d, "content_dim",          PyLong_FromLong((long)s.content_dim));
+    pyd_set_steal(d, "content_dim",          PyLong_FromLong((long)s.content_dim));
 
     /* Stages 6-7 */
-    PyDict_SetItemString(d, "fluency",              PyFloat_FromDouble((double)s.fluency));
-    PyDict_SetItemString(d, "syntactic_validity",   PyFloat_FromDouble((double)s.syntactic_validity));
+    pyd_set_steal(d, "fluency",              PyFloat_FromDouble((double)s.fluency));
+    pyd_set_steal(d, "syntactic_validity",   PyFloat_FromDouble((double)s.syntactic_validity));
 
     /* Stage 8 — Self-comprehension extras */
-    PyDict_SetItemString(d, "self_parsed",          PyBool_FromLong(s.self_parsed));
-    PyDict_SetItemString(d, "self_complexity",      PyFloat_FromDouble((double)s.self_complexity));
+    pyd_set_steal(d, "self_parsed",          PyBool_FromLong(s.self_parsed));
+    pyd_set_steal(d, "self_complexity",      PyFloat_FromDouble((double)s.self_complexity));
 
     /* Stage 9 — Phonological */
-    PyDict_SetItemString(d, "phoneme_count",        PyLong_FromLong((long)s.phoneme_count));
-    PyDict_SetItemString(d, "syllable_count",       PyLong_FromLong((long)s.syllable_count));
-    PyDict_SetItemString(d, "phon_voiced_ratio",    PyFloat_FromDouble((double)s.phon_voiced_ratio));
+    pyd_set_steal(d, "phoneme_count",        PyLong_FromLong((long)s.phoneme_count));
+    pyd_set_steal(d, "syllable_count",       PyLong_FromLong((long)s.syllable_count));
+    pyd_set_steal(d, "phon_voiced_ratio",    PyFloat_FromDouble((double)s.phon_voiced_ratio));
     if (phon_seq && s.phoneme_count > 0) {
         PyObject* lst = PyList_New((Py_ssize_t)s.phoneme_count);
         if (lst) {
@@ -4016,14 +4055,14 @@ static PyObject* Brain_produce_cascade(BrainObject* self, PyObject* args, PyObje
     }
 
     /* Stage 12 — Speech repair */
-    PyDict_SetItemString(d, "repair_attempts",      PyLong_FromLong((long)s.repair_attempts));
-    PyDict_SetItemString(d, "best_self_match",      PyFloat_FromDouble((double)s.best_self_match));
-    PyDict_SetItemString(d, "best_utterance",       PyUnicode_FromString(best_text));
+    pyd_set_steal(d, "repair_attempts",      PyLong_FromLong((long)s.repair_attempts));
+    pyd_set_steal(d, "best_self_match",      PyFloat_FromDouble((double)s.best_self_match));
+    pyd_set_steal(d, "best_utterance",       pyd_str_lossy(best_text));
 
     /* Stage 13 — Prosody */
-    PyDict_SetItemString(d, "prosody_syllable_count",PyLong_FromLong((long)s.prosody_syllable_count));
-    PyDict_SetItemString(d, "prosody_mean_f0",      PyFloat_FromDouble((double)s.prosody_mean_f0));
-    PyDict_SetItemString(d, "prosody_pitch_range",  PyFloat_FromDouble((double)s.prosody_pitch_range));
+    pyd_set_steal(d, "prosody_syllable_count",PyLong_FromLong((long)s.prosody_syllable_count));
+    pyd_set_steal(d, "prosody_mean_f0",      PyFloat_FromDouble((double)s.prosody_mean_f0));
+    pyd_set_steal(d, "prosody_pitch_range",  PyFloat_FromDouble((double)s.prosody_pitch_range));
     if (s.prosody_syllable_count > 0) {
         #define ADD_PROSODY_ARRAY(key, arr) do { \
             if ((arr)) { \
@@ -4043,36 +4082,36 @@ static PyObject* Brain_produce_cascade(BrainObject* self, PyObject* args, PyObje
     }
 
     /* Stage 14 — Self-train */
-    PyDict_SetItemString(d, "train_applied",        PyBool_FromLong(s.train_applied));
-    PyDict_SetItemString(d, "train_reward",         PyFloat_FromDouble((double)s.train_reward));
+    pyd_set_steal(d, "train_applied",        PyBool_FromLong(s.train_applied));
+    pyd_set_steal(d, "train_reward",         PyFloat_FromDouble((double)s.train_reward));
 
     /* Diagnostics */
-    PyDict_SetItemString(d, "stages_completed",     PyLong_FromLong((long)s.stages_completed));
-    PyDict_SetItemString(d, "stages_failed",        PyLong_FromLong((long)s.stages_failed));
-    PyDict_SetItemString(d, "stages_skipped",       PyLong_FromLong((long)s.stages_skipped));
-    PyDict_SetItemString(d, "failure_reason",       PyUnicode_FromString(s.failure_reason));
+    pyd_set_steal(d, "stages_completed",     PyLong_FromLong((long)s.stages_completed));
+    pyd_set_steal(d, "stages_failed",        PyLong_FromLong((long)s.stages_failed));
+    pyd_set_steal(d, "stages_skipped",       PyLong_FromLong((long)s.stages_skipped));
+    pyd_set_steal(d, "failure_reason",       pyd_str_lossy(s.failure_reason));
 
     /* Slice 3 — FEP prediction-error scalars. Consumers can plot the
      * per-stage norms vs iteration to see if the recurrent system is
      * actually settling (pe_total should fall) or wedged (flat / rising). */
-    PyDict_SetItemString(d, "pe_content_norm",      PyFloat_FromDouble((double)s.pe_content_norm));
-    PyDict_SetItemString(d, "pe_lexical_norm",      PyFloat_FromDouble((double)s.pe_lexical_norm));
-    PyDict_SetItemString(d, "pe_syntactic_norm",    PyFloat_FromDouble((double)s.pe_syntactic_norm));
-    PyDict_SetItemString(d, "pe_self_comp_norm",    PyFloat_FromDouble((double)s.pe_self_comp_norm));
-    PyDict_SetItemString(d, "pe_total",             PyFloat_FromDouble((double)s.pe_total));
-    PyDict_SetItemString(d, "fep_iteration",        PyLong_FromLong((long)s.fep_iteration));
-    PyDict_SetItemString(d, "fep_precision",        PyFloat_FromDouble((double)s.fep_precision));
+    pyd_set_steal(d, "pe_content_norm",      PyFloat_FromDouble((double)s.pe_content_norm));
+    pyd_set_steal(d, "pe_lexical_norm",      PyFloat_FromDouble((double)s.pe_lexical_norm));
+    pyd_set_steal(d, "pe_syntactic_norm",    PyFloat_FromDouble((double)s.pe_syntactic_norm));
+    pyd_set_steal(d, "pe_self_comp_norm",    PyFloat_FromDouble((double)s.pe_self_comp_norm));
+    pyd_set_steal(d, "pe_total",             PyFloat_FromDouble((double)s.pe_total));
+    pyd_set_steal(d, "fep_iteration",        PyLong_FromLong((long)s.fep_iteration));
+    pyd_set_steal(d, "fep_precision",        PyFloat_FromDouble((double)s.fep_precision));
 
     /* S1-C1 fix: distinct from repair_attempts above. The recurrent
      * cascade reports its iteration count in settling_steps; consumers
      * that need both can read both. */
-    PyDict_SetItemString(d, "settling_steps",       PyLong_FromLong((long)s.settling_steps));
+    pyd_set_steal(d, "settling_steps",       PyLong_FromLong((long)s.settling_steps));
 
     /* S3+S6-H2/H4 fix (2026-05-19): split arcuate-only vs gate-only PE.
      * pe_content_norm above aliases pe_content_arcuate_norm. */
-    PyDict_SetItemString(d, "pe_content_arcuate_norm",
+    pyd_set_steal(d, "pe_content_arcuate_norm",
         PyFloat_FromDouble((double)s.pe_content_arcuate_norm));
-    PyDict_SetItemString(d, "pe_content_gate_norm",
+    pyd_set_steal(d, "pe_content_gate_norm",
         PyFloat_FromDouble((double)s.pe_content_gate_norm));
 
     /* Free heap-owned arrays we just copied into Python lists. */
@@ -4168,9 +4207,9 @@ static PyObject* Brain_get_lateral_inhibition_params(BrainObject* self, PyObject
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "gain_self",    PyFloat_FromDouble((double)gain_self));
-    PyDict_SetItemString(d, "gain_inhibit", PyFloat_FromDouble((double)gain_inhibit));
-    PyDict_SetItemString(d, "micro_steps",  PyLong_FromUnsignedLong((unsigned long)micro_steps));
+    pyd_set_steal(d, "gain_self",    PyFloat_FromDouble((double)gain_self));
+    pyd_set_steal(d, "gain_inhibit", PyFloat_FromDouble((double)gain_inhibit));
+    pyd_set_steal(d, "micro_steps",  PyLong_FromUnsignedLong((unsigned long)micro_steps));
     return d;
 }
 
@@ -4216,10 +4255,10 @@ static PyObject* Brain_get_cascade_self_train_state(BrainObject* self, PyObject*
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "enabled",  PyBool_FromLong(enabled));
-    PyDict_SetItemString(d, "baseline", PyFloat_FromDouble((double)baseline));
-    PyDict_SetItemString(d, "alpha",    PyFloat_FromDouble((double)alpha));
-    PyDict_SetItemString(d, "lr_scale", PyFloat_FromDouble((double)lr_scale));
+    pyd_set_steal(d, "enabled",  PyBool_FromLong(enabled));
+    pyd_set_steal(d, "baseline", PyFloat_FromDouble((double)baseline));
+    pyd_set_steal(d, "alpha",    PyFloat_FromDouble((double)alpha));
+    pyd_set_steal(d, "lr_scale", PyFloat_FromDouble((double)lr_scale));
     return d;
 }
 
@@ -4294,11 +4333,11 @@ static PyObject* Brain_get_cascade_self_train_gate_counters(BrainObject* self,
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "skipped_stale",
+    pyd_set_steal(d, "skipped_stale",
                          PyLong_FromUnsignedLongLong((unsigned long long)stale));
-    PyDict_SetItemString(d, "skipped_below_threshold",
+    pyd_set_steal(d, "skipped_below_threshold",
                          PyLong_FromUnsignedLongLong((unsigned long long)below));
-    PyDict_SetItemString(d, "fired",
+    pyd_set_steal(d, "fired",
                          PyLong_FromUnsignedLongLong((unsigned long long)fired));
     return d;
 }
@@ -4318,9 +4357,9 @@ static PyObject* Brain_get_concept_registry_stats(BrainObject* self,
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "total_referents",
+    pyd_set_steal(d, "total_referents",
                          PyLong_FromUnsignedLongLong((unsigned long long)total_referents));
-    PyDict_SetItemString(d, "total_modality_bindings",
+    pyd_set_steal(d, "total_modality_bindings",
                          PyLong_FromUnsignedLongLong((unsigned long long)total_modality_bindings));
     return d;
 }
@@ -4615,16 +4654,16 @@ static PyObject* Brain_get_stage_constraints(BrainObject* self, PyObject* args) 
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "stage",
+    pyd_set_steal(d, "stage",
                          PyLong_FromUnsignedLong((unsigned long)stage));
-    PyDict_SetItemString(d, "max_visible_vocab",
+    pyd_set_steal(d, "max_visible_vocab",
                          PyLong_FromUnsignedLongLong(
                             (unsigned long long)max_visible_vocab));
-    PyDict_SetItemString(d, "min_produce_words",
+    pyd_set_steal(d, "min_produce_words",
                          PyLong_FromUnsignedLong((unsigned long)min_produce_words));
-    PyDict_SetItemString(d, "max_produce_words",
+    pyd_set_steal(d, "max_produce_words",
                          PyLong_FromUnsignedLong((unsigned long)max_produce_words));
-    PyDict_SetItemString(d, "allowed_grammar_mask",
+    pyd_set_steal(d, "allowed_grammar_mask",
                          PyLong_FromUnsignedLong((unsigned long)allowed_grammar_mask));
     return d;
 }
@@ -4687,10 +4726,10 @@ static PyObject* Brain_get_cascade_counters(BrainObject* self, PyObject* args) {
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "total_runs",        PyLong_FromUnsignedLongLong(c.total_runs));
-    PyDict_SetItemString(d, "runs_with_prompt",  PyLong_FromUnsignedLongLong(c.runs_with_prompt));
-    PyDict_SetItemString(d, "runs_spontaneous",  PyLong_FromUnsignedLongLong(c.runs_spontaneous));
-    PyDict_SetItemString(d, "runs_fatal_error",  PyLong_FromUnsignedLongLong(c.runs_fatal_error));
+    pyd_set_steal(d, "total_runs",        PyLong_FromUnsignedLongLong(c.total_runs));
+    pyd_set_steal(d, "runs_with_prompt",  PyLong_FromUnsignedLongLong(c.runs_with_prompt));
+    pyd_set_steal(d, "runs_spontaneous",  PyLong_FromUnsignedLongLong(c.runs_spontaneous));
+    pyd_set_steal(d, "runs_fatal_error",  PyLong_FromUnsignedLongLong(c.runs_fatal_error));
 
     PyObject* inv = PyList_New(BK_STAGE_COUNT);
     PyObject* msk = PyList_New(BK_STAGE_COUNT);
@@ -4704,27 +4743,27 @@ static PyObject* Brain_get_cascade_counters(BrainObject* self, PyObject* args) {
     PyDict_SetItemString(d, "stage_mask_skips",  msk);  Py_DECREF(msk);
     PyDict_SetItemString(d, "stage_failures",    fail); Py_DECREF(fail);
 
-    PyDict_SetItemString(d, "pragmatics_indirect_overrides",
+    pyd_set_steal(d, "pragmatics_indirect_overrides",
         PyLong_FromUnsignedLongLong(c.pragmatics_indirect_overrides));
-    PyDict_SetItemString(d, "wernicke_lexicon_miss",
+    pyd_set_steal(d, "wernicke_lexicon_miss",
         PyLong_FromUnsignedLongLong(c.wernicke_lexicon_miss));
-    PyDict_SetItemString(d, "speech_repair_applied",
+    pyd_set_steal(d, "speech_repair_applied",
         PyLong_FromUnsignedLongLong(c.speech_repair_applied));
-    PyDict_SetItemString(d, "self_train_steps_matched",
+    pyd_set_steal(d, "self_train_steps_matched",
         PyLong_FromUnsignedLongLong(c.self_train_steps_matched));
-    PyDict_SetItemString(d, "self_train_steps_no_bindings",
+    pyd_set_steal(d, "self_train_steps_no_bindings",
         PyLong_FromUnsignedLongLong(c.self_train_steps_no_bindings));
-    PyDict_SetItemString(d, "self_produced_events_fired",
+    pyd_set_steal(d, "self_produced_events_fired",
         PyLong_FromUnsignedLongLong(c.self_produced_events_fired));
-    PyDict_SetItemString(d, "discourse_ring_pushes_user",
+    pyd_set_steal(d, "discourse_ring_pushes_user",
         PyLong_FromUnsignedLongLong(c.discourse_ring_pushes_user));
-    PyDict_SetItemString(d, "discourse_ring_pushes_self",
+    pyd_set_steal(d, "discourse_ring_pushes_self",
         PyLong_FromUnsignedLongLong(c.discourse_ring_pushes_self));
-    PyDict_SetItemString(d, "recurrent_oom_count",
+    pyd_set_steal(d, "recurrent_oom_count",
         PyLong_FromUnsignedLongLong(c.recurrent_oom_count));
-    PyDict_SetItemString(d, "fep_lexical_skipped",
+    pyd_set_steal(d, "fep_lexical_skipped",
         PyLong_FromUnsignedLongLong(c.fep_lexical_skipped));
-    PyDict_SetItemString(d, "self_train_precision_cap_hits",
+    pyd_set_steal(d, "self_train_precision_cap_hits",
         PyLong_FromUnsignedLongLong(c.self_train_precision_cap_hits));
     return d;
 }
@@ -4784,14 +4823,14 @@ static PyObject* Brain_get_cascade_fep_metrics(BrainObject* self, PyObject* args
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "iterations_run",   PyLong_FromUnsignedLong((unsigned long)m.iterations_run));
-    PyDict_SetItemString(d, "pe_total_initial", PyFloat_FromDouble((double)m.pe_total_initial));
-    PyDict_SetItemString(d, "pe_total_terminal",PyFloat_FromDouble((double)m.pe_total_terminal));
-    PyDict_SetItemString(d, "pe_total_min",     PyFloat_FromDouble((double)m.pe_total_min));
-    PyDict_SetItemString(d, "pe_total_max",     PyFloat_FromDouble((double)m.pe_total_max));
-    PyDict_SetItemString(d, "pe_total_mean",    PyFloat_FromDouble((double)m.pe_total_mean));
-    PyDict_SetItemString(d, "pe_decay_rate",    PyFloat_FromDouble((double)m.pe_decay_rate));
-    PyDict_SetItemString(d, "converged",        PyBool_FromLong(m.converged));
+    pyd_set_steal(d, "iterations_run",   PyLong_FromUnsignedLong((unsigned long)m.iterations_run));
+    pyd_set_steal(d, "pe_total_initial", PyFloat_FromDouble((double)m.pe_total_initial));
+    pyd_set_steal(d, "pe_total_terminal",PyFloat_FromDouble((double)m.pe_total_terminal));
+    pyd_set_steal(d, "pe_total_min",     PyFloat_FromDouble((double)m.pe_total_min));
+    pyd_set_steal(d, "pe_total_max",     PyFloat_FromDouble((double)m.pe_total_max));
+    pyd_set_steal(d, "pe_total_mean",    PyFloat_FromDouble((double)m.pe_total_mean));
+    pyd_set_steal(d, "pe_decay_rate",    PyFloat_FromDouble((double)m.pe_decay_rate));
+    pyd_set_steal(d, "converged",        PyBool_FromLong(m.converged));
     /* The trace is fixed-size — emit only the populated prefix as a Py list. */
     uint32_t n = m.iterations_run;
     if (n > BK_FEP_TRACE_CAP) n = BK_FEP_TRACE_CAP;
@@ -4982,7 +5021,7 @@ static PyObject* Brain_get_thalamic_gates(BrainObject* self, PyObject* args) {
 
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "enabled", PyBool_FromLong(enabled));
+    pyd_set_steal(d, "enabled", PyBool_FromLong(enabled));
 
     /* Stage-name-keyed gate dict — the primary consumer view. */
     PyObject* gates = PyDict_New();
@@ -5076,8 +5115,8 @@ static PyObject* Brain_get_phonological_loop_state(BrainObject* self, PyObject* 
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "buffer",      PyUnicode_FromString(buf));
-    PyDict_SetItemString(d, "trace_count", PyLong_FromUnsignedLong(trace_count));
+    pyd_set_steal(d, "buffer",      PyUnicode_FromString(buf));
+    pyd_set_steal(d, "trace_count", PyLong_FromUnsignedLong(trace_count));
     return d;
 }
 
@@ -5093,14 +5132,14 @@ static PyObject* Brain_get_phonological_loop_diag(BrainObject* self, PyObject* a
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "enabled",            PyBool_FromLong(diag.enabled ? 1 : 0));
-    PyDict_SetItemString(d, "buffer_len",         PyLong_FromUnsignedLong(diag.buffer_len));
-    PyDict_SetItemString(d, "trace_count",        PyLong_FromUnsignedLong(diag.trace_count));
-    PyDict_SetItemString(d, "trace_capacity",     PyLong_FromUnsignedLong(diag.trace_capacity));
-    PyDict_SetItemString(d, "max_words",          PyLong_FromUnsignedLong(diag.max_words));
-    PyDict_SetItemString(d, "decay_rate",         PyFloat_FromDouble((double)diag.decay_rate));
-    PyDict_SetItemString(d, "avg_trace_strength", PyFloat_FromDouble((double)diag.avg_trace_strength));
-    PyDict_SetItemString(d, "last_refresh_ms",    PyLong_FromUnsignedLongLong((unsigned long long)diag.last_refresh_ms));
+    pyd_set_steal(d, "enabled",            PyBool_FromLong(diag.enabled ? 1 : 0));
+    pyd_set_steal(d, "buffer_len",         PyLong_FromUnsignedLong(diag.buffer_len));
+    pyd_set_steal(d, "trace_count",        PyLong_FromUnsignedLong(diag.trace_count));
+    pyd_set_steal(d, "trace_capacity",     PyLong_FromUnsignedLong(diag.trace_capacity));
+    pyd_set_steal(d, "max_words",          PyLong_FromUnsignedLong(diag.max_words));
+    pyd_set_steal(d, "decay_rate",         PyFloat_FromDouble((double)diag.decay_rate));
+    pyd_set_steal(d, "avg_trace_strength", PyFloat_FromDouble((double)diag.avg_trace_strength));
+    pyd_set_steal(d, "last_refresh_ms",    PyLong_FromUnsignedLongLong((unsigned long long)diag.last_refresh_ms));
     return d;
 }
 
@@ -5185,27 +5224,27 @@ static PyObject* Brain_get_cerebellar_diag(BrainObject* self, PyObject* args) {
     }
     PyObject* dict = PyDict_New();
     if (!dict) return NULL;
-    PyDict_SetItemString(dict, "enabled",
+    pyd_set_steal(dict, "enabled",
                         PyBool_FromLong(d.enabled ? 1 : 0));
-    PyDict_SetItemString(dict, "strength",
+    pyd_set_steal(dict, "strength",
                         PyFloat_FromDouble((double)d.strength));
-    PyDict_SetItemString(dict, "correction_pending",
+    pyd_set_steal(dict, "correction_pending",
                         PyBool_FromLong(d.correction_pending ? 1 : 0));
-    PyDict_SetItemString(dict, "pe_threshold",
+    pyd_set_steal(dict, "pe_threshold",
                         PyFloat_FromDouble((double)d.pe_threshold));
-    PyDict_SetItemString(dict, "predictions_made",
+    pyd_set_steal(dict, "predictions_made",
                         PyLong_FromUnsignedLongLong((unsigned long long)d.predictions_made));
-    PyDict_SetItemString(dict, "corrections_applied",
+    pyd_set_steal(dict, "corrections_applied",
                         PyLong_FromUnsignedLongLong((unsigned long long)d.corrections_applied));
     /* S7-H3: disambiguated semantics. correction_stages_applied is the
      * alias of corrections_applied (per-stage, bumped 2x/iter if both
      * motor+prosody correct); correction_iters_applied is the new
      * per-iter counter (bumped at most once per recurrent iter). */
-    PyDict_SetItemString(dict, "correction_stages_applied",
+    pyd_set_steal(dict, "correction_stages_applied",
                         PyLong_FromUnsignedLongLong((unsigned long long)d.correction_stages_applied));
-    PyDict_SetItemString(dict, "correction_iters_applied",
+    pyd_set_steal(dict, "correction_iters_applied",
                         PyLong_FromUnsignedLongLong((unsigned long long)d.correction_iters_applied));
-    PyDict_SetItemString(dict, "last_pe_norm",
+    pyd_set_steal(dict, "last_pe_norm",
                         PyFloat_FromDouble((double)d.last_pe_norm));
     return dict;
 }
@@ -7510,21 +7549,21 @@ static PyObject* Brain_sleep_get_statistics(BrainObject* self, PyObject* Py_UNUS
     }
     PyObject* d = PyDict_New();
     if (!d) return NULL;
-    PyDict_SetItemString(d, "total_awake_time_ms",
+    pyd_set_steal(d, "total_awake_time_ms",
         PyLong_FromUnsignedLongLong(stats.total_awake_time_ms));
-    PyDict_SetItemString(d, "total_sleep_time_ms",
+    pyd_set_steal(d, "total_sleep_time_ms",
         PyLong_FromUnsignedLongLong(stats.total_sleep_time_ms));
-    PyDict_SetItemString(d, "sleep_cycles_completed",
+    pyd_set_steal(d, "sleep_cycles_completed",
         PyLong_FromUnsignedLong(stats.sleep_cycles_completed));
-    PyDict_SetItemString(d, "total_memories_replayed",
+    pyd_set_steal(d, "total_memories_replayed",
         PyLong_FromUnsignedLong(stats.total_memories_replayed));
-    PyDict_SetItemString(d, "total_synapses_pruned",
+    pyd_set_steal(d, "total_synapses_pruned",
         PyLong_FromUnsignedLong(stats.total_synapses_pruned));
-    PyDict_SetItemString(d, "avg_consolidation_efficiency",
+    pyd_set_steal(d, "avg_consolidation_efficiency",
         PyFloat_FromDouble((double)stats.avg_consolidation_efficiency));
-    PyDict_SetItemString(d, "energy_savings_percent",
+    pyd_set_steal(d, "energy_savings_percent",
         PyFloat_FromDouble((double)stats.energy_savings_percent));
-    PyDict_SetItemString(d, "current_sleep_pressure",
+    pyd_set_steal(d, "current_sleep_pressure",
         PyFloat_FromDouble((double)stats.current_sleep_pressure));
     return d;
 }
@@ -11537,6 +11576,37 @@ static nimcp_safety_watchdog_t*    g_safety_watchdog = NULL;
 static nimcp_ros2_bridge_t*        g_ros2_bridge    = NULL;
 static nimcp_mavlink_bridge_t*     g_mavlink_bridge = NULL;
 
+/* The hub/watchdog created via the RPCs are attached to the calling brain's
+ * sensor_hub / safety_watchdog slots (when empty) so brain_decide actually
+ * blends sensor input and heartbeats/validates through the watchdog. The
+ * binding keeps ownership; these record which brain they are hooked into. */
+static brain_t g_sensor_hub_brain      = NULL;
+static brain_t g_safety_watchdog_brain = NULL;
+
+static void edge_detach_sensor_hub(void) {
+    brain_t ib = g_sensor_hub_brain;
+    if (ib && ib->sensor_hub == (void*)g_sensor_hub) {
+        ib->sensor_hub_enabled = false;
+        ib->sensor_hub = NULL;
+    }
+    g_sensor_hub_brain = NULL;
+}
+
+static void edge_detach_watchdog(void) {
+    brain_t ib = g_safety_watchdog_brain;
+    if (ib && ib->safety_watchdog == (void*)g_safety_watchdog) {
+        ib->safety_watchdog_enabled = false;
+        ib->safety_watchdog = NULL;
+    }
+    g_safety_watchdog_brain = NULL;
+}
+
+static void edge_detach_globals_from_brain(brain_t ib) {
+    if (!ib) return;
+    if (g_sensor_hub_brain == ib)      edge_detach_sensor_hub();
+    if (g_safety_watchdog_brain == ib) edge_detach_watchdog();
+}
+
 static PyObject* Brain_edge_resize(BrainObject* self, PyObject* args, PyObject* kwargs) {
     static char* kwlist[] = {"target_neurons", "mode", "knowledge_transfer", NULL};
     uint32_t target = 0;
@@ -11557,9 +11627,9 @@ static PyObject* Brain_edge_resize(BrainObject* self, PyObject* args, PyObject* 
 
     PyObject* result = PyDict_New();
     if (!result) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(result, "status", PyLong_FromLong(ret));
-    PyDict_SetItemString(result, "target_neurons", PyLong_FromUnsignedLong(target));
-    PyDict_SetItemString(result, "mode", PyUnicode_FromString(mode_str));
+    pyd_set_steal(result, "status", PyLong_FromLong(ret));
+    pyd_set_steal(result, "target_neurons", PyLong_FromUnsignedLong(target));
+    pyd_set_steal(result, "mode", PyUnicode_FromString(mode_str));
     return result;
 }
 
@@ -11576,11 +11646,11 @@ static PyObject* Brain_edge_resize_check(BrainObject* self, PyObject* args) {
 
     PyObject* result = PyDict_New();
     if (!result) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(result, "feasible", PyBool_FromLong(report.feasible));
-    PyDict_SetItemString(result, "neurons_before", PyLong_FromUnsignedLong(report.neurons_before));
-    PyDict_SetItemString(result, "neurons_after", PyLong_FromUnsignedLong(report.neurons_after));
-    PyDict_SetItemString(result, "ram_delta_mb", PyFloat_FromDouble(report.estimated_ram_delta_mb));
-    PyDict_SetItemString(result, "reason", PyUnicode_FromString(report.reason));
+    pyd_set_steal(result, "feasible", PyBool_FromLong(report.feasible));
+    pyd_set_steal(result, "neurons_before", PyLong_FromUnsignedLong(report.neurons_before));
+    pyd_set_steal(result, "neurons_after", PyLong_FromUnsignedLong(report.neurons_after));
+    pyd_set_steal(result, "ram_delta_mb", PyFloat_FromDouble(report.estimated_ram_delta_mb));
+    pyd_set_steal(result, "reason", PyUnicode_FromString(report.reason));
     return result;
 }
 
@@ -11610,13 +11680,13 @@ static PyObject* Brain_edge_distill(BrainObject* self, PyObject* args, PyObject*
 
     PyObject* result = PyDict_New();
     if (!result) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(result, "status", PyLong_FromLong(ret));
-    PyDict_SetItemString(result, "accuracy_retention", PyFloat_FromDouble(report.accuracy_retention));
-    PyDict_SetItemString(result, "neurons_selected", PyLong_FromUnsignedLong(report.neurons_selected));
-    PyDict_SetItemString(result, "compression_ratio", PyFloat_FromDouble(report.compression_ratio));
-    PyDict_SetItemString(result, "teacher_loss", PyFloat_FromDouble(report.teacher_loss));
-    PyDict_SetItemString(result, "student_loss", PyFloat_FromDouble(report.student_loss));
-    PyDict_SetItemString(result, "steps_trained", PyLong_FromUnsignedLong(report.steps_trained));
+    pyd_set_steal(result, "status", PyLong_FromLong(ret));
+    pyd_set_steal(result, "accuracy_retention", PyFloat_FromDouble(report.accuracy_retention));
+    pyd_set_steal(result, "neurons_selected", PyLong_FromUnsignedLong(report.neurons_selected));
+    pyd_set_steal(result, "compression_ratio", PyFloat_FromDouble(report.compression_ratio));
+    pyd_set_steal(result, "teacher_loss", PyFloat_FromDouble(report.teacher_loss));
+    pyd_set_steal(result, "student_loss", PyFloat_FromDouble(report.student_loss));
+    pyd_set_steal(result, "steps_trained", PyLong_FromUnsignedLong(report.steps_trained));
     return result;
 }
 
@@ -11650,12 +11720,12 @@ static PyObject* Brain_edge_optimize_for_device(BrainObject* self, PyObject* arg
 
     PyObject* result = PyDict_New();
     if (!result) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(result, "status", PyLong_FromLong(ret));
-    PyDict_SetItemString(result, "neuron_count", PyLong_FromUnsignedLong(report.neuron_count));
-    PyDict_SetItemString(result, "subsystems_enabled", PyLong_FromUnsignedLong(report.subsystems_enabled));
-    PyDict_SetItemString(result, "estimated_ram_mb", PyFloat_FromDouble(report.estimated_ram_mb));
-    PyDict_SetItemString(result, "estimated_inference_ms", PyFloat_FromDouble(report.estimated_inference_ms));
-    PyDict_SetItemString(result, "accuracy_retention", PyFloat_FromDouble(report.accuracy_retention));
+    pyd_set_steal(result, "status", PyLong_FromLong(ret));
+    pyd_set_steal(result, "neuron_count", PyLong_FromUnsignedLong(report.neuron_count));
+    pyd_set_steal(result, "subsystems_enabled", PyLong_FromUnsignedLong(report.subsystems_enabled));
+    pyd_set_steal(result, "estimated_ram_mb", PyFloat_FromDouble(report.estimated_ram_mb));
+    pyd_set_steal(result, "estimated_inference_ms", PyFloat_FromDouble(report.estimated_inference_ms));
+    pyd_set_steal(result, "accuracy_retention", PyFloat_FromDouble(report.accuracy_retention));
 
     PyObject* warnings = PyList_New(0);
     for (uint32_t i = 0; i < report.num_warnings && i < 16; i++) {
@@ -11687,8 +11757,8 @@ static PyObject* Brain_edge_quantize(BrainObject* self, PyObject* args, PyObject
 
     PyObject* result = PyDict_New();
     if (!result) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(result, "status", PyLong_FromLong(ret));
-    PyDict_SetItemString(result, "precision", PyUnicode_FromString(prec_str));
+    pyd_set_steal(result, "status", PyLong_FromLong(ret));
+    pyd_set_steal(result, "precision", PyUnicode_FromString(prec_str));
     return result;
 }
 
@@ -11796,15 +11866,15 @@ static PyObject* Brain_swarm_master_get_peer_info(BrainObject* self, PyObject* a
 
     PyObject* d = PyDict_New();
     if (!d) return PyErr_NoMemory();
-    PyDict_SetItemString(d, "device_id", PyLong_FromUnsignedLong(entry.device_id));
-    PyDict_SetItemString(d, "state", PyLong_FromLong(entry.state));
-    PyDict_SetItemString(d, "address", PyUnicode_FromString(entry.address));
-    PyDict_SetItemString(d, "port", PyLong_FromUnsignedLong(entry.port));
-    PyDict_SetItemString(d, "missed_heartbeats", PyLong_FromUnsignedLong(entry.missed_heartbeats));
-    PyDict_SetItemString(d, "anomaly_count", PyLong_FromUnsignedLong(entry.anomaly_count));
-    PyDict_SetItemString(d, "total_syncs", PyLong_FromUnsignedLongLong(entry.total_syncs));
-    PyDict_SetItemString(d, "quarantined", PyBool_FromLong(entry.quarantined));
-    PyDict_SetItemString(d, "gradient_norm_ema", PyFloat_FromDouble(entry.gradient_norm_ema));
+    pyd_set_steal(d, "device_id", PyLong_FromUnsignedLong(entry.device_id));
+    pyd_set_steal(d, "state", PyLong_FromLong(entry.state));
+    pyd_set_steal(d, "address", PyUnicode_FromString(entry.address));
+    pyd_set_steal(d, "port", PyLong_FromUnsignedLong(entry.port));
+    pyd_set_steal(d, "missed_heartbeats", PyLong_FromUnsignedLong(entry.missed_heartbeats));
+    pyd_set_steal(d, "anomaly_count", PyLong_FromUnsignedLong(entry.anomaly_count));
+    pyd_set_steal(d, "total_syncs", PyLong_FromUnsignedLongLong(entry.total_syncs));
+    pyd_set_steal(d, "quarantined", PyBool_FromLong(entry.quarantined));
+    pyd_set_steal(d, "gradient_norm_ema", PyFloat_FromDouble(entry.gradient_norm_ema));
     return d;
 }
 
@@ -11894,11 +11964,21 @@ static PyObject* Brain_sensor_hub_create(BrainObject* self, PyObject* args) {
         PyErr_SetString(PyExc_RuntimeError, "Failed to create sensor hub");
         return NULL;
     }
+    /* Hook into the brain so brain_decide consumes it (it only reads
+     * brain->sensor_hub); leave a config-created hub in place. */
+    brain_t ib = (self->brain) ? self->brain->internal_brain : NULL;
+    if (ib && !ib->sensor_hub) {
+        ib->sensor_hub = g_sensor_hub;
+        ib->sensor_hub_enabled = true;
+        g_sensor_hub_brain = ib;
+    }
     Py_RETURN_TRUE;
 }
 
 static PyObject* Brain_sensor_hub_destroy(BrainObject* self, PyObject* Py_UNUSED(args)) {
     if (g_sensor_hub) {
+        /* Unhook before freeing so brain_decide never sees a dangling hub. */
+        edge_detach_sensor_hub();
         nimcp_sensor_hub_destroy(g_sensor_hub);
         g_sensor_hub = NULL;
     }
@@ -11966,11 +12046,11 @@ static PyObject* Brain_sensor_get_latest(BrainObject* self, PyObject* args) {
 
     PyObject* d = PyDict_New();
     if (!d) return PyErr_NoMemory();
-    PyDict_SetItemString(d, "sensor_id", PyLong_FromUnsignedLong(reading.sensor_id));
-    PyDict_SetItemString(d, "type", PyLong_FromLong(reading.type));
-    PyDict_SetItemString(d, "confidence", PyFloat_FromDouble(reading.confidence));
-    PyDict_SetItemString(d, "valid", PyBool_FromLong(reading.valid));
-    PyDict_SetItemString(d, "timestamp_us", PyLong_FromUnsignedLongLong(reading.timestamp_us));
+    pyd_set_steal(d, "sensor_id", PyLong_FromUnsignedLong(reading.sensor_id));
+    pyd_set_steal(d, "type", PyLong_FromLong(reading.type));
+    pyd_set_steal(d, "confidence", PyFloat_FromDouble(reading.confidence));
+    pyd_set_steal(d, "valid", PyBool_FromLong(reading.valid));
+    pyd_set_steal(d, "timestamp_us", PyLong_FromUnsignedLongLong(reading.timestamp_us));
 
     PyObject* data_list = PyList_New(reading.data_count);
     if (data_list && reading.data) {
@@ -11999,10 +12079,10 @@ static PyObject* Brain_sensor_get_all_latest(BrainObject* self, PyObject* Py_UNU
     for (int i = 0; i < got; i++) {
         PyObject* d = PyDict_New();
         if (!d) { nimcp_free(readings); Py_DECREF(list); return PyErr_NoMemory(); }
-        PyDict_SetItemString(d, "sensor_id", PyLong_FromUnsignedLong(readings[i].sensor_id));
-        PyDict_SetItemString(d, "type", PyLong_FromLong(readings[i].type));
-        PyDict_SetItemString(d, "confidence", PyFloat_FromDouble(readings[i].confidence));
-        PyDict_SetItemString(d, "valid", PyBool_FromLong(readings[i].valid));
+        pyd_set_steal(d, "sensor_id", PyLong_FromUnsignedLong(readings[i].sensor_id));
+        pyd_set_steal(d, "type", PyLong_FromLong(readings[i].type));
+        pyd_set_steal(d, "confidence", PyFloat_FromDouble(readings[i].confidence));
+        pyd_set_steal(d, "valid", PyBool_FromLong(readings[i].valid));
 
         PyObject* data_sub = PyList_New(readings[i].data_count);
         if (data_sub && readings[i].data) {
@@ -12068,11 +12148,21 @@ static PyObject* Brain_watchdog_create(BrainObject* self, PyObject* args, PyObje
         PyErr_SetString(PyExc_RuntimeError, "Failed to create watchdog");
         return NULL;
     }
+    /* Hook into the brain so brain_decide heartbeats + validates through it
+     * (it only reads brain->safety_watchdog); keep a config-created one. */
+    brain_t ib = (self->brain) ? self->brain->internal_brain : NULL;
+    if (ib && !ib->safety_watchdog) {
+        ib->safety_watchdog = g_safety_watchdog;
+        ib->safety_watchdog_enabled = true;
+        g_safety_watchdog_brain = ib;
+    }
     Py_RETURN_TRUE;
 }
 
 static PyObject* Brain_watchdog_destroy(BrainObject* self, PyObject* Py_UNUSED(args)) {
     if (g_safety_watchdog) {
+        /* Unhook before freeing so brain_decide never sees a dangling one. */
+        edge_detach_watchdog();
         nimcp_watchdog_destroy(g_safety_watchdog);
         g_safety_watchdog = NULL;
     }
@@ -12318,13 +12408,13 @@ static PyObject* Brain_mavlink_get_attitude(BrainObject* self, PyObject* Py_UNUS
 
     PyObject* d = PyDict_New();
     if (!d) return PyErr_NoMemory();
-    PyDict_SetItemString(d, "roll", PyFloat_FromDouble(att.roll));
-    PyDict_SetItemString(d, "pitch", PyFloat_FromDouble(att.pitch));
-    PyDict_SetItemString(d, "yaw", PyFloat_FromDouble(att.yaw));
-    PyDict_SetItemString(d, "rollspeed", PyFloat_FromDouble(att.rollspeed));
-    PyDict_SetItemString(d, "pitchspeed", PyFloat_FromDouble(att.pitchspeed));
-    PyDict_SetItemString(d, "yawspeed", PyFloat_FromDouble(att.yawspeed));
-    PyDict_SetItemString(d, "timestamp_us", PyLong_FromUnsignedLongLong(att.timestamp_us));
+    pyd_set_steal(d, "roll", PyFloat_FromDouble(att.roll));
+    pyd_set_steal(d, "pitch", PyFloat_FromDouble(att.pitch));
+    pyd_set_steal(d, "yaw", PyFloat_FromDouble(att.yaw));
+    pyd_set_steal(d, "rollspeed", PyFloat_FromDouble(att.rollspeed));
+    pyd_set_steal(d, "pitchspeed", PyFloat_FromDouble(att.pitchspeed));
+    pyd_set_steal(d, "yawspeed", PyFloat_FromDouble(att.yawspeed));
+    pyd_set_steal(d, "timestamp_us", PyLong_FromUnsignedLongLong(att.timestamp_us));
     return d;
 }
 
@@ -12336,17 +12426,17 @@ static PyObject* Brain_mavlink_get_position(BrainObject* self, PyObject* Py_UNUS
 
     PyObject* d = PyDict_New();
     if (!d) return PyErr_NoMemory();
-    PyDict_SetItemString(d, "latitude", PyFloat_FromDouble(pos.latitude));
-    PyDict_SetItemString(d, "longitude", PyFloat_FromDouble(pos.longitude));
-    PyDict_SetItemString(d, "altitude_msl", PyFloat_FromDouble(pos.altitude_msl));
-    PyDict_SetItemString(d, "altitude_rel", PyFloat_FromDouble(pos.altitude_rel));
-    PyDict_SetItemString(d, "vx", PyFloat_FromDouble(pos.vx));
-    PyDict_SetItemString(d, "vy", PyFloat_FromDouble(pos.vy));
-    PyDict_SetItemString(d, "vz", PyFloat_FromDouble(pos.vz));
-    PyDict_SetItemString(d, "heading", PyFloat_FromDouble(pos.heading));
-    PyDict_SetItemString(d, "fix_type", PyLong_FromLong(pos.fix_type));
-    PyDict_SetItemString(d, "satellites", PyLong_FromLong(pos.satellites));
-    PyDict_SetItemString(d, "timestamp_us", PyLong_FromUnsignedLongLong(pos.timestamp_us));
+    pyd_set_steal(d, "latitude", PyFloat_FromDouble(pos.latitude));
+    pyd_set_steal(d, "longitude", PyFloat_FromDouble(pos.longitude));
+    pyd_set_steal(d, "altitude_msl", PyFloat_FromDouble(pos.altitude_msl));
+    pyd_set_steal(d, "altitude_rel", PyFloat_FromDouble(pos.altitude_rel));
+    pyd_set_steal(d, "vx", PyFloat_FromDouble(pos.vx));
+    pyd_set_steal(d, "vy", PyFloat_FromDouble(pos.vy));
+    pyd_set_steal(d, "vz", PyFloat_FromDouble(pos.vz));
+    pyd_set_steal(d, "heading", PyFloat_FromDouble(pos.heading));
+    pyd_set_steal(d, "fix_type", PyLong_FromLong(pos.fix_type));
+    pyd_set_steal(d, "satellites", PyLong_FromLong(pos.satellites));
+    pyd_set_steal(d, "timestamp_us", PyLong_FromUnsignedLongLong(pos.timestamp_us));
     return d;
 }
 
@@ -12358,11 +12448,11 @@ static PyObject* Brain_mavlink_get_battery(BrainObject* self, PyObject* Py_UNUSE
 
     PyObject* d = PyDict_New();
     if (!d) return PyErr_NoMemory();
-    PyDict_SetItemString(d, "voltage", PyFloat_FromDouble(bat.voltage));
-    PyDict_SetItemString(d, "current", PyFloat_FromDouble(bat.current));
-    PyDict_SetItemString(d, "remaining_pct", PyFloat_FromDouble(bat.remaining_pct));
-    PyDict_SetItemString(d, "consumed_mah", PyLong_FromLong(bat.consumed_mah));
-    PyDict_SetItemString(d, "timestamp_us", PyLong_FromUnsignedLongLong(bat.timestamp_us));
+    pyd_set_steal(d, "voltage", PyFloat_FromDouble(bat.voltage));
+    pyd_set_steal(d, "current", PyFloat_FromDouble(bat.current));
+    pyd_set_steal(d, "remaining_pct", PyFloat_FromDouble(bat.remaining_pct));
+    pyd_set_steal(d, "consumed_mah", PyLong_FromLong(bat.consumed_mah));
+    pyd_set_steal(d, "timestamp_us", PyLong_FromUnsignedLongLong(bat.timestamp_us));
     return d;
 }
 
@@ -12445,15 +12535,15 @@ static PyObject* Brain_memory_store_stats(BrainObject* self, PyObject* Py_UNUSED
     nimcp_memory_store_get_stats((nimcp_memory_store_t*)self->brain->internal_brain->memory_store, &stats);
     PyObject* d = PyDict_New();
     if (!d) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(d, "total_engrams", PyLong_FromUnsignedLongLong(stats.total_engrams));
-    PyDict_SetItemString(d, "total_concepts", PyLong_FromUnsignedLongLong(stats.total_concepts));
-    PyDict_SetItemString(d, "total_relations", PyLong_FromUnsignedLongLong(stats.total_relations));
-    PyDict_SetItemString(d, "total_autobio", PyLong_FromUnsignedLongLong(stats.total_autobio));
-    PyDict_SetItemString(d, "total_writes", PyLong_FromUnsignedLongLong(stats.total_writes));
-    PyDict_SetItemString(d, "total_reads", PyLong_FromUnsignedLongLong(stats.total_reads));
-    PyDict_SetItemString(d, "cache_hits", PyLong_FromUnsignedLongLong(stats.cache_hits));
-    PyDict_SetItemString(d, "cache_misses", PyLong_FromUnsignedLongLong(stats.cache_misses));
-    PyDict_SetItemString(d, "db_size_bytes", PyLong_FromUnsignedLongLong(stats.db_size_bytes));
+    pyd_set_steal(d, "total_engrams", PyLong_FromUnsignedLongLong(stats.total_engrams));
+    pyd_set_steal(d, "total_concepts", PyLong_FromUnsignedLongLong(stats.total_concepts));
+    pyd_set_steal(d, "total_relations", PyLong_FromUnsignedLongLong(stats.total_relations));
+    pyd_set_steal(d, "total_autobio", PyLong_FromUnsignedLongLong(stats.total_autobio));
+    pyd_set_steal(d, "total_writes", PyLong_FromUnsignedLongLong(stats.total_writes));
+    pyd_set_steal(d, "total_reads", PyLong_FromUnsignedLongLong(stats.total_reads));
+    pyd_set_steal(d, "cache_hits", PyLong_FromUnsignedLongLong(stats.cache_hits));
+    pyd_set_steal(d, "cache_misses", PyLong_FromUnsignedLongLong(stats.cache_misses));
+    pyd_set_steal(d, "db_size_bytes", PyLong_FromUnsignedLongLong(stats.db_size_bytes));
     return d;
 }
 
@@ -12518,11 +12608,11 @@ static PyObject* Brain_ood_stats(BrainObject* self, PyObject* Py_UNUSED(args)) {
     nimcp_ood_get_stats((const nimcp_ood_detector_t*)self->brain->internal_brain->ood_detector, &stats);
     PyObject* d = PyDict_New();
     if (!d) { PyErr_NoMemory(); return NULL; }
-    PyDict_SetItemString(d, "total_checks", PyLong_FromUnsignedLongLong(stats.total_checks));
-    PyDict_SetItemString(d, "ood_detected", PyLong_FromUnsignedLongLong(stats.ood_detected));
-    PyDict_SetItemString(d, "in_distribution", PyLong_FromUnsignedLongLong(stats.in_distribution));
-    PyDict_SetItemString(d, "avg_ood_score", PyFloat_FromDouble(stats.avg_ood_score));
-    PyDict_SetItemString(d, "ood_rate", PyFloat_FromDouble(stats.ood_rate));
+    pyd_set_steal(d, "total_checks", PyLong_FromUnsignedLongLong(stats.total_checks));
+    pyd_set_steal(d, "ood_detected", PyLong_FromUnsignedLongLong(stats.ood_detected));
+    pyd_set_steal(d, "in_distribution", PyLong_FromUnsignedLongLong(stats.in_distribution));
+    pyd_set_steal(d, "avg_ood_score", PyFloat_FromDouble(stats.avg_ood_score));
+    pyd_set_steal(d, "ood_rate", PyFloat_FromDouble(stats.ood_rate));
     return d;
 }
 
@@ -12559,8 +12649,8 @@ static PyObject* Brain_audit_search(BrainObject* self, PyObject* args, PyObject*
     if (res) {
         for (uint32_t i = 0; i < res->count; i++) {
             PyObject* d = PyDict_New();
-            PyDict_SetItemString(d, "id", PyLong_FromUnsignedLongLong(res->ids[i]));
-            PyDict_SetItemString(d, "severity", PyFloat_FromDouble(res->distances[i]));
+            pyd_set_steal(d, "id", PyLong_FromUnsignedLongLong(res->ids[i]));
+            pyd_set_steal(d, "severity", PyFloat_FromDouble(res->distances[i]));
             PyList_Append(list, d);
             Py_DECREF(d);
         }
@@ -12586,6 +12676,7 @@ static PyObject* Brain_memory_is_healthy(BrainObject* self, PyObject* Py_UNUSED(
  * the Python reference in scripts/batch_safe_homeostasis/.
  */
 #include "snn/nimcp_snn_batch_safe.h"
+
 
 static PyObject* BS_scaling_apply(PyObject* self, PyObject* args)
 {

@@ -178,6 +178,20 @@ int snn_csr_finalize(snn_csr_storage_t* csr);
  */
 int snn_csr_reopen(snn_csr_storage_t* csr);
 
+/**
+ * @brief Remove duplicate synapses from one source population (COO mode only)
+ *
+ * Drops entries whose (dst_neuron, src_pop, src_neuron) repeats an earlier
+ * entry with src_pop == @p src_pop, keeping the first (oldest) occurrence.
+ * Used by runtime re-wiring (e.g. the language projection rebuilt on every
+ * boot) so repeated wiring does not stack duplicate synapses.
+ *
+ * @param csr Storage in build (COO) mode
+ * @param src_pop Source population whose entries are deduplicated
+ * @return Number of entries removed, or -1 on error
+ */
+int snn_csr_dedup_src_pop(snn_csr_storage_t* csr, uint32_t src_pop);
+
 /* ========================================================================= */
 /* Query phase (CSR mode — after finalize)                                    */
 /* ========================================================================= */

@@ -216,8 +216,63 @@ int snn_csr_reopen(snn_csr_storage_t* csr)
     /* GPU mirror is stale — free device buffers so the next step re-uploads. */
     snn_csr_release_gpu(csr);
 
+    /* The derived host arrays were just freed, so the CSR is no longer
+     * GPU-prepared. Leaving gpu_ready=true made prepare_gpu early-return and
+     * every later upload memcpy from NULL weights (fail + realloc each step). */
+    csr->gpu_ready = false;
+
     csr->finalized = false;
     return 0;
+}
+
+/* Drop duplicate (dst_neuron, src_pop, src_neuron) entries whose src_pop ==
+ * the given pop, keeping the FIRST occurrence (the oldest, i.e. the one that
+ * carries learned weight). COO (build) mode only. Order of the kept entries is
+ * preserved. Open-addressing set over the matching entries: O(nnz).
+ * Returns the number of entries removed, or -1 on error. */
+int snn_csr_dedup_src_pop(snn_csr_storage_t* csr, uint32_t src_pop)
+{
+    if (!csr || csr->finalized) return -1;
+    coo_tagged_entry_t* tagged = (coo_tagged_entry_t*)csr->entries;
+    const uint32_t nnz = csr->n_synapses;
+    if (nnz == 0) return 0;
+
+    size_t n_match = 0;
+    for (uint32_t i = 0; i < nnz; i++) {
+        if (tagged[i].syn.src_pop == src_pop) n_match++;
+    }
+    if (n_match < 2) return 0;
+
+    size_t cap = 16;
+    while (cap < n_match * 2) cap <<= 1;
+    uint64_t* set = (uint64_t*)nimcp_malloc(cap * sizeof(uint64_t));
+    if (!set) return -1;
+    /* Key = (dst << 32 | src) + 1 so that 0 marks an empty slot. */
+    memset(set, 0, cap * sizeof(uint64_t));
+    const size_t mask = cap - 1;
+
+    uint32_t w = 0;
+    for (uint32_t i = 0; i < nnz; i++) {
+        if (tagged[i].syn.src_pop == src_pop) {
+            const uint64_t key = (((uint64_t)tagged[i].dst_neuron << 32) |
+                                  (uint64_t)tagged[i].syn.src_neuron) + 1u;
+            size_t h = (size_t)((key * 0x9E3779B97F4A7C15ULL) >> 17) & mask;
+            bool dup = false;
+            while (set[h] != 0) {
+                if (set[h] == key) { dup = true; break; }
+                h = (h + 1) & mask;
+            }
+            if (dup) continue;
+            set[h] = key;
+        }
+        if (w != i) tagged[w] = tagged[i];
+        w++;
+    }
+    nimcp_free(set);
+
+    const int removed = (int)(nnz - w);
+    csr->n_synapses = w;
+    return removed;
 }
 
 int snn_csr_prepare_gpu(snn_csr_storage_t* csr,

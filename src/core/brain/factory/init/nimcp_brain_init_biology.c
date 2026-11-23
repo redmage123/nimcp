@@ -3,7 +3,7 @@
  * @brief Biology cluster init — epigenetics + neurogenesis + NVC
  *
  * Wires three modules that existed as statues prior to 2026-04-24 into the
- * cycle coordinator's register_driven API. See the companion header for the
+ * cycle coordinator (observation-only since 2026-11-23; ticked inline). See the companion header for the
  * scope of this change (state advancement only; consumer-side wiring is a
  * separate follow-up).
  *
@@ -43,34 +43,15 @@ BRIDGE_BOILERPLATE_MESH_ONLY(brain_init_biology, MESH_ADAPTER_CATEGORY_SYSTEM)
 #define BIO_INIT_LOG_MODULE "BRAIN_INIT_BIOLOGY"
 
 /*=============================================================================
- * TICK WRAPPERS
+ * SINGLE-OWNER POLICY (2026-11-23)
  *
- * The coordinator's register_driven takes a (void*)->void callback. Each
- * biology module has a different update signature (taking dt in seconds
- * or milliseconds). These wrappers adapt the ABI and skip the call
- * defensively if the module was destroyed between registration and tick.
+ * brain_tick_biology() is called inline from brain_learn_vector and
+ * brain_decide (under the daemon's brain lock). The former cc-EPIGENETICS /
+ * cc-NEUROGENESIS / cc-NEUROVASCULAR driver threads ran the same unlocked
+ * updates concurrently (racing ng->current_time etc.) and double-counted dt.
+ * The cycles are now registered observation-only; the inline tick is the sole
+ * driver.
  *===========================================================================*/
-
-static void epigenetics_tick_wrapper(void* ctx) {
-    struct brain_struct* brain = (struct brain_struct*)ctx;
-    if (!brain || !brain->epigenetics || !brain->epigenetics_enabled) return;
-    /* 100ms cycle → 0.1s in seconds */
-    (void)nimcp_epigenetics_update(brain->epigenetics, 0.1f);
-}
-
-static void neurogenesis_tick_wrapper(void* ctx) {
-    struct brain_struct* brain = (struct brain_struct*)ctx;
-    if (!brain || !brain->neurogenesis || !brain->neurogenesis_enabled) return;
-    /* 1s cycle → 1.0s in seconds */
-    (void)nimcp_neurogenesis_update(brain->neurogenesis, 1.0f);
-}
-
-static void nvc_tick_wrapper(void* ctx) {
-    struct brain_struct* brain = (struct brain_struct*)ctx;
-    if (!brain || !brain->nvc_system || !brain->neurovascular_enabled) return;
-    /* 100ms cycle → 100.0ms per nvc_update's ms-dt contract */
-    (void)nimcp_nvc_update(brain->nvc_system, 100.0f);
-}
 
 /*=============================================================================
  * PER-MODULE INIT HELPERS
@@ -99,13 +80,12 @@ static bool init_epigenetics(struct brain_struct* brain,
         return false;
     }
 
-    /* Drive at 100ms. Passing brain as tick_ctx so wrapper can reach all state. */
-    int reg_rc = brain_cycle_coordinator_register_driven(
-        coord, BRAIN_CYCLE_EPIGENETICS, 100000ull,
-        epigenetics_tick_wrapper, brain, NULL);
+    /* Observation-only: ticked inline by brain_tick_biology (single owner). */
+    int reg_rc = brain_cycle_coordinator_register(
+        coord, BRAIN_CYCLE_EPIGENETICS, brain, NULL);
     if (reg_rc != 0) {
         LOG_MODULE_WARN(BIO_INIT_LOG_MODULE,
-            "register_driven(EPIGENETICS) failed — destroying");
+            "register(EPIGENETICS) failed — destroying");
         nimcp_epigenetics_shutdown(brain->epigenetics);
         nimcp_epigenetics_destroy(brain->epigenetics);
         brain->epigenetics = NULL;
@@ -113,7 +93,7 @@ static bool init_epigenetics(struct brain_struct* brain,
     }
 
     brain->epigenetics_enabled = true;
-    LOG_MODULE_INFO(BIO_INIT_LOG_MODULE, "epigenetics wired (100ms cycle)");
+    LOG_MODULE_INFO(BIO_INIT_LOG_MODULE, "epigenetics wired (ticked inline)");
     return true;
 }
 
@@ -139,12 +119,11 @@ static bool init_neurogenesis(struct brain_struct* brain,
         return false;
     }
 
-    int reg_rc = brain_cycle_coordinator_register_driven(
-        coord, BRAIN_CYCLE_NEUROGENESIS, 1000000ull,  /* 1s */
-        neurogenesis_tick_wrapper, brain, NULL);
+    int reg_rc = brain_cycle_coordinator_register(
+        coord, BRAIN_CYCLE_NEUROGENESIS, brain, NULL);
     if (reg_rc != 0) {
         LOG_MODULE_WARN(BIO_INIT_LOG_MODULE,
-            "register_driven(NEUROGENESIS) failed — destroying");
+            "register(NEUROGENESIS) failed — destroying");
         nimcp_neurogenesis_shutdown(brain->neurogenesis);
         nimcp_neurogenesis_destroy(brain->neurogenesis);
         brain->neurogenesis = NULL;
@@ -152,7 +131,7 @@ static bool init_neurogenesis(struct brain_struct* brain,
     }
 
     brain->neurogenesis_enabled = true;
-    LOG_MODULE_INFO(BIO_INIT_LOG_MODULE, "neurogenesis wired (1s cycle)");
+    LOG_MODULE_INFO(BIO_INIT_LOG_MODULE, "neurogenesis wired (ticked inline)");
     return true;
 }
 
@@ -179,12 +158,11 @@ static bool init_neurovascular(struct brain_struct* brain,
         return false;
     }
 
-    int reg_rc = brain_cycle_coordinator_register_driven(
-        coord, BRAIN_CYCLE_NEUROVASCULAR, 100000ull,  /* 100ms */
-        nvc_tick_wrapper, brain, NULL);
+    int reg_rc = brain_cycle_coordinator_register(
+        coord, BRAIN_CYCLE_NEUROVASCULAR, brain, NULL);
     if (reg_rc != 0) {
         LOG_MODULE_WARN(BIO_INIT_LOG_MODULE,
-            "register_driven(NEUROVASCULAR) failed — freeing");
+            "register(NEUROVASCULAR) failed — freeing");
         (void)nimcp_nvc_shutdown(brain->nvc_system);
         nimcp_free(brain->nvc_system);
         brain->nvc_system = NULL;
@@ -192,7 +170,7 @@ static bool init_neurovascular(struct brain_struct* brain,
     }
 
     brain->neurovascular_enabled = true;
-    LOG_MODULE_INFO(BIO_INIT_LOG_MODULE, "neurovascular wired (100ms cycle)");
+    LOG_MODULE_INFO(BIO_INIT_LOG_MODULE, "neurovascular wired (ticked inline)");
     return true;
 }
 
@@ -239,8 +217,7 @@ void nimcp_brain_factory_destroy_biology_subsystem(brain_t brain) {
     brain_cycle_coordinator_t* coord =
         (brain_cycle_coordinator_t*)brain->cycle_coordinator;
 
-    /* Each unregister stops + joins the driver thread. Order doesn't matter
-     * because each cycle has its own thread. */
+    /* Observation-only registrations: unregister just clears the entry. */
     if (brain->epigenetics_enabled && coord) {
         (void)brain_cycle_coordinator_unregister(coord, BRAIN_CYCLE_EPIGENETICS);
         brain->epigenetics_enabled = false;

@@ -118,9 +118,12 @@ bool nimcp_brain_factory_init_predictive_immune_subsystem(brain_t brain) {
         return false;
     }
 
-    int reg_rc = brain_cycle_coordinator_register_driven(
-        coord, BRAIN_CYCLE_PREDICTIVE_IMMUNE, 100000ull,  /* 100ms */
-        predictive_immune_tick_wrapper, brain, NULL);
+    /* Observation-only: brain_tick_predictive_immune already runs inline in
+     * brain_learn_vector and brain_decide; a 100 ms driver thread ticked it
+     * a second time concurrently (2026-11-23 walkthrough, single owner). */
+    (void)predictive_immune_tick_wrapper;
+    int reg_rc = brain_cycle_coordinator_register(
+        coord, BRAIN_CYCLE_PREDICTIVE_IMMUNE, brain, NULL);
     if (reg_rc != 0) {
         LOG_MODULE_WARN(PREDIMMUNE_INIT_LOG_MODULE,
             "register_driven(PREDICTIVE_IMMUNE) failed — destroying");

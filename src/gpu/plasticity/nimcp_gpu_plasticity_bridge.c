@@ -443,7 +443,14 @@ int gpu_plasticity_homeostatic_update(
     size_t n_dim = (size_t)n_neurons;
     nimcp_gpu_tensor_t* g_rates = NULL;
     bool own_rates = false;
-    if (state && state->avg_rates && n_neurons <= state->max_neurons) {
+    /* Persistent tensors only when sizes match exactly: upload/to_host and the
+     * kernels all use tensor->numel (max_neurons, >=10000), so a smaller host
+     * buffer (brain_learn_example passes <=1000) was over-read and overflowed.
+     * Both rates and scaling must take the same branch so kernels see equal numel. */
+    bool use_persistent = state && state->avg_rates && state->scaling_factors &&
+                          state->avg_rates->numel == n_dim &&
+                          state->scaling_factors->numel == n_dim;
+    if (use_persistent) {
         g_rates = state->avg_rates;
         if (!nimcp_gpu_tensor_upload(g_rates, firing_rates)) {
             return -1;
@@ -458,7 +465,7 @@ int gpu_plasticity_homeostatic_update(
     /* Create or use persistent scaling factors tensor */
     nimcp_gpu_tensor_t* g_scaling = NULL;
     bool own_scaling = false;
-    if (state && state->scaling_factors && n_neurons <= state->max_neurons) {
+    if (use_persistent) {
         g_scaling = state->scaling_factors;
     } else {
         g_scaling = nimcp_gpu_tensor_create(gpu_ctx, &n_dim, 1,
@@ -539,17 +546,15 @@ int gpu_plasticity_coordinator_update(
 
     /* GPU batch 1: STDP trace decay (exponential decay of all traces)
      * trace *= exp(-dt/tau). No spikes during coordinator tick — just decay. */
-    if (state->pre_traces && state->post_traces) {
-        size_t zero_dim = state->max_neurons;
-        nimcp_gpu_tensor_t* zero_spikes = nimcp_gpu_tensor_create(
-            gpu_ctx, &zero_dim, 1, NIMCP_GPU_PRECISION_FP32);
-        if (zero_spikes) {
-            nimcp_gpu_stdp_update_traces(
-                gpu_ctx, state->pre_traces, state->post_traces,
-                zero_spikes, zero_spikes, dt, &state->stdp_params);
-            nimcp_gpu_tensor_destroy(zero_spikes);
-            updates++;
-        }
+    /* Reuse the persistent pre/post spike tensors (zeroed at create, never
+     * written) instead of a per-call cudaMalloc/cudaFree: cudaFree implicitly
+     * syncs the whole device and stalled in-flight SNN/ANN work every 10 steps. */
+    if (state->pre_traces && state->post_traces &&
+        state->pre_spikes && state->post_spikes) {
+        nimcp_gpu_stdp_update_traces(
+            gpu_ctx, state->pre_traces, state->post_traces,
+            state->pre_spikes, state->post_spikes, dt, &state->stdp_params);
+        updates++;
     }
 
     /* GPU batch 2: BCM threshold adaptation

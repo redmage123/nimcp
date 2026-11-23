@@ -35,6 +35,12 @@ typedef struct {
     float* cached_params;
     float* cached_grads;
     size_t cached_buf_size;         /* Number of floats allocated */
+    /* True when the network's gradients changed (backward / zero_grad) since
+     * cached_grads was last filled. UTM calls get_param_groups once per
+     * transform (batch average, clip, sanitize, L1, AdamW); re-copying raw
+     * grads on every call discarded each transform before AdamW ran. */
+    bool   grads_fresh;
+    size_t cached_grad_count;       /* floats valid in cached_grads */
     /* Learned readout (2026-11-03). last_state holds the LNN state from the
      * latest forward so backward can form dL/dW = dL/dy ⊗ x. */
     bool   readout_enabled;         /* NIMCP_LNN_READOUT=0 disables */
@@ -127,6 +133,7 @@ static int lnn_adapter_backward(void* ctx, const float* dl_doutput, uint32_t out
     }
 
     int rc = lnn_backward(a->lnn_ctx->network, grad_t);
+    a->grads_fresh = true;  /* network grads changed: refill cached_grads */
 
     /* Normalize LNN gradients after adjoint computation.
      * The raw adjoint produces norms of 60K-770K which cause NaN in loss.
@@ -215,11 +222,23 @@ static int lnn_adapter_get_param_groups(void* ctx,
                 a->cached_params = (float*)nimcp_malloc(n_params * sizeof(float));
                 a->cached_grads = (float*)nimcp_malloc(n_params * sizeof(float));
                 a->cached_buf_size = (a->cached_params && a->cached_grads) ? n_params : 0;
+                a->grads_fresh = true;  /* new buffer holds no gradients yet */
             }
             if (a->cached_params && a->cached_grads) {
                 size_t actual_p = 0, actual_g = 0;
                 lnn_network_get_params(a->lnn_ctx->network, a->cached_params, &actual_p);
-                lnn_network_get_gradients(a->lnn_ctx->network, a->cached_grads, &actual_g);
+                /* Gradients are copied only when the network's changed, so the
+                 * UTM transforms applied to cached_grads between calls within
+                 * one step (1/batch, clip, sanitize, L1) reach AdamW. */
+                if (a->grads_fresh) {
+                    if (lnn_network_get_gradients(a->lnn_ctx->network, a->cached_grads,
+                                                  &actual_g) == 0) {
+                        a->grads_fresh = false;
+                        a->cached_grad_count = actual_g;
+                    }
+                } else {
+                    actual_g = a->cached_grad_count;
+                }
                 size_t count = (actual_p < actual_g) ? actual_p : actual_g;
                 if (count > 0) {
                     /* Up to 3 groups: LNN params (cached copy, synced back
@@ -274,6 +293,7 @@ static int lnn_adapter_zero_grad(void* ctx) {
     if (!a || !a->lnn_ctx || !a->lnn_ctx->network) return -1;
     lnn_network_zero_gradients(a->lnn_ctx->network);
     lnn_network_readout_zero_grad(a->lnn_ctx->network);
+    a->grads_fresh = true;  /* cached_grads must be refilled (zeros) */
     return 0;
 }
 
@@ -398,6 +418,7 @@ int nimcp_trainable_lnn_create(struct lnn_training_ctx_s* lnn_ctx,
     if (!a) return -1;
 
     a->lnn_ctx = (lnn_training_ctx_t*)lnn_ctx;
+    a->grads_fresh = true;
     {
         const char* e = getenv("NIMCP_LNN_READOUT");
         a->readout_enabled = !(e && e[0] == '0');

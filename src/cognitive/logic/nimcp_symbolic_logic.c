@@ -17,6 +17,7 @@
 #include "utils/validation/nimcp_validate.h"
 #include "utils/time/nimcp_time.h"
 #include "utils/logging/nimcp_logging.h"
+#include "utils/thread/nimcp_thread.h"
 #include "core/brain/nimcp_brain_internal.h"     /* W7: KG access */
 #include "core/brain/nimcp_brain_kg.h"           /* W7: KG event emission */
 
@@ -60,6 +61,13 @@ typedef struct {
 struct symbolic_logic {
     logic_config_t config;
 
+    /* KB lock (recursive: forward_chain -> add_fact). Once the engine is
+     * wired to grounded language, learn_vector (fact extraction), the
+     * lock-free RO-socket brain_decide (query/forward-chain) and the sensory
+     * hub all touch the KB, so unsynchronised num_facts++ could write past
+     * kb[]. NULL only if creation failed (then calls run unlocked). */
+    nimcp_mutex_t* kb_mu;
+
     // Knowledge base
     kb_entry_t** kb;
     uint32_t num_facts;
@@ -92,6 +100,13 @@ struct symbolic_logic {
      * add_fact / add_rule can mirror symbolic writes into internal_kg. */
     brain_t kg_brain;
 };
+
+static inline void sl_lock(const symbolic_logic_t* l) {
+    if (l && l->kb_mu) nimcp_mutex_lock(l->kb_mu);
+}
+static inline void sl_unlock(const symbolic_logic_t* l) {
+    if (l && l->kb_mu) nimcp_mutex_unlock(l->kb_mu);
+}
 
 /* Phase 5: FNV-1a hash for predicate names */
 static uint32_t hash_predicate(const char* name) {
@@ -131,6 +146,10 @@ static const pred_index_bucket_t* predicate_index_lookup(
     uint32_t bucket = hash_predicate(predicate);
     return &logic->pred_index[bucket];
 }
+
+/* Defined below; used by symbolic_logic_to_cnf / add_fact. */
+static atomic_formula_t* logic_atom_copy(const atomic_formula_t* atom);
+static void logic_clause_destroy(logic_clause_t* clause);
 
 //=============================================================================
 // Helper Functions - Term Management
@@ -403,8 +422,49 @@ logical_formula_t* symbolic_logic_parse(const char* str)
         strncpy(pred_name, start, LOGIC_MAX_NAME_LENGTH - 1);
     }
 
-    // Create atomic formula
-    atomic_formula_t* atom = logic_atom_create(pred_name, NULL, 0);
+    /* Parse the argument list "(a, b, ...)". Previously the arguments were
+     * dropped, so "hears(athena, speech)" was stored as the 0-ary "hears"
+     * and every such fact was identical. A single lowercase letter is a
+     * variable (LOGIC_MAX_VARIABLES = a-z, e.g. "P(x)"); anything else is a
+     * constant. Extra arguments beyond LOGIC_MAX_ARITY are ignored. */
+    logical_term_t* args[LOGIC_MAX_ARITY] = {0};
+    uint8_t arity = 0;
+    if (paren) {
+        const char* p = paren + 1;
+        while (*p && *p != ')') {
+            while (*p == ' ' || *p == '\t') p++;
+            const char* tok = p;
+            while (*p && *p != ',' && *p != ')') p++;
+            const char* end = p;
+            while (end > tok && (end[-1] == ' ' || end[-1] == '\t')) end--;
+            size_t len = (size_t)(end - tok);
+            if (len > 0) {
+                if (arity < LOGIC_MAX_ARITY) {
+                    char tname[LOGIC_MAX_NAME_LENGTH] = {0};
+                    if (len >= LOGIC_MAX_NAME_LENGTH) len = LOGIC_MAX_NAME_LENGTH - 1;
+                    memcpy(tname, tok, len);
+                    term_type_t tt = (len == 1 && tname[0] >= 'a' && tname[0] <= 'z')
+                                     ? TERM_VARIABLE : TERM_CONSTANT;
+                    args[arity] = logic_term_create(tt, tname);
+                    if (!args[arity]) break;
+                    arity++;
+                } else {
+                    LOG_WARN("symbolic_logic_parse: '%s' has more than %d arguments; "
+                             "extra ignored", str, LOGIC_MAX_ARITY);
+                }
+            }
+            if (*p == ',') p++;
+        }
+        /* Strip trailing whitespace from the predicate name ("P (x)"). */
+        size_t nl = strlen(pred_name);
+        while (nl > 0 && (pred_name[nl - 1] == ' ' || pred_name[nl - 1] == '\t')) {
+            pred_name[--nl] = '\0';
+        }
+    }
+
+    // Create atomic formula (logic_atom_create deep-copies the terms)
+    atomic_formula_t* atom = logic_atom_create(pred_name, arity ? args : NULL, arity);
+    for (uint8_t i = 0; i < arity; i++) logic_term_destroy(args[i]);
     if (!atom) {
         nimcp_free(formula);
         formula = NULL;
@@ -455,14 +515,18 @@ bool symbolic_logic_to_cnf(
         clause->num_literals = 1;
         clause->literals = (atomic_formula_t**)nimcp_calloc(1, sizeof(atomic_formula_t*));
         if (clause->literals) {
-            atomic_formula_t* lit = (atomic_formula_t*)nimcp_calloc(1, sizeof(atomic_formula_t));
-            if (lit) {
-                strncpy(lit->name, formula->atom->name, LOGIC_MAX_NAME_LENGTH - 1);
-                lit->negated = formula->atom->negated;
-                lit->arity = 0;
-                lit->terms = NULL;
-                clause->literals[0] = lit;
-            }
+            /* Deep copy keeps the predicate's arguments (was arity=0/terms=NULL,
+             * which dropped them) and its negation. */
+            clause->literals[0] = logic_atom_copy(formula->atom);
+        }
+        if (!clause->literals || !clause->literals[0]) {
+            /* Don't hand out a clause whose literal slot is NULL. */
+            nimcp_free(clause->literals);
+            nimcp_free(clause);
+            nimcp_free(*clauses);
+            *clauses = NULL;
+            *num_clauses = 0;
+            return false;
         }
         clause->confidence = 1.0F;
     }
@@ -470,8 +534,8 @@ bool symbolic_logic_to_cnf(
     (*clauses)[0] = clause;
     return true;
 }
-
-bool symbolic_logic_backward_chain(
+static 
+bool symbolic_logic_backward_chain_unlocked(
     symbolic_logic_t* logic,
     logic_clause_t* goal,
     inference_rule_t*** proof_trace,
@@ -537,6 +601,16 @@ bool symbolic_logic_backward_chain(
 
     LOG_DEBUG("Goal could not be proven");
     return false;
+}
+
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_backward_chain(symbolic_logic_t* logic, logic_clause_t* goal,
+    inference_rule_t*** proof_trace, int* num_steps)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_backward_chain_unlocked(logic, goal, proof_trace, num_steps);
+    sl_unlock(logic);
+    return r;
 }
 
 bool symbolic_logic_resolve(
@@ -850,6 +924,13 @@ static void logic_clause_destroy(logic_clause_t* clause)
     clause = NULL;
 }
 
+/* Public destructor so callers of symbolic_logic_to_cnf can free the
+ * clauses (and their literals) they own instead of leaking them. */
+void symbolic_logic_clause_destroy(logic_clause_t* clause)
+{
+    logic_clause_destroy(clause);
+}
+
 static logic_clause_t* logic_clause_copy(const logic_clause_t* clause)
 {
     if (!clause) {
@@ -1035,6 +1116,15 @@ symbolic_logic_t* symbolic_logic_create(const logic_config_t* config)
 
     memset(&logic->stats, 0, sizeof(logic_stats_t));
 
+    {
+        mutex_attr_t mattr = { .type = MUTEX_TYPE_RECURSIVE };
+        logic->kb_mu = nimcp_mutex_create(&mattr);
+        if (!logic->kb_mu) {
+            NIMCP_LOGGING_WARN("symbolic_logic_create: KB mutex creation failed; "
+                               "KB access will be unsynchronised");
+        }
+    }
+
     // Initialize quantum bridge if enabled
     logic->quantum_bridge = NULL;
     if (config->enable_quantum_logic) {
@@ -1143,6 +1233,11 @@ void symbolic_logic_destroy(symbolic_logic_t* logic)
         nimcp_free(logic->working_memory);
     }
 
+    if (logic->kb_mu) {
+        nimcp_mutex_free(logic->kb_mu);
+        logic->kb_mu = NULL;
+    }
+
     // Destroy quantum bridge
     if (logic->quantum_bridge) {
         symbolic_quantum_bridge_destroy(logic->quantum_bridge);
@@ -1159,8 +1254,8 @@ void symbolic_logic_destroy(symbolic_logic_t* logic)
     nimcp_free(logic);
     logic = NULL;
 }
-
-bool symbolic_logic_get_stats(const symbolic_logic_t* logic, logic_stats_t* stats)
+static 
+bool symbolic_logic_get_stats_unlocked(const symbolic_logic_t* logic, logic_stats_t* stats)
 {
     /* Phase 8: Heartbeat at operation start */
     symbolic_logic_heartbeat("symbolic_log_get_stats", 0.0f);
@@ -1175,11 +1270,20 @@ bool symbolic_logic_get_stats(const symbolic_logic_t* logic, logic_stats_t* stat
     return true;
 }
 
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_get_stats(const symbolic_logic_t* logic, logic_stats_t* stats)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_get_stats_unlocked(logic, stats);
+    sl_unlock(logic);
+    return r;
+}
+
 //=============================================================================
 // Knowledge Base Management
 //=============================================================================
-
-bool symbolic_logic_add_fact(symbolic_logic_t* logic, logic_clause_t* clause, float salience)
+static 
+bool symbolic_logic_add_fact_unlocked(symbolic_logic_t* logic, logic_clause_t* clause, float salience)
 {
     /* Phase 8: Heartbeat at operation start */
     symbolic_logic_heartbeat("symbolic_log_add_fact", 0.0f);
@@ -1194,6 +1298,26 @@ bool symbolic_logic_add_fact(symbolic_logic_t* logic, logic_clause_t* clause, fl
         LOG_ERROR("Invalid salience value: %f (must be [0,1])", salience);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "symbolic_logic_add_fact: validation failed");
         return false;
+    }
+
+    /* Dedup: an identical fact (same literals incl. arguments) refreshes the
+     * existing entry instead of filling the fixed-capacity KB with copies
+     * (e.g. the sensory hub re-asserting "hears(athena, speech)"). */
+    if (clause->num_literals > 0 && clause->literals && clause->literals[0]) {
+        for (uint32_t i = 0; i < logic->num_facts; i++) {
+            kb_entry_t* e = logic->kb[i];
+            if (!e || !e->clause || e->clause->num_literals != clause->num_literals) continue;
+            bool same = true;
+            for (uint32_t l = 0; l < clause->num_literals && same; l++) {
+                same = clause->literals[l] && e->clause->literals[l] &&
+                       atoms_equal(clause->literals[l], e->clause->literals[l]);
+            }
+            if (same) {
+                if (salience > e->salience) e->salience = salience;
+                e->timestamp = nimcp_time_get_ms();
+                return true;
+            }
+        }
     }
 
     if (logic->num_facts >= logic->kb_capacity) {
@@ -1237,7 +1361,16 @@ bool symbolic_logic_add_fact(symbolic_logic_t* logic, logic_clause_t* clause, fl
     return true;
 }
 
-bool symbolic_logic_add_rule(symbolic_logic_t* logic, inference_rule_t* rule)
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_add_fact(symbolic_logic_t* logic, logic_clause_t* clause, float salience)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_add_fact_unlocked(logic, clause, salience);
+    sl_unlock(logic);
+    return r;
+}
+static 
+bool symbolic_logic_add_rule_unlocked(symbolic_logic_t* logic, inference_rule_t* rule)
 {
     /* Phase 8: Heartbeat at operation start */
     symbolic_logic_heartbeat("symbolic_log_add_rule", 0.0f);
@@ -1265,7 +1398,36 @@ bool symbolic_logic_add_rule(symbolic_logic_t* logic, inference_rule_t* rule)
     return true;
 }
 
-bool symbolic_logic_query(symbolic_logic_t* logic, logic_clause_t* query,
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_add_rule(symbolic_logic_t* logic, inference_rule_t* rule)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_add_rule_unlocked(logic, rule);
+    sl_unlock(logic);
+    return r;
+}
+
+/* Query matching. Now that parsed facts keep their arguments, a bare
+ * predicate query ("hears") must still match every arity (the old behaviour,
+ * when everything was 0-ary), and a variable argument ("Bird(x)") matches
+ * any value; constants must be equal. */
+static bool query_atom_matches(const atomic_formula_t* q, const atomic_formula_t* f)
+{
+    if (!q || !f) return false;
+    if (strcmp(q->name, f->name) != 0 || q->negated != f->negated) return false;
+    if (q->arity == 0) return true;
+    if (q->arity != f->arity) return false;
+    for (uint8_t i = 0; i < q->arity; i++) {
+        const logical_term_t* qt = q->terms ? q->terms[i] : NULL;
+        const logical_term_t* ft = f->terms ? f->terms[i] : NULL;
+        if (!qt || !ft) return false;
+        if (qt->type == TERM_VARIABLE) continue;
+        if (!terms_equal(qt, ft)) return false;
+    }
+    return true;
+}
+static 
+bool symbolic_logic_query_unlocked(symbolic_logic_t* logic, logic_clause_t* query,
                          kb_entry_t*** results, int* num_results)
 {
     /* Phase 8: Heartbeat at operation start */
@@ -1296,7 +1458,7 @@ bool symbolic_logic_query(symbolic_logic_t* logic, logic_clause_t* query,
         // Simple matching: check if query literals match fact literals
         bool match = false;
         if (query->num_literals > 0 && entry->clause->num_literals > 0) {
-            match = atoms_equal(query->literals[0], entry->clause->literals[0]);
+            match = query_atom_matches(query->literals[0], entry->clause->literals[0]);
         }
 
         if (match) {
@@ -1322,7 +1484,7 @@ bool symbolic_logic_query(symbolic_logic_t* logic, logic_clause_t* query,
 
         bool match = false;
         if (query->num_literals > 0 && entry->clause->num_literals > 0) {
-            match = atoms_equal(query->literals[0], entry->clause->literals[0]);
+            match = query_atom_matches(query->literals[0], entry->clause->literals[0]);
         }
 
         if (match) {
@@ -1332,6 +1494,16 @@ bool symbolic_logic_query(symbolic_logic_t* logic, logic_clause_t* query,
 
     *num_results = (int)match_count;
     return true;
+}
+
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_query(symbolic_logic_t* logic, logic_clause_t* query,
+                         kb_entry_t*** results, int* num_results)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_query_unlocked(logic, query, results, num_results);
+    sl_unlock(logic);
+    return r;
 }
 
 //=============================================================================
@@ -1515,8 +1687,8 @@ void unification_destroy(unification_t* unif)
 //=============================================================================
 // Inference Engine - Forward Chaining
 //=============================================================================
-
-bool symbolic_logic_forward_chain(symbolic_logic_t* logic, uint32_t max_iterations,
+static 
+bool symbolic_logic_forward_chain_unlocked(symbolic_logic_t* logic, uint32_t max_iterations,
                                   logic_clause_t*** new_facts, int* num_new_facts)
 {
     /* Phase 8: Heartbeat at operation start */
@@ -1628,7 +1800,7 @@ bool symbolic_logic_forward_chain(symbolic_logic_t* logic, uint32_t max_iteratio
                     }
                 }
 
-                if (!already_known) {
+                if (!already_known && derived_count < LOGIC_MAX_PREDICATES) {  /* bounded: derived holds LOGIC_MAX_PREDICATES */
                     derived[derived_count] = logic_clause_copy(rule->conclusion);
                     if (derived[derived_count]) {
                         derived_count++;
@@ -1654,10 +1826,27 @@ bool symbolic_logic_forward_chain(symbolic_logic_t* logic, uint32_t max_iteratio
     logic->stats.avg_inference_time = (float)(end_time - start_time);
     logic->stats.inferences_performed++;
 
+    /* No result array when nothing was derived: callers used to free it
+     * only when n_new > 0, leaking 8 KB per call (every brain_decide once the
+     * KB has a fact, 2026-11-23). */
+    if (derived_count == 0) {
+        nimcp_free(derived);
+        derived = NULL;
+    }
     *new_facts = derived;
     *num_new_facts = (int)derived_count;
 
     return true;
+}
+
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_forward_chain(symbolic_logic_t* logic, uint32_t max_iterations,
+                                  logic_clause_t*** new_facts, int* num_new_facts)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_forward_chain_unlocked(logic, max_iterations, new_facts, num_new_facts);
+    sl_unlock(logic);
+    return r;
 }
 
 //=============================================================================
@@ -2001,8 +2190,8 @@ int symbolic_logic_training_step(void* instance, float progress) {
  * @param text        Training label text
  * @param confidence  Confidence score for the fact [0,1]
  * @return true if fact was extracted and added, false otherwise
- */
-bool symbolic_logic_extract_fact_from_text(void* logic, const char* text,
+ */static 
+bool symbolic_logic_extract_fact_from_text_unlocked(void* logic, const char* text,
                                              float confidence) {
     if (!logic || !text || confidence < 0.0f || confidence > 1.0f) {
         return false;
@@ -2061,6 +2250,12 @@ bool symbolic_logic_extract_fact_from_text(void* logic, const char* text,
         return false; /* No pattern matched */
     }
 
+    /* Training labels hit this every step: once the KB is full, return
+     * quietly instead of raising a KB-full error per call. */
+    if (sl->num_facts >= sl->kb_capacity) {
+        return false;
+    }
+
     /* Create logical terms for subject and object */
     logical_term_t* subj_term = logic_term_create(TERM_CONSTANT, subject);
     logical_term_t* obj_term = logic_term_create(TERM_CONSTANT, object);
@@ -2094,11 +2289,23 @@ bool symbolic_logic_extract_fact_from_text(void* logic, const char* text,
                             predicate_name, subject, object, confidence);
     }
 
-    /* Note: atomic_formula and terms will be owned by the KB after add_fact;
-     * we don't free them here to avoid double-free. The KB cleanup will
-     * handle freeing when facts are removed. */
+    /* add_fact stores a deep copy (logic_clause_copy) and logic_atom_create
+     * deep-copied the terms, so all three are still ours — free them (they
+     * were leaked on every extracted fact). */
+    logic_atom_destroy(atom);
+    logic_term_destroy(subj_term);
+    logic_term_destroy(obj_term);
 
     return success;
+}
+
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_extract_fact_from_text(void* logic, const char* text, float confidence)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_extract_fact_from_text_unlocked(logic, text, confidence);
+    sl_unlock(logic);
+    return r;
 }
 
 /**
@@ -2119,8 +2326,8 @@ bool symbolic_logic_extract_fact_from_text(void* logic, const char* text,
  * @param out_facts     Output: array of retrieved facts (caller frees)
  * @param num_facts     Output: number of facts retrieved
  * @return true if query succeeded, false on error
- */
-bool symbolic_logic_query_for_inference(void* logic, const float* features,
+ */static 
+bool symbolic_logic_query_for_inference_unlocked(void* logic, const float* features,
                                           uint32_t num_features,
                                           void** out_facts, int* num_facts) {
     if (!logic || !features || !out_facts || !num_facts) {
@@ -2161,10 +2368,11 @@ bool symbolic_logic_query_for_inference(void* logic, const float* features,
                 NIMCP_LOGGING_DEBUG("symbolic_logic_query_for_inference: "
                                     "forward chaining derived %d new facts",
                                     n_new);
-                /* New facts are now in the KB; they'll be counted in
-                 * future stats queries. Free the returned array. */
-                nimcp_free(new_facts);
             }
+            /* The KB holds its own copies: free the derived clause copies
+             * and the array (the copies leaked too). */
+            for (int k = 0; k < n_new; k++) symbolic_logic_clause_destroy(new_facts[k]);
+            nimcp_free(new_facts);
         }
     }
 
@@ -2178,4 +2386,15 @@ bool symbolic_logic_query_for_inference(void* logic, const float* features,
                         num_features, stats.facts_stored,
                         (unsigned long long)stats.inferences_performed);
     return true;
+}
+
+/* Locked entry point — see symbolic_logic_t::kb_mu. */
+bool symbolic_logic_query_for_inference(void* logic, const float* features,
+                                        uint32_t num_features,
+                                        void** out_facts, int* num_facts)
+{
+    sl_lock(logic);
+    bool r = symbolic_logic_query_for_inference_unlocked(logic, features, num_features, out_facts, num_facts);
+    sl_unlock(logic);
+    return r;
 }

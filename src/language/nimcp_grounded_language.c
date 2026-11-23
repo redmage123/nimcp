@@ -2073,6 +2073,9 @@ int grounded_language_decay_all_valence(grounded_language_t* gl, float factor) {
     if (factor > 1.0f) factor = 1.0f;
     if (factor == 1.0f) return 0;  /* no-op */
     int touched = 0;
+    /* Called from the toxicity cycle thread: hold the lexicon mutate lock
+     * (as evict_lru does) so eviction cannot free entries mid-walk. */
+    gl_mutate_lock(gl);
     for (uint32_t i = 0; i < gl->vocab_count; i++) {
         gl_lexicon_entry_t* e = gl->vocab_list[i];
         if (!e) continue;
@@ -2080,6 +2083,7 @@ int grounded_language_decay_all_valence(grounded_language_t* gl, float factor) {
         e->arousal *= factor;
         touched++;
     }
+    gl_mutate_unlock(gl);
     return touched;
 }
 

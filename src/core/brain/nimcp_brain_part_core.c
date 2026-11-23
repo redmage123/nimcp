@@ -1410,6 +1410,10 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
                                        uint32_t num_features);
         nimcp_octopus_tick(brain, features, num_features);
     }
+    {   /* Non-human modules (see brain_learn_vector); self rate-limited. */
+        extern void brain_tick_nonhuman(brain_t, const float*, uint32_t, const char*);
+        brain_tick_nonhuman(brain, features, num_features, NULL);
+    }
 
     // ========================================================================
     // PARALLEL PRE-FORWARD: Wellbeing + Engram + Sleep + Curiosity
@@ -1707,14 +1711,18 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
     if (!pre_forward_parallel_done && brain->engram_system) {
         uint32_t* cue_neurons = nimcp_malloc(num_features * sizeof(uint32_t));
         if (cue_neurons) {
+            /* Cue = currently active features (same rule as the parallel
+             * stage). The old 0..N-1 ramp was identical for every input, so
+             * recall could not depend on what was being decided. */
+            uint32_t cue_count = 0;
             for (uint32_t i = 0; i < num_features; i++) {
-                cue_neurons[i] = i;
+                if (features[i] > 0.1f) cue_neurons[cue_count++] = i;
             }
             #define MAX_RECALL_NEURONS 100
             uint32_t recalled_neurons[MAX_RECALL_NEURONS];
             float recalled_activations[MAX_RECALL_NEURONS];
             recalled_engram_id = engram_recall(
-                brain->engram_system, cue_neurons, num_features,
+                brain->engram_system, cue_neurons, cue_count,
                 recalled_neurons, recalled_activations, MAX_RECALL_NEURONS,
                 &engram_confidence);
 
@@ -1824,14 +1832,31 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
     // WHY:  Compute prediction error for active inference
     // HOW:  Use predictive network to anticipate output
     float* prediction = NULL;
+    uint32_t prediction_len = 0;  /* valid input-space entries in prediction */
     float prediction_error = 0.0F;
     if (brain->predictive_network && brain->config.enable_predictive_processing) {
-        prediction = (float*)nimcp_calloc(num_features, sizeof(float));
-        if (prediction) {
-            // Generate prediction (5 iterations of free energy minimization)
-            predictive_forward(brain->predictive_network, features, 5);
-            // Get prediction from bottom layer
-            predictive_get_layer_prediction(brain->predictive_network, 0, prediction);
+        /* predictive_forward reads, and get_layer_prediction writes, exactly
+         * layer-0-size floats (256 by default). Size the buffers to that, not
+         * num_features, so a brain with num_inputs < 256 can't overflow. */
+        uint32_t l0 = predictive_get_layer_size(brain->predictive_network, 0);
+        if (l0 > 0) {
+            uint32_t buf_len = (l0 > num_features) ? l0 : num_features;
+            prediction = (float*)nimcp_calloc(buf_len, sizeof(float));
+            float* pred_in = (l0 > num_features) ?
+                (float*)nimcp_calloc(l0, sizeof(float)) : NULL;
+            if (prediction && (l0 <= num_features || pred_in)) {
+                if (pred_in) memcpy(pred_in, features, num_features * sizeof(float));
+                // Generate prediction (5 iterations of free energy minimization)
+                predictive_forward(brain->predictive_network,
+                                   pred_in ? pred_in : features, 5);
+                // Get prediction from bottom layer
+                predictive_get_layer_prediction(brain->predictive_network, 0, prediction);
+                prediction_len = (l0 < num_features) ? l0 : num_features;
+            } else {
+                nimcp_free(prediction);
+                prediction = NULL;
+            }
+            nimcp_free(pred_in);
         }
     }
 
@@ -2213,6 +2238,7 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
         decision->confidence = 0.1f;  /* Low confidence for timeout */
         determine_output_label(brain, decision);
         update_inference_stats(brain, decision);
+        nimcp_free(prediction);  /* was leaked on every timed-out decide */
         nimcp_free(local_features);
         nimcp_decide_trace("d99_final_partial", decision->output_vector, decision->output_size);
         return decision;
@@ -2564,13 +2590,15 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
     // WHY:  Prediction errors drive learning and attention
     // HOW:  L2 distance between predicted and actual output
     if (prediction) {
-        for (uint32_t i = 0; i < decision->output_size; i++) {
-            float error = decision->output_vector[i] -
-                         (i < num_features ? prediction[i] : 0.0F);
+        /* Layer 0 predicts the INPUT, so the error is input vs prediction.
+         * Comparing it with output_vector (a different space/dimension) made
+         * the value meaningless. */
+        for (uint32_t i = 0; i < prediction_len; i++) {
+            float error = features[i] - prediction[i];
             prediction_error += error * error;
         }
-        prediction_error = (decision->output_size > 0) ?
-            sqrtf(prediction_error / decision->output_size) : 0.0f;
+        prediction_error = (prediction_len > 0) ?
+            sqrtf(prediction_error / prediction_len) : 0.0f;
 
         // Update predictive model with actual outcome
         if (brain->config.enable_predictive_processing) {

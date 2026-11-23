@@ -23,7 +23,7 @@
 #include <string.h>
 
 #define HEARING_BLOCK_MS 40u
-#define HEARING_MAX_BLOCK 1024u   /* the shared cochlea_output_buffer's capacity */
+#define HEARING_MAX_BLOCK 1024u   /* capacity of hearing's private cochlea output */
 
 typedef struct {
     nimcp_mutex_t* mu;
@@ -33,10 +33,14 @@ typedef struct {
     float carry[HEARING_MAX_BLOCK];
     uint32_t n_carry;
     uint16_t* counts;
+    /* Private cochlea output. feed runs lock-free (outside the daemon's brain
+     * lock), so writing the shared brain->cochlea_output_buffer here raced its
+     * lock-free readers (decide, learn_vector, the COCHLEA_BRIDGES driver). */
+    cochlea_output_t* out;
 } brain_hearing_t;
 
 int brain_hearing_create(struct brain_struct* brain) {
-    if (!brain || !brain->cochlea || !brain->cochlea_output_buffer) return -1;
+    if (!brain || !brain->cochlea) return -1;
     if (brain->hearing) return 0;
     /* The brain's cochlea runs at BRAIN_HEARING_SAMPLE_RATE (created in
      * nimcp_brain_init_cochlea.c; the cochlea has no sample-rate getter). */
@@ -51,8 +55,10 @@ int brain_hearing_create(struct brain_struct* brain) {
     h->counts = (uint16_t*)calloc(channels, sizeof(uint16_t));
     h->mu = nimcp_mutex_create(NULL);
     h->pred = auditory_predictor_create(channels, NULL);
-    if (!h->counts || !h->mu || !h->pred) {
+    h->out = cochlea_output_create((cochlea_t*)brain->cochlea, HEARING_MAX_BLOCK);
+    if (!h->counts || !h->mu || !h->pred || !h->out) {
         auditory_predictor_destroy(h->pred);
+        if (h->out) cochlea_output_destroy(h->out);
         if (h->mu) nimcp_mutex_free(h->mu);
         free(h->counts);
         free(h);
@@ -67,6 +73,7 @@ void brain_hearing_destroy(struct brain_struct* brain) {
     brain_hearing_t* h = (brain_hearing_t*)brain->hearing;
     brain->hearing = NULL;
     auditory_predictor_destroy(h->pred);
+    cochlea_output_destroy(h->out);
     nimcp_mutex_free(h->mu);
     free(h->counts);
     free(h);
@@ -74,7 +81,7 @@ void brain_hearing_destroy(struct brain_struct* brain) {
 
 /* One 40 ms block: cochlea -> per-channel spike counts -> predictor. */
 static int hear_block(struct brain_struct* brain, brain_hearing_t* h, const float* block) {
-    cochlea_output_t* out = (cochlea_output_t*)brain->cochlea_output_buffer;
+    cochlea_output_t* out = h->out;   /* private: see brain_hearing_t.out */
     if (cochlea_process((cochlea_t*)brain->cochlea, block, h->block, out) != NIMCP_SUCCESS) return -1;
     if (!out->anf_output || !out->anf_output->spike_trains) return -1;
     for (uint32_t ch = 0; ch < h->channels; ch++) {
@@ -97,8 +104,7 @@ static int hear_block(struct brain_struct* brain, brain_hearing_t* h, const floa
 }
 
 int brain_hearing_feed(struct brain_struct* brain, const float* audio, uint32_t num_samples) {
-    if (!brain || !audio || !brain->hearing || !brain->cochlea || !brain->cochlea_output_buffer)
-        return -1;
+    if (!brain || !audio || !brain->hearing || !brain->cochlea) return -1;
     brain_hearing_t* h = (brain_hearing_t*)brain->hearing;
     int frames = 0;
     nimcp_mutex_lock(h->mu);

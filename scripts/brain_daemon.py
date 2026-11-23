@@ -1188,14 +1188,29 @@ class BrainService:
         'snn_probe_selectivity', 'set_snn_gen_params',
     })
 
+    # RO-socket commands that reach brain_decide / forward passes / probe
+    # attach. Those mutate brain state (last_transcript free+replace, WM ring,
+    # grounded_lang + knowledge learn_from_text, inference_pool) with the GIL
+    # released, so they must serialize with learn_vector on the service lock.
+    _RO_MUTATING_COMMANDS = frozenset({
+        'decide_full', 'predict', 'speak', 'generate_text',
+        'utm_forward_only', 'attach_builtin_probes', 'emergent_express',
+        'predict_with_confidence', 'predict_with_deadline',
+    })
+
     def handle_readonly(self, req):
-        """Lock-free dispatch for read-only socket. Never blocks on training."""
+        """Dispatch for the read-only socket. Snapshot getters run lock-free
+        (never blocked by training); state-mutating inference paths in
+        _RO_MUTATING_COMMANDS take the service lock."""
         cmd = req.get("cmd", "")
         self._stats["total_requests"] += 1
         try:
             handler = getattr(self, f"_cmd_{cmd}", None)
             if handler is None:
                 return {"error": f"Unknown command: {cmd}"}
+            if cmd in self._RO_MUTATING_COMMANDS:
+                with self._lock:
+                    return handler(req)
             return handler(req)
         except Exception as e:
             self._stats["errors"] += 1
@@ -3659,7 +3674,8 @@ class BrainService:
         if not (hasattr(self, 'checkpointer') and self.checkpointer):
             return {"error": "no auto-checkpointer attached"}
         try:
-            self.checkpointer.save_now(force=True)
+            # handle() already holds service._lock for this command.
+            self.checkpointer.save_now(force=True, lock_held=True)
         except Exception as e:
             return {"error": "save failed: " + str(e)}
         return {"ok": True}
@@ -4559,11 +4575,13 @@ class BrainDaemon:
 
     Listens on TWO sockets:
     - Main socket (brain.sock): all commands, uses locks for write commands
-    - Read-only socket (brain_ro.sock): only read commands, NO locks
-      Use this for eval, monitoring, probes — never blocked by training.
+    - Read-only socket (brain_ro.sock): only read commands; snapshot getters
+      take no lock, but inference paths that mutate brain state (see
+      BrainService._RO_MUTATING_COMMANDS) take the service lock.
     """
 
-    # Commands allowed on the read-only socket (no lock needed)
+    # Commands allowed on the read-only socket (getters lock-free; the
+    # BrainService._RO_MUTATING_COMMANDS subset is serialized on the lock)
     _READONLY_COMMANDS = frozenset({
         'ping', 'status', 'keepalive',
         'decide_full', 'predict', 'speak', 'generate_text',
@@ -4842,6 +4860,10 @@ class AutoCheckpointer:
         self._thread = None
         self._running = False
         self._lock = threading.Lock()
+        # Service dispatch lock (BrainService._lock), set by main(). The C
+        # save releases the GIL and walks weights/CSR/lexicon, so it must not
+        # overlap learn_vector/decide on an RPC worker (torn ckpt / SIGSEGV).
+        self.brain_lock = None
         self._save_count = 0
         self._last_athena_auto_time = 0.0
         # Snapshot of _save_count at the last athena_auto write. The
@@ -4910,7 +4932,7 @@ class AutoCheckpointer:
         Enables step-based checkpoint gating."""
         self._save_count += 1
 
-    def save_now(self, force=False):
+    def save_now(self, force=False, lock_held=False):
         """Save checkpoint with safety guards.
 
         CRITICAL SAFETY: Never overwrite trained data with untrained brain.
@@ -5024,8 +5046,16 @@ class AutoCheckpointer:
             # .meta, .cortex_*, etc.) to tmp_path.snn, tmp_path.lnn, etc.
             # On any failure mid-write, clean up the partials so the next
             # retry has a clean slate.
+            # Take the service lock unless the caller (force_save_now RPC,
+            # already dispatched under it) holds it: threading.Lock is not
+            # reentrant. Only the C save is locked; prune/sync stay outside.
+            _blk = None if lock_held else self.brain_lock
             try:
-                self.brain.save(tmp_path)
+                if _blk is not None:
+                    with _blk:
+                        self.brain.save(tmp_path)
+                else:
+                    self.brain.save(tmp_path)
             except Exception as save_exc:
                 _cleanup_save_partials(tmp_path)
                 logger.error("brain.save FAILED — orphan shards cleaned: %s", save_exc)
@@ -6238,6 +6268,8 @@ def main():
                                       interval_seconds=args.checkpoint_interval,
                                       min_steps_before_save=10)
     checkpointer.set_loaded_from_checkpoint(loaded_from_ckpt)
+    # Auto/shutdown saves serialize with learn/decide on the same lock.
+    checkpointer.brain_lock = service._lock
     service.checkpointer = checkpointer  # So learn_vector can notify
 
     # Signal handlers — set a flag, let the main loop handle shutdown gracefully

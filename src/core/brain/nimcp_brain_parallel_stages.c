@@ -86,9 +86,14 @@ static void stage_engram_recall_task(void* arg)
 
         if (cue_count > 0) {
             float confidence = 0.0f;
+            /* engram_recall returns 0 before setting confidence when either
+             * output buffer is NULL, so pass real (small) buffers — with NULL
+             * engram_strength was always 0 on this production path. */
+            uint32_t recall_ids[64];
+            float recall_acts[64];
             uint64_t engram_id = engram_recall(
                 brain->engram_system, cue_neurons, cue_count,
-                NULL, NULL, 0, &confidence);
+                recall_ids, recall_acts, 64, &confidence);
             a->ctx->engram_strength = (engram_id != 0) ? confidence : 0.0f;
         } else {
             a->ctx->engram_strength = 0.0f;

@@ -93,6 +93,17 @@ typedef struct {
     float surprise_at_last_reward;
     uint32_t diverged_ticks;
     bool kg_done, facts_done, health_done;   /* late binding: these may appear after attach */
+    /* Single-entry guard for brain_sensory_hub_tick: it is called from both
+     * brain_learn_vector and brain_decide, and the daemon runs decide_full
+     * lock-free on the RO socket, so two ticks could otherwise run the
+     * tick-side state below (and the occipital pipeline) concurrently. */
+    int tick_busy;                   /* __atomic flag, 1 while a tick runs */
+    bool router_fanout;              /* NIMCP_SENSORY_HUB_ROUTER_FANOUT=1: inbox messages */
+    uint64_t nonfinite_seen;         /* hearing's nonfinite_resets at the last tick */
+    uint32_t nonfinite_ticks;        /* consecutive ticks with new non-finite resets */
+    float lgn_out[SENSORY_HUB_VISUAL_MAX];   /* thalamic relay of the LGN (was a function static) */
+    float rf_buf[SENSORY_HUB_VISUAL_MAX];    /* receptive-field pooled hypercolumn input */
+    double rf_prefix[SENSORY_HUB_VISUAL_MAX + 1];
     float* wide;                     /* num_inputs-wide buffer for WM / workspace */
     float* occ_img;                  /* occipital input image (CHW) built from the LGN maps */
     uint32_t occ_img_n;
@@ -201,6 +212,13 @@ int brain_sensory_hub_attach(struct brain_struct* b) {
         free(h);
         return -1;
     }
+    /* The router has no receiver for the hub's per-tick message types yet
+     * (Wernicke is not a router module, Broca has no SPEECH_ONSET handler,
+     * nothing handles AUDIO_FEATURE_DETECTED / VISUAL_FEATURES_READY), so
+     * broadcasting them only fills every module's bounded inbox. They are
+     * opt-in until receivers exist; the scalar signals are always published. */
+    const char* fan = getenv("NIMCP_SENSORY_HUB_ROUTER_FANOUT");
+    h->router_fanout = fan && fan[0] == '1';
     if (bio_router_is_initialized()) {
         bio_module_info_t info = {HUB_MODULE_ID, "sensory_hub", 0, b};
         h->router = bio_router_register_module(&info);
@@ -244,17 +262,20 @@ void brain_sensory_hub_post_audio(struct brain_struct* b, const uint16_t* counts
     nimcp_mutex_lock(h->mu);
     for (uint32_t c = 0; c < channels; c++) {
         h->a_counts[c] += counts[c];
-        if (err) {
+        if (err && isfinite(err[c])) {   /* nothing non-finite enters the hub */
             h->a_err[c] += err[c];
             h->a_err2[c] += (double)err[c] * err[c];
         }
     }
-    h->a_mse += mse;
-    h->a_copy += copy_mse;
+    if (isfinite(mse) && isfinite(copy_mse)) {
+        h->a_mse += mse;
+        h->a_copy += copy_mse;
+    }
     h->a_frames++;
     if (hidden && n_hidden) {
         h->n_hidden = n_hidden < 1024u ? n_hidden : 1024u;
-        memcpy(h->hidden, hidden, h->n_hidden * sizeof(float));
+        for (uint32_t j = 0; j < h->n_hidden; j++)
+            h->hidden[j] = isfinite(hidden[j]) ? hidden[j] : 0.0f;
     }
     h->st.audio_frames++;
     nimcp_mutex_unlock(h->mu);
@@ -291,7 +312,7 @@ static void salient_to_cognition(brain_t b, brain_sensory_hub_t* h, const float*
 }
 
 static void broadcast(brain_sensory_hub_t* h, void* msg, size_t size, bio_message_type_t type) {
-    if (!h->router) return;
+    if (!h->router || !h->router_fanout) return;   /* no receivers yet: see attach */
     bio_msg_init_header((bio_message_header_t*)msg, type, HUB_MODULE_ID, 0,
                         size - sizeof(bio_message_header_t));
     if (bio_router_broadcast(h->router, msg, size) == NIMCP_SUCCESS) h->st.router_broadcasts++;
@@ -299,10 +320,40 @@ static void broadcast(brain_sensory_hub_t* h, void* msg, size_t size, bio_messag
 
 static void send_to(brain_sensory_hub_t* h, void* msg, size_t size, bio_message_type_t type,
                     bio_module_id_t target) {
-    if (!h->router) return;
+    if (!h->router || !h->router_fanout) return;   /* no receivers yet: see attach */
     bio_msg_init_header((bio_message_header_t*)msg, type, HUB_MODULE_ID, target,
                         size - sizeof(bio_message_header_t));
     if (bio_router_send(h->router, msg, size, 0) == NIMCP_SUCCESS) h->st.router_sends++;
+}
+
+/* Scalar perceptual signals: delivered only to observers registered for the
+ * name (bio_router_observe_signal), so they cost no inbox space when nobody
+ * listens, and any module can subscribe without a new message handler. */
+static void publish(brain_sensory_hub_t* h, const char* name, float value) {
+    if (h->router && isfinite(value)) (void)bio_router_publish_signal(h->router, name, value);
+}
+
+/* Receptive fields for hypercolumn input. minicolumn_compute samples an
+ * input of size > 3 at one point chosen by each minicolumn's tuning
+ * preference, so a raw channel / LGN vector gave each minicolumn a single
+ * channel. Box-pooling over one minicolumn spacing (prefix sums, O(n))
+ * makes each sampled point the mean of a contiguous tonotopic / retinotopic
+ * band, so every minicolumn sees its whole patch of the input. */
+static const float* rf_pool(brain_sensory_hub_t* h, hypercolumn_t* hc, const float* in, uint32_t n) {
+    cc_hypercolumn_stats_t hs;
+    memset(&hs, 0, sizeof(hs));
+    hypercolumn_get_stats(hc, &hs);
+    const uint32_t M = hs.num_minicolumns;
+    if (n == 0 || n > SENSORY_HUB_VISUAL_MAX || M < 2 || n <= M) return in;
+    const uint32_t r = (uint32_t)((n - 1) / (2.0f * (float)(M - 1)));   /* half a spacing */
+    if (r == 0) return in;
+    h->rf_prefix[0] = 0.0;
+    for (uint32_t j = 0; j < n; j++) h->rf_prefix[j + 1] = h->rf_prefix[j] + in[j];
+    for (uint32_t k = 0; k < n; k++) {
+        uint32_t lo = k > r ? k - r : 0, hi = k + r + 1 < n ? k + r + 1 : n;
+        h->rf_buf[k] = (float)((h->rf_prefix[hi] - h->rf_prefix[lo]) / (double)(hi - lo));
+    }
+    return h->rf_buf;
 }
 
 static void tick_audio(brain_t b, brain_sensory_hub_t* h, const float* counts_mean, const float* err_mean,
@@ -336,14 +387,18 @@ static void tick_audio(brain_t b, brain_sensory_hub_t* h, const float* counts_me
     m.loudness = loud;
     m.frames = frames;
     broadcast(h, &m, sizeof(m), BIO_MSG_AUDIO_FEATURE_DETECTED);
+    publish(h, "sensory.audio.surprise", surprise);
+    publish(h, "sensory.audio.loudness", loud);
     if (onset) {
+        publish(h, "sensory.audio.onset", jump);
         send_to(h, &m, sizeof(m), BIO_MSG_SPEECH_ONSET_DETECTED, BIO_MODULE_WERNICKE);
         send_to(h, &m, sizeof(m), BIO_MSG_SPEECH_ONSET_DETECTED, BIO_MODULE_BROCA);
     }
 
-    /* Cortical columns: tonotopic input to the first hypercolumn. */
+    /* Cortical columns: tonotopic input to the first hypercolumn, pooled
+     * into per-minicolumn frequency bands (rf_pool). */
     if (b->hypercolumns && b->num_hypercolumns > 0 && b->hypercolumns[0]) {
-        hypercolumn_compute(b->hypercolumns[0], mgn, C);
+        hypercolumn_compute(b->hypercolumns[0], rf_pool(h, b->hypercolumns[0], mgn, C), C);
         h->st.column_updates++;
     }
 
@@ -456,7 +511,7 @@ static void drive_occipital(brain_t b, brain_sensory_hub_t* h, const brain_senso
 
 static void tick_visual(brain_t b, brain_sensory_hub_t* h, const brain_sensory_visual_frame_t* f) {
     const uint32_t n = f->n;
-    static float lgn_out[SENSORY_HUB_VISUAL_MAX];   /* tick chain is single-threaded */
+    float* lgn_out = h->lgn_out;   /* hub-owned; the tick is single-entry (tick_busy) */
     memcpy(lgn_out, f->lgn, n * sizeof(float));
     if (b->thalamus && nimcp_brain_thal_relay_visual(b, f->lgn, n, lgn_out, n) > 0) h->st.thalamus_relays++;
 
@@ -468,10 +523,13 @@ static void tick_visual(brain_t b, brain_sensory_hub_t* h, const brain_sensory_v
     m.contrast = f->on_off_contrast;
     m.change = f->change;
     broadcast(h, &m, sizeof(m), BIO_MSG_VISUAL_FEATURES_READY);
+    publish(h, "sensory.visual.change", f->change);
+    publish(h, "sensory.visual.luminance", f->luminance);
+    publish(h, "sensory.visual.contrast", f->on_off_contrast);
     drive_occipital(b, h, f);
 
     if (b->hypercolumns && b->num_hypercolumns > 1 && b->hypercolumns[1]) {
-        hypercolumn_compute(b->hypercolumns[1], lgn_out, n);
+        hypercolumn_compute(b->hypercolumns[1], rf_pool(h, b->hypercolumns[1], lgn_out, n), n);
         h->st.column_updates++;
     }
     if (b->medulla && f->change > 0.3f && medulla_boost_arousal(b->medulla, 0.2f * f->change) == 0)
@@ -489,7 +547,25 @@ static void tick_visual(brain_t b, brain_sensory_hub_t* h, const brain_sensory_v
 /* Self-repair: a hearing predictor that has diverged is restarted. */
 static void self_repair(brain_t b, brain_sensory_hub_t* h) {
     auditory_predictor_stats_t s;
-    if (!brain_hearing_get_stats(b, &s) || s.scored < 3000) return;
+    if (!brain_hearing_get_stats(b, &s)) return;
+    /* Non-finite errors: the predictor drops its listening state and carries
+     * on, but if that keeps happening tick after tick its weights have gone
+     * non-finite and its skill EMA (frozen at a finite value) cannot show it.
+     * Restart it after 3 such ticks, without the 3000-frame warm-up gate. */
+    if (s.nonfinite_resets < h->nonfinite_seen) h->nonfinite_seen = 0;   /* predictor was replaced */
+    h->nonfinite_ticks = s.nonfinite_resets > h->nonfinite_seen ? h->nonfinite_ticks + 1 : 0;
+    h->nonfinite_seen = s.nonfinite_resets;
+    if (h->nonfinite_ticks >= 3) {
+        h->nonfinite_ticks = 0;
+        if (brain_hearing_reset(b) == 0) {
+            h->nonfinite_seen = 0;
+            h->st.self_repairs++;
+            fprintf(stderr, "[SENSORY_HUB] self-repair: hearing produced non-finite predictions "
+                    "(%llu resets) — predictor restarted\n", (unsigned long long)s.nonfinite_resets);
+        }
+        return;
+    }
+    if (s.scored < 3000) return;
     bool bad = !isfinite(s.skill_recent) || s.skill_recent < HUB_DIVERGED_SKILL;
     h->diverged_ticks = bad ? h->diverged_ticks + 1 : 0;
     if (h->diverged_ticks >= 100) {
@@ -513,6 +589,11 @@ void brain_sensory_hub_tick(struct brain_struct* b) {
     float surprise = 0.0f;
     brain_sensory_visual_frame_t vf;
     bool have_v = false;
+
+    /* Single entry: a concurrent caller (RO-socket decide_full while
+     * learn_vector ticks) returns at once without draining, so the frames
+     * stay queued for the tick in progress or the next one. Never blocks decide. */
+    if (__atomic_exchange_n(&h->tick_busy, 1, __ATOMIC_ACQUIRE)) return;
 
     nimcp_mutex_lock(h->mu);
     if (h->a_frames > 0) {
@@ -538,7 +619,10 @@ void brain_sensory_hub_tick(struct brain_struct* b) {
     }
     nimcp_mutex_unlock(h->mu);
 
-    if (!frames && !have_v) return;
+    if (!frames && !have_v) {
+        __atomic_store_n(&h->tick_busy, 0, __ATOMIC_RELEASE);
+        return;
+    }
     late_bind(b, h);
     h->st.ticks++;
     sensory_hub_heartbeat("tick", 0.5f);
@@ -547,6 +631,7 @@ void brain_sensory_hub_tick(struct brain_struct* b) {
         self_repair(b, h);
     }
     if (have_v) tick_visual(b, h, &vf);
+    __atomic_store_n(&h->tick_busy, 0, __ATOMIC_RELEASE);
 }
 
 bool brain_sensory_hub_get_stats(struct brain_struct* b, brain_sensory_hub_stats_t* out) {

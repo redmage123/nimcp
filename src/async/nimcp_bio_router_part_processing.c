@@ -50,6 +50,10 @@ nimcp_error_t bio_router_register_handler(bio_module_context_t ctx,
             !entry->handlers[i].is_category_handler) {
             // If same handler function, just succeed (idempotent re-registration)
             if (entry->handlers[i].handler == handler) {
+                /* Re-registration (reinit): refresh to the newest ctx's user_data,
+                 * matching the old entry-wide user_data update. */
+                entry->handlers[i].user_data = ctx->user_data;
+                entry->handlers[i].owner = ctx;
                 nimcp_platform_mutex_unlock(&entry->handler_mutex);
                 LOG_DEBUG("Handler for message type 0x%04X already registered in module %s (same handler)",
                           msg_type, entry->module_name);
@@ -70,6 +74,8 @@ nimcp_error_t bio_router_register_handler(bio_module_context_t ctx,
     h->category_mask = 0;
     h->handler = handler;
     h->is_category_handler = false;
+    h->user_data = ctx->user_data;  /* per-ctx: entry may be shared */
+    h->owner = ctx;
 
     entry->handler_count++;
 
@@ -108,6 +114,8 @@ nimcp_error_t bio_router_register_category_handler(bio_module_context_t ctx,
         if (entry->handlers[i].msg_type == category_base &&
             entry->handlers[i].is_category_handler) {
             if (entry->handlers[i].handler == handler) {
+                entry->handlers[i].user_data = ctx->user_data;
+                entry->handlers[i].owner = ctx;
                 nimcp_platform_mutex_unlock(&entry->handler_mutex);
                 LOG_DEBUG("Category handler for 0x%04X already registered in module %s (same handler)",
                           category_base, entry->module_name);
@@ -127,6 +135,8 @@ nimcp_error_t bio_router_register_category_handler(bio_module_context_t ctx,
     h->category_mask = 0xFF00;  // Match top byte
     h->handler = handler;
     h->is_category_handler = true;
+    h->user_data = ctx->user_data;  /* per-ctx: entry may be shared */
+    h->owner = ctx;
 
     entry->handler_count++;
 
@@ -216,7 +226,8 @@ nimcp_error_t bio_router_clear_handlers(bio_module_context_t ctx) {
  * HOW:  Search handlers for exact match or category match
  */
 static bio_message_handler_t bio_router_find_handler(bio_module_entry_t* entry,
-                                                       bio_message_type_t msg_type) {
+                                                       bio_message_type_t msg_type,
+                                                       void** out_user_data) {
     nimcp_platform_mutex_lock(&entry->handler_mutex);
 
     // First try exact match
@@ -224,6 +235,7 @@ static bio_message_handler_t bio_router_find_handler(bio_module_entry_t* entry,
         if (!entry->handlers[i].is_category_handler &&
             entry->handlers[i].msg_type == msg_type) {
             bio_message_handler_t handler = entry->handlers[i].handler;
+            if (out_user_data) *out_user_data = entry->handlers[i].user_data;
             nimcp_platform_mutex_unlock(&entry->handler_mutex);
             return handler;
         }
@@ -236,6 +248,7 @@ static bio_message_handler_t bio_router_find_handler(bio_module_entry_t* entry,
             uint32_t masked_handler = entry->handlers[i].msg_type & entry->handlers[i].category_mask;
             if (masked_type == masked_handler) {
                 bio_message_handler_t handler = entry->handlers[i].handler;
+                if (out_user_data) *out_user_data = entry->handlers[i].user_data;
                 nimcp_platform_mutex_unlock(&entry->handler_mutex);
                 return handler;
             }
@@ -282,7 +295,9 @@ uint32_t bio_router_process_inbox(bio_module_context_t ctx, uint32_t max_message
         const bio_message_header_t* header = (const bio_message_header_t*)msg_data;
 
         // Find handler
-        bio_message_handler_t handler = bio_router_find_handler(entry, header->type);
+        void* handler_user_data = entry->user_data;
+        bio_message_handler_t handler = bio_router_find_handler(entry, header->type,
+                                                                &handler_user_data);
 
         if (handler) {
             /* DEADLOCK PREVENTION: Check for re-entrant message delivery.
@@ -306,7 +321,7 @@ uint32_t bio_router_process_inbox(bio_module_context_t ctx, uint32_t max_message
 
             nimcp_error_t handler_result = handler(msg_data, msg_size,
                                                     response_promise,
-                                                    entry->user_data);
+                                                    handler_user_data);
 
             // Clear re-entrancy guard
             atomic_store(&entry->in_handler, false);

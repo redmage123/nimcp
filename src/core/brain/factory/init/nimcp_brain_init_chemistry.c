@@ -3,7 +3,7 @@
  * @brief Chemistry cluster init — protons + buffers + pH + NO
  *
  * Wires four previously-compile-disabled chemistry modules via a single
- * BRAIN_CYCLE_CHEMISTRY cycle at 10ms. All four have `_init(system, config)`
+ * BRAIN_CYCLE_CHEMISTRY cycle (observation-only; ticked inline). All four have `_init(system, config)`
  * lifecycle APIs that require caller-allocated structs. The combined tick
  * advances all four in biological order each pass.
  *
@@ -39,45 +39,14 @@ BRIDGE_BOILERPLATE_MESH_ONLY(brain_init_chemistry, MESH_ADAPTER_CATEGORY_SYSTEM)
 #define CHEM_INIT_LOG_MODULE "BRAIN_INIT_CHEMISTRY"
 
 /*=============================================================================
- * TICK WRAPPER — advances all 4 chemistry modules per cycle.
+ * SINGLE-OWNER POLICY (2026-11-23)
  *
- * Ordering rationale (short → long feedback loops):
- *   1. proton pumps   — move H+ across membranes (source term)
- *   2. buffer systems — absorb/release H+ (damping)
- *   3. pH dynamics    — integrate net H+ change into local pH
- *   4. NO system      — pH-dependent NOS activity; must see new pH
+ * brain_tick_chemistry() is called inline from brain_learn_vector and
+ * brain_decide (under the daemon's brain lock). The former 10ms
+ * cc-CHEMISTRY driver ran the same lock-free pump/buffer/pH/NO updates
+ * concurrently with those calls (torn state, ~3x simulated time). The cycle
+ * is now registered observation-only; the inline tick is the sole driver.
  *===========================================================================*/
-
-static void chemistry_tick_wrapper(void* ctx) {
-    struct brain_struct* brain = (struct brain_struct*)ctx;
-    if (!brain || !brain->chemistry_enabled) return;
-
-    /* All modules take dt in ms — coord cadence is 10ms. */
-    const float dt_ms = 10.0f;
-
-    if (brain->proton_pumps) {
-        /* nimcp_pump_update needs 3 pH sample inputs. Use physiological
-         * defaults (7.2 cyto, 7.4 extra, 5.5 vesicular) — these are the
-         * resting values the model regresses toward when no external pH
-         * module has fed it real values. If brain->ph_system is populated
-         * and exposes per-compartment pH getters in a future wave, we
-         * can sample real values here. */
-        (void)nimcp_pump_update((nimcp_pump_system_t*)brain->proton_pumps,
-                                dt_ms,
-                                7.2f,   /* intracellular */
-                                7.4f,   /* extracellular */
-                                5.5f);  /* vesicular */
-    }
-    if (brain->buffer_manager) {
-        (void)nimcp_buffer_update((nimcp_buffer_manager_t*)brain->buffer_manager, dt_ms);
-    }
-    if (brain->ph_system) {
-        (void)nimcp_ph_update((nimcp_ph_system_t*)brain->ph_system, dt_ms);
-    }
-    if (brain->no_system) {
-        (void)nimcp_no_update((nimcp_no_system_t*)brain->no_system, dt_ms);
-    }
-}
 
 /*=============================================================================
  * INIT / DESTROY HELPERS (one per module) — minimize conditional nesting
@@ -162,26 +131,26 @@ bool nimcp_brain_factory_init_chemistry_subsystem(brain_t brain) {
     }
 
     LOG_MODULE_INFO(CHEM_INIT_LOG_MODULE,
-        "Initializing chemistry cluster (10ms cycle: protons, buffers, pH, NO)");
+        "Initializing chemistry cluster (protons, buffers, pH, NO)");
 
     if (!chem_init_pumps(brain))  { LOG_MODULE_WARN(CHEM_INIT_LOG_MODULE, "pump init failed");   chem_teardown(brain); return false; }
     if (!chem_init_buffers(brain)){ LOG_MODULE_WARN(CHEM_INIT_LOG_MODULE, "buffer init failed"); chem_teardown(brain); return false; }
     if (!chem_init_ph(brain))     { LOG_MODULE_WARN(CHEM_INIT_LOG_MODULE, "pH init failed");     chem_teardown(brain); return false; }
     if (!chem_init_no(brain))     { LOG_MODULE_WARN(CHEM_INIT_LOG_MODULE, "NO init failed");     chem_teardown(brain); return false; }
 
-    int reg_rc = brain_cycle_coordinator_register_driven(
-        coord, BRAIN_CYCLE_CHEMISTRY, 10000ull,  /* 10ms */
-        chemistry_tick_wrapper, brain, NULL);
+    /* Observation-only: ticked inline by brain_tick_chemistry (single owner). */
+    int reg_rc = brain_cycle_coordinator_register(
+        coord, BRAIN_CYCLE_CHEMISTRY, brain, NULL);
     if (reg_rc != 0) {
         LOG_MODULE_WARN(CHEM_INIT_LOG_MODULE,
-            "register_driven(CHEMISTRY) failed — tearing down");
+            "register(CHEMISTRY) failed — tearing down");
         chem_teardown(brain);
         return false;
     }
 
     brain->chemistry_enabled = true;
     LOG_MODULE_INFO(CHEM_INIT_LOG_MODULE,
-        "chemistry wired (10ms cycle driving 4 modules)");
+        "chemistry wired (4 modules, ticked inline)");
     return true;
 }
 
@@ -191,8 +160,7 @@ void nimcp_brain_factory_destroy_chemistry_subsystem(brain_t brain) {
     brain_cycle_coordinator_t* coord =
         (brain_cycle_coordinator_t*)brain->cycle_coordinator;
 
-    /* Unregister first — joins the driver thread so no in-flight tick
-     * races against the shutdowns below. */
+    /* Unregister first (observation-only entry; nothing to join). */
     if (brain->chemistry_enabled && coord) {
         (void)brain_cycle_coordinator_unregister(coord, BRAIN_CYCLE_CHEMISTRY);
         brain->chemistry_enabled = false;

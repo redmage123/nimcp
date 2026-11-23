@@ -21,6 +21,14 @@ static nimcp_error_t bio_msg_queue_init(bio_msg_queue_t* queue, uint32_t capacit
                       "bio_msg_queue_init: failed to allocate queue entries");
 
     queue->capacity = capacity;
+    /* Bound growth relative to the (tier-capped) initial size; see
+     * BIO_INBOX_GROWTH_FACTOR. Callers may raise it (never above MAX). */
+    uint64_t max_cap = (uint64_t)capacity * BIO_INBOX_GROWTH_FACTOR;
+    if (max_cap < BIO_INBOX_MIN_GROWTH_CAP) max_cap = BIO_INBOX_MIN_GROWTH_CAP;
+    if (max_cap > MAX_INBOX_MESSAGES) max_cap = MAX_INBOX_MESSAGES;
+    if (max_cap < capacity) max_cap = capacity;
+    queue->max_capacity = (uint32_t)max_cap;
+    queue->closed = false;
     queue->read_idx = 0;
     queue->write_idx = 0;
     queue->count = 0;
@@ -262,6 +270,10 @@ void bio_router_shutdown(void) {
     for (uint32_t i = 0; i < g_router->module_count; i++) {
         bio_module_entry_t* entry = &g_router->modules[i];
         if (entry->magic == BIO_MODULE_MAGIC) {
+            /* Wait out unicast/promise/KG senders that hold the inbox pointer
+             * outside modules_mutex before freeing it (use-after-free fix). */
+            entry->magic = 0;
+            bio_router_quiesce_entry(entry);
             bio_msg_queue_destroy(&entry->inbox);
             nimcp_platform_mutex_destroy(&entry->handler_mutex);
             entry->magic = 0;

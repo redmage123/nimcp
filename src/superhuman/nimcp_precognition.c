@@ -1933,3 +1933,31 @@ const char* precognition_confidence_string(confidence_level_t level) {
 uint64_t precognition_get_current_time_ms(void) {
     return get_current_time_ms();
 }
+
+/* ============================================================================
+ * Brain integration helpers (2026-11-23)
+ * ============================================================================
+ * precognition_create had no caller. nimcp_precognition.h cannot be included
+ * next to nimcp_brain_internal.h (observation_t / pattern_type_t clash), so
+ * the brain drives the module through these void*-typed wrappers. */
+
+void* precognition_brain_create(void) {
+    return precognition_create(NULL);   /* NULL -> precognition_default_config() */
+}
+
+void precognition_brain_destroy(void* module) {
+    precognition_destroy((precognition_module_t*)module);
+}
+
+/* Observe one brain state; returns the surprise of that state as a z-score
+ * against the running statistics (>= 0), or -1 on error. Uses the static
+ * compute_z_score directly: precognition_detect_anomaly throws to the immune
+ * system whenever there is NO anomaly, which would flood it per tick. */
+float precognition_brain_observe(void* module, const float* features, uint32_t n) {
+    precognition_module_t* m = (precognition_module_t*)module;
+    if (!m || !features || n == 0) return -1.0f;
+    if (!precognition_observe_features(m, features, n)) return -1.0f;
+    if (m->history.count < 10 || m->stats_count < 2) return 0.0f;
+    float z = compute_z_score(m, features, n);
+    return (isfinite(z) && z > 0.0f) ? z : 0.0f;
+}

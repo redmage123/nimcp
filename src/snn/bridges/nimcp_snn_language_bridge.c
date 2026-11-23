@@ -1011,6 +1011,9 @@ int snn_language_bridge_build_projection(snn_language_bridge_t* bridge,
 
     /* Reopen if finalized so wire_concept_word's snn_csr_add_entry is allowed. */
     const bool was_finalized = csr->finalized;
+    /* Remember GPU prep: reopen frees the derived arrays, and nothing else
+     * re-prepares this CSR after boot, so we must re-prepare it below. */
+    const bool was_gpu_ready = csr->gpu_ready;
     if (was_finalized && snn_csr_reopen(csr) != 0) {
         LOG_ERROR("[snn_lang_bridge] build_projection: snn_csr_reopen failed");
         return -1;
@@ -1037,11 +1040,39 @@ int snn_language_bridge_build_projection(snn_language_bridge_t* bridge,
     }
     nimcp_free(binds);
 
+    /* The daemon calls this on every boot and the previous boot's projection is
+     * restored from the checkpoint, so re-wiring stacked one more copy of every
+     * Wernicke->Broca synapse per restart. Keep the first (loaded, learned)
+     * copy of each and drop the rest. */
+    const int n_dups = snn_csr_dedup_src_pop(csr, (uint32_t)wid);
+    if (n_dups > 0) {
+        LOG_INFO("[snn_lang_bridge] build_projection: dropped %d duplicate "
+                 "wernicke->broca synapses", n_dups);
+    }
+
     /* Re-finalize so the running SNN sees the new topology (next step re-uploads
      * the freed GPU mirror). */
     if (snn_csr_finalize(csr) != 0) {
         LOG_ERROR("[snn_lang_bridge] build_projection: snn_csr_finalize failed");
         return -1;
+    }
+    /* Rebuild the flat GPU arrays (weights/flat_col_idx/src_pop_idx) reopen
+     * freed; without this the lazy per-step upload has nothing to copy and
+     * sync_weights_to_gpu fails, so projection learning never reaches the GPU. */
+    if (was_gpu_ready && net->populations) {
+        uint32_t* pop_offsets = (uint32_t*)nimcp_calloc(net->n_populations + 1,
+                                                        sizeof(uint32_t));
+        if (pop_offsets) {
+            for (uint32_t p = 0; p < net->n_populations; p++) {
+                pop_offsets[p + 1] = pop_offsets[p] +
+                    (net->populations[p] ? net->populations[p]->n_neurons : 0);
+            }
+            if (snn_csr_prepare_gpu(csr, pop_offsets, net->n_populations) != 0) {
+                LOG_WARN("[snn_lang_bridge] build_projection: snn_csr_prepare_gpu "
+                         "failed — Broca falls back to the host CSR walk");
+            }
+            nimcp_free(pop_offsets);
+        }
     }
     LOG_INFO("[snn_lang_bridge] build_projection: wired %d/%u concept→word pairs "
              "(wernicke=%d->broca=%d, w_init=%.2f)",

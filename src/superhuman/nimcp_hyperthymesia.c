@@ -1878,3 +1878,42 @@ void hyperthymesia_free_reexperience_result(reexperience_result_t* result) {
 
     memset(result, 0, sizeof(reexperience_result_t));
 }
+
+/* ============================================================================
+ * Brain integration helpers (2026-11-23)
+ * ============================================================================
+ * hyperthymesia_create had no caller. nimcp_hyperthymesia.h cannot be
+ * included next to nimcp_brain_internal.h (emotional_state_t and
+ * autobiographical_memory_t clash), so the brain drives the module through
+ * these void*-typed wrappers. */
+
+void* hyperthymesia_brain_create(uint32_t memory_capacity) {
+    hyperthymesia_config_t cfg = hyperthymesia_default_config();
+    if (memory_capacity > 0) cfg.memory_capacity = memory_capacity;
+    return hyperthymesia_create(&cfg);
+}
+
+void hyperthymesia_brain_destroy(void* module) {
+    hyperthymesia_destroy((hyperthymesia_module_t*)module);
+}
+
+/* Encode one autobiographical event stamped with the wall clock. Returns the
+ * memory id, or 0 when full / on error (stops before the capacity throw). */
+uint64_t hyperthymesia_brain_encode(void* module, const float* features, uint32_t n,
+                                    float valence, float arousal) {
+    hyperthymesia_module_t* m = (hyperthymesia_module_t*)module;
+    if (!m || !features || n == 0) return 0;
+    if (m->memory_count >= m->config.memory_capacity) return 0;
+    hyperthymesia_datetime_t now;
+    if (!hyperthymesia_get_current_datetime(&now)) return 0;
+    emotional_state_t emo;
+    memset(&emo, 0, sizeof(emo));
+    emo.valence = valence;
+    emo.arousal = arousal;
+    return hyperthymesia_encode_memory(m, &now, AUTOBIO_TYPE_EVENT, features, n, NULL, &emo);
+}
+
+uint64_t hyperthymesia_brain_count(const void* module) {
+    const hyperthymesia_module_t* m = (const hyperthymesia_module_t*)module;
+    return m ? m->memory_count : 0;
+}

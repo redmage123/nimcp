@@ -2069,13 +2069,15 @@ static void snn_gpu_homeo_device_finish(snn_network_t* network, float dt_ms,
  *     CPU.  Verified in the gate by checking pop->dendritic_enabled.
  *   - Substrate spike-survival dropout runs on CPU (the GPU kernel is
  *     deterministic). Pops with substrate_spike_dropout_on stay on CPU.
- *   - Refractory + threshold-offset are NOT honored by the kernel
- *     (uses scalar v_thresh from params + per-neuron arrays). For the
- *     baseline this matches because both are 0 by default. Production
- *     networks that rely on per-neuron refractory periods or dynamic
- *     threshold offsets MUST keep cb_gpu_enabled=0 — CB-GPU-7 ports the
- *     deposit pass to GPU but does NOT lift this constraint. A future
- *     stage will honor refractory + v_thresh_offset per-neuron arrays.
+ *   - Parity with the CPU CB step (2026-11-23): per-neuron tau / v_thresh
+ *     (subclass + heterogeneity) are uploaded when dirty; every step the
+ *     kernel's per-neuron threshold is set to base + IP threshold_offset
+ *     + the AHP/pump term hyp*dt/tau, and that term is subtracted from V
+ *     afterwards for non-spiking neurons (spike iff V+dv-hyp*dt/tau >=
+ *     thr, exactly the CPU test). Refractory neurons get an unreachable
+ *     threshold and keep their V; a spike re-arms the host refractory
+ *     timer with the pop's (substrate-adjusted) t_ref. Stochastic spike
+ *     dropout and gap junctions remain CPU-only.
  */
 static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
     extern float snn_tune_get_conductance_enabled(void);
@@ -2175,6 +2177,41 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         return -1;
     }
 
+    /* CPU-parity buffers (refractory / IP threshold offset / AHP-pump /
+     * per-neuron params). Without them strongly driven pops fired on every
+     * tick on this path — the runaway the current-based GPU step fixed on
+     * 2026-11-03. h_vthr_eff is the kernel's per-neuron threshold this step;
+     * h_hyp_dv the AHP/pump drop to remove from V afterwards; h_held marks
+     * refractory neurons; t_ref_pop the per-pop re-arm period. */
+    const bool cb_refr_on = snn_gpu_refractory_enabled() != 0;
+    const bool cb_tau_upload = lif->per_neuron_params_dirty
+                            || !lif->tau_mem_per_neuron
+                            || !lif->v_thresh_per_neuron;
+    float*   h_tau_pn   = cb_tau_upload
+        ? (float*)nimcp_calloc(total_neurons, sizeof(float)) : NULL;
+    float*   h_vthr_eff = (float*)nimcp_calloc(total_neurons, sizeof(float));
+    float*   h_hyp_dv   = (float*)nimcp_calloc(total_neurons, sizeof(float));
+    uint8_t* h_held     = (uint8_t*)nimcp_calloc(total_neurons, sizeof(uint8_t));
+    float*   t_ref_pop  = (float*)nimcp_calloc(network->n_populations, sizeof(float));
+    if ((cb_tau_upload && !h_tau_pn) || !h_vthr_eff || !h_hyp_dv ||
+        !h_held || !t_ref_pop) {
+        nimcp_free(h_tau_pn); nimcp_free(h_vthr_eff); nimcp_free(h_hyp_dv);
+        nimcp_free(h_held);   nimcp_free(t_ref_pop);
+        nimcp_free(ahp_hyp_per_pop);
+        nimcp_free(pump_hyp_per_pop);
+        return -1;
+    }
+    const axon_substrate_effects_t* cb_se_axon =
+        (network->substrate && snn_tune_get_substrate_enabled() != 0.0f)
+        ? &network->cached_axon_effects : NULL;
+    /* ATP coupling for AHP/pump gain, identical to the CPU path. */
+    float cb_pump_factor = 1.0f;
+    if (cb_se_axon && snn_tune_get_ahp_pump_substrate_coupling() != 0.0f) {
+        cb_pump_factor = cb_se_axon->pump_activity;
+        if (cb_pump_factor < 0.1f) cb_pump_factor = 0.1f;
+        if (cb_pump_factor > 1.0f) cb_pump_factor = 1.0f;
+    }
+
     /* CB-GPU-7 sub-phase instrumentation. Total cbgpu_ms includes all
      * of these; breakdown tells us whether to optimize deposit / I/O /
      * kernel / post-spike. Logged as a NIMCP_DEBUG_SNN line every step. */
@@ -2224,9 +2261,13 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
      * Decay g_*, apply gap-junction V, refractory tick + early-out, run
      * the per-neuron deposit helper. Mirrors the inline CPU loop minus
      * the integrate + spike block (which the GPU kernel handles). */
+    size_t dep_off = 0;  /* flat offset of pop p (same order as the gather) */
     for (uint32_t p = 0; p < network->n_populations; p++) {
         snn_population_t* pop = network->populations[p];
         if (!pop) continue;
+        const snn_lif_params_t pop_lif = snn_pop_lif_params(pop, &network->config);
+        t_ref_pop[p] = cb_se_axon ? substrate_apply_tref(pop_lif.t_ref, cb_se_axon)
+                                  : pop_lif.t_ref;
         const float decay_ampa   = expf(-dt_ms / tau_ampa);
         const float decay_nmda   = expf(-dt_ms / tau_nmda);
         const float decay_gaba_a = expf(-dt_ms / tau_gaba_a);
@@ -2269,8 +2310,8 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
                                 pop->device_id == 0),
         };
 
-        /* AHP/pump hyp arrays — kernel does not use them (Stage A
-         * limitation), but compute and pass to post_spike for adaptation
+        /* AHP/pump hyp arrays — folded into the per-neuron threshold /
+         * V correction below, then handed to post_spike for the adaptation
          * update. */
         float* ahp_hyp  = ahp_on  ? (float*)nimcp_calloc(pop->n_neurons, sizeof(float)) : NULL;
         float* pump_hyp = pump_on ? (float*)nimcp_calloc(pop->n_neurons, sizeof(float)) : NULL;
@@ -2286,15 +2327,43 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
             float* g_gaba_a_n = pop->g_gaba_a ? &pop->g_gaba_a[n] : NULL;
             float* g_gaba_b_n = pop->g_gaba_b ? &pop->g_gaba_b[n] : NULL;
 
-            /* Decay BEFORE deposit (matches CPU CB ordering). */
-            snn_membrane_decay_one(g_ampa_n, g_nmda_n, g_gaba_a_n, g_gaba_b_n,
-                                   decay_ampa, decay_nmda,
-                                   decay_gaba_a, decay_gaba_b);
+            /* No host decay here: kernel_lif_forward_cb already decays every
+             * g_* by exp(-dt/tau) after the membrane update, and that is the
+             * value downloaded into pop->g_*. Decaying again here made g
+             * decay twice per step (CPU decays once). End-of-step kernel
+             * decay + deposit == CPU's decay-then-deposit ordering. */
+            (void)decay_ampa; (void)decay_nmda;
+            (void)decay_gaba_a; (void)decay_gaba_b;
 
-            /* Refractory tick (kernel doesn't honor refractory in Stage
-             * A; see limitation note above). */
+            /* Per-neuron params + effective threshold, as the CPU
+             * snn_cb_integrate_neuron computes them: threshold = base
+             * (subclass/heterogeneity) + IP offset; the AHP/pump term
+             * hyp*dt/tau is raised into the threshold here and taken off V
+             * after the kernel, which is exactly the CPU spike test. */
+            const size_t gi = dep_off + n;
+            const float tau_n = pop->tau_mem_per_neuron
+                              ? pop->tau_mem_per_neuron[n] : pop_lif.tau_mem;
+            if (h_tau_pn) h_tau_pn[gi] = tau_n;
+            float vthr_n = pop->v_thresh_per_neuron
+                         ? pop->v_thresh_per_neuron[n] : pop_lif.v_thresh;
+            if (pop->threshold_offset) vthr_n += pop->threshold_offset[n];
+            float hyp = 0.0f;
+            if (ahp_hyp)  hyp += ahp_hyp[n];
+            if (pump_hyp) hyp += pump_hyp[n];
+            const float tau_c = (tau_n < 1e-3f) ? 1e-3f : tau_n;
+            const float hyp_dv = hyp * cb_pump_factor * (dt_ms / tau_c);
+            h_vthr_eff[gi] = vthr_n + hyp_dv;
+            h_hyp_dv[gi]   = hyp_dv;
+
+            /* Refractory: tick down, skip deposit, and (unless the GPU
+             * refractory kill switch is off) hold the neuron — unreachable
+             * threshold on the kernel side, V kept at scatter. */
             if (ref_data && ref_data[n] > 0.0f) {
                 ref_data[n] -= dt_ms;
+                if (cb_refr_on) {
+                    h_held[gi]     = 1;
+                    h_vthr_eff[gi] = 1e30f;
+                }
                 continue;
             }
 
@@ -2309,6 +2378,7 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         /* Stash hyp arrays for post-spike pass. */
         ahp_hyp_per_pop[p]  = ahp_hyp;
         pump_hyp_per_pop[p] = pump_hyp;
+        dep_off += pop->n_neurons;
     }
     clock_gettime(CLOCK_MONOTONIC, &_ph1);
     dep_ms = (_ph1.tv_sec - _ph0.tv_sec) * 1000.0
@@ -2335,6 +2405,8 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         }
         nimcp_free(ahp_hyp_per_pop);
         nimcp_free(pump_hyp_per_pop);
+        nimcp_free(h_tau_pn); nimcp_free(h_vthr_eff); nimcp_free(h_hyp_dv);
+        nimcp_free(h_held);   nimcp_free(t_ref_pop);
         return -1;
     }
     size_t off = 0;
@@ -2360,6 +2432,21 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
     bool ok = nimcp_gpu_tensor_upload(lif->v, h_v);
     ok = ok && nimcp_gpu_lif_state_upload_g(
         gpu, lif, h_g_ampa, h_g_nmda, h_g_ga_a, h_g_ga_b, total_neurons);
+    /* Per-neuron params: tau only when dirty (subclass/heterogeneity
+     * change), the effective threshold every step (IP offset, AHP/pump
+     * and refractory hold change per step). */
+    if (ok) {
+        if (h_tau_pn) {
+            ok = nimcp_gpu_lif_state_upload_per_neuron_params(
+                gpu, lif, h_tau_pn, h_vthr_eff, total_neurons);
+            if (ok) lif->per_neuron_params_dirty = false;
+        } else {
+            ok = nimcp_gpu_tensor_upload(lif->v_thresh_per_neuron, h_vthr_eff);
+        }
+        /* The device threshold is no longer the base value the current-
+         * based step expects — make that step re-upload its own. */
+        network->gpu_vthr_holds_cb_eff = true;
+    }
     clock_gettime(CLOCK_MONOTONIC, &_ph1);
     upload_ms = (_ph1.tv_sec - _ph0.tv_sec) * 1000.0
               + (_ph1.tv_nsec - _ph0.tv_nsec) / 1e6;
@@ -2476,7 +2563,9 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
                     }
                     /* Launch. Kernel reads lif_state's d_g_* directly so
                      * we pass them; offset is the pop's flat start. */
-                    nimcp_gpu_snn_cb_deposit_csr(
+                    /* A failed launch now reports false (walkthrough #17):
+                     * fall back instead of integrating with no synaptic input. */
+                    if (!nimcp_gpu_snn_cb_deposit_csr(
                         gpu,
                         (const float*)network->gpu_cb_spike_flat,
                         (const float*)network->gpu_cb_depr_flat,
@@ -2490,7 +2579,10 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
                         lif->g_gaba_a ? (float*)lif->g_gaba_a->data : NULL,
                         lif->g_gaba_b ? (float*)lif->g_gaba_b->data : NULL,
                         (uint32_t)off3,
-                        pop_neurons);
+                        pop_neurons)) {
+                        ok = false;
+                        break;
+                    }
                     off3 += pop_neurons;
                 }
             }
@@ -2523,6 +2615,8 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         }
         nimcp_free(ahp_hyp_per_pop);
         nimcp_free(pump_hyp_per_pop);
+        nimcp_free(h_tau_pn); nimcp_free(h_vthr_eff); nimcp_free(h_hyp_dv);
+        nimcp_free(h_held);   nimcp_free(t_ref_pop);
         return -1;
     }
 
@@ -2544,6 +2638,8 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         }
         nimcp_free(ahp_hyp_per_pop);
         nimcp_free(pump_hyp_per_pop);
+        nimcp_free(h_tau_pn); nimcp_free(h_vthr_eff); nimcp_free(h_hyp_dv);
+        nimcp_free(h_held);   nimcp_free(t_ref_pop);
         return -1;
     }
 
@@ -2559,9 +2655,21 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
         if (!pop) continue;
         float* v_data     = (float*)nimcp_tensor_data(pop->membrane_v);
         float* spike_data = (float*)nimcp_tensor_data(pop->spike_output);
+        float* ref_out    = (float*)nimcp_tensor_data(pop->refractory);
         for (uint32_t n = 0; n < pop->n_neurons; n++) {
-            if (v_data)     v_data[n]     = h_v[off + n];
             float spk = h_spikes[off + n];
+            if (h_held[off + n]) {
+                /* Refractory: CPU leaves V untouched and cannot fire. */
+                spk = 0.0f;
+            } else if (spk > 0.5f) {
+                if (v_data) v_data[n] = h_v[off + n];
+                /* Re-arm the refractory period, as the CPU step does. */
+                if (cb_refr_on && ref_out) ref_out[n] = t_ref_pop[p];
+            } else if (v_data) {
+                /* Remove the AHP/pump drop that was raised into the
+                 * threshold (CPU: dv -= hyp*dt/tau). */
+                v_data[n] = h_v[off + n] - h_hyp_dv[off + n];
+            }
             if (spike_data) spike_data[n] = spk;
             if (spk > 0.5f) {
                 record_spike(&pop->spike_trains[n], network->sim->current_time_us);
@@ -2584,6 +2692,8 @@ static int snn_network_step_cb_gpu(snn_network_t* network, float dt_ms) {
     nimcp_free(h_g_ampa); nimcp_free(h_g_nmda);
     nimcp_free(h_g_ga_a); nimcp_free(h_g_ga_b);
     nimcp_free(h_spikes);
+    nimcp_free(h_tau_pn); nimcp_free(h_vthr_eff); nimcp_free(h_hyp_dv);
+    nimcp_free(h_held);   nimcp_free(t_ref_pop);
 
     /* ===== Per-pop post-spike adaptation =====
      * AHP/pump update (reads spike_data the GPU just wrote), basket step,
@@ -2746,6 +2856,12 @@ int snn_network_step(snn_network_t* network, float dt) {
          * The flag is set on lif_state create AND by
          * snn_network_set_pop_heterogeneity. Re-upload happens at most once
          * per dirty event (cleared on success). */
+        if (network->gpu_vthr_holds_cb_eff) {
+            /* The CB-GPU step left its per-step effective threshold in the
+             * device v_thresh array; restore the base values. */
+            lif_state->per_neuron_params_dirty = true;
+            network->gpu_vthr_holds_cb_eff = false;
+        }
         if (lif_state->per_neuron_params_dirty && total_neurons > 0) {
             float* h_tau  = (float*)nimcp_calloc(total_neurons, sizeof(float));
             float* h_vthr = (float*)nimcp_calloc(total_neurons, sizeof(float));
@@ -2827,7 +2943,12 @@ int snn_network_step(snn_network_t* network, float dt) {
                     for (uint32_t p = 0; p < network->n_populations; p++) {
                         snn_population_t* pop = network->populations[p];
                         if (!pop) continue;
-                        float* sd = (float*)nimcp_tensor_data(pop->spike_output);
+                        /* Honor axonal conduction delays like the CPU and
+                         * CB-GPU deposits: read the delayed ring row when the
+                         * pop has a delay (restored on load), else the live
+                         * spike_output (same-tick, delay 0). */
+                        const float* sd = snn_pop_get_delayed_spike_row(pop);
+                        if (!sd) sd = (const float*)nimcp_tensor_data(pop->spike_output);
                         if (sd) memcpy(h_spk_flat + off, sd, pop->n_neurons * sizeof(float));
                         /* Short-term depression (2026-11-03): a spiking
                          * source carries (1 - depression), which the isyn
@@ -3049,7 +3170,9 @@ int snn_network_step(snn_network_t* network, float dt) {
                                             if (syns[s].src_pop >= network->n_populations) continue;
                                             snn_population_t* sp = network->populations[syns[s].src_pop];
                                             if (!sp || !sp->spike_output) continue;
-                                            float* ss = (float*)nimcp_tensor_data(sp->spike_output);
+                                            /* Conduction delay, as the CPU deposit (delayed ring row). */
+                                            const float* ss = snn_pop_get_delayed_spike_row(sp);
+                                            if (!ss) ss = (const float*)nimcp_tensor_data(sp->spike_output);
                                             if (ss && syns[s].src_neuron < sp->n_neurons
                                                 && ss[syns[s].src_neuron] > 0.5f)
                                                 I_syn += syns[s].weight;
@@ -3099,7 +3222,9 @@ int snn_network_step(snn_network_t* network, float dt) {
                                 if (syns[s].src_pop >= network->n_populations) continue;
                                 snn_population_t* sp = network->populations[syns[s].src_pop];
                                 if (!sp || !sp->spike_output) continue;
-                                float* ss = (float*)nimcp_tensor_data(sp->spike_output);
+                                /* Conduction delay, as the CPU deposit (delayed ring row). */
+                                const float* ss = snn_pop_get_delayed_spike_row(sp);
+                                if (!ss) ss = (const float*)nimcp_tensor_data(sp->spike_output);
                                 if (ss && syns[s].src_neuron < sp->n_neurons
                                     && ss[syns[s].src_neuron] > 0.5f)
                                     I_syn += syns[s].weight;
@@ -4588,9 +4713,26 @@ int snn_network_rebalance_inhibition(snn_network_t* network, float target_ratio,
                                                SNN_INH_REBALANCE_MIN_EXC_SCALE, stats);
 }
 
+/* skip_rebalanced: the load-time hook skips pops already marked
+ * inh_rebalanced. The rebalance is not idempotent where the excitation floor
+ * or max_scale binds (the pop stays under target, so each run scales the
+ * same capped rows again, halving their excitation per restart). */
+static int snn_network_rebalance_inhibition_impl(snn_network_t* network, float target_ratio,
+                                                 float max_scale, float min_exc_scale,
+                                                 bool skip_rebalanced,
+                                                 snn_inh_rebalance_stats_t* stats);
+
 int snn_network_rebalance_inhibition_ex(snn_network_t* network, float target_ratio,
                                         float max_scale, float min_exc_scale,
                                         snn_inh_rebalance_stats_t* stats) {
+    return snn_network_rebalance_inhibition_impl(network, target_ratio, max_scale,
+                                                 min_exc_scale, false, stats);
+}
+
+static int snn_network_rebalance_inhibition_impl(snn_network_t* network, float target_ratio,
+                                                 float max_scale, float min_exc_scale,
+                                                 bool skip_rebalanced,
+                                                 snn_inh_rebalance_stats_t* stats) {
     if (stats) memset(stats, 0, sizeof(*stats));
     if (!network) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER,
@@ -4616,6 +4758,7 @@ int snn_network_rebalance_inhibition_ex(snn_network_t* network, float target_rat
     for (uint32_t p = 0; p < network->n_populations; p++) {
         snn_population_t* pop = network->populations[p];
         if (!pop || !pop->incoming_csr || snn_subclass_is_interneuron(pop->subclass)) continue;
+        if (skip_rebalanced && pop->inh_rebalanced) continue;
         snn_csr_storage_t* csr = pop->incoming_csr;
         if (!csr->finalized || csr->n_synapses == 0 || !csr->entries || !csr->row_ptr) continue;
 
@@ -4636,6 +4779,7 @@ int snn_network_rebalance_inhibition_ex(snn_network_t* network, float target_rat
         }
         if (i_pvsom <= 0.0 || e_sum <= 0.0) continue;
         st.pops_examined++;
+        pop->inh_rebalanced = true;  /* one-time correction; persisted on save */
         const double ratio_before = (i_pvsom + i_other) / e_sum;
         ratio_before_sum += ratio_before;
 
@@ -4760,7 +4904,10 @@ int snn_network_apply_inhibition_rebalance(snn_network_t* network) {
     if (ek) { float v = strtof(ek, NULL); if (isfinite(v) && v > 0.0f && v <= 1.0f) min_exc = v; }
 
     snn_inh_rebalance_stats_t st;
-    int rc = snn_network_rebalance_inhibition_ex(network, target, max_scale, min_exc, &st);
+    /* Load/build hook: pops corrected once (marker restored from the
+     * checkpoint) are left alone so restarts do not compound the scaling. */
+    int rc = snn_network_rebalance_inhibition_impl(network, target, max_scale, min_exc,
+                                                   true, &st);
     if (rc != 0) return rc;
     NIMCP_LOGGING_INFO("SNN inhibition rebalance: %u/%u pyramidal pops scaled, %llu synapses, "
                        "mean I/E %.3f -> %.3f (target %.2f, max scale %.2f applied, "
@@ -5319,6 +5466,32 @@ int snn_network_get_output_tensor(snn_network_t* network,
     return snn_network_get_outputs(network, data, (uint32_t)size);
 }
 
+/* Run duration_ms of simulation with the input held for the whole window.
+ * Every step path zeroes external_current at the end of the step ("input is
+ * per-step"), so set_inputs-once-then-run drove only the first of ~100 steps
+ * and the decision read rates from input-free dynamics. Re-apply the input
+ * before each step instead; otherwise identical to snn_network_run. */
+static int snn_network_run_with_input(snn_network_t* network,
+                                      const float* inputs, uint32_t n_inputs,
+                                      float duration_ms) {
+    float dt_ms = network->config.dt;
+    int n_steps = (int)(duration_ms / dt_ms);
+    int total_spikes = 0;
+
+    for (int i = 0; i < n_steps; i++) {
+        int result = snn_network_set_inputs(network, inputs, n_inputs);
+        if (result != SNN_SUCCESS) return result;
+        int spikes = snn_network_step(network, dt_ms);
+        if (spikes < 0) {
+            return spikes;  /* Error code */
+        }
+        total_spikes += spikes;
+    }
+
+    snn_network_update_stats(network, total_spikes, duration_ms);
+    return total_spikes;
+}
+
 int snn_network_forward(snn_network_t* network,
                         const float* inputs,
                         uint32_t n_inputs,
@@ -5345,12 +5518,12 @@ int snn_network_forward(snn_network_t* network,
     int result = snn_network_reset(network);
     if (result != SNN_SUCCESS) return result;
 
-    /* Set inputs */
+    /* Validate inputs up front (also covers a zero-step window). */
     result = snn_network_set_inputs(network, inputs, n_inputs);
     if (result != SNN_SUCCESS) return result;
 
-    /* Run simulation */
-    result = snn_network_run(network, duration_ms);
+    /* Run simulation with the input held for every step of the window. */
+    result = snn_network_run_with_input(network, inputs, n_inputs, duration_ms);
     if (result < 0) return result;
 
     /* Get outputs */
@@ -5395,7 +5568,8 @@ int snn_network_forward_carry(snn_network_t* network,
     int result = snn_network_set_inputs(network, inputs, n_inputs);
     if (result != SNN_SUCCESS) return result;
 
-    result = snn_network_run(network, duration_ms);
+    /* Hold the input for the whole decide window (steps zero it). */
+    result = snn_network_run_with_input(network, inputs, n_inputs, duration_ms);
     if (result < 0) return result;
 
     return snn_network_get_outputs(network, outputs, n_outputs);
@@ -6882,6 +7056,10 @@ int snn_network_save(snn_network_t* network, const char* path) {
             uint8_t has_homeostatic = (pop->threshold_offset &&
                                        pop->neuron_rate_ema &&
                                        pop->depression) ? 1 : 0;
+            /* Bit 1 = inhibition rebalance already applied (only alongside
+             * bit 0, so older loaders, which test the byte for non-zero,
+             * still read the block correctly). */
+            if (has_homeostatic && pop->inh_rebalanced) has_homeostatic |= 2u;
             SNN_FWRITE(&has_homeostatic, sizeof(uint8_t), 1, f);
             if (has_homeostatic) {
                 SNN_FWRITE(pop->threshold_offset, sizeof(float), pop->n_neurons, f);
@@ -7343,6 +7521,8 @@ snn_network_t* snn_network_load(const char* path) {
                 if (wiring_schema >= 7) {
                     uint8_t has_homeostatic = 0;
                     if (fread(&has_homeostatic, sizeof(uint8_t), 1, f) == 1 && has_homeostatic) {
+                        /* Bit 1: rebalance already applied — see save. */
+                        pop->inh_rebalanced = (has_homeostatic & 2u) != 0;
                         if (pop->threshold_offset) {
                             size_t r1 = fread(pop->threshold_offset, sizeof(float),
                                               pop->n_neurons, f);
@@ -7465,7 +7645,8 @@ snn_network_t* snn_network_load(const char* path) {
     }
 
     /* Weights come from the checkpoint, so the inhibition rebalance runs on
-     * the loaded network (idempotent: never weakens inhibition). */
+     * the loaded network — only on pops not yet marked inh_rebalanced (the
+     * marker is persisted), so restarts do not compound the scaling. */
     /* Population subclass, delays, heterogeneity and gap coupling are not in
      * the save format; restore them from the builder by name first — the
      * rebalance identifies PV/SOM pops by subclass.

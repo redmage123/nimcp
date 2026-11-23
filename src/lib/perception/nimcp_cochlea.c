@@ -42,6 +42,8 @@ NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(cochlea)
 
 
 #define COCHLEA_LOG_MODULE "COCHLEA"
+#define COCHLEA_TAP_MAX     1024u   /* the brain hears 40 ms blocks (640 samples at 16 kHz) */
+#define COCHLEA_EXT_OUT_MAX 128u    /* >= dog (16) and bat (64) ultrasonic channel counts */
 
 //=============================================================================
 // Opaque Structure Definition
@@ -59,6 +61,14 @@ struct cochlea {
     hair_cell_bank_t*   hc;         /**< Hair cell bank */
     anf_bank_t*         anf;        /**< Auditory nerve fiber bank */
     ext_hearing_t*      ext;        /**< Extended hearing (dog/bat, optional) */
+    float*              ext_out;    /**< ext_hearing_process scratch [COCHLEA_EXT_OUT_MAX] */
+
+    /* Last raw input block (2026-11-23): lets the brain's non-human hearing
+     * (echolocation) listen to the same sound the cochlea hears. Seqlock:
+     * tap_seq is odd while being written. */
+    float*            tap_buf;
+    uint32_t          tap_len;
+    volatile uint64_t tap_seq;
 
     /* Output buffers */
     float* channel_energy;          /**< Per-channel energy */
@@ -222,9 +232,16 @@ cochlea_t* cochlea_create(const cochlea_config_t* config)
 
     /* Create extended hearing if enabled */
     if (config->enable_extended_hearing) {
-        cochlea->ext = ext_hearing_create(&config->ext_config, config->sample_rate);
+        ext_hearing_config_t ext_cfg = config->ext_config;
+        if (ext_cfg.dog.ultrasonic_channels > COCHLEA_EXT_OUT_MAX)   /* ext_out bound */
+            ext_cfg.dog.ultrasonic_channels = COCHLEA_EXT_OUT_MAX;
+        if (ext_cfg.bat.ultrasonic_channels > COCHLEA_EXT_OUT_MAX)
+            ext_cfg.bat.ultrasonic_channels = COCHLEA_EXT_OUT_MAX;
+        cochlea->ext = ext_hearing_create(&ext_cfg, config->sample_rate);
         /* Not fatal if ext fails - degrade gracefully */
     }
+    cochlea->ext_out = (float*)nimcp_calloc(COCHLEA_EXT_OUT_MAX, sizeof(float));
+    cochlea->tap_buf = (float*)nimcp_calloc(COCHLEA_TAP_MAX, sizeof(float));
 
     /* Allocate output buffers */
     uint32_t nc = config->num_channels;
@@ -269,6 +286,8 @@ void cochlea_destroy(cochlea_t* cochlea)
     if (cochlea->hc)  hair_cell_bank_destroy(cochlea->hc);
     if (cochlea->anf) anf_bank_destroy(cochlea->anf);
     if (cochlea->ext) ext_hearing_destroy(cochlea->ext);
+    nimcp_free(cochlea->ext_out);
+    nimcp_free(cochlea->tap_buf);
 
     nimcp_free(cochlea->channel_energy);
     nimcp_free(cochlea->channel_db);
@@ -404,6 +423,29 @@ nimcp_error_t cochlea_process(
     output->speech_detected = (peak_freq >= 300.0f && peak_freq <= 3000.0f
                                && total_energy > 0.01f);
 
+    /* Extended (dog/bat) hearing: ext was created but ext_hearing_process
+     * was never called, so the extended-hearing code never ran. Mono input
+     * is fed to both ears here; cochlea_process_stereo refines localization. */
+    if (cochlea->ext && cochlea->ext_out) {
+        ext_hearing_process(cochlea->ext, audio_in, num_samples, cochlea->ext_out);
+        dog_auditory_t* dog = ext_hearing_get_dog(cochlea->ext);
+        if (dog) {
+            if (!output->dog_localization)   /* freed by cochlea_output_destroy */
+                output->dog_localization = (dog_localization_t*)nimcp_calloc(1, sizeof(dog_localization_t));
+            if (output->dog_localization)
+                dog_auditory_localize(dog, output->dog_localization);
+        }
+    }
+
+    /* Publish the raw block for cochlea_copy_last_input (seqlock writer). */
+    if (cochlea->tap_buf) {
+        uint32_t n = num_samples < COCHLEA_TAP_MAX ? num_samples : COCHLEA_TAP_MAX;
+        __atomic_add_fetch(&cochlea->tap_seq, 1, __ATOMIC_ACQ_REL);
+        memcpy(cochlea->tap_buf, audio_in, n * sizeof(float));
+        cochlea->tap_len = n;
+        __atomic_add_fetch(&cochlea->tap_seq, 1, __ATOMIC_ACQ_REL);
+    }
+
     /* Update statistics */
     __atomic_add_fetch(&cochlea->stats.samples_processed, num_samples, __ATOMIC_RELAXED);
     __atomic_add_fetch(&cochlea->stats.frames_processed, 1, __ATOMIC_RELAXED);
@@ -446,13 +488,20 @@ nimcp_error_t cochlea_process_stereo(
         mono[i] = (audio_left[i] + audio_right[i]) * 0.5f;
     }
 
-    /* Process extended hearing for localization */
-    if (cochlea->ext && output->dog_localization) {
-        /* Extended hearing processes stereo for ITD/ILD */
-    }
-
     nimcp_error_t result = cochlea_process(cochlea, mono, num_samples, output);
     nimcp_free(mono);
+
+    /* Extended hearing localization needs the two ears separately (the
+     * block that used to be here was empty): re-run the dog processor on
+     * true stereo so ILD/azimuth replace the mono estimate. */
+    if (result == NIMCP_SUCCESS && cochlea->ext && cochlea->ext_out) {
+        dog_auditory_t* dog = ext_hearing_get_dog(cochlea->ext);
+        if (dog && dog_auditory_process(dog, audio_left, audio_right, num_samples,
+                                        cochlea->ext_out) == NIMCP_SUCCESS &&
+            output->dog_localization) {
+            dog_auditory_localize(dog, output->dog_localization);
+        }
+    }
 
     cochlea_heartbeat("process_stereo", 1.0f);
     return result;
@@ -744,6 +793,12 @@ nimcp_error_t cochlea_enable_extended_mode(
     /* Create extended hearing if not already present */
     if (!cochlea->ext) {
         ext_hearing_config_t ext_cfg = ext_hearing_config_default(mode);
+        /* ext_out holds COCHLEA_EXT_OUT_MAX floats; dog/bat processing writes
+         * ultrasonic_channels of them unchecked. */
+        if (ext_cfg.dog.ultrasonic_channels > COCHLEA_EXT_OUT_MAX)
+            ext_cfg.dog.ultrasonic_channels = COCHLEA_EXT_OUT_MAX;
+        if (ext_cfg.bat.ultrasonic_channels > COCHLEA_EXT_OUT_MAX)
+            ext_cfg.bat.ultrasonic_channels = COCHLEA_EXT_OUT_MAX;
         cochlea->ext = ext_hearing_create(&ext_cfg, cochlea->config.sample_rate);
         if (!cochlea->ext) {
             return NIMCP_ERROR_NO_MEMORY;
@@ -752,9 +807,44 @@ nimcp_error_t cochlea_enable_extended_mode(
         ext_hearing_switch_mode(cochlea->ext, mode);
     }
 
+    if (!cochlea->ext_out) {
+        cochlea->ext_out = (float*)nimcp_calloc(COCHLEA_EXT_OUT_MAX, sizeof(float));
+    }
+
     cochlea->config.enable_extended_hearing = true;
     cochlea_heartbeat("enable_extended_mode", 1.0f);
     return NIMCP_SUCCESS;
+}
+
+/* Brain-integration helpers (2026-11-23). Plain int/bool signatures so the
+ * brain init TU can forward-declare them without nimcp_cochlea.h (whose
+ * medulla_t / thalamus_t tags collide with nimcp_brain_internal.h). */
+bool cochlea_has_extended_hearing(const cochlea_t* cochlea)
+{
+    return cochlea && cochlea->ext;
+}
+
+int cochlea_enable_dog_hearing(cochlea_t* cochlea)
+{
+    return cochlea_enable_extended_mode(cochlea, EXT_HEARING_DOG) == NIMCP_SUCCESS ? 0 : -1;
+}
+
+uint32_t cochlea_copy_last_input(const cochlea_t* cochlea, float* dst,
+                                 uint32_t max_samples, uint64_t* seq_out)
+{
+    if (!cochlea || !cochlea->tap_buf || !dst || max_samples == 0) return 0;
+    for (int attempt = 0; attempt < 4; attempt++) {   /* seqlock reader */
+        uint64_t s0 = __atomic_load_n(&cochlea->tap_seq, __ATOMIC_ACQUIRE);
+        if (s0 & 1u) continue;
+        uint32_t n = cochlea->tap_len < max_samples ? cochlea->tap_len : max_samples;
+        memcpy(dst, cochlea->tap_buf, n * sizeof(float));
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&cochlea->tap_seq, __ATOMIC_ACQUIRE) == s0) {
+            if (seq_out) *seq_out = s0;
+            return n;
+        }
+    }
+    return 0;
 }
 
 //=============================================================================

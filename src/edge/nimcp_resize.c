@@ -22,6 +22,12 @@
 /* Internal access */
 extern neural_network_t adaptive_network_get_base_network(adaptive_network_t network);
 
+/* The brain's base ANN, or NULL when there is no brain/network to measure. */
+static neural_network_t edge_resize_base_network(nimcp_brain_t brain) {
+    if (!brain || !brain->internal_brain || !brain->internal_brain->network) return NULL;
+    return adaptive_network_get_base_network(brain->internal_brain->network);
+}
+
 /* ============================================================================
  * Neuron Importance Scoring
  * ============================================================================ */
@@ -35,37 +41,41 @@ int nimcp_edge_score_neuron_importance(
         return -1;
     }
 
-    /*
-     * Since we don't have direct access to brain internals from this module,
-     * generate deterministic scores based on neuron index with variance.
-     * This lets tests verify the scoring/selection logic end-to-end.
-     *
-     * Real implementation would access:
-     *   - neuron activity history
-     *   - synapse fan-in/fan-out counts
-     *   - absolute weight magnitudes
-     *   - activation uniqueness (cosine distance from neighbors)
-     */
-    for (uint32_t i = 0; i < num_neurons; i++) {
-        float activity    = 0.5f + 0.3f * sinf((float)i * 0.1f);
-        float connectivity = 0.4f + 0.2f * cosf((float)i * 0.07f);
-        float weight_mag  = 0.6f + 0.25f * sinf((float)i * 0.13f + 1.0f);
-        float uniqueness  = 0.3f + 0.4f * cosf((float)i * 0.17f + 2.0f);
-
-        /* Pseudo-random noise from index hash */
-        uint32_t h = i * 2654435761u;
-        float noise = ((float)(h & 0xFFFF) / 65535.0f - 0.5f) * 0.1f;
-
-        scores[i] = activity * 0.3f
-                   + connectivity * 0.2f
-                   + weight_mag * 0.3f
-                   + uniqueness * 0.2f
-                   + noise;
-
-        /* Clamp to [0, 1] */
-        if (scores[i] < 0.0f) scores[i] = 0.0f;
-        if (scores[i] > 1.0f) scores[i] = 1.0f;
+    /* Score from the brain's real ANN state (2026-11-23). This used to
+     * return index-only sin/cos values that ignored the brain, so contraction
+     * and distillation pruned fixed sinusoidal indices. Score =
+     * 0.4 recent activity + 0.3 fan-in + 0.3 weight norm, each normalized by
+     * its maximum over the network. No brain/network -> error, not fake data. */
+    neural_network_t nn = edge_resize_base_network(brain);
+    if (!nn) {
+        return -1;
     }
+    uint32_t net_n = neural_network_get_num_neurons(nn);
+    uint32_t n = num_neurons < net_n ? num_neurons : net_n;
+
+    float max_act = 0.0f, max_fan = 0.0f, max_w = 0.0f;
+    for (uint32_t i = 0; i < n; i++) {
+        float act = neural_network_get_average_activity(nn, i);
+        float fan = (float)neural_network_get_incoming_synapse_count(nn, i);
+        float w   = neural_network_get_weight_norm(nn, i);
+        if (!isfinite(act)) act = 0.0f;
+        if (!isfinite(w)) w = 0.0f;
+        scores[i] = act;                 /* stash raw activity for pass 2 */
+        if (act > max_act) max_act = act;
+        if (fan > max_fan) max_fan = fan;
+        if (fabsf(w) > max_w) max_w = fabsf(w);
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        float act = max_act > 0.0f ? scores[i] / max_act : 0.0f;
+        float fan = max_fan > 0.0f ?
+            (float)neural_network_get_incoming_synapse_count(nn, i) / max_fan : 0.0f;
+        float w = neural_network_get_weight_norm(nn, i);
+        float wn = (max_w > 0.0f && isfinite(w)) ? fabsf(w) / max_w : 0.0f;
+        float sc = 0.4f * act + 0.3f * fan + 0.3f * wn;
+        scores[i] = sc < 0.0f ? 0.0f : (sc > 1.0f ? 1.0f : sc);
+    }
+    /* Indices past the real network have nothing to keep. */
+    for (uint32_t i = n; i < num_neurons; i++) scores[i] = 0.0f;
 
     return 0;
 }
@@ -96,10 +106,18 @@ int nimcp_edge_brain_resize_check(
 
     memset(report, 0, sizeof(*report));
 
-    /* Estimate current neuron count from brain handle — use a reasonable default
-     * since we can't peek into brain internals from the edge module. */
-    uint32_t current_neurons = 100000; /* Placeholder — real impl reads brain->internal_brain */
-    (void)brain;
+    /* Real ANN neuron count (was a 100000 placeholder, so EXPAND wired new
+     * neurons only from the first 100K and the feasibility bounds were
+     * fiction). Without a network there is nothing to resize. */
+    neural_network_t nn = edge_resize_base_network(brain);
+    uint32_t current_neurons = nn ? neural_network_get_num_neurons(nn) : 0;
+    if (current_neurons == 0) {
+        report->feasible = false;
+        report->neurons_after = config->target_neuron_count;
+        snprintf(report->reason, sizeof(report->reason),
+                 "No brain network to measure");
+        return 0;
+    }
 
     report->neurons_before = current_neurons;
     report->neurons_after = config->target_neuron_count;

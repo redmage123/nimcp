@@ -39,6 +39,10 @@ bio_module_context_t bio_router_register_module(const bio_module_info_t* info) {
             }
             ctx->magic = BIO_MODULE_MAGIC;
             ctx->entry = existing;
+            /* Shared entry: count this ctx so unregistering one owner does not
+             * destroy the inbox under the others, and keep its own user_data. */
+            ctx->user_data = info->user_data;
+            existing->refcount++;
             nimcp_platform_mutex_unlock(&g_router->modules_mutex);
             return ctx;
         }
@@ -103,6 +107,14 @@ bio_module_context_t bio_router_register_module(const bio_module_info_t* info) {
         return NULL;
     }
 
+    /* A module asking for more than the tier cap may still grow to what it asked. */
+    if (info->inbox_capacity > entry->inbox.max_capacity) {
+        entry->inbox.max_capacity = info->inbox_capacity < MAX_INBOX_MESSAGES ?
+                                    info->inbox_capacity : MAX_INBOX_MESSAGES;
+    }
+
+    entry->refcount = 1;
+
     /* BUG-8 fix: NOW set magic — inbox and handler_mutex are fully initialized,
      * so other threads can safely use this entry. */
     entry->magic = BIO_MODULE_MAGIC;
@@ -139,6 +151,7 @@ bio_module_context_t bio_router_register_module(const bio_module_info_t* info) {
 
     ctx->magic = BIO_MODULE_MAGIC;
     ctx->entry = entry;
+    ctx->user_data = info->user_data;
 
     LOG_INFO("Registered module: id=%u, name=%s, inbox_capacity=%u",
              info->module_id, entry->module_name, inbox_cap);
@@ -161,8 +174,40 @@ void bio_router_unregister_module(bio_module_context_t ctx) {
         return;
     }
 
+    /* Drop the handlers this ctx registered: its user_data is about to go away. */
+    nimcp_platform_mutex_lock(&entry->handler_mutex);
+    uint32_t kept = 0;
+    for (uint32_t i = 0; i < entry->handler_count; i++) {
+        if (entry->handlers[i].owner != (const void*)ctx) {
+            entry->handlers[kept++] = entry->handlers[i];
+        }
+    }
+    for (uint32_t i = kept; i < entry->handler_count; i++) {
+        memset(&entry->handlers[i], 0, sizeof(entry->handlers[i]));
+    }
+    entry->handler_count = kept;
+    nimcp_platform_mutex_unlock(&entry->handler_mutex);
+
+    /* Other contexts still share this entry (duplicate module_id): release
+     * only this reference and keep the inbox alive for them. */
+    if (entry->refcount > 1) {
+        entry->refcount--;
+        LOG_DEBUG("Released shared module ref: id=%u, name=%s (remaining=%u)",
+                  entry->module_id, entry->module_name, entry->refcount);
+        nimcp_platform_mutex_unlock(&g_router->modules_mutex);
+        ctx->magic = 0;
+        nimcp_free(ctx);
+        return;
+    }
+
     LOG_INFO("Unregistering module: id=%u, name=%s",
              entry->module_id, entry->module_name);
+
+    /* Hide the entry from new lookups, then wait for senders that pinned it
+     * outside modules_mutex before freeing the inbox (UAF fix). */
+    entry->magic = 0;
+    entry->refcount = 0;
+    bio_router_quiesce_entry(entry);
 
     // Destroy inbox
     bio_msg_queue_destroy(&entry->inbox);
@@ -503,13 +548,17 @@ nimcp_error_t bio_router_send(bio_module_context_t ctx,
         }
 
         bio_msg_queue_t* target_inbox = &target->inbox;
+        /* Pin the entry so a concurrent unregister/shutdown waits before freeing the inbox. */
+        atomic_fetch_add(&target->inflight, 1);
         nimcp_platform_mutex_unlock(&g_router->modules_mutex);
 
         result = bio_msg_queue_enqueue(target_inbox, msg, msg_size,
                                         NULL, timeout_ms);
         if (result == NIMCP_SUCCESS) {
             atomic_fetch_add(&target->messages_received, 1);
-        } else {
+        }
+        atomic_fetch_sub(&target->inflight, 1);
+        if (result != NIMCP_SUCCESS) {
             LOG_WARN("Failed to enqueue to module %u inbox (type=0x%04X)", target_id, header->type);
 
             /* Dead-letter tracking: record dropped message type */
@@ -723,7 +772,8 @@ nimcp_error_t bio_router_observe_signal(bio_module_context_t ctx,
     obs->user_data = bio_module_context_get_user_data(ctx);
     obs->active = true;
 
-    g_signal_observer_count++;
+    /* Release-store so the lock-free empty check in publish sees a complete entry. */
+    __atomic_store_n(&g_signal_observer_count, g_signal_observer_count + 1, __ATOMIC_RELEASE);
 
     nimcp_platform_mutex_unlock(&g_signal_mutex);
 
@@ -739,6 +789,12 @@ nimcp_error_t bio_router_publish_signal(bio_module_context_t ctx,
                                          float value) {
     NIMCP_CHECK_THROW(ctx && signal_name, NIMCP_ERROR_INVALID_PARAM,
                       "bio_router_publish_signal: invalid context or signal_name");
+
+    /* Fast path: glia/brain publish every tick but usually nobody observes;
+     * skip the global mutex + strcmp scan when the registry is empty. */
+    if (__atomic_load_n(&g_signal_observer_count, __ATOMIC_ACQUIRE) == 0) {
+        return NIMCP_SUCCESS;
+    }
 
     // Initialize mutex on first use (thread-safe via pthread_once)
     nimcp_platform_once(&g_signal_mutex_once, init_signal_mutex_once);

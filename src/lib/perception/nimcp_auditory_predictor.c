@@ -48,6 +48,7 @@ struct auditory_predictor {
     double sum_mse, sum_copy;
     float ema_mse, ema_copy;
     float last_mse, last_copy;
+    uint64_t nonfinite_resets;   /* listening-state resets after a non-finite error */
 };
 
 /* ------------------------------------------------------------------ rng */
@@ -288,6 +289,30 @@ static void present(auditory_predictor_t* p, const float* x_in) {
     }
 }
 
+/* Zero the listening state (membranes, spikes, adaptation, readout,
+ * traces, feedforward-inhibition mean, pending prediction). Weights and
+ * statistics are kept. */
+static void reset_listening(auditory_predictor_t* p) {
+    const size_t n = p->n, dim = p->dim, dn = (size_t)p->dim * p->n, nn = (size_t)p->n * p->n;
+    memset(p->v, 0, n * sizeof(float));
+    memset(p->z, 0, n * sizeof(float));
+    memset(p->b, 0, n * sizeof(float));
+    memset(p->psi, 0, n * sizeof(float));
+    memset(p->zbar, 0, n * sizeof(float));
+    memset(p->zsum, 0, n * sizeof(float));
+    memset(p->eps_rec, 0, n * sizeof(float));
+    memset(p->y, 0, dim * sizeof(float));
+    memset(p->eps_in, 0, dim * sizeof(float));
+    memset(p->epa_in, 0, dn * sizeof(float));
+    memset(p->ebar_in, 0, dn * sizeof(float));
+    memset(p->epa_rec, 0, nn * sizeof(float));
+    memset(p->ebar_rec, 0, nn * sizeof(float));
+    memset(p->xbar, 0, dim * sizeof(float));
+    memset(p->pending, 0, dim * sizeof(float));
+    p->has_xbar = false;
+    p->has_pending = false;
+}
+
 static void learn(auditory_predictor_t* p) {
     const uint32_t n = p->n, dim = p->dim;
     const auditory_predictor_config_t* c = &p->cfg;
@@ -336,7 +361,28 @@ int auditory_predictor_step(auditory_predictor_t* p, const float* x) {
         }
         mse /= dim;
         copy /= dim;
-        if (!isfinite(mse)) return -1;   /* never learn from a non-finite error */
+        if (!isfinite(mse)) {
+            /* Never learn from a non-finite error. Returning here used to leave
+             * the bad `pending` in place, so every later frame failed the same
+             * way (permanent wedge). Drop the listening state and start
+             * listening afresh from this frame; the counter lets the caller
+             * (sensory-hub self-repair) restart a predictor whose weights,
+             * not just its state, have gone non-finite. */
+            reset_listening(p);
+            p->nonfinite_resets++;
+            /* Don't let this frame's non-finite error / MSE reach readers
+             * (auditory_predictor_last_error / _last_mse feed the sensory hub,
+             * then the cerebellum and memories). */
+            memset(p->err, 0, dim * sizeof(float));
+            p->last_mse = 0.0f;
+            p->last_copy = 0.0f;
+            present(p, x);
+            memcpy(p->pending, p->y, dim * sizeof(float));
+            memcpy(p->x_prev, x, dim * sizeof(float));
+            p->has_pending = true;
+            p->frames++;
+            return 0;
+        }
         learn(p);
         for (uint32_t j = 0; j < n; j++)
             p->h[j] += p->cfg.ip_lr * (p->r_step - p->zsum[j] / p->cfg.sub);
@@ -383,6 +429,7 @@ void auditory_predictor_get_stats(const auditory_predictor_t* p, auditory_predic
     out->copy_mse_recent = p->ema_copy;
     out->skill_recent = p->ema_copy > 0 ? 1.0f - p->ema_mse / p->ema_copy : 0.0f;
     out->skill_total = p->sum_copy > 0 ? (float)(1.0 - p->sum_mse / p->sum_copy) : 0.0f;
+    out->nonfinite_resets = p->nonfinite_resets;
 }
 
 /* ---------------------------------------------------------- persistence */

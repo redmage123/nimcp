@@ -455,6 +455,19 @@ int brain_cycle_coordinator_unregister(
     brain_cycle_coordinator_t* coord,
     brain_cycle_type_t type);
 
+/**
+ * @brief Stop and join every driver thread, keeping the registrations.
+ *
+ * Used at the very start of brain_destroy so no driver thread can tick a
+ * subsystem while it is being freed. Entries stay registered (as
+ * observation-only, tick_fn cleared) so the per-subsystem destroy helpers'
+ * later unregister calls still succeed quietly. Idempotent.
+ *
+ * @param coord Coordinator handle (NULL is safe)
+ * @return Number of driver threads stopped
+ */
+int brain_cycle_coordinator_stop_all_drivers(brain_cycle_coordinator_t* coord);
+
 //=============================================================================
 // API Functions - Tick Notification
 //=============================================================================

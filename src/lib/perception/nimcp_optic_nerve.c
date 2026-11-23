@@ -301,10 +301,15 @@ int optic_nerve_read(optic_nerve_t* on, FILE* fp)
     uint32_t hdr[3];
     if (fread(hdr, sizeof(hdr), 1, fp) != 1) return -1;
     if (hdr[0] != ON_MAGIC || hdr[1] != ON_VERSION || hdr[2] != on->n_axons) return -1;
-    for (uint32_t i = 0; i < on->n_axons; i++) {
-        float m;
-        if (fread(&m, sizeof(m), 1, fp) != 1 || !isfinite(m)) return -1;
-        optic_nerve_set_myelination(on, (int32_t)i, m);
-    }
+    /* Read and validate every axon before applying any: a truncated or
+     * corrupt record must not leave myelination applied up to the bad axon. */
+    float* m = (float*)nimcp_malloc((on->n_axons ? on->n_axons : 1) * sizeof(float));
+    if (!m) return -1;
+    if (fread(m, sizeof(float), on->n_axons, fp) != on->n_axons) { nimcp_free(m); return -1; }
+    for (uint32_t i = 0; i < on->n_axons; i++)
+        if (!isfinite(m[i])) { nimcp_free(m); return -1; }
+    for (uint32_t i = 0; i < on->n_axons; i++)
+        optic_nerve_set_myelination(on, (int32_t)i, m[i]);
+    nimcp_free(m);
     return 0;
 }
