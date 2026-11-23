@@ -113,6 +113,15 @@ typedef struct {
 
     // Thread safety
     nimcp_mutex_t lock;
+
+    // Appended: territory mapping set up by glial_integration_auto_assign_spatial().
+    // Neurons carry no coordinates, so an astrocyte's territory is a contiguous
+    // block of postsynaptic neuron ids (ids are allocated layer by layer, i.e.
+    // blocks are local). A synapse (pre, post) with no explicit mapping is
+    // served by astrocyte post * territory_astrocytes / territory_neurons.
+    uint32_t territory_neurons;              /**< 0 = territory mapping off */
+    uint32_t territory_astrocytes;           /**< astrocyte count snapshot for the mapping */
+    uint64_t territory_synapses;             /**< real synapses covered by territories */
 } glial_integration_t;
 
 /**
@@ -274,20 +283,49 @@ nimcp_result_t glial_integration_assign_microglia_to_synapse(glial_integration_t
 // ============================================================================
 
 /**
- * @brief Automatically assign glial cells based on spatial proximity
+ * @brief Automatically assign glial cells to the attached neural network
  *
- * Uses spatial coordinates to assign:
- * - Astrocytes to nearby synapses (within radius)
- * - Oligodendrocytes to nearby neurons (capacity-limited)
- * - Microglia to synapses within surveillance radius
+ * Neurons have no coordinates, so "proximity" is neuron-id locality
+ * (ids are allocated layer by layer):
+ * - Astrocytes: territory mapping. Every REAL synapse (pre, post) of
+ *   gi->network is covered by astrocyte post*A/N (O(1), no per-synapse
+ *   memory); each astrocyte's drive_synapses is set to the number of real
+ *   incoming synapses in its territory. Explicit
+ *   glial_integration_assign_astrocyte_to_synapse() mappings take precedence.
+ * - Oligodendrocytes: neuron n → oligodendrocyte n*O/N; each assignment
+ *   registers the axon with the oligodendrocyte (oligodendrocyte_assign_neuron)
+ *   and stops when that cell is full (max_axons).
+ * - Microglia: not auto-assigned (their per-synapse monitoring is a linear
+ *   list of <= 1000 entries; use glial_integration_assign_microglia_to_synapse
+ *   for the synapses to be surveilled).
+ *
+ * Safe to call repeatedly (idempotent); takes gi->lock once (no re-locking).
  *
  * @param gi Glial integration system
  *
- * @return Number of assignments made
- *
- * REQUIRES: Neurons and glial cells must have spatial positions
+ * @return Number of assignments made (covered synapses + myelinated neurons,
+ *         saturating at UINT32_MAX)
  */
 uint32_t glial_integration_auto_assign_spatial(glial_integration_t* gi);
+
+/**
+ * @brief Create glial cells in the attached (empty) networks, then auto-assign
+ *
+ * For each attached network that currently has no cells, creates
+ * round(capacity × density) cells (at least 1), laid out on a regular grid
+ * at 50 µm spacing:
+ * - astrocytes (protoplasmic, 50 µm coverage radius)
+ * - oligodendrocytes with max_axons = ceil(n_neurons / count), capped at
+ *   NIMCP_OLIGO_MAX_AXONS (cells beyond the needed count are not created)
+ * - microglia: at most 256 (each preallocates ~85 KB of monitoring slots)
+ * then calls glial_integration_auto_assign_spatial().
+ *
+ * @param gi        Glial integration system (networks already attached)
+ * @param n_neurons Neuron count of gi->network (0 = query the network)
+ * @param density   Fraction (0, 1] of each network's capacity to fill
+ * @return Number of assignments made by auto-assign (0 on error)
+ */
+uint32_t glial_integration_populate(glial_integration_t* gi, uint32_t n_neurons, float density);
 
 // ============================================================================
 // EVENT NOTIFICATIONS (Called by neural network during simulation)
@@ -333,6 +371,11 @@ void glial_integration_on_neuron_fired(glial_integration_t* gi, uint32_t neuron_
  * @param gi Glial integration system
  * @param pre_neuron_id ID of presynaptic neuron
  * @param post_neuron_id ID of postsynaptic neuron
+ *
+ * modulation = clamp(1 + 0.2·(a·glutamate_pool − (1 − atp_level)), 0.8, 1.2),
+ * a = clamp((Ca − baseline) / 1 µM, 0, 1): Ca2+-dependent gliotransmitter
+ * potentiation (pool-limited) minus metabolic-depletion depression; 1.0 at
+ * rest.
  *
  * @return Modulation factor (0.8 - 1.2), or 1.0 if no astrocyte assigned
  *

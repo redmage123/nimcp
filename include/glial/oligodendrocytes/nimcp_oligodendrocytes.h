@@ -82,10 +82,28 @@ extern "C" {
 /** @brief Pool block size (64 entries per block for bitmap allocation) */
 #define NIMCP_OLIGO_POOL_BLOCK_SIZE 64
 
-/** @brief Baseline unmyelinated conduction velocity (m/s) */
+/** @brief Baseline unmyelinated conduction velocity (m/s) for a 1 µm axon.
+ *  Unmyelinated CNS axons conduct at v ≈ NIMCP_OLIGO_BASE_VELOCITY_MS × sqrt(d/µm)
+ *  (same law as core/axon axon_calculate_velocity). */
 #define NIMCP_OLIGO_BASE_VELOCITY_MS 1.0f
 
-/** @brief Myelin velocity multiplier (fully myelinated) */
+/** @brief Rushton/Hursh constant: myelinated velocity per µm OUTER (fibre)
+ *  diameter at g = 0.7 (m/s per µm). CNS range 5.5-6. */
+#define NIMCP_OLIGO_RUSHTON_K_MS_PER_UM 5.5f
+
+/** @brief Upper bound on any computed conduction velocity (m/s) */
+#define NIMCP_OLIGO_MAX_VELOCITY_MS 120.0f
+
+/** @brief Firing rate (Hz) whose sustained activity_score drives an axon to
+ *  full myelination target (target = clamp(rate / this, 0, 1)). Default for
+ *  new oligodendrocytes; per-cell value: oligodendrocyte_set_full_myelin_rate(). */
+#define NIMCP_OLIGO_FULL_MYELIN_RATE_HZ 10.0f
+
+/** @brief Hard safety bound on internodes per axon (dynamic, per-length) */
+#define NIMCP_OLIGO_MAX_INTERNODES_PER_AXON 8192u
+
+/** @brief Myelin velocity multiplier (legacy; network field only — the
+ *  velocity model is Rushton's law, see NIMCP_OLIGO_RUSHTON_K_MS_PER_UM) */
 #define NIMCP_OLIGO_MYELIN_MULTIPLIER 50.0f
 
 /** @brief Activity threshold for triggering myelination (Hz) */
@@ -131,13 +149,13 @@ extern "C" {
 // Internode Spacing Parameters (Saltatory Conduction)
 //-----------------------------------------------------------------------------
 
-/** @brief Minimum internode length (µm) */
-#define NIMCP_OLIGO_INTERNODE_MIN_UM 100.0f
+/** @brief Minimum internode length (µm); small CNS axons have ~20-80 µm internodes */
+#define NIMCP_OLIGO_INTERNODE_MIN_UM 20.0f
 
 /** @brief Maximum internode length (µm) */
 #define NIMCP_OLIGO_INTERNODE_MAX_UM 1500.0f
 
-/** @brief Optimal internode-to-diameter ratio */
+/** @brief Optimal internode length / OUTER (fibre) diameter ratio (100-150) */
 #define NIMCP_OLIGO_INTERNODE_DIAMETER_RATIO 100.0f
 
 /** @brief Node of Ranvier length (µm) */
@@ -356,7 +374,7 @@ typedef struct {
     //-------------------------------------------------------------------------
     // Activity Tracking
     //-------------------------------------------------------------------------
-    float activity_score;                 /**< Current activity (EMA) */
+    float activity_score;                 /**< Firing-rate estimate (Hz); drives target myelination */
     float filtered_activity;              /**< Low-pass filtered activity */
     uint64_t last_activity_time;          /**< Last spike timestamp */
     float activity_integral;              /**< Integrated activity over time */
@@ -395,6 +413,11 @@ typedef struct {
     float block_probability;              /**< Conduction block probability (0-1) */
     bool is_conducting;                   /**< True if signal can propagate */
     nimcp_metabolic_efficiency_t metabolic; /**< Energy efficiency metrics */
+
+    //-------------------------------------------------------------------------
+    // Appended: spike-event rate estimator (oligodendrocyte_record_spike)
+    //-------------------------------------------------------------------------
+    uint32_t pending_spikes;              /**< Spikes recorded since the last network step */
 } myelinated_axon_t;
 
 //-----------------------------------------------------------------------------
@@ -533,6 +556,13 @@ typedef struct oligodendrocyte {
     uint32_t cow_ref_count;               /**< Reference count for CoW */
     bool cow_modified;                    /**< True if modified since copy */
     void* cow_original;                   /**< Pointer to original if this is a copy */
+
+    //-------------------------------------------------------------------------
+    // Appended: activity → myelination mapping
+    //-------------------------------------------------------------------------
+    float full_myelin_rate_hz;            /**< Rate (Hz) mapped to full myelination target */
+    bool spike_driven;                    /**< Set once oligodendrocyte_record_spike() was used:
+                                               network_step then derives rates from spike counts */
 } oligodendrocyte_t;
 
 /**
@@ -593,6 +623,12 @@ typedef struct {
     //-------------------------------------------------------------------------
     oligo_axon_pool_t* axon_pool;         /**< Shared pool for myelinated axon data */
     oligo_internode_pool_t* internode_pool; /**< Shared pool for internode segments */
+
+    //-------------------------------------------------------------------------
+    // Appended: per-network skip-frame state for oligodendrocyte_network_step
+    //-------------------------------------------------------------------------
+    uint32_t step_counter;                /**< Calls since the last full update */
+    float accumulated_dt;                 /**< Seconds accumulated since the last full update */
 } oligodendrocyte_network_t;
 
 /**
@@ -843,14 +879,8 @@ float oligodendrocyte_get_g_ratio_deviation(oligodendrocyte_t* oligo);
  *
  * @return Effective velocity with myelin (m/s)
  *
- * FORMULA (Rushton's law for saltatory conduction):
- * v = k × d × G-ratio factor
- * where k ≈ 5.5 m/s per µm for myelinated axons
- *
- * FACTORS:
- * - Axon diameter (larger = faster)
- * - Myelin thickness (optimal G-ratio = fastest)
- * - Internode spacing (longer = fewer delays)
+ * Velocity of oligodendrocyte_compute_saltatory_velocity(), floored at
+ * base_velocity. Also caches conduction_velocity / conduction_delay.
  */
 float oligodendrocyte_compute_conduction_velocity(oligodendrocyte_t* oligo,
                                                    uint32_t axon_id,
@@ -863,11 +893,17 @@ float oligodendrocyte_compute_conduction_velocity(oligodendrocyte_t* oligo,
  *
  * @return Conduction velocity (m/s)
  *
- * MODEL:
- * Uses full saltatory conduction model with:
- * - Node of Ranvier delays
- * - Internode capacitance
- * - G-ratio efficiency factor
+ * MODEL (Rushton 1951; Hursh 1939; Waxman & Bennett 1972):
+ *   D      = axon_diameter / g_ratio                    (outer fibre diameter)
+ *   v_m    = K · D · [g·sqrt(-ln g)] / [0.7·sqrt(-ln 0.7)] · f_internode
+ *            K = NIMCP_OLIGO_RUSHTON_K_MS_PER_UM (5.5 m/s per µm at g = 0.7)
+ *   v_u    = NIMCP_OLIGO_BASE_VELOCITY_MS · sqrt(axon_diameter)  (unmyelinated)
+ *   1/v    = L/v_m + (1-L)/v_u      L = myelination_level (ensheathed fraction;
+ *                                   segments in series)
+ *   f_internode = 1 - 0.3·|L_int - L_opt|/L_opt in [0.7, 1],
+ *                 L_opt = NIMCP_OLIGO_INTERNODE_DIAMETER_RATIO × D(g_opt)
+ * Examples at full myelination (g = g_opt ≈ 0.63-0.64): d = 0.8 µm → 7.2 m/s,
+ * 1.0 µm → 9.0 m/s, 1.5 µm → 13.1 m/s. Capped at NIMCP_OLIGO_MAX_VELOCITY_MS.
  */
 float oligodendrocyte_compute_saltatory_velocity(const myelinated_axon_t* axon);
 
@@ -902,13 +938,34 @@ void oligodendrocyte_optimize_internode_spacing(oligodendrocyte_t* oligo, uint32
  *
  * @param oligo Oligodendrocyte
  * @param axon_id ID of active axon
- * @param activity Activity level (e.g., spike count, firing rate)
+ * @param activity Firing rate in Hz (clamped to [0, 1000]); folded into
+ *        activity_score with an EMA (alpha 0.3 per sample)
  * @param timestamp Timestamp of this activity sample (µs)
  */
 void oligodendrocyte_track_activity(oligodendrocyte_t* oligo,
                                      uint32_t axon_id,
                                      float activity,
                                      uint64_t timestamp);
+
+/**
+ * @brief Record one spike of an axon (event-driven callers)
+ *
+ * Counts the spike; oligodendrocyte_network_step() converts the count since
+ * its previous full update into a rate (Hz) and folds it into activity_score
+ * with time constant NIMCP_OLIGO_ACTIVITY_TAU_S (so silent axons decay).
+ * Callers that already know a rate should use oligodendrocyte_track_activity().
+ * Unknown axon ids are ignored.
+ */
+void oligodendrocyte_record_spike(oligodendrocyte_t* oligo, uint32_t axon_id);
+
+/**
+ * @brief Set the firing rate (Hz) that maps to a full myelination target
+ *
+ * remodel target = clamp(activity_score / rate_hz, 0, 1). Default
+ * NIMCP_OLIGO_FULL_MYELIN_RATE_HZ (10 Hz). Non-positive/non-finite values
+ * are ignored.
+ */
+void oligodendrocyte_set_full_myelin_rate(oligodendrocyte_t* oligo, float rate_hz);
 
 /**
  * @brief Update all activity scores (decay + filtering)
@@ -926,7 +983,8 @@ void oligodendrocyte_update_activity_scores(oligodendrocyte_t* oligo, uint64_t c
  *
  * ADAPTIVE MYELINATION ALGORITHM:
  * 1. Compute target myelination for each axon based on:
- *    - Activity level (high activity → more myelin)
+ *    - Activity level: activity_factor = clamp(activity_score [Hz] /
+ *      full_myelin_rate_hz, 0, 1)  (default 10 Hz → full target)
  *    - NRG1/BDNF concentrations (growth factor signals)
  *    - Centrality score (important axons prioritized)
  * 2. Adjust myelination toward target using RK4 dynamics
@@ -1153,6 +1211,10 @@ void oligodendrocyte_network_update_centrality(oligodendrocyte_network_t* networ
  *
  * @param network Network
  * @param dt Time step (seconds)
+ *
+ * Myelination is slow, so the full update runs on every 100th call of THIS
+ * network (per-network counter) with the summed dt of those calls. Spike
+ * counts from oligodendrocyte_record_spike() are converted to rates here.
  *
  * OPERATIONS:
  * 1. Update state dynamics (RK4) for all oligodendrocytes

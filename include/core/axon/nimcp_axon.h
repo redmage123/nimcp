@@ -109,6 +109,17 @@ typedef struct axon_segment_pool_struct axon_segment_pool_t;
 /** Spike amplitude (mV) */
 #define NIMCP_AXON_SPIKE_AMPLITUDE_MV 100.0f
 
+/** Per-axon in-flight buffer: initial capacity (allocated on the first spike) */
+#define NIMCP_AXON_IN_FLIGHT_INITIAL 8
+
+/** Per-axon in-flight buffer: at this size, arrived-but-uncollected spikes are
+ *  evicted before the buffer grows further (bounds memory for callers that use
+ *  axon_initiate_spike() only as a gate and never collect arrivals) */
+#define NIMCP_AXON_IN_FLIGHT_EVICT_AT 64
+
+/** Per-axon in-flight buffer: hard capacity (spikes beyond it are dropped) */
+#define NIMCP_AXON_IN_FLIGHT_MAX 4096
+
 //=============================================================================
 // AXON TYPE ENUMERATION
 //=============================================================================
@@ -501,6 +512,18 @@ struct axon_struct {
 
     /** Original axon if this is a CoW copy */
     axon_t* cow_original;
+
+    //--- Spikes in flight (delay line) ---
+    /** Spikes travelling soma -> terminal, min-heap on arrival_time.
+     *  Allocated on the first axon_initiate_spike(); owned by this axon
+     *  (not shared by CoW copies). Collect with axon_pop_arrivals(). */
+    axon_spike_queue_t* in_flight;
+
+    /** Spikes lost before arrival because the buffer was at NIMCP_AXON_IN_FLIGHT_MAX */
+    uint64_t in_flight_dropped;
+
+    /** Spikes that arrived but were never collected and were evicted to make room */
+    uint64_t in_flight_evicted;
 };
 
 //=============================================================================
@@ -732,9 +755,21 @@ bool axon_set_segment_myelination(axon_t* axon,
  *
  * WHAT: Start action potential propagation
  * WHY:  Core function - neuron fires, spike travels along axon
- * HOW:  Creates spike event, queues for delivery at arrival_time
+ * HOW:  Gates on damage / refractoriness / ATP, then enqueues a spike event on
+ *       the axon's own in-flight buffer with
+ *       arrival_time = current_time + propagation delay (us). Several spikes
+ *       can be in flight at once; collect them with axon_pop_arrivals() (or
+ *       axon_spike_arrived(), or axon_network_process_arrivals()).
+ *       The absolute refractory period is NIMCP_AXON_REFRACTORY_PERIOD_MS:
+ *       a spike at t blocks initiation for t' < t + period, independent of
+ *       whether/how often axon_step() is called.
+ *       Callers that never collect arrivals are safe: once the buffer holds
+ *       NIMCP_AXON_IN_FLIGHT_EVICT_AT events, already-arrived spikes are evicted
+ *       (counted in in_flight_evicted). A spike that cannot be buffered at all
+ *       (NIMCP_AXON_IN_FLIGHT_MAX pending, none arrived) is still initiated
+ *       (return true) but counted in in_flight_dropped.
  *
- * COMPLEXITY: O(1)
+ * COMPLEXITY: O(log n) in spikes in flight
  *
  * @param axon Axon to propagate spike
  * @param current_time Current simulation time (microseconds)
@@ -747,18 +782,55 @@ bool axon_initiate_spike(axon_t* axon,
                          float amplitude);
 
 /**
- * @brief Check if spike has arrived at terminal
+ * @brief Consume one spike that has arrived at the terminal
  *
- * WHAT: Test if propagating spike reached destination
+ * WHAT: Test whether a propagating spike has reached the terminal
  * WHY:  Trigger synaptic transmission when spike arrives
- * HOW:  Compare current_time with arrival_time
+ * HOW:  Pops the earliest in-flight spike with arrival_time <= current_time.
+ *       Each arrived spike is reported exactly once, so
+ *       `while (axon_spike_arrived(a, t)) deliver();` delivers every spike due
+ *       by t. (Before 2026-11-23 this only re-tested the most recent spike and
+ *       returned true on every call after it arrived.)
  *
  * @param axon Axon to check
- * @param current_time Current simulation time
+ * @param current_time Current simulation time (microseconds)
  *
- * @return true if spike arrived this timestep
+ * @return true if one arrived spike was consumed
  */
 bool axon_spike_arrived(axon_t* axon, uint64_t current_time);
+
+/**
+ * @brief Collect spikes that have arrived at the terminal
+ *
+ * WHAT: Pops up to max_events in-flight spikes with arrival_time <= current_time,
+ *       earliest first.
+ * WHY:  The axon is a delay line: several spikes may be in flight and several
+ *       may arrive within one step.
+ * HOW:  Min-heap pop on the axon's in-flight buffer.
+ *
+ * @param axon Axon
+ * @param current_time Current simulation time (microseconds)
+ * @param out Output array of max_events events (may be NULL: spikes are
+ *            consumed and only counted)
+ * @param max_events Maximum spikes to pop (0 = no limit; requires out == NULL)
+ * @return Number of spikes popped
+ */
+uint32_t axon_pop_arrivals(axon_t* axon, uint64_t current_time,
+                           axon_spike_event_t* out, uint32_t max_events);
+
+/**
+ * @brief Number of spikes held by the axon (in flight + arrived, uncollected)
+ */
+uint32_t axon_spikes_in_flight(const axon_t* axon);
+
+/**
+ * @brief Drain the axon module's bio-async inbox explicitly
+ *
+ * WHAT: Processes up to max_messages pending bio-router messages (0 = all).
+ * WHY:  axon_step() no longer drains the inbox for every axon every step.
+ * @return Messages processed (0 if the module never registered)
+ */
+uint32_t axon_process_bio_inbox(uint32_t max_messages);
 
 /**
  * @brief Get propagation delay
@@ -887,7 +959,12 @@ void axon_update_conduction(axon_t* axon);
  *
  * WHAT: Advance axon state by one timestep
  * WHY:  Core simulation loop
- * HOW:  Update refractory state, activity, metabolic state
+ * HOW:  Update refractory state (ACTIVE/REFRACTORY -> RESTING once
+ *       current_time >= refractory_end), activity (EMA decay over dt),
+ *       metabolic state. Refractoriness itself is decided by time in
+ *       axon_is_refractory(), so it lasts exactly NIMCP_AXON_REFRACTORY_PERIOD_MS
+ *       whatever the step size. Does not deliver spikes (see axon_pop_arrivals)
+ *       and does not drain the bio-async inbox (see axon_process_bio_inbox).
  *
  * @param axon Axon to step
  * @param current_time Current simulation time (microseconds)
@@ -898,8 +975,11 @@ void axon_step(axon_t* axon, uint64_t current_time, float dt);
 /**
  * @brief Check if axon is in refractory period
  *
+ * True iff a spike was initiated at t0 and current_time < t0 +
+ * NIMCP_AXON_REFRACTORY_PERIOD_MS (and the axon is ACTIVE/REFRACTORY).
+ *
  * @param axon Axon to check
- * @param current_time Current time
+ * @param current_time Current time (microseconds)
  *
  * @return true if refractory
  */
@@ -1022,7 +1102,9 @@ void axon_network_step(axon_network_t* network,
  *
  * WHAT: Deliver spikes that have arrived at terminals
  * WHY:  Trigger synaptic transmission
- * HOW:  Check queue for spikes with arrival_time <= current_time
+ * HOW:  Pops spikes with arrival_time <= current_time from the network queue,
+ *       then from every member axon's in-flight buffer (where
+ *       axon_initiate_spike() puts them), calling callback for each.
  *
  * @param network Network
  * @param current_time Current time

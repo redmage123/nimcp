@@ -60,6 +60,8 @@
 /* Socratic active learning: cognitive module + LGSS bindings */
 #include "api/nimcp_api_internal.h"
 #include "core/brain/nimcp_brain_internal.h"  /* brain_struct access for cortex fields */
+#include "core/brain/nimcp_brain_sensory_hub.h"  /* sensory hub stats (2026-11-23) */
+#include "core/brain/nimcp_brain_vision.h"       /* vision stats (2026-11-23) */
 #include "core/brain/accessors/nimcp_brain_accessors.h"
 #include "cognitive/curiosity/nimcp_curiosity.h"
 #include "cognitive/consolidation/nimcp_consolidation.h"
@@ -4381,6 +4383,117 @@ static PyObject* Brain_get_speech_lexicon_stats(BrainObject* self,
         "majority_hits", (unsigned long long)s.majority_hits,
         "words", s.words, "units_seeded", s.units_seeded,
         "mean_units", (double)s.mean_units, "last_heard", s.last_heard);
+}
+
+/* Hearing (2026-11-23): mono float32 audio at 16 kHz as any buffer
+ * (bytes, numpy float32 array). The GIL is released while the cochlea and
+ * the Wernicke predictor run. Returns the number of 40 ms frames learned. */
+static PyObject* Brain_feed_audio(BrainObject* self, PyObject* args) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    Py_buffer buf;
+    if (!PyArg_ParseTuple(args, "y*", &buf)) return NULL;
+    if (buf.len % (Py_ssize_t)sizeof(float) != 0) {
+        PyBuffer_Release(&buf);
+        PyErr_SetString(PyExc_ValueError, "feed_audio: buffer length is not a multiple of 4 (float32)");
+        return NULL;
+    }
+    int32_t frames = 0;
+    nimcp_status_t st;
+    Py_BEGIN_ALLOW_THREADS
+    st = nimcp_brain_feed_audio(self->brain, (const float*)buf.buf,
+                                (uint32_t)(buf.len / (Py_ssize_t)sizeof(float)), &frames);
+    Py_END_ALLOW_THREADS
+    PyBuffer_Release(&buf);
+    if (st != NIMCP_OK) {
+        PyErr_Format(PyExc_RuntimeError, "feed_audio failed (status %d; no hearing if the brain has no cochlea)", (int)st);
+        return NULL;
+    }
+    return PyLong_FromLong(frames);
+}
+
+/* Sensory hub (2026-11-23): how often each brain target was driven by
+ * what the brain heard/saw. */
+static PyObject* Brain_get_sensory_hub_stats(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain || !self->brain->internal_brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    extern bool brain_sensory_hub_get_stats(struct brain_struct*, brain_sensory_hub_stats_t*);
+    brain_sensory_hub_stats_t s;
+    bool on = brain_sensory_hub_get_stats(self->brain->internal_brain, &s);
+    PyObject* d = PyDict_New();
+    if (!d) return NULL;
+#define HUB_K(f) do { PyObject* v = PyLong_FromUnsignedLongLong((unsigned long long)s.f); \
+        PyDict_SetItemString(d, #f, v); Py_DECREF(v); } while (0)
+    PyDict_SetItemString(d, "enabled", on ? Py_True : Py_False);
+    HUB_K(ticks); HUB_K(audio_frames); HUB_K(visual_frames); HUB_K(router_broadcasts);
+    HUB_K(router_sends); HUB_K(thalamus_relays); HUB_K(column_updates); HUB_K(wernicke_injections);
+    HUB_K(hippocampus_encodes); HUB_K(working_memory_adds); HUB_K(workspace_bids);
+    HUB_K(medulla_boosts); HUB_K(bg_rewards); HUB_K(cerebellum_updates); HUB_K(immune_antigens);
+    HUB_K(logic_facts); HUB_K(occipital_frames); HUB_K(kg_nodes); HUB_K(kg_edges); HUB_K(onsets);
+    HUB_K(self_repairs);
+#undef HUB_K
+    PyObject* f1 = PyFloat_FromDouble(s.last_surprise); PyDict_SetItemString(d, "last_surprise", f1); Py_DECREF(f1);
+    PyObject* f2 = PyFloat_FromDouble(s.last_loudness); PyDict_SetItemString(d, "last_loudness", f2); Py_DECREF(f2);
+    return d;
+}
+
+static PyObject* Brain_get_vision_stats(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain || !self->brain->internal_brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    extern bool brain_vision_get_stats(struct brain_struct*, brain_vision_stats_t*);
+    brain_vision_stats_t s;
+    (void)brain_vision_get_stats(self->brain->internal_brain, &s);
+    return Py_BuildValue("{s:O,s:K,s:d,s:f,s:f,s:f,s:f,s:f,s:f,s:f}",
+        "enabled", s.enabled ? Py_True : Py_False, "frames", (unsigned long long)s.frames,
+        "seconds_seen", s.seconds_seen, "rgc_rate_hz", (double)s.rgc_rate_hz,
+        "lgn_rate_hz", (double)s.lgn_rate_hz, "latency_ms", (double)s.latency_ms,
+        "rod_activation", (double)s.rod_activation, "cone_activation", (double)s.cone_activation,
+        "mean_myelination", (double)s.mean_myelination, "wall_ms", (double)s.wall_ms);
+}
+
+/* Direct seeing (tests, tools): uint8 HWC bytes. */
+static PyObject* Brain_see(BrainObject* self, PyObject* args) {
+    if (!self->brain || !self->brain->internal_brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    Py_buffer buf;
+    unsigned int w, h, ch;
+    float ms = 100.0f;
+    if (!PyArg_ParseTuple(args, "y*III|f", &buf, &w, &h, &ch, &ms)) return NULL;
+    if ((size_t)w * h * ch > (size_t)buf.len) {
+        PyBuffer_Release(&buf);
+        PyErr_SetString(PyExc_ValueError, "see: buffer smaller than w*h*ch");
+        return NULL;
+    }
+    extern int brain_vision_see(struct brain_struct*, const uint8_t*, uint32_t, uint32_t, uint32_t, float);
+    int rc;
+    Py_BEGIN_ALLOW_THREADS
+    rc = brain_vision_see(self->brain->internal_brain, (const uint8_t*)buf.buf, w, h, ch, ms);
+    Py_END_ALLOW_THREADS
+    PyBuffer_Release(&buf);
+    if (rc != 0) { PyErr_SetString(PyExc_RuntimeError, "see failed (no vision?)"); return NULL; }
+    Py_RETURN_NONE;
+}
+
+static PyObject* Brain_get_hearing_stats(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    nimcp_brain_hearing_stats_t s;
+    if (nimcp_brain_get_hearing_stats(self->brain, &s) != NIMCP_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "get_hearing_stats failed");
+        return NULL;
+    }
+    return Py_BuildValue(
+        "{s:O,s:K,s:K,s:d,s:f,s:f,s:f,s:f,s:f}",
+        "enabled", s.enabled ? Py_True : Py_False,
+        "frames", (unsigned long long)s.frames, "scored", (unsigned long long)s.scored,
+        "hours", s.hours, "rate_hz", (double)s.rate_hz,
+        "skill_recent", (double)s.skill_recent, "skill_total", (double)s.skill_total,
+        "mse_recent", (double)s.mse_recent, "copy_mse_recent", (double)s.copy_mse_recent);
 }
 
 static PyObject* Brain_get_nlp_immune_stats(BrainObject* self,
@@ -9151,6 +9264,18 @@ static PyObject* Brain_submit_sensory(BrainObject* self, PyObject* args, PyObjec
         ib->staged_sensory.visual_width = (width > 0) ? width : 32;
         ib->staged_sensory.visual_height = (height > 0) ? height : 32;
         ib->staged_sensory.visual_channels = (channels > 0) ? channels : 3;
+        /* Vision (2026-11-23): the eye sees the frame too — retina ->
+         * optic nerve -> sensory hub (LGN, occipital, columns, ...). The
+         * cortex CNN path above is unchanged. */
+        if (ib->vision &&
+            (size_t)ib->staged_sensory.visual_width * ib->staged_sensory.visual_height *
+                ib->staged_sensory.visual_channels <= (size_t)num_elements) {
+            extern int brain_vision_see(struct brain_struct*, const uint8_t*, uint32_t, uint32_t,
+                                        uint32_t, float);
+            (void)brain_vision_see(ib, pixels, ib->staged_sensory.visual_width,
+                                   ib->staged_sensory.visual_height,
+                                   ib->staged_sensory.visual_channels, 100.0f);
+        }
     } else if (strcmp(modality, "audio") == 0) {
         /* Stage audio data */
         if (ib->staged_sensory.audio_data) {
@@ -13478,6 +13603,16 @@ static PyMethodDef Brain_methods[] = {
      "Emergent language (NIMCP_EMERGENT_LANGUAGE=1): {'enabled', 'vocab_size', 'active_tokens', 'labeled_tokens', 'purity', 'observations', 'labeled_decides', 'predictions', 'hits', 'majority_hits', 'distinct_labels'}. hits/predictions = brain's own token already named the training label; majority_hits/labeled_decides = baseline."},
     {"get_speech_lexicon_stats", (PyCFunction)Brain_get_speech_lexicon_stats, METH_NOARGS,
      "Spoken-word lexicon (NIMCP_SPEECH_UNITS=1): {'enabled', 'clips', 'empty_clips', 'predictions', 'hits', 'majority_hits', 'words', 'units_seeded', 'mean_units', 'last_heard'}. hits/predictions = held-out recognition of labelled real speech clips."},
+    {"feed_audio", (PyCFunction)Brain_feed_audio, METH_VARARGS,
+     "Hear mono float32 audio at 16 kHz (bytes or numpy float32): cochlea -> auditory nerve -> Wernicke predictor, which learns to predict the next 40 ms. Returns frames learned."},
+    {"get_sensory_hub_stats", (PyCFunction)Brain_get_sensory_hub_stats, METH_NOARGS,
+     "Sensory hub counters: how often hearing/vision drove each brain target (thalamus, router, columns, wernicke, hippocampus, working memory, workspace, medulla, basal ganglia, cerebellum, immune, logic, KG, self-repair)."},
+    {"get_vision_stats", (PyCFunction)Brain_get_vision_stats, METH_NOARGS,
+     "Vision (retina -> optic nerve): {'enabled', 'frames', 'seconds_seen', 'rgc_rate_hz', 'lgn_rate_hz', 'latency_ms', 'rod_activation', 'cone_activation', 'mean_myelination', 'wall_ms'}."},
+    {"see", (PyCFunction)Brain_see, METH_VARARGS,
+     "see(pixels_uint8_hwc, w, h, ch, duration_ms=100): present a frame to the retina."},
+    {"get_hearing_stats", (PyCFunction)Brain_get_hearing_stats, METH_NOARGS,
+     "Hearing: {'enabled', 'frames', 'scored', 'hours', 'rate_hz', 'skill_recent', 'skill_total', 'mse_recent', 'copy_mse_recent'}; skill = 1 - MSE/MSE(copy) on frames predicted before being heard."},
     {"get_nlp_immune_stats", (PyCFunction)Brain_get_nlp_immune_stats, METH_NOARGS,
      "NLP-immune coupling (NIMCP_NLP_IMMUNE=1): {'enabled', 'clearance', 'capacity', 'inflammation_level', 'outcomes', 'successes', 'last_window_error', 'baseline_error', 'il1_releases', 'il10_releases'}."},
     {"emergent_express", (PyCFunction)Brain_emergent_express, METH_VARARGS,

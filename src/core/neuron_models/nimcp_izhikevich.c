@@ -102,6 +102,14 @@ static void izhikevich_bio_cleanup(void) {
     nimcp_mutex_unlock(&bio_cleanup_mutex);
 }
 
+uint32_t izhikevich_process_bio_inbox(uint32_t max_messages) {
+    bio_module_context_t ctx = bio_ctx;
+    if (!ctx) {
+        return 0;
+    }
+    return bio_router_process_inbox(ctx, max_messages);
+}
+
 //=============================================================================
 // Internal State Structure
 //=============================================================================
@@ -283,19 +291,21 @@ static void izhikevich_init(neuron_model_state_t state, const void* params) {
     // Get pointer to Izhikevich-specific state
     izhikevich_state_t* izh = (izhikevich_state_t*)state->model_state;
 
-    // Initialize voltage to resting potential
-    izh->v = IZHIKEVICH_RESTING_POTENTIAL;
-    izh->u = izh->v * 0.2F;  // u = b*v at rest (approximation)
-    izh->spiked_this_step = false;
-    izh->integration_method = INTEGRATION_EULER;  // Default to Euler (backward compatible)
-    izh->current_input = 0.0F;
-
     // Set parameters from input or use default (Regular Spiking)
     if (params) {
         memcpy(&izh->params, params, sizeof(izhikevich_params_t));
     } else {
         izh->params = PRESET_TABLE[IZHI_PRESET_REGULAR_SPIKING];
     }
+
+    // Initialize voltage to resting potential. u = b*v uses the neuron's own b
+    // (as izhikevich_reset does); it used a hard-coded 0.2, which started
+    // b != 0.2 cells (LTS, TC, RZ) away from rest with a spurious transient.
+    izh->v = IZHIKEVICH_RESTING_POTENTIAL;
+    izh->u = izh->v * izh->params.b;
+    izh->spiked_this_step = false;
+    izh->integration_method = INTEGRATION_EULER;  // Default to Euler (backward compatible)
+    izh->current_input = 0.0F;
 }
 
 /**
@@ -336,10 +346,10 @@ static void izhikevich_destroy(neuron_model_state_t state) {
  * @param input_current Input current (arbitrary units)
  */
 static void izhikevich_update(neuron_model_state_t state, float dt, float input_current) {
-    // Process pending bio-async messages
-    if (bio_ctx) {
-        bio_router_process_inbox(bio_ctx, 5);
-    }
+    /* Bio-async inbox draining is NOT done here (it was a per-neuron-per-step
+     * cost, and neuron_model_update() drained a second inbox on top of it);
+     * call izhikevich_process_bio_inbox() / neuron_model_process_bio_inbox()
+     * once per simulation step instead. */
 
     // Guard: Validate state
     if (!state) {

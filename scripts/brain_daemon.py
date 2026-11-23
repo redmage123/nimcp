@@ -1221,7 +1221,9 @@ class BrainService:
                        'get_network_metrics', 'get_cortex_cnn_metrics',
                        'get_cognitive_stats', 'get_module_activity',
                        'get_emergent_stats', 'get_speech_lexicon_stats',
-                       'get_nlp_immune_stats'):
+                       'get_nlp_immune_stats', 'get_hearing_stats',
+                       'get_sensory_hub_stats', 'get_vision_stats',
+                       'feed_audio'):   # hearing: own mutex, GIL released
                 return handler(req)
 
             # All other commands (learn_vector, decide_full, save, etc.) take the lock
@@ -3724,6 +3726,36 @@ class BrainService:
             return {"stats": {"enabled": False, "error": "binding too old"}}
         return {"stats": self.brain.get_speech_lexicon_stats()}
 
+    def _cmd_feed_audio(self, req):
+        """Hearing (2026-11-23): mono float32 PCM at 16 kHz, base64 in "pcm_b64",
+        through the brain's cochlea into the Wernicke predictor, which learns
+        to predict the next 40 ms. Runs outside the brain-wide lock (hearing
+        has its own mutex; the binding releases the GIL), so a listener never
+        stalls the trainer."""
+        if not hasattr(self.brain, "feed_audio"):
+            return {"error": "binding too old (no feed_audio)"}
+        from base64 import b64decode
+        pcm = b64decode(req["pcm_b64"])
+        return {"frames": self.brain.feed_audio(pcm)}
+
+    def _cmd_get_sensory_hub_stats(self, _req):
+        """Sensory hub counters. Read-only."""
+        if not hasattr(self.brain, "get_sensory_hub_stats"):
+            return {"stats": {"enabled": False, "error": "binding too old"}}
+        return {"stats": self.brain.get_sensory_hub_stats()}
+
+    def _cmd_get_vision_stats(self, _req):
+        """Vision (retina/optic nerve) counters. Read-only."""
+        if not hasattr(self.brain, "get_vision_stats"):
+            return {"stats": {"enabled": False, "error": "binding too old"}}
+        return {"stats": self.brain.get_vision_stats()}
+
+    def _cmd_get_hearing_stats(self, _req):
+        """Hearing counters. Read-only."""
+        if not hasattr(self.brain, "get_hearing_stats"):
+            return {"stats": {"enabled": False, "error": "binding too old"}}
+        return {"stats": self.brain.get_hearing_stats()}
+
     def _cmd_get_nlp_immune_stats(self, _req):
         """NLP-immune coupling counters (NIMCP_NLP_IMMUNE=1). Read-only."""
         if not hasattr(self.brain, "get_nlp_immune_stats"):
@@ -4550,7 +4582,7 @@ class BrainDaemon:
         'predict_with_confidence', 'predict_with_deadline',
         'get_inner_speech_trace', 'get_hypothesis_log',
         'get_emergent_stats', 'emergent_express', 'get_speech_lexicon_stats',
-        'get_nlp_immune_stats',
+        'get_nlp_immune_stats', 'get_hearing_stats', 'get_sensory_hub_stats', 'get_vision_stats',
         'audit_log_event',  # audit logging is append-only, safe on RO socket
     })
 

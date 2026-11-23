@@ -714,7 +714,7 @@ float nimcp_brain_thal_get_attention(brain_t brain) {
         return -1.0f;
     }
 
-    return b->thalamus->global_attention;
+    return ((thalamus_t*)b->thalamus)->global_attention;
 }
 
 float nimcp_brain_thal_get_arousal(brain_t brain) {
@@ -730,7 +730,7 @@ float nimcp_brain_thal_get_arousal(brain_t brain) {
         return -1.0f;
     }
 
-    return b->thalamus->global_arousal;
+    return ((thalamus_t*)b->thalamus)->global_arousal;
 }
 
 float nimcp_brain_thal_get_firing_rate(brain_t brain,

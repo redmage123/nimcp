@@ -416,8 +416,11 @@ static bool init_cochlea_if_needed(brain_t brain) {
     /* Wave 8A cochlea + 15 consumer bridges. Runs after Wave 14 so immune
      * (Wave 11) and fep_orchestrator (Wave 14) prereqs are live. Any
      * still-NULL dep (e.g. broca, rcog_engine which init later) just
-     * leaves its bridge NULL — not a hard error. Soft failure. */
-    if (brain->config.lazy_init_mode) return true;
+     * leaves its bridge NULL — not a hard error. Soft failure.
+     * NOT skipped in lazy mode (2026-11-23): nothing creates the cochlea on
+     * demand, so the lazy gate meant no brain ever had a cochlea, hearing
+     * or any of the 15 bridges. The cochlea is small (64 channels; the
+     * hearing predictor ~4 MB). */
     (void)nimcp_brain_factory_init_cochlea_subsystem(brain);
     return true;
 }

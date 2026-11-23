@@ -551,6 +551,31 @@ nimcp_status_t nimcp_brain_get_speech_lexicon_stats(nimcp_brain_t brain,
                                                     nimcp_brain_speech_lexicon_stats_t* out);
 
 /**
+ * @brief Hearing: the brain's cochlea -> auditory nerve -> Wernicke predictor
+ *        (a 512-neuron spiking network learning, with e-prop, to predict the
+ *        next 40 ms of sound). skill = 1 - MSE/MSE(copy), measured on each
+ *        frame before it is learned from; skill_recent is an EMA over ~6 min.
+ */
+typedef struct {
+    bool     enabled;
+    uint64_t frames;
+    uint64_t scored;
+    double   hours;
+    float    rate_hz;
+    float    skill_recent;
+    float    skill_total;
+    float    mse_recent;
+    float    copy_mse_recent;
+} nimcp_brain_hearing_stats_t;
+
+/** Hear mono float audio at 16 kHz (any length; a partial 40 ms frame is
+ *  carried into the next call). frames_out (optional): frames learned from. */
+nimcp_status_t nimcp_brain_feed_audio(nimcp_brain_t brain, const float* audio,
+                                      uint32_t num_samples, int32_t* frames_out);
+nimcp_status_t nimcp_brain_get_hearing_stats(nimcp_brain_t brain,
+                                             nimcp_brain_hearing_stats_t* out);
+
+/**
  * @brief NLP-immune coupling snapshot (opt-in NIMCP_NLP_IMMUNE=1).
  *
  * Held-out language outcomes drive cytokines (IL-1 when the brain does

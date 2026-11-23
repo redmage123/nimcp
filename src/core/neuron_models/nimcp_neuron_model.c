@@ -47,6 +47,7 @@
 #include "utils/exception/nimcp_exception_macros.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <pthread.h>
 #include "utils/memory/nimcp_memory.h"
 #include "utils/thread/nimcp_thread.h"
@@ -183,10 +184,10 @@ void neuron_model_destroy(neuron_model_state_t state) {
  * COMPLEXITY: O(1) dispatch + model update complexity
  */
 void neuron_model_update(neuron_model_state_t state, float dt, float input_current) {
-    // Process pending bio-async messages
-    if (bio_ctx) {
-        bio_router_process_inbox(bio_ctx, 5);
-    }
+    /* Bio-async inbox draining is NOT done here: it used to run on every
+     * per-neuron update (and the Izhikevich update drained a second inbox on
+     * top), a per-neuron-per-step cost. Call neuron_model_process_bio_inbox()
+     * once per simulation step instead. */
 
     // Guard: Validate state and vtable
     if (!state || !state->vtable || !state->vtable->update) {
@@ -194,6 +195,20 @@ void neuron_model_update(neuron_model_state_t state, float dt, float input_curre
     }
 
     state->vtable->update(state, dt, input_current);
+}
+
+/**
+ * @brief Drain all neuron-model bio-async inboxes (explicit, once per step)
+ */
+uint32_t neuron_model_process_bio_inbox(uint32_t max_messages) {
+    uint32_t processed = 0;
+    bio_module_context_t ctx = bio_ctx;
+    if (ctx) {
+        processed += bio_router_process_inbox(ctx, max_messages);
+    }
+    processed += izhikevich_process_bio_inbox(max_messages);
+    processed += two_compartment_process_bio_inbox(max_messages);
+    return processed;
 }
 
 /**
@@ -360,4 +375,186 @@ void neuron_model_set_integration_method(neuron_model_state_t state, ode_integra
             // They will continue using their built-in methods
             break;
     }
+}
+
+
+//=============================================================================
+// Leaky Integrate-and-Fire (LIF) Model
+//=============================================================================
+/*
+ * tau_m dV/dt = -(V - v_rest) + R*I, spike at V >= v_thresh, reset to v_reset,
+ * clamp at v_reset for t_ref ms. Integrated with the exact exponential
+ * solution for constant I over the step (stable for any dt). The reset happens
+ * inside update() (like the Izhikevich model), so post_spike() is a no-op and
+ * check_spike() reports the spike of the most recent update().
+ */
+
+typedef struct {
+    float v;                    /**< Membrane potential (mV) */
+    float refractory_remaining; /**< Absolute refractory time left (ms) */
+    bool spiked_this_step;      /**< Spike flag for the last update */
+    lif_model_params_t params;  /**< Model parameters */
+} lif_state_t;
+
+lif_model_params_t lif_model_default_params(void) {
+    lif_model_params_t p = {
+        .tau_m = 10.0F,
+        .v_rest = -65.0F,
+        .v_reset = -65.0F,
+        .v_thresh = -50.0F,
+        .t_ref = 2.0F,
+        .resistance = 10.0F   /* == tau_m: dV/dt gets +I, as in Izhikevich */
+    };
+    return p;
+}
+
+lif_model_params_t lif_model_create_params(float tau_m, float v_rest, float v_reset,
+                                           float v_thresh, float t_ref, float resistance) {
+    lif_model_params_t p = {
+        .tau_m = tau_m,
+        .v_rest = v_rest,
+        .v_reset = v_reset,
+        .v_thresh = v_thresh,
+        .t_ref = t_ref,
+        .resistance = resistance
+    };
+    return p;
+}
+
+static bool lif_params_valid(const lif_model_params_t* p) {
+    if (!isfinite(p->tau_m) || !isfinite(p->v_rest) || !isfinite(p->v_reset) ||
+        !isfinite(p->v_thresh) || !isfinite(p->t_ref) || !isfinite(p->resistance)) {
+        return false;
+    }
+    if (p->tau_m <= 0.0F || p->resistance <= 0.0F || p->t_ref < 0.0F) {
+        return false;
+    }
+    return p->v_reset < p->v_thresh;
+}
+
+static void lif_init(neuron_model_state_t state, const void* params) {
+    if (!state) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "lif_init: state is NULL");
+        return;
+    }
+    lif_state_t* lif = (lif_state_t*)state->model_state;
+    lif->params = lif_model_default_params();
+    if (params) {
+        lif_model_params_t p;
+        memcpy(&p, params, sizeof(p));
+        if (lif_params_valid(&p)) {
+            lif->params = p;
+        } else {
+            LOG_WARN("lif_init: invalid LIF params (tau_m=%.3f R=%.3f t_ref=%.3f "
+                     "v_reset=%.2f v_thresh=%.2f) - using defaults",
+                     (double)p.tau_m, (double)p.resistance, (double)p.t_ref,
+                     (double)p.v_reset, (double)p.v_thresh);
+        }
+    }
+    lif->v = lif->params.v_rest;
+    lif->refractory_remaining = 0.0F;
+    lif->spiked_this_step = false;
+}
+
+static void lif_destroy(neuron_model_state_t state) {
+    (void)state;  /* fixed-size state, nothing to free */
+}
+
+static void lif_update(neuron_model_state_t state, float dt, float input_current) {
+    if (!state) {
+        return;
+    }
+    lif_state_t* lif = (lif_state_t*)state->model_state;
+    const lif_model_params_t* p = &lif->params;
+
+    lif->spiked_this_step = false;
+    if (!(dt > 0.0F) || !isfinite(dt)) {
+        return;
+    }
+    if (!isfinite(input_current)) {
+        input_current = 0.0F;
+    }
+
+    float t = dt;
+    if (lif->refractory_remaining > 0.0F) {
+        if (lif->refractory_remaining >= t) {
+            lif->refractory_remaining -= t;
+            lif->v = p->v_reset;
+            return;
+        }
+        /* refractory ends inside this step: integrate only the remainder */
+        t -= lif->refractory_remaining;
+        lif->refractory_remaining = 0.0F;
+        lif->v = p->v_reset;
+    }
+
+    const float v_inf = p->v_rest + p->resistance * input_current;
+    lif->v = v_inf + (lif->v - v_inf) * expf(-t / p->tau_m);
+
+    if (lif->v >= p->v_thresh) {
+        lif->spiked_this_step = true;
+        lif->v = p->v_reset;
+        lif->refractory_remaining = p->t_ref;
+    }
+}
+
+static bool lif_check_spike(const neuron_model_state_t state) {
+    if (!state) {
+        return false;
+    }
+    return ((const lif_state_t*)state->model_state)->spiked_this_step;
+}
+
+static void lif_post_spike(neuron_model_state_t state) {
+    (void)state;  /* reset + refractory are applied in lif_update() */
+}
+
+static float lif_get_voltage(const neuron_model_state_t state) {
+    if (!state) {
+        return 0.0F;
+    }
+    return ((const lif_state_t*)state->model_state)->v;
+}
+
+static void lif_set_voltage(neuron_model_state_t state, float voltage) {
+    if (!state || !isfinite(voltage)) {
+        return;
+    }
+    ((lif_state_t*)state->model_state)->v = voltage;
+}
+
+static void lif_reset(neuron_model_state_t state) {
+    if (!state) {
+        return;
+    }
+    lif_state_t* lif = (lif_state_t*)state->model_state;
+    lif->v = lif->params.v_rest;
+    lif->refractory_remaining = 0.0F;
+    lif->spiked_this_step = false;
+}
+
+static void lif_copy(neuron_model_state_t dst, const neuron_model_state_t src) {
+    if (!dst || !src) {
+        return;
+    }
+    memcpy(dst->model_state, src->model_state, sizeof(lif_state_t));
+}
+
+static const neuron_model_vtable_t lif_vtable = {
+    .name = "LIF",
+    .type = NEURON_MODEL_LIF,
+    .state_size = sizeof(lif_state_t),
+    .init = lif_init,
+    .destroy = lif_destroy,
+    .update = lif_update,
+    .check_spike = lif_check_spike,
+    .post_spike = lif_post_spike,
+    .get_voltage = lif_get_voltage,
+    .set_voltage = lif_set_voltage,
+    .reset = lif_reset,
+    .copy = lif_copy
+};
+
+const neuron_model_vtable_t* neuron_model_get_lif_vtable(void) {
+    return &lif_vtable;
 }

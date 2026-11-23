@@ -431,11 +431,11 @@ struct dendritic_spine_struct {
     float head_volume;          // Spine head volume (μm³)
 
     // Electrical Properties
-    float neck_resistance;      // Electrical coupling to dendrite (MΩ)
-    float head_capacitance;     // Membrane capacitance (fF)
+    float neck_resistance;      // Electrical coupling to dendrite (MΩ, ~50-500)
+    float head_capacitance;     // Membrane capacitance (fF, 1 μF/cm² = 10 fF/μm²)
 
     // State Variables
-    float voltage;              // Spine head voltage (mV)
+    float voltage;              // Spine head depolarisation (VOLTS, relative to rest)
     float calcium;              // Spine [Ca²⁺] (μM)
 
     // Plasticity
@@ -501,14 +501,16 @@ struct dendritic_segment_struct {
     float diameter;             // Segment diameter
     float path_distance;        // Distance from soma
 
-    // Cable Properties
-    float R_m;                  // Membrane resistance (Ω·cm²)
-    float C_m;                  // Membrane capacitance (μF/cm²)
-    float R_a;                  // Axial resistance (Ω·cm)
-    float path_resistance;      // Cumulative resistance to soma (MΩ)
+    // Cable Properties (ABSOLUTE values for this segment; the specific
+    // values are NIMCP_DENDRITE_R_M/C_M/R_A_DEFAULT)
+    float R_m;                  // Membrane resistance (Ω) = Rm_specific / area
+    float C_m;                  // Membrane capacitance (μF) = Cm_specific * area
+    float R_a;                  // Axial resistance (Ω) = Ri * L / cross-section
+    float path_resistance;      // Cumulative axial resistance to soma (Ω)
 
     // State Variables
-    float voltage;              // Local voltage (mV)
+    float voltage;              // Local depolarisation (VOLTS, relative to rest;
+                                // absolute = -70 mV + 1000*voltage)
     float calcium;              // Local [Ca²⁺] (μM)
 
     // Spines on this segment (tier-optimized)
@@ -516,28 +518,33 @@ struct dendritic_segment_struct {
     uint32_t num_spines;
 
     // Active Conductances (optional)
-    float g_na;                 // Sodium conductance (nS)
-    float g_k;                  // Potassium conductance (nS)
-    float g_ca;                 // Calcium conductance (nS)
+    float g_na;                 // Sodium specific conductance (mS/cm², informational)
+    float g_k;                  // Potassium specific conductance (mS/cm², informational)
+    float g_ca;                 // Calcium specific conductance (mS/cm², informational)
     bool has_active_properties; // Enable NMDA spikes, backprop
 
     // Inter-segment coupling (cable theory)
     float I_axial_parent;       // Axial current from parent (pA)
     float I_axial_children;     // Axial current from children (pA)
-    float g_axial;              // Axial conductance (nS)
+    float g_axial;              // Axial conductance to parent, centre-to-centre (nS)
 
     // Rall's 3/2 power rule for branching
     float branch_power_ratio;   // d_parent^3/2 / sum(d_child^3/2)
 
     // NMDA spike state for this segment
     bool nmda_spike_active;
-    float nmda_spike_voltage;
+    float nmda_spike_voltage;   // volts, relative to rest
     float nmda_spike_remaining_ms;
 
     // bAP state for this segment
     bool bap_reached;
-    float bap_amplitude;
+    float bap_amplitude;        // volts, relative to rest
     uint64_t bap_arrival_time;
+
+    // Appended 2026-11: coupling to the soma (set by dendrite_create_segments /
+    // dendrite_add_branch)
+    float g_soma_ns;            // Axial conductance segment-midpoint -> soma (nS)
+    float att_soma;             // Cable attenuation to soma, exp(-X) (0-1)
 };
 
 //=============================================================================
@@ -590,14 +597,14 @@ struct dendrite_struct {
     dendritic_spine_t* spines;     // Spine array
 
     //--- Electrical Properties ---
-    float input_resistance;        // Total input resistance (MΩ)
-    float time_constant;           // Membrane time constant (ms)
-    float attenuation_factor;      // Voltage attenuation soma→distal (0-1)
+    float input_resistance;        // Membrane-only (sealed tree) input resistance (MΩ)
+    float time_constant;           // Membrane time constant Rm*Cm (ms, ~20)
+    float attenuation_factor;      // Cable attenuation of the most distal segment (0-1)
     float integration_window_ms;   // Temporal summation window
 
     //--- State Variables ---
-    float somatic_voltage;         // Voltage at soma junction (mV)
-    float mean_voltage;            // Average dendritic voltage (mV)
+    float somatic_voltage;         // Attenuated EPSP at soma junction (volts, rel. rest)
+    float mean_voltage;            // Average dendritic voltage (volts, rel. rest)
     float calcium_level;           // Average [Ca²⁺] (μM)
 
     //--- Activity Tracking ---
@@ -635,6 +642,16 @@ struct dendrite_struct {
 
     //--- Thread Safety ---
     nimcp_mutex_t lock;
+
+    //--- Appended 2026-11 (keep at end: offsets of the fields above unchanged) ---
+    float pending_dt_ms;           // Passive decay deferred by dendrite_step skip-frames (ms)
+    bool spine_kinetics_stepped;   // dendrite_update_spine_conductances() owns g/Ca decay
+    uint32_t* cow_shared_refs;     // Shared count of CoW handles sharing segments/spines
+                                   // (NULL = arrays exclusively owned)
+    float soma_v;                  // Passive soma-load compartment (volts rel. rest;
+                                   // 100 pF, tau_m) that the segments drain into
+    float soma_charge_fc;          // Charge delivered to the soma since last
+    float soma_charge_dt_ms;       //   dendrite_compute_somatic_current() call, and its time span
 };
 
 //=============================================================================
@@ -779,11 +796,13 @@ bool dendrite_remove_spine(dendrite_t* dendrite, uint32_t spine_id);
 /**
  * WHAT: Receive synaptic input at segment
  * WHY:  Process incoming synaptic current at compartment
- * HOW:  Update segment voltage/calcium
+ * HOW:  The current is a 1 ms pulse: its charge (I x 1 ms) is deposited on
+ *       the segment capacitance (1 μF/cm² x area): dV[mV] = I[pA] / C[pF].
+ *       E.g. 10 pA into a 2 μm x 50 μm segment (3.1 pF) -> +3.2 mV.
  *
  * @param dendrite Target dendrite
  * @param segment_id Segment receiving input
- * @param current Synaptic current (pA)
+ * @param current Synaptic current (pA), applied for 1 ms
  * @param timestamp Current simulation time (μs)
  * @return true on success
  */
@@ -793,7 +812,11 @@ bool dendrite_receive_input(dendrite_t* dendrite, uint32_t segment_id,
 /**
  * WHAT: Compute integrated current delivered to soma
  * WHY:  Calculate dendrite's contribution to somatic membrane potential
- * HOW:  Integrate all segment voltages with attenuation
+ * HOW:  I = sum_i att_i * V_i[mV] * G_m,i[nS] (cable attenuation x the
+ *       current sustaining each segment's depolarisation). Linear in input;
+ *       equals the injected current low-pass filtered by tau_m (~20 ms),
+ *       with the attenuated injected charge as its integral. Also sets
+ *       somatic_voltage (G_m-weighted attenuated EPSP, volts rel. rest).
  *
  * @param dendrite Target dendrite
  * @return Somatic current (pA)
@@ -803,7 +826,9 @@ float dendrite_compute_somatic_current(dendrite_t* dendrite);
 /**
  * WHAT: Get voltage attenuation for specific segment
  * WHY:  Understand electrical isolation from soma
- * HOW:  Use path resistance and cable theory
+ * HOW:  exp(-X), X = electrotonic distance along the path to the soma,
+ *       lambda = sqrt(Rm*d/(4*Ri)) per segment (Rm 20 kΩ·cm², Ri 150 Ω·cm:
+ *       ~580 μm at d = 1 μm, ~820 μm at d = 2 μm)
  *
  * @param dendrite Target dendrite
  * @param segment_id Segment index
@@ -818,7 +843,11 @@ float dendrite_get_attenuation(dendrite_t* dendrite, uint32_t segment_id);
 /**
  * WHAT: Update dendrite state for one timestep
  * WHY:  Evolve voltages, calcium, plasticity
- * HOW:  Integrate cable equations, update spines, check thresholds
+ * HOW:  Passive decay V *= exp(-dt/tau_m) (tau_m = Rm*Cm ~ 20 ms) and Ca²⁺
+ *       decay. Full update every 10th call (every call for the first 10);
+ *       skipped time is accumulated and applied exactly at the next full
+ *       update or before any other API reads/writes segment state. Spine
+ *       synaptic charge is added by dendrite_update_spine_conductances().
  *
  * @param dendrite Target dendrite
  * @param dt_ms Time step (ms)
@@ -1175,7 +1204,11 @@ void dendrite_pool_free_spine(dendrite_t* dendrite, dendritic_spine_t* spine);
 /**
  * WHAT: Create shallow copy of dendrite (CoW)
  * WHY:  Efficient read-only sharing without full copy
- * HOW:  Increment reference count, share data until write
+ * HOW:  Segment/spine arrays are shared (shared atomic count) until either
+ *       handle writes; every mutating API unshares first. Each handle is
+ *       owned independently: free it with dendrite_destroy() or
+ *       dendrite_cow_release(); shared arrays are freed with the last sharer.
+ *       The copy does not inherit the spine pool.
  *
  * @param dendrite Source dendrite
  * @return New dendrite handle sharing data with source
@@ -1193,9 +1226,9 @@ dendrite_t* dendrite_cow_copy(dendrite_t* dendrite);
 bool dendrite_cow_prepare_write(dendrite_t* dendrite);
 
 /**
- * WHAT: Release CoW reference
- * WHY:  Decrement reference count, free if zero
- * HOW:  Atomic decrement, destroy if last reference
+ * WHAT: Release a CoW handle
+ * WHY:  Drop one handle; shared arrays survive until the last sharer goes
+ * HOW:  Same as dendrite_destroy(dendrite) (share-aware)
  *
  * @param dendrite Dendrite to release
  */
@@ -1208,13 +1241,21 @@ void dendrite_cow_release(dendrite_t* dendrite);
 /**
  * WHAT: Process input at specific spine
  * WHY:  Apply spine-level filtering and dynamics
- * HOW:  RC filtering, calcium dynamics, receptor activation
+ * HOW:  Presynaptic input opens AMPA (0.5 nS, tau 2 ms) and NMDA (0.25 nS,
+ *       tau 100 ms, Jahr-Stevens Mg²⁺ block) conductances per unit input,
+ *       scaled by synaptic_weight and receptor counts (cap 20 nS each).
+ *       Returns the resulting synaptic current through the spine neck,
+ *       I = g (E_rev - V_head), with E_rev = 0 mV and V_head = V_seg + I*R_neck.
+ *       If dendrite_update_spine_conductances() is never called, conductances
+ *       and Ca²⁺ decay here between calls using the timestamps (event mode);
+ *       once it is called it owns the decay (stepped mode).
  *
  * @param dendrite Target dendrite
  * @param spine_id Spine receiving input
- * @param current Input current (pA)
+ * @param current Presynaptic input strength (>= 0; 1.0 = one release event,
+ *                graded values for graded release). Name kept for ABI.
  * @param timestamp Current time (μs)
- * @return Filtered current delivered to dendrite (pA)
+ * @return Synaptic current delivered to dendrite (pA, + = depolarising)
  */
 float dendrite_spine_process_input(dendrite_t* dendrite, uint32_t spine_id,
                                     float current, uint64_t timestamp);
@@ -1222,7 +1263,10 @@ float dendrite_spine_process_input(dendrite_t* dendrite, uint32_t spine_id,
 /**
  * WHAT: Update all spine conductances
  * WHY:  Evolve AMPA, NMDA, GABA dynamics
- * HOW:  Kinetic models for each receptor type
+ * HOW:  Deposits the synaptic charge of each spine during dt on its segment
+ *       (dV = Q / C_seg), loads spine Ca²⁺ from NMDA charge, then decays
+ *       g_ampa (2 ms), g_nmda (100 ms), g_gaba (6 ms). Call once per step
+ *       before dendrite_step(dt).
  *
  * @param dendrite Target dendrite
  * @param dt_ms Time step (ms)

@@ -1653,6 +1653,10 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
         /* Wave 8B-d: broca + wernicke bio-msg drain */
         extern void brain_tick_language(brain_t brain, float dt_ms);
         brain_tick_language(brain, _tick_dt_ms);
+        /* Sensory hub (2026-11-23): what was heard/seen since the last tick
+         * reaches thalamus, cortex, language areas, hippocampus, subcortex. */
+        extern void brain_sensory_hub_tick(struct brain_struct* brain);
+        brain_sensory_hub_tick(brain);
 
         /* Wave 8C: HALF-STATUE physics bridges (ephaptic/hh/thermo bio_async) */
         extern void brain_tick_physics_bridges(brain_t brain, float dt_ms);

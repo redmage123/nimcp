@@ -141,6 +141,12 @@ typedef struct astrocyte_t {
     // === THREAD SAFETY ===
     nimcp_spinlock_t lock;              /**< Spinlock for concurrent calcium updates */
 
+    // === APPENDED FIELDS (kept at the end so earlier offsets do not move) ===
+    float ip3r_h;                       /**< Li-Rinzel IP3R inactivation gate h (0-1); <=0 = uninitialised */
+    float synaptic_drive;               /**< Sum of synaptic weights reported since the last network step */
+    uint32_t drive_synapses;            /**< Synapses mapped to this cell by glial_integration (drive normaliser) */
+    uint32_t signal_flags;              /**< Edge-trigger state for rate-limited bio-router publications */
+
 } astrocyte_t;
 
 /**
@@ -283,9 +289,20 @@ void astrocyte_destroy(astrocyte_t* astro);
  * - J_pump = active calcium reuptake (ATP-dependent)
  * - J_ER = calcium buffering by ER
  *
+ * Li-Rinzel / De Pitta (2009) model with ER depletion and IP3R
+ * inactivation gate; the leak is solved so the cell rests exactly at
+ * calcium_baseline. Graded response (steady / onset peak, µM):
+ * stimulus 0 → 0.10/0.10, 2 → 0.23/0.98, 6 → 0.47/2.1, 10 → 0.66/2.5,
+ * 20 → 0.96/3.0. Also refills the glutamate and D-serine pools (τ 1.5 s).
+ * Publishes "astrocyte.calcium" only on threshold crossings (3x baseline
+ * up, 2x baseline down).
+ *
  * @param astro Astrocyte to update
- * @param dt Timestep in seconds (typically 0.0001-0.001)
- * @param external_stimulus External calcium stimulus (e.g., from synaptic activity)
+ * @param dt Timestep in seconds (any size; substepped internally at <= 5 ms,
+ *           clamped at 2 s)
+ * @param external_stimulus PLC/IP3-producing drive, >= 0, arbitrary units
+ *           ~ mean (synaptic weight × events/s) per covered synapse
+ *           (IP3 production 0.05 µM/s per unit; clamped to 100)
  *
  * COMPLEXITY: O(1)
  * THREAD-SAFE: Yes (uses astrocyte->lock)
@@ -331,12 +348,16 @@ void astrocyte_propagate_calcium_wave(astrocyte_t* astro,
  * - Glutamate enhances AMPA/NMDA receptor sensitivity
  * - Time scale: 10-100ms release kinetics
  *
+ * Release fraction = clamp((Ca - 2·baseline) / 2 µM, 0, 1); amount =
+ * 0.15 × fraction × glutamate_pool (max 0.15 with a full pool). The pool
+ * is depleted by the release and refilled in astrocyte_update_calcium().
+ *
  * @param astro Astrocyte
  * @param synapse_idx Index into covered_synapse_ids array
- * @return Glutamate concentration (0-1 normalized)
+ * @return Released glutamate (0-0.15, normalized pool units)
  *
  * COMPLEXITY: O(1)
- * THREAD-SAFE: Yes (read-only access)
+ * THREAD-SAFE: Yes (takes astro->lock)
  */
 float astrocyte_compute_glutamate_release(astrocyte_t* astro, uint32_t synapse_idx);
 
@@ -608,7 +629,15 @@ nimcp_result_t astrocyte_network_assign_synapses(astrocyte_network_t* network,
  * HOW:  For each astrocyte: update_calcium, propagate_wave, update_atp
  *
  * @param network Astrocyte network
- * @param dt Timestep in seconds
+ * @param dt Timestep in seconds. Large steps are integrated in internal
+ *           substeps of <= 5 ms; steps longer than 2 s are clamped to 2 s
+ *           (calcium/IP3/pool kinetics relax within ~1-5 s, so a longer
+ *           gap is equivalent to steady state).
+ *
+ * Synaptic input reported through astrocyte_t::synaptic_drive (sum of
+ * synaptic weights since the previous step, normalised by drive_synapses)
+ * is converted to an IP3-producing stimulus of mean (weight x events/s)
+ * per mapped synapse and consumed (reset) here.
  *
  * COMPLEXITY: O(N × K) where N = num_astrocytes, K = avg coupled neighbors
  * THREAD-SAFE: Can parallelize across astrocytes with partition assignment

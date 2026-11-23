@@ -25,8 +25,10 @@
 #include "utils/memory/nimcp_unified_memory.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/exception/nimcp_exception_macros.h"
+#include "core/neuralnet/nimcp_neuron_synapse_access.h"
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 #define LOG_MODULE "GLIAL_INTEGRATION"
 
@@ -159,6 +161,10 @@ glial_integration_t* glial_integration_create(neural_network_t network, uint32_t
 
     memset(gi, 0, sizeof(glial_integration_t));
 
+    // Initialize the lock first: the error path below calls
+    // glial_integration_destroy(), which destroys it.
+    nimcp_mutex_init(&gi->lock, NULL);
+
     gi->network = network;
 
     // G7: synapse-keyed tables use UINT64 (synapse_id = packed (pre,post)).
@@ -232,9 +238,6 @@ glial_integration_t* glial_integration_create(neural_network_t network, uint32_t
     // Bio-async initialization
     gi->bio_ctx = NULL;
     gi->bio_async_enabled = false;
-
-    // Initialize lock
-    nimcp_mutex_init(&gi->lock, NULL);
 
     LOG_INFO(LOG_MODULE, "Glial integration created with max_mappings=%u", max_mappings);
 
@@ -341,112 +344,103 @@ nimcp_result_t glial_integration_set_spatial_neuromod_system(
 // ============================================================================
 // GLIAL CELL ASSIGNMENT
 // ============================================================================
+//
+// The *_locked helpers require gi->lock to be held. The public functions take
+// the (non-recursive) lock and call them; glial_integration_auto_assign_spatial
+// holds the lock once and calls the helpers directly (it used to call the
+// public functions, which re-locked the mutex and self-deadlocked as soon as
+// any glial cell existed).
 
-nimcp_result_t glial_integration_assign_astrocyte_to_synapse(glial_integration_t* gi,
-                                                             uint32_t astrocyte_id,
-                                                             uint64_t synapse_id) {
-    NIMCP_CHECK_THROW(gi, NIMCP_ERROR_INVALID_PARAM, "gi is NULL");
+/* Append id to the reverse list of glial cell `glial_id` in `reverse`. */
+static nimcp_result_t reverse_list_add_locked(hash_table_t* reverse, uint32_t glial_id, uint64_t id) {
+    id_list_t** list_ptr = (id_list_t**)hash_table_lookup_uint32(reverse, glial_id);
+    id_list_t* list;
 
-    nimcp_mutex_lock(&gi->lock);
+    if (!list_ptr || !*list_ptr) {
+        list = id_list_create();
+        if (!list) {
+            return NIMCP_ERROR_MEMORY;
+        }
+        // Store pointer to list in hash table (hash table copies the pointer value)
+        if (!hash_table_insert_uint32(reverse, glial_id, &list, sizeof(id_list_t*))) {
+            id_list_destroy(list);
+            return NIMCP_ERROR_MEMORY;
+        }
+    } else {
+        list = *list_ptr;
+    }
+
+    return id_list_add(list, id) ? NIMCP_SUCCESS : NIMCP_ERROR_MEMORY;
+}
+
+static nimcp_result_t assign_astrocyte_to_synapse_locked(glial_integration_t* gi,
+                                                         uint32_t astrocyte_id,
+                                                         uint64_t synapse_id) {
+    uint32_t* prev = (uint32_t*)hash_table_lookup_uint64(gi->synapse_to_astrocyte, synapse_id);
+    bool is_new = (prev == NULL);
+    if (prev && *prev == astrocyte_id) {
+        return NIMCP_SUCCESS;  // already mapped to this astrocyte
+    }
 
     // Forward mapping: synapse → astrocyte (G7: uint64 key)
-    hash_table_insert_uint64(gi->synapse_to_astrocyte, synapse_id, &astrocyte_id, sizeof(uint32_t));
+    if (!hash_table_insert_uint64(gi->synapse_to_astrocyte, synapse_id, &astrocyte_id, sizeof(uint32_t))) {
+        return NIMCP_ERROR_MEMORY;
+    }
 
     // Reverse mapping: astrocyte → list of synapses
-    id_list_t** list_ptr = (id_list_t**)hash_table_lookup_uint32(gi->astrocyte_to_synapses, astrocyte_id);
-    id_list_t* list;
+    nimcp_result_t r = reverse_list_add_locked(gi->astrocyte_to_synapses, astrocyte_id, synapse_id);
+    if (r != NIMCP_SUCCESS) {
+        return r;
+    }
 
-    if (!list_ptr) {
-        // Create new list for this astrocyte
-        list = id_list_create();
-        if (!list) {
-            nimcp_mutex_unlock(&gi->lock);
-            return NIMCP_ERROR_MEMORY;
+    // Count the synapse into the astrocyte's drive normaliser
+    if (is_new && gi->astrocyte_network && astrocyte_id < gi->astrocyte_network->num_astrocytes) {
+        astrocyte_t* ast = gi->astrocyte_network->astrocytes[astrocyte_id];
+        if (ast) {
+            nimcp_spinlock_lock(&ast->lock);
+            ast->drive_synapses++;
+            nimcp_spinlock_unlock(&ast->lock);
         }
-
-        // Store pointer to list in hash table (hash table will copy the pointer value)
-        hash_table_insert_uint32(gi->astrocyte_to_synapses, astrocyte_id, &list, sizeof(id_list_t*));
-    } else {
-        list = *list_ptr;
     }
-
-    // Add synapse to list
-    if (!id_list_add(list, synapse_id)) {
-        nimcp_mutex_unlock(&gi->lock);
-        return NIMCP_ERROR_MEMORY;
-    }
-
-    nimcp_mutex_unlock(&gi->lock);
     return NIMCP_SUCCESS;
 }
 
-nimcp_result_t glial_integration_assign_oligodendrocyte_to_neuron(glial_integration_t* gi,
-                                                                  uint32_t oligo_id,
-                                                                  uint32_t neuron_id) {
-    NIMCP_CHECK_THROW(gi, NIMCP_ERROR_INVALID_PARAM, "gi is NULL");
-
-    nimcp_mutex_lock(&gi->lock);
+static nimcp_result_t assign_oligodendrocyte_to_neuron_locked(glial_integration_t* gi,
+                                                              uint32_t oligo_id,
+                                                              uint32_t neuron_id) {
+    // Register the axon with the oligodendrocyte itself; without this,
+    // oligodendrocyte_get_myelination_level() never finds it (always 0).
+    if (gi->oligodendrocyte_network && oligo_id < gi->oligodendrocyte_network->num_oligodendrocytes) {
+        oligodendrocyte_t* oligo = gi->oligodendrocyte_network->oligodendrocytes[oligo_id];
+        if (oligo) {
+            nimcp_result_t ar = oligodendrocyte_assign_neuron(oligo, neuron_id);
+            if (ar != NIMCP_SUCCESS) {
+                return ar;  // cell full (max_axons) or invalid
+            }
+        }
+    }
 
     // Forward mapping: neuron → oligodendrocyte
-    // Store the oligo_id directly (not a pointer to it)
-    hash_table_insert_uint32(gi->neuron_to_oligodendrocyte, neuron_id, &oligo_id, sizeof(uint32_t));
+    if (!hash_table_insert_uint32(gi->neuron_to_oligodendrocyte, neuron_id, &oligo_id, sizeof(uint32_t))) {
+        return NIMCP_ERROR_MEMORY;
+    }
 
     // Reverse mapping: oligodendrocyte → list of neurons
-    id_list_t** list_ptr = (id_list_t**)hash_table_lookup_uint32(gi->oligodendrocyte_to_neurons, oligo_id);
-    id_list_t* list;
-
-    if (!list_ptr) {
-        list = id_list_create();
-        if (!list) {
-            nimcp_mutex_unlock(&gi->lock);
-            return NIMCP_ERROR_MEMORY;
-        }
-
-        // Store pointer to list in hash table (hash table will copy the pointer value)
-        hash_table_insert_uint32(gi->oligodendrocyte_to_neurons, oligo_id, &list, sizeof(id_list_t*));
-    } else {
-        list = *list_ptr;
-    }
-
-    if (!id_list_add(list, neuron_id)) {
-        nimcp_mutex_unlock(&gi->lock);
-        return NIMCP_ERROR_MEMORY;
-    }
-
-    nimcp_mutex_unlock(&gi->lock);
-    return NIMCP_SUCCESS;
+    return reverse_list_add_locked(gi->oligodendrocyte_to_neurons, oligo_id, neuron_id);
 }
 
-nimcp_result_t glial_integration_assign_microglia_to_synapse(glial_integration_t* gi,
-                                                             uint32_t microglia_id,
-                                                             uint64_t synapse_id) {
-    NIMCP_CHECK_THROW(gi, NIMCP_ERROR_INVALID_PARAM, "gi is NULL");
-
-    nimcp_mutex_lock(&gi->lock);
-
+static nimcp_result_t assign_microglia_to_synapse_locked(glial_integration_t* gi,
+                                                         uint32_t microglia_id,
+                                                         uint64_t synapse_id) {
     // Forward mapping: synapse → microglia (G7: uint64 key)
-    hash_table_insert_uint64(gi->synapse_to_microglia, synapse_id, &microglia_id, sizeof(uint32_t));
-
-    // Reverse mapping: microglia → list of synapses
-    id_list_t** list_ptr = (id_list_t**)hash_table_lookup_uint32(gi->microglia_to_synapses, microglia_id);
-    id_list_t* list;
-
-    if (!list_ptr) {
-        list = id_list_create();
-        if (!list) {
-            nimcp_mutex_unlock(&gi->lock);
-            return NIMCP_ERROR_MEMORY;
-        }
-
-        // Store pointer to list in hash table (hash table will copy the pointer value)
-        hash_table_insert_uint32(gi->microglia_to_synapses, microglia_id, &list, sizeof(id_list_t*));
-    } else {
-        list = *list_ptr;
+    if (!hash_table_insert_uint64(gi->synapse_to_microglia, synapse_id, &microglia_id, sizeof(uint32_t))) {
+        return NIMCP_ERROR_MEMORY;
     }
 
-    if (!id_list_add(list, synapse_id)) {
-        nimcp_mutex_unlock(&gi->lock);
-        return NIMCP_ERROR_MEMORY;
+    // Reverse mapping: microglia → list of synapses
+    nimcp_result_t r = reverse_list_add_locked(gi->microglia_to_synapses, microglia_id, synapse_id);
+    if (r != NIMCP_SUCCESS) {
+        return r;
     }
 
     // Also add to microglia's monitored synapse list
@@ -456,37 +450,60 @@ nimcp_result_t glial_integration_assign_microglia_to_synapse(glial_integration_t
             microglia_monitor_synapse(mg, synapse_id);
         }
     }
-
-    nimcp_mutex_unlock(&gi->lock);
     return NIMCP_SUCCESS;
+}
+
+nimcp_result_t glial_integration_assign_astrocyte_to_synapse(glial_integration_t* gi,
+                                                             uint32_t astrocyte_id,
+                                                             uint64_t synapse_id) {
+    NIMCP_CHECK_THROW(gi, NIMCP_ERROR_INVALID_PARAM, "gi is NULL");
+
+    nimcp_mutex_lock(&gi->lock);
+    nimcp_result_t r = assign_astrocyte_to_synapse_locked(gi, astrocyte_id, synapse_id);
+    nimcp_mutex_unlock(&gi->lock);
+    return r;
+}
+
+nimcp_result_t glial_integration_assign_oligodendrocyte_to_neuron(glial_integration_t* gi,
+                                                                  uint32_t oligo_id,
+                                                                  uint32_t neuron_id) {
+    NIMCP_CHECK_THROW(gi, NIMCP_ERROR_INVALID_PARAM, "gi is NULL");
+
+    nimcp_mutex_lock(&gi->lock);
+    nimcp_result_t r = assign_oligodendrocyte_to_neuron_locked(gi, oligo_id, neuron_id);
+    nimcp_mutex_unlock(&gi->lock);
+    return r;
+}
+
+nimcp_result_t glial_integration_assign_microglia_to_synapse(glial_integration_t* gi,
+                                                             uint32_t microglia_id,
+                                                             uint64_t synapse_id) {
+    NIMCP_CHECK_THROW(gi, NIMCP_ERROR_INVALID_PARAM, "gi is NULL");
+
+    nimcp_mutex_lock(&gi->lock);
+    nimcp_result_t r = assign_microglia_to_synapse_locked(gi, microglia_id, synapse_id);
+    nimcp_mutex_unlock(&gi->lock);
+    return r;
 }
 
 // ============================================================================
 // AUTOMATIC SPATIAL ASSIGNMENT
 // ============================================================================
 
+static inline uint32_t saturating_add_u32(uint32_t a, uint64_t b) {
+    uint64_t s = (uint64_t)a + b;
+    return s > UINT32_MAX ? UINT32_MAX : (uint32_t)s;
+}
+
 uint32_t glial_integration_auto_assign_spatial(glial_integration_t* gi) {
     /**
-     * @brief WHAT: Automatically assign glial cells to neurons/synapses by spatial proximity
-     * @brief WHY:  Setup tripartite synapses without manual assignment
-     * @brief HOW:  For each astrocyte, find synapses within coverage radius and assign
-     *
-     * ALGORITHM:
-     * 1. For each astrocyte in network:
-     *    a. Get its spatial position (x, y, z) and coverage radius
-     *    b. Find all neurons within radius (using spatial queries)
-     *    c. Assign synapses connected to those neurons → this astrocyte
-     * 2. For each oligodendrocyte:
-     *    a. Find neurons within myelination radius
-     *    b. Assign neurons → this oligodendrocyte (up to capacity limit)
-     * 3. For each microglia:
-     *    a. Find synapses within surveillance radius
-     *    b. Assign synapses → this microglia for monitoring
-     *
-     * BIOLOGICAL RATIONALE:
-     * - Astrocytes cover local synaptic domains (~100,000 synapses, 50-100 µm radius)
-     * - Oligodendrocytes myelinate nearby axons (capacity: ~40-50 axons each)
-     * - Microglia patrol local territories (surveillance radius: ~20-50 µm)
+     * WHAT: Assign glial cells to the real neurons/synapses of gi->network
+     * WHY:  Set up tripartite synapses and myelination without manual calls
+     * HOW:  Neuron-id locality (no coordinates exist): astrocyte territories
+     *       over postsynaptic neuron blocks (all real synapses covered, O(1)
+     *       lookup, no per-synapse memory); oligodendrocytes take neuron
+     *       blocks up to their axon capacity. Microglia are left to explicit
+     *       assignment. See header for details.
      */
     if (!gi) return 0;
 
@@ -494,84 +511,197 @@ uint32_t glial_integration_auto_assign_spatial(glial_integration_t* gi) {
 
     nimcp_mutex_lock(&gi->lock);
 
+    uint32_t n_neurons = gi->network ? neural_network_get_num_neurons(gi->network) : 0;
+    if (n_neurons == 0) {
+        nimcp_mutex_unlock(&gi->lock);
+        return 0;
+    }
+
     // ========================================================================
-    // STEP 1: Assign Astrocytes to Synapses (Tripartite Synapse Model)
+    // STEP 1: Astrocyte territories (tripartite synapses)
     // ========================================================================
-    if (gi->astrocyte_network && gi->astrocyte_network->num_astrocytes > 0) {
+    if (gi->astrocyte_network && gi->astrocyte_network->num_astrocytes > 0 &&
+        gi->astrocyte_network->astrocytes) {
         astrocyte_network_t* astro_net = gi->astrocyte_network;
+        uint32_t n_astro = astro_net->num_astrocytes;
 
-        for (uint32_t i = 0; i < astro_net->num_astrocytes; i++) {
-            astrocyte_t* astro = astro_net->astrocytes[i];
-            if (!astro) continue;
-
-            // For now, use simple round-robin assignment
-            // TODO: Once spatial index is available, use proximity-based assignment
-            //
-            // In a full implementation, this would:
-            // 1. Query spatial index for all neurons within astro->coverage_radius of (astro->x, astro->y, astro->z)
-            // 2. For each nearby neuron, get its synapses
-            // 3. Assign those synapses to this astrocyte
-            //
-            // Current stub: Assign synapse IDs based on coverage area estimate
-            // Assume network has ~10,000 synapses, each astrocyte covers ~100 synapses
-            uint32_t synapses_per_astrocyte = 100;
-            uint32_t start_synapse = i * synapses_per_astrocyte;
-            uint32_t end_synapse = start_synapse + synapses_per_astrocyte;
-
-            for (uint32_t syn_id = start_synapse; syn_id < end_synapse; syn_id++) {
-                nimcp_result_t result = glial_integration_assign_astrocyte_to_synapse(gi, i, syn_id);
-                if (result == NIMCP_SUCCESS) {
-                    total_assignments++;
-                }
+        // Count real incoming synapses per territory
+        uint32_t* counts = (uint32_t*)nimcp_calloc(n_astro, sizeof(uint32_t));
+        uint64_t covered = 0;
+        if (counts) {
+            for (uint32_t n = 0; n < n_neurons; n++) {
+                neuron_t* neuron = neural_network_get_neuron(gi->network, n);
+                if (!neuron) continue;
+                uint32_t in = NEURON_IN_COUNT(neuron);
+                uint32_t a = (uint32_t)(((uint64_t)n * n_astro) / n_neurons);
+                uint64_t c = (uint64_t)counts[a] + in;
+                counts[a] = c > UINT32_MAX ? UINT32_MAX : (uint32_t)c;
+                covered += in;
             }
+            for (uint32_t a = 0; a < n_astro; a++) {
+                astrocyte_t* ast = astro_net->astrocytes[a];
+                if (!ast) continue;
+                nimcp_spinlock_lock(&ast->lock);
+                ast->drive_synapses = counts[a];
+                nimcp_spinlock_unlock(&ast->lock);
+            }
+            nimcp_free(counts);
+
+            gi->territory_neurons = n_neurons;
+            gi->territory_astrocytes = n_astro;
+            gi->territory_synapses = covered;
+            total_assignments = saturating_add_u32(total_assignments, covered);
+        } else {
+            LOG_WARN(LOG_MODULE, "auto_assign_spatial: territory count allocation failed");
         }
     }
 
     // ========================================================================
-    // STEP 2: Assign Oligodendrocytes to Neurons (Myelination)
+    // STEP 2: Oligodendrocytes → neurons (axons), capacity-limited
     // ========================================================================
-    if (gi->oligodendrocyte_network && gi->oligodendrocyte_network->num_oligodendrocytes > 0) {
+    if (gi->oligodendrocyte_network && gi->oligodendrocyte_network->num_oligodendrocytes > 0 &&
+        gi->oligodendrocyte_network->oligodendrocytes) {
         oligodendrocyte_network_t* oligo_net = gi->oligodendrocyte_network;
+        uint32_t n_oligo = oligo_net->num_oligodendrocytes;
 
-        for (uint32_t i = 0; i < oligo_net->num_oligodendrocytes; i++) {
-            // Each oligodendrocyte can myelinate ~40-50 neurons (biological limit)
-            uint32_t neurons_per_oligo = 45;
-            uint32_t start_neuron = i * neurons_per_oligo;
-            uint32_t end_neuron = start_neuron + neurons_per_oligo;
-
-            for (uint32_t neuron_id = start_neuron; neuron_id < end_neuron; neuron_id++) {
-                nimcp_result_t result = glial_integration_assign_oligodendrocyte_to_neuron(gi, i, neuron_id);
-                if (result == NIMCP_SUCCESS) {
-                    total_assignments++;
-                }
+        for (uint32_t n = 0; n < n_neurons; n++) {
+            uint32_t o = (uint32_t)(((uint64_t)n * n_oligo) / n_neurons);
+            oligodendrocyte_t* oligo = oligo_net->oligodendrocytes[o];
+            if (!oligo) continue;
+            if (hash_table_lookup_uint32(gi->neuron_to_oligodendrocyte, n)) {
+                continue;  // already assigned (idempotent re-run)
+            }
+            if (oligo->num_myelinated_axons >= oligo->max_axons) {
+                continue;  // this oligodendrocyte is full
+            }
+            if (assign_oligodendrocyte_to_neuron_locked(gi, o, n) == NIMCP_SUCCESS) {
+                total_assignments = saturating_add_u32(total_assignments, 1);
             }
         }
     }
 
-    // ========================================================================
-    // STEP 3: Assign Microglia to Synapses (Synaptic Surveillance)
-    // ========================================================================
-    if (gi->microglia_network && gi->microglia_network->num_microglia > 0) {
-        microglia_network_t* micro_net = gi->microglia_network;
+    // STEP 3 (microglia): intentionally not automatic — see header.
 
-        for (uint32_t i = 0; i < micro_net->num_microglia; i++) {
-            // Each microglia monitors ~50-200 synapses in its territory
-            uint32_t synapses_per_microglia = 100;
-            uint32_t start_synapse = i * synapses_per_microglia;
-            uint32_t end_synapse = start_synapse + synapses_per_microglia;
+    nimcp_mutex_unlock(&gi->lock);
 
-            for (uint32_t syn_id = start_synapse; syn_id < end_synapse; syn_id++) {
-                nimcp_result_t result = glial_integration_assign_microglia_to_synapse(gi, i, syn_id);
-                if (result == NIMCP_SUCCESS) {
-                    total_assignments++;
-                }
+    LOG_INFO(LOG_MODULE, "auto_assign_spatial: %u assignments (%llu territory synapses, %u neurons)",
+             total_assignments, (unsigned long long)gi->territory_synapses, n_neurons);
+    return total_assignments;
+}
+
+uint32_t glial_integration_populate(glial_integration_t* gi, uint32_t n_neurons, float density) {
+    if (!gi) {
+        return 0;
+    }
+    if (!(density > 0.0F) || !isfinite(density)) {
+        density = 1.0F;
+    }
+    if (density > 1.0F) {
+        density = 1.0F;
+    }
+    if (n_neurons == 0 && gi->network) {
+        n_neurons = neural_network_get_num_neurons(gi->network);
+    }
+    if (n_neurons == 0) {
+        return 0;
+    }
+
+    const float spacing_um = 50.0F;
+
+    nimcp_mutex_lock(&gi->lock);
+
+    // Astrocytes
+    astrocyte_network_t* an = gi->astrocyte_network;
+    if (an && an->num_astrocytes == 0 && an->capacity > 0) {
+        uint32_t count = (uint32_t)lroundf((float)an->capacity * density);
+        if (count < 1) count = 1;
+        uint32_t side = (uint32_t)ceilf(cbrtf((float)count));
+        for (uint32_t i = 0; i < count; i++) {
+            float x = (float)(i % side) * spacing_um;
+            float y = (float)((i / side) % side) * spacing_um;
+            float z = (float)(i / (side * side)) * spacing_um;
+            astrocyte_t* ast = astrocyte_create(i, ASTROCYTE_TYPE_GENERIC, x, y, z, spacing_um);
+            if (!ast) break;
+            if (astrocyte_network_add(an, ast) != NIMCP_SUCCESS) {
+                astrocyte_destroy(ast);
+                break;
+            }
+        }
+    }
+
+    // Oligodendrocytes: only as many as needed to cover n_neurons axons
+    oligodendrocyte_network_t* on = gi->oligodendrocyte_network;
+    if (on && on->num_oligodendrocytes == 0 && on->capacity > 0) {
+        uint32_t count = (uint32_t)lroundf((float)on->capacity * density);
+        if (count < 1) count = 1;
+        uint32_t per = (n_neurons + count - 1) / count;
+        if (per > NIMCP_OLIGO_MAX_AXONS) per = NIMCP_OLIGO_MAX_AXONS;
+        if (per < 1) per = 1;
+        uint32_t needed = (n_neurons + per - 1) / per;
+        if (count > needed) count = needed;
+        uint32_t side = (uint32_t)ceilf(cbrtf((float)count));
+        for (uint32_t i = 0; i < count; i++) {
+            float x = (float)(i % side) * spacing_um;
+            float y = (float)((i / side) % side) * spacing_um;
+            float z = (float)(i / (side * side)) * spacing_um;
+            oligodendrocyte_t* ol = oligodendrocyte_create(i, x, y, z, per);
+            if (!ol) break;
+            if (oligodendrocyte_network_add(on, ol) != NIMCP_SUCCESS) {
+                oligodendrocyte_destroy(ol);
+                break;
+            }
+        }
+    }
+
+    // Microglia: bounded (each preallocates its monitoring slots)
+    microglia_network_t* mn = gi->microglia_network;
+    if (mn && mn->num_microglia == 0 && mn->capacity > 0) {
+        uint32_t count = (uint32_t)lroundf((float)mn->capacity * density);
+        if (count < 1) count = 1;
+        if (count > 256) count = 256;
+        uint32_t side = (uint32_t)ceilf(cbrtf((float)count));
+        for (uint32_t i = 0; i < count; i++) {
+            float x = (float)(i % side) * spacing_um;
+            float y = (float)((i / side) % side) * spacing_um;
+            float z = (float)(i / (side * side)) * spacing_um;
+            microglia_t* mg = microglia_create(i, x, y, z, spacing_um);
+            if (!mg) break;
+            if (microglia_network_add(mn, mg) != NIMCP_SUCCESS) {
+                microglia_destroy(mg);
+                break;
             }
         }
     }
 
     nimcp_mutex_unlock(&gi->lock);
 
-    return total_assignments;
+    return glial_integration_auto_assign_spatial(gi);
+}
+
+// ============================================================================
+// LOOKUP HELPERS (caller holds gi->lock)
+// ============================================================================
+
+/* Astrocyte serving synapse (pre, post): explicit mapping first, then the
+ * territory of the postsynaptic neuron. NULL if none. */
+static astrocyte_t* lookup_astrocyte_locked(glial_integration_t* gi, uint32_t pre, uint32_t post) {
+    astrocyte_network_t* an = gi->astrocyte_network;
+    if (!an || !an->astrocytes || an->num_astrocytes == 0) {
+        return NULL;
+    }
+    uint32_t astrocyte_id = UINT32_MAX;
+    if (hash_table_size(gi->synapse_to_astrocyte) > 0) {
+        uint32_t* p = (uint32_t*)hash_table_lookup_uint64(gi->synapse_to_astrocyte,
+                                                          make_synapse_id(pre, post));
+        if (p) astrocyte_id = *p;
+    }
+    if (astrocyte_id == UINT32_MAX && gi->territory_neurons > 0 && post < gi->territory_neurons) {
+        astrocyte_id = (uint32_t)(((uint64_t)post * gi->territory_astrocytes) / gi->territory_neurons);
+    }
+    if (astrocyte_id >= an->num_astrocytes) {
+        return NULL;
+    }
+    return an->astrocytes[astrocyte_id];
 }
 
 // ============================================================================
@@ -582,31 +712,31 @@ void glial_integration_on_synapse_fired(glial_integration_t* gi, uint32_t pre_ne
                                         uint32_t post_neuron_id, float synaptic_weight,
                                         uint64_t timestamp) {
     if (!gi) return;
-
-    uint64_t synapse_id = make_synapse_id(pre_neuron_id, post_neuron_id);
+    if (!gi->enable_astrocyte_modulation && !gi->enable_microglia_pruning) return;
 
     nimcp_mutex_lock(&gi->lock);
 
-    // Find assigned astrocyte
-    if (gi->enable_astrocyte_modulation && gi->astrocyte_network) {
-        uint32_t* astrocyte_id_ptr = (uint32_t*)hash_table_lookup_uint64(
-            gi->synapse_to_astrocyte, synapse_id);
-
-        if (astrocyte_id_ptr) {
-            uint32_t astrocyte_id = *astrocyte_id_ptr;
-            if (astrocyte_id < gi->astrocyte_network->num_astrocytes) {
-                astrocyte_t* ast = gi->astrocyte_network->astrocytes[astrocyte_id];
-                if (ast) {
-                    // Increase calcium with external stimulus
-                    // dt = 0.001s (1ms), stimulus = synaptic_weight * 10
-                    astrocyte_update_calcium(ast, 0.001F, synaptic_weight * 10.0F);
-                }
+    // Astrocyte: accumulate synaptic drive. astrocyte_network_step() converts
+    // it into an IP3-producing stimulus (mean weight x events/s per mapped
+    // synapse). (Was: a full calcium ODE step plus a bio-router publication
+    // per synaptic event, which also time-compressed the dynamics.)
+    if (gi->enable_astrocyte_modulation) {
+        astrocyte_t* ast = lookup_astrocyte_locked(gi, pre_neuron_id, post_neuron_id);
+        if (ast) {
+            float w = fabsf(synaptic_weight);
+            if (isfinite(w)) {
+                nimcp_spinlock_lock(&ast->lock);
+                ast->synaptic_drive += w;
+                nimcp_spinlock_unlock(&ast->lock);
             }
+            gi->total_astrocyte_modulations++;
         }
     }
 
     // Notify microglia if assigned
-    if (gi->enable_microglia_pruning && gi->microglia_network) {
+    if (gi->enable_microglia_pruning && gi->microglia_network &&
+        hash_table_size(gi->synapse_to_microglia) > 0) {
+        uint64_t synapse_id = make_synapse_id(pre_neuron_id, post_neuron_id);
         uint32_t* microglia_id_ptr = (uint32_t*)hash_table_lookup_uint64(
             gi->synapse_to_microglia, synapse_id);
 
@@ -627,12 +757,13 @@ void glial_integration_on_synapse_fired(glial_integration_t* gi, uint32_t pre_ne
 
 void glial_integration_on_neuron_fired(glial_integration_t* gi, uint32_t neuron_id,
                                        uint64_t timestamp) {
+    (void)timestamp;
     if (!gi || !gi->enable_oligodendrocyte_myelination) return;
 
     nimcp_mutex_lock(&gi->lock);
 
     // Find assigned oligodendrocyte
-    if (gi->oligodendrocyte_network) {
+    if (gi->oligodendrocyte_network && hash_table_size(gi->neuron_to_oligodendrocyte) > 0) {
         uint32_t* oligo_id_ptr = (uint32_t*)hash_table_lookup_uint32(
             gi->neuron_to_oligodendrocyte, neuron_id);
 
@@ -641,8 +772,12 @@ void glial_integration_on_neuron_fired(glial_integration_t* gi, uint32_t neuron_
             if (oligo_id < gi->oligodendrocyte_network->num_oligodendrocytes) {
                 oligodendrocyte_t* oligo = gi->oligodendrocyte_network->oligodendrocytes[oligo_id];
                 if (oligo) {
-                    // Track axon activity for adaptive myelination
-                    oligodendrocyte_track_activity(oligo, neuron_id, 1.0F, timestamp);
+                    // Count the spike; oligodendrocyte_network_step() turns the
+                    // counts into a firing rate (Hz) that drives myelination.
+                    // (Was track_activity(..., 1.0): an EMA of the constant 1.0,
+                    // i.e. "1 Hz" for any neuron that ever fired.)
+                    oligodendrocyte_record_spike(oligo, neuron_id);
+                    gi->total_oligodendrocyte_myelinations++;
                 }
             }
         }
@@ -661,37 +796,36 @@ float glial_integration_get_synaptic_modulation(glial_integration_t* gi, uint32_
         return 1.0F; // Neutral modulation
     }
 
-    uint64_t synapse_id = make_synapse_id(pre_neuron_id, post_neuron_id);
+    float modulation = 1.0F;  // No astrocyte -> neutral
 
     nimcp_mutex_lock(&gi->lock);
 
-    // Find assigned astrocyte
-    if (gi->astrocyte_network) {
-        uint32_t* astrocyte_id_ptr = (uint32_t*)hash_table_lookup_uint64(
-            gi->synapse_to_astrocyte, synapse_id);
+    astrocyte_t* ast = lookup_astrocyte_locked(gi, pre_neuron_id, post_neuron_id);
+    if (ast) {
+        nimcp_spinlock_lock(&ast->lock);
+        float ca = ast->calcium_concentration;
+        float base = ast->calcium_baseline;
+        float pool = ast->glutamate_pool;
+        float atp = ast->atp_level;
+        nimcp_spinlock_unlock(&ast->lock);
 
-        if (astrocyte_id_ptr) {
-            uint32_t astrocyte_id = *astrocyte_id_ptr;
-            if (astrocyte_id < gi->astrocyte_network->num_astrocytes) {
-                astrocyte_t* ast = gi->astrocyte_network->astrocytes[astrocyte_id];
-                if (ast) {
-                    // Get modulation factor based on glutamate pool
-                    float glutamate = ast->glutamate_pool;
-                    float modulation = 1.0F + (glutamate / 100.0F); // Simple linear mapping
+        // Ca2+-dependent gliotransmitter potentiation (limited by the
+        // releasable pool) minus depression when the astrocyte's energy
+        // supply is depleted. Neutral (1.0) at resting Ca2+ and full ATP.
+        // (Was 1 + glutamate_pool/100: range [1.00, 1.01].)
+        float activation = (ca - base) / 1.0F;  // 1 uM above rest = full
+        activation = activation < 0.0F ? 0.0F : (activation > 1.0F ? 1.0F : activation);
+        float depression = 1.0F - atp;
+        depression = depression < 0.0F ? 0.0F : (depression > 1.0F ? 1.0F : depression);
+        modulation = 1.0F + 0.2F * (activation * pool - depression);
 
-                    // Clamp to range
-                    if (modulation < 0.8F) modulation = 0.8F;
-                    if (modulation > 1.2F) modulation = 1.2F;
-
-                    nimcp_mutex_unlock(&gi->lock);
-                    return modulation;
-                }
-            }
-        }
+        if (!isfinite(modulation)) modulation = 1.0F;
+        if (modulation < 0.8F) modulation = 0.8F;
+        if (modulation > 1.2F) modulation = 1.2F;
     }
 
     nimcp_mutex_unlock(&gi->lock);
-    return 1.0F; // No astrocyte → neutral
+    return modulation;
 }
 
 float glial_integration_get_myelination_factor(glial_integration_t* gi, uint32_t neuron_id) {
@@ -699,10 +833,11 @@ float glial_integration_get_myelination_factor(glial_integration_t* gi, uint32_t
         return 0.0F; // No myelination
     }
 
+    float myelination = 0.0F;  // No oligodendrocyte
+
     nimcp_mutex_lock(&gi->lock);
 
-    // Find assigned oligodendrocyte
-    if (gi->oligodendrocyte_network) {
+    if (gi->oligodendrocyte_network && hash_table_size(gi->neuron_to_oligodendrocyte) > 0) {
         uint32_t* oligo_id_ptr = (uint32_t*)hash_table_lookup_uint32(
             gi->neuron_to_oligodendrocyte, neuron_id);
 
@@ -711,17 +846,14 @@ float glial_integration_get_myelination_factor(glial_integration_t* gi, uint32_t
             if (oligo_id < gi->oligodendrocyte_network->num_oligodendrocytes) {
                 oligodendrocyte_t* oligo = gi->oligodendrocyte_network->oligodendrocytes[oligo_id];
                 if (oligo) {
-                    // Get myelination level for this neuron/axon
-                    float myelination = oligodendrocyte_get_myelination_level(oligo, neuron_id);
-                    nimcp_mutex_unlock(&gi->lock);
-                    return myelination;
+                    myelination = oligodendrocyte_get_myelination_level(oligo, neuron_id);
                 }
             }
         }
     }
 
     nimcp_mutex_unlock(&gi->lock);
-    return 0.0F; // No oligodendrocyte
+    return myelination;
 }
 
 bool glial_integration_should_prune_synapse(glial_integration_t* gi, uint32_t pre_neuron_id,
@@ -733,12 +865,12 @@ bool glial_integration_should_prune_synapse(glial_integration_t* gi, uint32_t pr
         return false;  /* Pruning disabled - normal config */
     }
 
-    uint64_t synapse_id = make_synapse_id(pre_neuron_id, post_neuron_id);
+    bool should_prune = false;
 
     nimcp_mutex_lock(&gi->lock);
 
-    // Find assigned microglia
-    if (gi->microglia_network) {
+    if (gi->microglia_network && hash_table_size(gi->synapse_to_microglia) > 0) {
+        uint64_t synapse_id = make_synapse_id(pre_neuron_id, post_neuron_id);
         uint32_t* microglia_id_ptr = (uint32_t*)hash_table_lookup_uint64(
             gi->synapse_to_microglia, synapse_id);
 
@@ -747,18 +879,38 @@ bool glial_integration_should_prune_synapse(glial_integration_t* gi, uint32_t pr
             if (microglia_id < gi->microglia_network->num_microglia) {
                 microglia_t* mg = gi->microglia_network->microglia[microglia_id];
                 if (mg) {
-                    // Check if activity score is below pruning threshold
-                    float activity_score = microglia_get_synapse_activity_score(mg, synapse_id);
-                    bool should_prune = (activity_score < mg->pruning_threshold);
-                    nimcp_mutex_unlock(&gi->lock);
-                    return should_prune;
+                    // Pruned = the microglia removed it from surveillance
+                    // (microglia_prune_weak_synapses), or it is C3-tagged and
+                    // still below the pruning threshold. (Was: activity_score
+                    // < threshold, which is true for every freshly monitored
+                    // synapse (score 0); a pruned synapse never transmits, so
+                    // its score could never rise: instant permanent pruning.)
+                    bool monitored = false;
+                    bool c3 = false;
+                    nimcp_spinlock_lock(&mg->lock);
+                    for (uint32_t i = 0; i < mg->num_monitored_synapses; i++) {
+                        if (mg->synapses[i].synapse_id == synapse_id) {
+                            monitored = true;
+                            c3 = (mg->synapses[i].complement.tag == COMPLEMENT_C3);
+                            break;
+                        }
+                    }
+                    nimcp_spinlock_unlock(&mg->lock);
+                    if (!monitored) {
+                        should_prune = true;
+                    } else if (c3) {
+                        should_prune = microglia_should_prune_synapse(mg, synapse_id);
+                    }
+                    if (should_prune) {
+                        gi->total_microglia_prunings++;
+                    }
                 }
             }
         }
     }
 
     nimcp_mutex_unlock(&gi->lock);
-    return false;  /* No microglia found for synapse - normal search miss */
+    return should_prune;
 }
 
 // ============================================================================
@@ -793,9 +945,18 @@ void glial_integration_step(glial_integration_t* gi, uint64_t timestamp) {
     /* Phase 8: Send heartbeat after setup (20% progress) */
     glial_integration_heartbeat("glial_integration_step", 0.2f);
 
+    // Astrocyte and oligodendrocyte steps take SECONDS (their headers say
+    // so). Passing milliseconds made astrocyte_network_step() skip every call
+    // (dt > 1 returned early) and made oligodendrocytes integrate 1000x too
+    // much time. Timestamps from different clocks (sim steps vs wall clock)
+    // can produce huge gaps; anything beyond 2 s is steady state anyway.
+    float dt_s = dt_ms / 1000.0F;
+    if (!isfinite(dt_s) || dt_s <= 0.0F) dt_s = 0.001F;
+    if (dt_s > 2.0F) dt_s = 2.0F;
+
     // Step astrocyte network (calcium dynamics, glutamate release)
     if (gi->astrocyte_network && gi->enable_astrocyte_modulation) {
-        astrocyte_network_step(gi->astrocyte_network, dt_ms);
+        astrocyte_network_step(gi->astrocyte_network, dt_s);
     }
 
     /* Phase 8: Send heartbeat after astrocyte step (40% progress) */
@@ -803,7 +964,7 @@ void glial_integration_step(glial_integration_t* gi, uint64_t timestamp) {
 
     // Step oligodendrocyte network (adaptive myelination)
     if (gi->oligodendrocyte_network && gi->enable_oligodendrocyte_myelination) {
-        oligodendrocyte_network_step(gi->oligodendrocyte_network, dt_ms);
+        oligodendrocyte_network_step(gi->oligodendrocyte_network, dt_s);
     }
 
     /* Phase 8: Send heartbeat after oligodendrocyte step (60% progress) */
@@ -857,7 +1018,11 @@ nimcp_result_t glial_integration_get_stats(glial_integration_t* gi,
     }
 
     // Count assignments from forward mappings
-    stats->num_tripartite_synapses = (uint32_t)hash_table_size(gi->synapse_to_astrocyte);
+    {
+        // Explicit mappings + synapses covered by astrocyte territories
+        uint64_t tri = (uint64_t)hash_table_size(gi->synapse_to_astrocyte) + gi->territory_synapses;
+        stats->num_tripartite_synapses = tri > UINT32_MAX ? UINT32_MAX : (uint32_t)tri;
+    }
     stats->num_myelinated_neurons = (uint32_t)hash_table_size(gi->neuron_to_oligodendrocyte);
     stats->num_monitored_synapses = (uint32_t)hash_table_size(gi->synapse_to_microglia);
 

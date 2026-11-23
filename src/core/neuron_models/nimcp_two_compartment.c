@@ -89,6 +89,14 @@ static void two_compartment_bio_cleanup(void) {
     nimcp_mutex_unlock(&bio_cleanup_mutex);
 }
 
+uint32_t two_compartment_process_bio_inbox(uint32_t max_messages) {
+    bio_module_context_t ctx = bio_ctx;
+    if (!ctx) {
+        return 0;
+    }
+    return bio_router_process_inbox(ctx, max_messages);
+}
+
 //=============================================================================
 // Internal State Structure
 //=============================================================================
@@ -292,9 +300,14 @@ static void two_comp_destroy(neuron_model_state_t state_opaque)
  */
 static void two_comp_update(neuron_model_state_t state_opaque, float dt, float input_current)
 {
-    // Process pending bio-async messages
-    if (bio_ctx) {
-        bio_router_process_inbox(bio_ctx, 5);
+    /* Bio-async inbox draining is NOT done here (it was a per-neuron-per-step
+     * cost); call two_compartment_process_bio_inbox() /
+     * neuron_model_process_bio_inbox() once per simulation step instead. */
+
+    // Guard: Validate state (vtable is reachable directly, not only via
+    // neuron_model_update which already NULL-checks)
+    if (!state_opaque) {
+        return;
     }
 
     two_compartment_state_t* state = (two_compartment_state_t*)state_opaque->model_state;

@@ -217,6 +217,17 @@ const char* izhikevich_get_preset_description(izhikevich_preset_t preset);
  */
 void izhikevich_set_integration_method(neuron_model_state_t state, integration_method_t method);
 
+/**
+ * @brief Drain the Izhikevich module's bio-async inbox explicitly
+ *
+ * WHAT: Processes up to max_messages pending bio-router messages (0 = all).
+ * WHY:  izhikevich_update() no longer drains the inbox per neuron per step.
+ * HOW:  No-op (returns 0) if the module never registered with the router.
+ *
+ * @return Messages processed
+ */
+uint32_t izhikevich_process_bio_inbox(uint32_t max_messages);
+
 #ifdef __cplusplus
 }
 #endif

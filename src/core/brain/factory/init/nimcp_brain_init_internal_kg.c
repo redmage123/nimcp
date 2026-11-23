@@ -184,6 +184,8 @@ static void log_security_config(brain_kg_t* kg) {
 static nimcp_mutex_t* kg_init_mutex = NULL;
 static volatile int kg_mutex_init_done = 0;
 static volatile brain_kg_t* global_initialized_kg = NULL;
+static uint64_t global_kg_admin_token = 0;   /* admin token of the shared KG */
+static uint32_t global_kg_refs = 0;          /* brains holding the shared KG (under kg_init_mutex) */
 
 bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
     if (!brain) {
@@ -218,6 +220,11 @@ bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
         /* Reuse the globally initialized KG */
         brain->internal_kg = (brain_kg_t*)global_initialized_kg;
         brain->internal_kg_enabled = true;
+        /* The admin token must travel with the shared KG: without it every
+         * brain that reuses the KG (e.g. a resumed brain) failed all
+         * structural writes with "Insufficient access level" (2026-11-23). */
+        brain->internal_kg_admin_token = global_kg_admin_token;
+        global_kg_refs++;
         nimcp_mutex_unlock(kg_init_mutex);
         fprintf(stderr, "[INTERNAL_KG] Already initialized globally (brain=%p), reusing KG\n", (void*)brain);
         return true;
@@ -226,6 +233,8 @@ bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
     /* Double-check brain's own kg field */
     if (brain->internal_kg != NULL) {
         global_initialized_kg = brain->internal_kg;
+        global_kg_admin_token = brain->internal_kg_admin_token;
+        global_kg_refs++;
         nimcp_mutex_unlock(kg_init_mutex);
         fprintf(stderr, "[INTERNAL_KG] Brain already has KG, marking as global\n");
         return true;
@@ -285,6 +294,7 @@ bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
 
     /* Store admin token in brain for privileged operations */
     brain->internal_kg_admin_token = admin_token;
+    global_kg_admin_token = admin_token;
     fprintf(stderr, "[INTERNAL_KG] Admin token generated and stored\n");
 
     /* Set access level to ADMIN for population */
@@ -307,6 +317,7 @@ bool nimcp_brain_factory_init_internal_kg_subsystem(brain_t brain) {
 
     /* Mark as globally initialized so other brain instances reuse it */
     global_initialized_kg = kg;
+    global_kg_refs++;
 
     /* W6: register memory-family root nodes + cognitive umbrella while we
      * still have ADMIN access. memory_kg_init_roots() handles its own
@@ -499,8 +510,26 @@ void nimcp_brain_factory_destroy_internal_kg_subsystem(brain_t brain) {
     }
 
     if (brain->internal_kg) {
-        fprintf(stderr, "[INTERNAL_KG] Destroying internal knowledge graph\n");
-        brain_kg_destroy(brain->internal_kg);
+        /* The KG is shared by every brain in the process (see init). Only
+         * the last holder destroys it; before 2026-11-23 any brain's
+         * teardown freed the KG the others were still using. */
+        bool destroy = true;
+        if (kg_init_mutex) {
+            nimcp_mutex_lock(kg_init_mutex);
+            if (brain->internal_kg == (brain_kg_t*)global_initialized_kg) {
+                if (global_kg_refs > 0) global_kg_refs--;
+                destroy = (global_kg_refs == 0);
+                if (destroy) {
+                    global_initialized_kg = NULL;
+                    global_kg_admin_token = 0;
+                }
+            }
+            nimcp_mutex_unlock(kg_init_mutex);
+        }
+        if (destroy) {
+            fprintf(stderr, "[INTERNAL_KG] Destroying internal knowledge graph\n");
+            brain_kg_destroy(brain->internal_kg);
+        }
         brain->internal_kg = NULL;
     }
 

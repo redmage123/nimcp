@@ -46,8 +46,16 @@ BRIDGE_BOILERPLATE_MESH_ONLY(brain_init_occipital, MESH_ADAPTER_CATEGORY_SYSTEM)
 #include "core/brain/regions/occipital/nimcp_occipital_thalamic_bridge.h"
 #include "core/brain/regions/occipital/nimcp_occipital_quantum_bridge.h"
 #include "core/brain/regions/occipital/nimcp_occipital_audiovisual_bridge.h"
+/* These two bridge headers forward-declare tags that clash with typedefs
+ * already pulled in via brain_internal (orientation_hypercolumn_t is an
+ * anonymous-struct typedef in nimcp_orientation_columns.h; neural_logic_network_t
+ * is a pointer typedef in nimcp_neural_logic.h). Rename their local copies. */
+#define orientation_hypercolumn_t occ_bridge_orientation_hypercolumn_t
 #include "core/brain/regions/occipital/nimcp_occipital_cortical_bridge.h"
+#undef orientation_hypercolumn_t
+#define neural_logic_network_t occ_bridge_neural_logic_network_t
 #include "core/brain/regions/occipital/nimcp_occipital_logic_bridge.h"
+#undef neural_logic_network_t
 #include "core/brain/regions/occipital/nimcp_occipital_cognitive_bridge.h"
 
 // Stream connection includes
@@ -97,7 +105,7 @@ static void dorsal_motion_callback(const motion_vector_t* motion, void* user_dat
     if (!motion || !user_data) return;
 
     brain_t brain = (brain_t)user_data;
-    if (!brain->parietal) return;
+    if (!brain->parietal_cortex) return;   /* the parietal adapter (brain->parietal is a different type) */
 
     /* Convert motion vector to spatial target */
     parietal_cortex_spatial_target_t target = {
@@ -110,15 +118,11 @@ static void dorsal_motion_callback(const motion_vector_t* motion, void* user_dat
         .frame = PARIETAL_CORTEX_SPATIAL_FRAME_RETINOTOPIC,
         .salience = motion->confidence,
         .size = 0.1f,  /* Default size */
-        .velocity = {
-            .x = motion->dx,
-            .y = motion->dy,
-            .z = 0.0f
-        }
+        .is_active = true   /* the spatial-target struct has no velocity field */
     };
 
     /* Add motion target to parietal spatial attention */
-    parietal_cortex_add_spatial_target(brain->parietal, &target);
+    parietal_cortex_add_spatial_target(brain->parietal_cortex, &target);
 }
 
 /**
@@ -139,11 +143,11 @@ static void ventral_feature_callback(const visual_feature_t* feature, void* user
         .feature_dim = feature->descriptor_size,
         .x = feature->x,
         .y = feature->y,
-        .timestamp_ms = (double)feature->timestamp_us / 1000.0
+        .confidence = feature->strength
     };
 
     /* Send to temporal for object recognition */
-    temporal_object_recognition_result_t result;
+    temporal_recognition_result_t result;
     temporal_recognize_object(brain->temporal, &input, &result);
 }
 
@@ -456,7 +460,7 @@ bool nimcp_brain_factory_connect_occipital_to_parietal(brain_t brain) {
     }
 
     /* Check if parietal is available */
-    if (!brain->parietal) {
+    if (!brain->parietal_cortex) {
         return true;  /* Parietal not initialized yet */
     }
 
@@ -672,9 +676,9 @@ bool nimcp_brain_factory_connect_occipital_to_logic(brain_t brain) {
      * This provides direct visual feature -> predicate conversion.
      */
     occipital_logic_config_t occ_logic_cfg = occipital_logic_default_config();
-    occ_logic_cfg.enable_object_grounding = true;
-    occ_logic_cfg.enable_spatial_predicates = true;
-    occ_logic_cfg.enable_motion_predicates = true;
+    occ_logic_cfg.enable_unary_predicates = true;    /* objects */
+    occ_logic_cfg.enable_binary_predicates = true;   /* spatial relations */
+    occ_logic_cfg.enable_scene_predicates = true;
     occ_logic_cfg.enable_bio_async = brain->bio_async_enabled;
 
     occipital_logic_bridge_t* occ_logic_bridge = occipital_logic_bridge_create(
@@ -800,15 +804,9 @@ bool nimcp_brain_factory_connect_occipital_to_cortical_columns(brain_t brain) {
         }
 
         /* Create each hypercolumn */
-        orientation_hypercolumn_config_t config = {
-            .num_orientations = 8,       /* 0, 22.5, 45, ... 157.5 degrees */
-            .num_spatial_frequencies = 4, /* Log-spaced spatial frequencies */
-            .num_phases = 2,             /* 0 and 90 degree phase */
-            .receptive_field_size = 0.1f /* Fraction of visual field */
-        };
-
+        /* 8 orientations (0, 22.5, ... 157.5 deg), 0.1 cycles/px, 30 deg tuning */
         for (uint32_t i = 0; i < num_hypercolumns; i++) {
-            brain->orientation_hypercolumns[i] = orientation_hypercolumn_create(&config);
+            brain->orientation_hypercolumns[i] = orientation_hypercolumn_create(8, 0.1f, 30.0f);
             if (!brain->orientation_hypercolumns[i]) {
                 LOG_WARN(LOG_MODULE, "Failed to create orientation hypercolumn %u", i);
             }

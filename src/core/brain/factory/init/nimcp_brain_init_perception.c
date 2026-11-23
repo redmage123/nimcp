@@ -102,6 +102,7 @@ BRIDGE_BOILERPLATE_MESH_ONLY(brain_init_perception, MESH_ADAPTER_CATEGORY_SYSTEM
 #include "utils/exception/nimcp_exception_macros.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 //=============================================================================
@@ -327,7 +328,23 @@ void nimcp_brain_attach_glial(brain_t brain)
     // Trigger spatial assignment (populates lookup tables). Returns the number
     // of assignments made; zero is not an error (just means neurons don't have
     // positions yet or no glial cells were created).
-    uint32_t n_assigned = glial_integration_auto_assign_spatial(brain->glial);
+    /* Populate the glial networks (created empty until 2026-11-23, so every
+     * glial lookup missed) and assign them; NIMCP_GLIA_POPULATE=0 keeps the
+     * old assign-only behaviour. Populate only fills empty networks and the
+     * assignment is idempotent, so this is safe after load and resize. */
+    uint32_t n_assigned;
+    const char* pop_env = getenv("NIMCP_GLIA_POPULATE");
+    uint32_t n_neurons = 0;
+    if (brain->network) {
+        neural_network_t base = adaptive_network_get_base_network(brain->network);
+        if (base) n_neurons = neural_network_get_num_neurons(base);
+    }
+    if ((!pop_env || strcmp(pop_env, "0") != 0) && n_neurons > 0) {
+        n_assigned = glial_integration_populate(brain->glial, n_neurons, 1.0F);
+        fprintf(stderr, "[GLIA] populate: %u neurons -> %u assignments\n", n_neurons, n_assigned);
+    } else {
+        n_assigned = glial_integration_auto_assign_spatial(brain->glial);
+    }
     LOG_INFO(LOG_MODULE,
              "Glial spatial auto-assign: %u synapse/neuron ↔ glial mappings", n_assigned);
 

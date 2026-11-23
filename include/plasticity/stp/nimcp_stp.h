@@ -23,9 +23,18 @@
  * MATHEMATICAL MODEL (Tsodyks-Markram):
  *   dx/dt = (1 - x) / τ_D             (recovery of resources)
  *   du/dt = (U - u) / τ_F             (decay of facilitation)
- *   On spike: u ← u + U(1 - u)        (facilitation increases)
- *             x ← x - ux               (resource depletion)
- *   PSC amplitude: A = A_max · u · x  (effective strength)
+ *   On spike: A = A_max · u⁻ · x⁻     (PSC amplitude, values just before the spike)
+ *             x ← x⁻ - u⁻x⁻            (resource depletion, with u BEFORE the jump)
+ *             u ← u⁻ + U(1 - u⁻)       (facilitation increases, after release)
+ *   u relaxes to U between spikes, so the first spike after rest has u = U.
+ *
+ * UNITS: every timestamp is a uint64 in MILLISECONDS and τ_D, τ_F are in
+ * milliseconds. Sub-millisecond intervals cannot be represented.
+ *
+ * USAGE PER SPIKE: stp_update(s, t); A = w * stp_get_modulation(s);
+ *                  stp_process_spike(s, t);
+ * (read the modulation BEFORE stp_process_spike; afterwards it is the value
+ *  for a hypothetical second spike at the same instant).
  *
  * PARAMETERS:
  * - U: Baseline release probability (0.2-0.5)
@@ -165,10 +174,11 @@ void stp_init(stp_state_t* state, const stp_params_t* params, uint64_t timestamp
  *
  * WHAT: Applies exponential decay of x and u between spikes
  * WHY: Resources recover, facilitation decays with time
- * HOW: Euler integration of dx/dt and du/dt
+ * HOW: Exact exponential solution of dx/dt and du/dt over (timestamp - last)
  *
  * COMPLEXITY: O(1)
- * STABILITY: Stable for dt < min(τ_D, τ_F)/10
+ * STABILITY: Unconditionally stable (exact). Timestamps <= last_update are
+ *            ignored (no backwards time).
  *
  * @param state STP state
  * @param timestamp Current time (ms)
@@ -180,7 +190,8 @@ void stp_update(stp_state_t* state, uint64_t timestamp);
  *
  * WHAT: Updates u and x when presynaptic neuron fires
  * WHY: Implements facilitation increase and resource depletion
- * HOW: u ← u + U(1-u), then x ← x - ux
+ * HOW: decays to timestamp, then x ← x(1-u), then u ← u + U(1-u)
+ *      (release uses u before the facilitation jump)
  *
  * COMPLEXITY: O(1)
  *
@@ -291,6 +302,9 @@ const char* stp_get_preset_description(stp_preset_t preset);
  * HOW: Solves fixed-point equations
  *
  * COMPLEXITY: O(1)
+ *
+ * Values are those seen by each spike of a regular train just before it
+ * releases, so the steady-state PSC is A_max · u_ss · x_ss.
  *
  * @param params STP parameters
  * @param frequency Input spike frequency (Hz)

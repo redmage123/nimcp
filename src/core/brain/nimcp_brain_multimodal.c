@@ -70,6 +70,9 @@ extern nimcp_error_t cochlea_process(
     void* cochlea, const float* audio_in,
     uint32_t num_samples, void* output);
 
+/* Hearing API only declares struct brain_struct (no cochlea typedefs). */
+#include "core/brain/nimcp_brain_hearing.h"
+
 BRIDGE_BOILERPLATE_MESH_ONLY(brain_multimodal, MESH_ADAPTER_CATEGORY_COGNITIVE)
 
 
@@ -1330,6 +1333,9 @@ bool brain_feed_audio(brain_t brain,
                       uint32_t num_samples)
 {
     if (!brain || !audio || num_samples == 0) return false;
+    /* Hearing runs the cochlea in 40 ms blocks into cochlea_output_buffer
+     * (the cochlea bridges read it) and learns from each block. */
+    if (brain->hearing) return brain_hearing_feed(brain, audio, num_samples) >= 0;
     if (!brain->cochlea || !brain->cochlea_output_buffer) return false;
 
     nimcp_error_t err = cochlea_process(

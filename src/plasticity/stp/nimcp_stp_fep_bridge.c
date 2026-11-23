@@ -233,6 +233,23 @@ float stp_fep_get_effective_u(const stp_fep_bridge_t* bridge, float base_u) {
  * STP → FEP Direction
  * ============================================================================ */
 
+/* Unlocked bodies: callers must hold bridge->base.mutex. stp_fep_bridge_update()
+ * holds the (non-recursive) mutex while reporting, so it must use these and not
+ * the public locking wrappers -- calling those from update() self-deadlocked
+ * whenever enable_stp_precision_feedback was on (the default). */
+static void report_facilitation_locked(stp_fep_bridge_t* bridge, float u) {
+    if (!bridge->config.enable_stp_precision_feedback) return;
+    bridge->stp_effects.current_u = u;
+    bridge->stp_effects.u_precision_estimate = u * bridge->config.stp_precision_gain;
+}
+
+static void report_depression_locked(stp_fep_bridge_t* bridge, float x) {
+    if (!bridge->config.enable_stp_precision_feedback) return;
+    bridge->stp_effects.current_x = x;
+    /* Lower x (depletion) → higher complexity */
+    bridge->stp_effects.x_complexity_estimate = (1.0f - x);
+}
+
 int stp_fep_report_facilitation(stp_fep_bridge_t* bridge, float u) {
     if (!bridge) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "stp_fep_report_facilitation: bridge is NULL");
@@ -241,8 +258,7 @@ int stp_fep_report_facilitation(stp_fep_bridge_t* bridge, float u) {
     if (!bridge->config.enable_stp_precision_feedback) return 0;
 
     nimcp_platform_mutex_lock(bridge->base.mutex);
-    bridge->stp_effects.current_u = u;
-    bridge->stp_effects.u_precision_estimate = u * bridge->config.stp_precision_gain;
+    report_facilitation_locked(bridge, u);
     nimcp_platform_mutex_unlock(bridge->base.mutex);
 
     return 0;
@@ -256,9 +272,7 @@ int stp_fep_report_depression(stp_fep_bridge_t* bridge, float x) {
     if (!bridge->config.enable_stp_precision_feedback) return 0;
 
     nimcp_platform_mutex_lock(bridge->base.mutex);
-    bridge->stp_effects.current_x = x;
-    /* Lower x (depletion) → higher complexity */
-    bridge->stp_effects.x_complexity_estimate = (1.0f - x);
+    report_depression_locked(bridge, x);
     nimcp_platform_mutex_unlock(bridge->base.mutex);
 
     return 0;
@@ -294,13 +308,18 @@ int stp_fep_bridge_update(stp_fep_bridge_t* bridge, uint64_t delta_ms) {
     if (bridge->fep_system && bridge->stp_state) {
         /* Query FEP state */
         bridge->state.current_pe = fep_get_prediction_error(bridge->fep_system, 0);
+        /* zero-initialised: on failure the getters leave their outputs untouched */
         fep_free_energy_t fe;
-        fep_compute_free_energy(bridge->fep_system, &fe);
-        bridge->state.current_free_energy = fe.total;
+        memset(&fe, 0, sizeof(fe));
+        if (fep_compute_free_energy(bridge->fep_system, &fe) == 0) {
+            bridge->state.current_free_energy = fe.total;
+        }
 
         fep_belief_t beliefs;
-        fep_get_beliefs(bridge->fep_system, 0, &beliefs);
-        bridge->state.current_precision = beliefs.precision ? beliefs.precision[0] : 1.0f;
+        memset(&beliefs, 0, sizeof(beliefs));
+        bridge->state.current_precision =
+            (fep_get_beliefs(bridge->fep_system, 0, &beliefs) == 0 && beliefs.precision)
+            ? beliefs.precision[0] : 1.0f;
 
         /* Update FEP effects on STP */
         bridge->fep_effects.pe_magnitude = fabsf(bridge->state.current_pe);
@@ -322,8 +341,8 @@ int stp_fep_bridge_update(stp_fep_bridge_t* bridge, uint64_t delta_ms) {
         bridge->state.current_x = bridge->stp_state->x;
         bridge->state.current_modulation = bridge->state.current_u * bridge->state.current_x;
 
-        stp_fep_report_facilitation(bridge, bridge->state.current_u);
-        stp_fep_report_depression(bridge, bridge->state.current_x);
+        report_facilitation_locked(bridge, bridge->state.current_u);
+        report_depression_locked(bridge, bridge->state.current_x);
 
         bridge->stp_effects.effective_transmission = stp_fep_get_effective_transmission(bridge);
         bridge->stp_effects.transmission_precision_weight = bridge->stp_effects.effective_transmission;

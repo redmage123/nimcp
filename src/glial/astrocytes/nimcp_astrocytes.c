@@ -434,6 +434,97 @@ void astrocyte_unregister_bio_handlers(void)
 }
 
 //=============================================================================
+// Li-Rinzel constants and helpers (see "Calcium Dynamics" below)
+//=============================================================================
+
+#define ASTRO_LR_C0        6.0F     /* total free Ca2+ / cytosolic volume (µM) */
+#define ASTRO_LR_C1        0.185F   /* ER / cytosol volume ratio */
+#define ASTRO_LR_RC        3.0F     /* IP3R max rate (1/s) */
+#define ASTRO_LR_VER       3.0F     /* SERCA max rate (µM/s) */
+#define ASTRO_LR_KER       0.2F     /* SERCA affinity (µM) */
+#define ASTRO_LR_D1        0.13F    /* IP3 dissociation (µM) */
+#define ASTRO_LR_D2        1.049F   /* Ca2+ inactivation dissociation (µM) */
+#define ASTRO_LR_D3        0.9434F  /* IP3 dissociation (µM) */
+#define ASTRO_LR_D5        0.08234F /* Ca2+ activation dissociation (µM) */
+#define ASTRO_LR_A2        0.2F     /* IP3R binding rate for Ca2+ inhibition (1/(µM s)) */
+#define ASTRO_IP3_REST_UM  0.1F     /* resting IP3 (µM) */
+#define ASTRO_IP3_TAU_S    1.0F     /* IP3 degradation time constant (s) */
+#define ASTRO_IP3_GAIN     0.05F    /* IP3 production per unit stimulus (µM/s) */
+#define ASTRO_IP3_MAX_UM   5.0F
+#define ASTRO_STIM_MAX     100.0F   /* stimulus clamp (a.u.) */
+#define ASTRO_MAX_SUBSTEP_S 0.005F  /* Euler substep; result is step-size independent to <0.3% up to 10 ms */
+#define ASTRO_GLU_REFILL_TAU_S  1.5F /* gliotransmitter vesicle pool refill (s) */
+#define ASTRO_DSER_REFILL_TAU_S 1.5F
+
+/* signal_flags bits: edge-triggered bio-router publications */
+#define ASTRO_SIG_CA_ELEVATED   0x1u
+#define ASTRO_SIG_GLU_RELEASING 0x2u
+#define ASTRO_SIG_ATP_LOW       0x4u
+
+static inline float astro_lr_q2(float ip3)
+{
+    return ASTRO_LR_D2 * (ip3 + ASTRO_LR_D1) / (ip3 + ASTRO_LR_D3);
+}
+
+static inline float astro_lr_hinf(float ca, float ip3)
+{
+    float q2 = astro_lr_q2(ip3);
+    return q2 / (q2 + ca);
+}
+
+static inline float astro_lr_jchan(float ca, float ip3, float h, float ca_er)
+{
+    float m = ip3 / (ip3 + ASTRO_LR_D1);
+    float n = ca / (ca + ASTRO_LR_D5);
+    float mnh = m * n * h;
+    return ASTRO_LR_RC * mnh * mnh * mnh * (ca_er - ca);
+}
+
+static inline float astro_lr_jpump(float ca)
+{
+    float c2 = ca * ca;
+    return ASTRO_LR_VER * c2 / (c2 + ASTRO_LR_KER * ASTRO_LR_KER);
+}
+
+/* Leak rate that makes (baseline, I_rest, h∞) a fixed point. */
+static float astro_lr_leak_rate(float ca_b)
+{
+    if (!(ca_b > 0.0F) || ca_b >= 0.5F * ASTRO_LR_C0) {
+        ca_b = ASTROCYTE_BASELINE_CALCIUM_UM;
+    }
+    float ca_er = (ASTRO_LR_C0 - ca_b) / ASTRO_LR_C1;
+    float h = astro_lr_hinf(ca_b, ASTRO_IP3_REST_UM);
+    float net = astro_lr_jpump(ca_b) - astro_lr_jchan(ca_b, ASTRO_IP3_REST_UM, h, ca_er);
+    float rl = net / (ca_er - ca_b);
+    return rl > 0.0F ? rl : 0.0F;
+}
+
+/* Edge detector for rate-limited publications. Caller holds astro->lock.
+ * Returns true (and flips the stored bit) only when `on` differs from it. */
+static bool astro_signal_edge_locked(astrocyte_t* astro, uint32_t bit, bool on)
+{
+    bool was = (astro->signal_flags & bit) != 0;
+    if (was == on) {
+        return false;
+    }
+    if (on) {
+        astro->signal_flags |= bit;
+    } else {
+        astro->signal_flags &= ~bit;
+    }
+    return true;
+}
+
+/* Publish outside any astrocyte lock. */
+static void astro_publish(const char* topic, float value)
+{
+    if (nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) &&
+        g_astrocyte_bio_ctx) {
+        bio_router_publish_signal(g_astrocyte_bio_ctx, topic, value);
+    }
+}
+
+//=============================================================================
 // Creation and Destruction
 //=============================================================================
 
@@ -471,7 +562,8 @@ astrocyte_t* astrocyte_create(uint32_t id, astrocyte_type_t type, float x, float
     // Calcium dynamics - initialize to resting baseline
     astro->calcium_concentration = ASTROCYTE_BASELINE_CALCIUM_UM;
     astro->calcium_baseline = ASTROCYTE_BASELINE_CALCIUM_UM;
-    astro->ip3_concentration = 0.0F;
+    astro->ip3_concentration = ASTRO_IP3_REST_UM;
+    astro->ip3r_h = astro_lr_hinf(ASTROCYTE_BASELINE_CALCIUM_UM, ASTRO_IP3_REST_UM);
     astro->last_calcium_spike = 0;
 
     // Neurotransmitter pools - initialize to full
@@ -535,110 +627,124 @@ void astrocyte_destroy(astrocyte_t* astro)
 }
 
 //=============================================================================
-// Calcium Dynamics - STUB IMPLEMENTATION
+// Calcium Dynamics - Li-Rinzel (De Pitta et al. 2009 "ChI" formulation)
 //=============================================================================
+//
+// State: cytosolic Ca2+ C (µM), IP3 I (µM), IP3R inactivation gate h.
+// ER Ca2+ follows from conservation of total free Ca2+:
+//     C_ER = (c0 - C) / c1
+//
+//   dC/dt = J_chan + J_leak - J_pump
+//     J_chan = rC · m∞³ n∞³ h³ · (C_ER - C),  m∞ = I/(I+d1), n∞ = C/(C+d5)
+//     J_leak = rL · (C_ER - C)
+//     J_pump = vER · C² / (C² + KER²)                     (SERCA)
+//   dh/dt  = (h∞ - h)/τh,  h∞ = Q2/(Q2+C),  τh = 1/(a2 (Q2+C)),
+//            Q2 = d2 (I+d1)/(I+d3)
+//   dI/dt  = (I_rest - I)/τ_IP3 + k_IP3 · stimulus
+//
+// rL is not a free constant: it is solved from the steady state at
+// (C = calcium_baseline, I = I_rest, h = h∞) so the cell rests exactly at its
+// own baseline (the previous constants rested at 0.045 µM against a 0.1 µM
+// baseline and were bistable: stimulus < ~6 never raised Ca, > ~10 latched
+// ~5 µM). With these constants the response is graded:
+//     stimulus   0   2    6    10   20      (a.u., ≈ weight × events/s)
+//     steady Ca  0.10 0.23 0.47 0.66 0.96 µM
+//     onset peak 0.10 0.98 2.08 2.53 3.02 µM   (CICR transient before h closes)
+// and returns to baseline within ~1-2 s of stimulus offset.
+
+/* Caller holds astro->lock. dt in seconds, already bounded by the caller. */
+static void astro_integrate_locked(astrocyte_t* astro, float dt, float stimulus)
+{
+    float ca = astro->calcium_concentration;
+    float ip3 = astro->ip3_concentration;
+    float h = astro->ip3r_h;
+    if (!isfinite(ca) || ca < 0.0F) ca = astro->calcium_baseline;
+    if (!isfinite(ip3) || ip3 < 0.0F) ip3 = ASTRO_IP3_REST_UM;
+    if (!(h > 0.0F) || h > 1.0F || !isfinite(h)) h = astro_lr_hinf(ca, ip3);
+
+    const float rl = astro_lr_leak_rate(astro->calcium_baseline);
+    const float ca_max = ASTRO_LR_C0 * 0.99F;
+
+    uint32_t nsub = (uint32_t)ceilf(dt / ASTRO_MAX_SUBSTEP_S);
+    if (nsub < 1) nsub = 1;
+    const float h_dt = dt / (float)nsub;
+
+    for (uint32_t s = 0; s < nsub; s++) {
+        // IP3: relaxation to rest + stimulus-driven PLC production
+        ip3 += h_dt * ((ASTRO_IP3_REST_UM - ip3) / ASTRO_IP3_TAU_S + ASTRO_IP3_GAIN * stimulus);
+        ip3 = fmaxf(0.0F, fminf(ASTRO_IP3_MAX_UM, ip3));
+
+        // IP3R inactivation gate: dh/dt = a2 (Q2 + C)(h∞ - h)
+        // (τh = 1/(a2 (Q2+C)) >= ~0.8 s for C <= 6 µM, so Euler at <= 5 ms is stable)
+        float q2 = astro_lr_q2(ip3);
+        float h_inf = q2 / (q2 + ca);
+        h += h_dt * ASTRO_LR_A2 * (q2 + ca) * (h_inf - h);
+
+        // Cytosolic Ca2+
+        float ca_er = fmaxf(0.0F, (ASTRO_LR_C0 - ca) / ASTRO_LR_C1);
+        float d_ca = astro_lr_jchan(ca, ip3, h, ca_er) + rl * (ca_er - ca) - astro_lr_jpump(ca);
+        ca += h_dt * d_ca;
+        ca = fmaxf(0.0F, fminf(ca_max, ca));
+    }
+
+    astro->calcium_concentration = ca;
+    astro->ip3_concentration = ip3;
+    astro->ip3r_h = h;
+
+    // Gliotransmitter vesicle pools refill toward full (τ ≈ 1.5 s)
+    float k_glu = dt / (ASTRO_GLU_REFILL_TAU_S + dt);   /* ≈ 1 - exp(-dt/τ) */
+    astro->glutamate_pool += k_glu * (1.0F - astro->glutamate_pool);
+    astro->glutamate_pool = fmaxf(0.0F, fminf(1.0F, astro->glutamate_pool));
+    float k_ds = dt / (ASTRO_DSER_REFILL_TAU_S + dt);
+    astro->d_serine_pool += k_ds * (1.0F - astro->d_serine_pool);
+    astro->d_serine_pool = fmaxf(0.0F, fminf(1.0F, astro->d_serine_pool));
+}
 
 void astrocyte_update_calcium(astrocyte_t* astro, float dt, float external_stimulus)
 {
-    if (!astro || dt < 0.0F) {
+    if (!astro || !(dt > 0.0F) || !isfinite(dt)) {
         return;
     }
-
-    // Li-Rinzel calcium dynamics model
-    // d[Ca²⁺]/dt = J_channel + J_leak - J_pump - J_ER
-    //
-    // BIOLOGICAL PARAMETERS:
-    // - v1 = 6.0: IP3R channel max flux
-    // - v2 = 0.11: Leak flux coefficient
-    // - v3 = 2.2: Pump max flux
-    // - k1 = 0.3 µM: Ca²⁺ activation for IP3R
-    // - k2 = 0.1 µM: Ca²⁺ half-max for pump
-    // - k3 = 0.5 µM: IP3 half-max for IP3R
+    if (!isfinite(external_stimulus) || external_stimulus < 0.0F) {
+        external_stimulus = 0.0F;
+    }
+    if (external_stimulus > ASTRO_STIM_MAX) {
+        external_stimulus = ASTRO_STIM_MAX;
+    }
+    if (dt > 2.0F) {
+        dt = 2.0F;  /* kinetics relax within seconds; longer gaps == steady state */
+    }
 
     nimcp_spinlock_lock(&astro->lock);
 
-    // Model parameters - TUNED for faster decay to baseline
-    const float v1 = 6.0F;   // IP3R channel coefficient
-    const float v2 = 0.11F;  // Leak coefficient
-    const float v3 = 8.0F;   // Pump coefficient - DOUBLED from 4.0 for even faster decay
-    const float k1 = 0.3F;   // Ca²⁺ activation constant (µM)
-    const float k2 = 0.1F;   // Ca²⁺ pump half-max (µM)
-    const float k3 = 0.5F;   // IP3 half-max (µM)
-
-    // ER calcium store (assumed constant for simplified model)
-    const float ca_er = 10.0F; // µM
-
-    // Additional decay term to ensure return to baseline
-    const float baseline_decay_rate = 5.0F; // Direct exponential decay to baseline - INCREASED
-
-    // Current state
+    astro_integrate_locked(astro, dt, external_stimulus);
     float ca = astro->calcium_concentration;
-    float ip3 = astro->ip3_concentration;
-
-    // IP3 dynamics: production from stimulus, degradation
-    const float ip3_degradation_rate = 1.0F; // /s (from biological constants)
-    float ip3_production = external_stimulus * dt * 0.5F; // Stimulus produces IP3
-    float ip3_degradation = ip3_degradation_rate * ip3 * dt;
-    ip3 += ip3_production - ip3_degradation;
-    ip3 = fmaxf(0.0F, fminf(5.0F, ip3)); // Clamp IP3
-
-    // J_channel: IP3-receptor mediated Ca²⁺ release from ER
-    // J_channel = v1 * (IP3³/(IP3³ + k3³)) * (Ca³/(Ca³ + k1³)) * (Ca_ER - Ca)
-    float ip3_3 = ip3 * ip3 * ip3;
-    float k3_3 = k3 * k3 * k3;
-    float ip3_factor = ip3_3 / (ip3_3 + k3_3);
-
-    float ca_3 = ca * ca * ca;
-    float k1_3 = k1 * k1 * k1;
-    float ca_factor = ca_3 / (ca_3 + k1_3);
-
-    float J_channel = v1 * ip3_factor * ca_factor * (ca_er - ca);
-
-    // J_leak: Passive leak from ER
-    float J_leak = v2 * (ca_er - ca);
-
-    // J_pump: ATP-dependent Ca²⁺ reuptake
-    // J_pump = v3 * Ca²/(Ca² + k2²)
-    float ca_2 = ca * ca;
-    float k2_2 = k2 * k2;
-    float J_pump = v3 * ca_2 / (ca_2 + k2_2);
-
-    // Integrate calcium dynamics
-    float d_ca = J_channel + J_leak - J_pump;
-
-    // Add exponential decay term to ensure return to baseline
-    // This dominates when IP3 is low, pulling Ca back to baseline
-    float decay_to_baseline = -baseline_decay_rate * (ca - astro->calcium_baseline);
-    d_ca += decay_to_baseline;
-
-    ca += d_ca * dt;
-
-    // Add stimulus contribution (direct calcium injection)
-    ca += external_stimulus * dt * 0.1F;
-
-    // Clamp to physiological range
-    ca = fmaxf(0.0F, fminf(10.0F, ca));
-
-    // Update astrocyte state
-    astro->calcium_concentration = ca;
-    astro->ip3_concentration = ip3;
 
     // Detect calcium spike (3x baseline)
+    bool elevated_bit = (astro->signal_flags & ASTRO_SIG_CA_ELEVATED) != 0;
     if (ca > astro->calcium_baseline * 3.0F) {
         astro->last_calcium_spike = nimcp_time_monotonic_us();
     }
+    // Rate-limited publication (was: one bio-router message per call per cell).
+    // Publish only on threshold crossings, with hysteresis: rise above 3x
+    // baseline, fall below 2x baseline.
+    bool elevated = elevated_bit ? (ca > astro->calcium_baseline * 2.0F)
+                                 : (ca > astro->calcium_baseline * 3.0F);
+    bool publish = astro_signal_edge_locked(astro, ASTRO_SIG_CA_ELEVATED, elevated);
 
     nimcp_spinlock_unlock(&astro->lock);
 
-    // Process pending bio-async messages
-    if (nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) && g_astrocyte_bio_ctx) {
-        bio_router_process_inbox(g_astrocyte_bio_ctx, 5);
+    if (publish) {
+        astro_publish("astrocyte.calcium", ca);
     }
 
-    // Publish calcium concentration via predictive signal
-    if (nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) && g_astrocyte_bio_ctx) {
-        bio_router_publish_signal(g_astrocyte_bio_ctx, "astrocyte.calcium", ca);
-        LOG_MODULE_DEBUG("ASTROCYTE", "Published calcium signal: %.2f μM", ca);
+    // Drain pending bio-async messages, rate-limited (was 5 messages on every
+    // call for every cell). astrocyte_network_step also drains once per step.
+    static uint32_t s_inbox_tick = 0;
+    if ((__atomic_fetch_add(&s_inbox_tick, 1u, __ATOMIC_RELAXED) & 63u) == 0 &&
+        nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) &&
+        g_astrocyte_bio_ctx) {
+        bio_router_process_inbox(g_astrocyte_bio_ctx, 5);
     }
 }
 
@@ -705,29 +811,35 @@ float astrocyte_compute_glutamate_release(astrocyte_t* astro, uint32_t synapse_i
         return 0.0F;
     }
 
-    // Calcium-dependent glutamate release with pool depletion
+    // Calcium-dependent glutamate release with pool depletion. The pool is
+    // refilled (τ ≈ 1.5 s) inside astrocyte_update_calcium().
+    // Release fraction rises linearly from 2x baseline (0.2 µM) and saturates
+    // 2 µM above it (Li-Rinzel steady state is 0.1-1.3 µM, onset transients
+    // reach 1-3.5 µM).
+    float release_amount = 0.0F;
+    bool publish = false;
+
+    nimcp_spinlock_lock(&astro->lock);
     float ca_threshold = astro->calcium_baseline * 2.0F;
-    if (astro->calcium_concentration > ca_threshold) {
+    bool releasing = astro->calcium_concentration > ca_threshold;
+    if (releasing) {
         float excess = astro->calcium_concentration - ca_threshold;
-        float release_fraction = fminf(1.0F, excess / 5.0F);
+        float release_fraction = fminf(1.0F, excess / 2.0F);
 
-        // Release glutamate from pool (depletes pool)
-        // Higher release rate for biological accuracy
         float release_rate = 0.15F; // 15% of available pool × release_fraction
-        float release_amount = release_fraction * astro->glutamate_pool * release_rate;
+        release_amount = release_fraction * astro->glutamate_pool * release_rate;
         astro->glutamate_pool -= release_amount;
-        astro->glutamate_pool = fmaxf(0.0F, astro->glutamate_pool); // Clamp to [0, 1]
+        astro->glutamate_pool = fmaxf(0.0F, astro->glutamate_pool);
+    }
+    // Publish on release onset/offset only (was: every call while releasing)
+    publish = astro_signal_edge_locked(astro, ASTRO_SIG_GLU_RELEASING, releasing);
+    nimcp_spinlock_unlock(&astro->lock);
 
-        // Publish glutamate release via predictive signal
-        if (nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) && g_astrocyte_bio_ctx) {
-            bio_router_publish_signal(g_astrocyte_bio_ctx, "astrocyte.glutamate", release_amount);
-            LOG_MODULE_DEBUG("ASTROCYTE", "Published glutamate release: %.4f", release_amount);
-        }
-
-        return release_amount;
+    if (publish) {
+        astro_publish("astrocyte.glutamate", release_amount);
     }
 
-    return 0.0F;
+    return release_amount;
 }
 
 float astrocyte_compute_d_serine_release(astrocyte_t* astro, uint32_t synapse_idx)
@@ -748,7 +860,7 @@ float astrocyte_compute_d_serine_release(astrocyte_t* astro, uint32_t synapse_id
     nimcp_spinlock_lock(&astro->lock);
 
     const float n = 4.0F;           // Hill coefficient
-    const float K = 1.5F;           // Half-max calcium (µM)
+    const float K = 0.5F;           // Half-max calcium (µM); Li-Rinzel range 0.1-1.3 µM steady
     const float depletion_rate = 0.1F;  // Pool depletion per release
     const float refill_rate = 0.01F;    // Pool refill rate (1/s)
 
@@ -768,8 +880,8 @@ float astrocyte_compute_d_serine_release(astrocyte_t* astro, uint32_t synapse_id
     float dt = 0.001F; // 1ms timestep assumption
     pool -= release * dt * depletion_rate;
 
-    // Pool refill (slow recovery toward 1.0)
-    pool += dt * refill_rate * (1.0F - pool);
+    // Pool refill: handled with the real dt in astrocyte_update_calcium()
+    (void)refill_rate;
 
     // Clamp pool to [0, 1]
     pool = fmaxf(0.0F, fminf(1.0F, pool));
@@ -828,28 +940,38 @@ nimcp_result_t astrocyte_assign_synapse(astrocyte_t* astro, uint32_t synapse_id)
         return NIMCP_ERROR_INVALID_PARAM;
     }
 
-    // Reallocate arrays
+    nimcp_spinlock_lock(&astro->lock);
+
+    // Grow arrays geometrically (was one realloc per assignment)
     uint32_t new_count = astro->num_covered_synapses + 1;
+    uint32_t cap = astro->num_covered_synapses;
+    /* implicit capacity: 8, then the next power of two */
+    bool need_grow = (cap < 8) ? (cap == 0) : ((cap & (cap - 1)) == 0);
+    if (need_grow) {
+        uint32_t new_cap = cap < 8 ? 8 : cap * 2;
+        uint32_t* new_ids = (uint32_t*) nimcp_realloc(astro->covered_synapse_ids,
+                                                        new_cap * sizeof(uint32_t));
+        if (!new_ids) {
+            nimcp_spinlock_unlock(&astro->lock);
+            return NIMCP_ERROR_MEMORY;
+        }
+        astro->covered_synapse_ids = new_ids;
 
-    uint32_t* new_ids = (uint32_t*) nimcp_realloc(astro->covered_synapse_ids,
-                                                    new_count * sizeof(uint32_t));
-    if (!new_ids) {
-        return NIMCP_ERROR_MEMORY;
+        float* new_ca = (float*) nimcp_realloc(astro->synapse_calcium_levels,
+                                                new_cap * sizeof(float));
+        if (!new_ca) {
+            nimcp_spinlock_unlock(&astro->lock);
+            return NIMCP_ERROR_MEMORY;
+        }
+        astro->synapse_calcium_levels = new_ca;
     }
-    astro->covered_synapse_ids = new_ids;
-
-    float* new_ca = (float*) nimcp_realloc(astro->synapse_calcium_levels,
-                                            new_count * sizeof(float));
-    if (!new_ca) {
-        return NIMCP_ERROR_MEMORY;
-    }
-    astro->synapse_calcium_levels = new_ca;
 
     // Add synapse
     astro->covered_synapse_ids[astro->num_covered_synapses] = synapse_id;
     astro->synapse_calcium_levels[astro->num_covered_synapses] = astro->calcium_baseline;
     astro->num_covered_synapses = new_count;
 
+    nimcp_spinlock_unlock(&astro->lock);
     return NIMCP_SUCCESS;
 }
 
@@ -889,7 +1011,7 @@ float astrocyte_compute_synaptic_scaling(astrocyte_t* astro, neural_network_t ne
     // Estimate average calcium activity
     // In full implementation, would use sliding window buffer
     // Here, simplified to current calcium normalized by expected max
-    float avg_calcium_normalized = astro->calcium_concentration / 5.0F;
+    float avg_calcium_normalized = astro->calcium_concentration / 1.0F; // ~1 µM = strong sustained activity
 
     // Error signal
     float error = astro->target_activity_level - avg_calcium_normalized;
@@ -944,7 +1066,7 @@ float astrocyte_compute_bcm_threshold_shift(astrocyte_t* astro, float default_th
     nimcp_spinlock_lock(&astro->lock);
 
     const float max_shift = 0.3F;      // Maximum shift magnitude
-    const float sensitivity = 2.0F;    // Sensitivity parameter
+    const float sensitivity = 0.5F;    // µM; Li-Rinzel steady range is 0.1-1.3 µM
 
     float calcium_deviation = astro->calcium_concentration - astro->calcium_baseline;
     float normalized_deviation = calcium_deviation / sensitivity;
@@ -1010,13 +1132,18 @@ void astrocyte_update_atp_level(astrocyte_t* astro, float neural_activity, float
 
     // Clamp to [0.0, 1.0]
     astro->atp_level = fmaxf(0.0F, fminf(1.0F, astro->atp_level));
+    float atp = astro->atp_level;
+
+    // Rate-limited publication: only when ATP enters/leaves the low band
+    // (< 0.3, hysteresis to 0.4). Was: one message per call per cell.
+    bool low_bit = (astro->signal_flags & ASTRO_SIG_ATP_LOW) != 0;
+    bool low = low_bit ? (atp < 0.4F) : (atp < 0.3F);
+    bool publish = astro_signal_edge_locked(astro, ASTRO_SIG_ATP_LOW, low);
 
     nimcp_spinlock_unlock(&astro->lock);
 
-    // Publish ATP level via predictive signal
-    if (nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) && g_astrocyte_bio_ctx) {
-        bio_router_publish_signal(g_astrocyte_bio_ctx, "astrocyte.atp", astro->atp_level);
-        LOG_MODULE_DEBUG("ASTROCYTE", "Published ATP level: %.3f", astro->atp_level);
+    if (publish) {
+        astro_publish("astrocyte.atp", atp);
     }
 }
 
@@ -1399,7 +1526,7 @@ nimcp_result_t astrocyte_network_assign_synapses(astrocyte_network_t* network,
 
 void astrocyte_network_step(astrocyte_network_t* network, float dt)
 {
-    if (!network || dt <= 0.0F) {
+    if (!network || !(dt > 0.0F) || !isfinite(dt)) {
         return;
     }
     if (!network->astrocytes) {
@@ -1409,22 +1536,43 @@ void astrocyte_network_step(astrocyte_network_t* network, float dt)
     if (network->num_astrocytes > network->capacity) {
         return;
     }
-    /* Validate dt is finite and within reasonable range */
-    if (!isfinite(dt) || dt > 1.0F) {
-        return;  /* Cap at 1 second per step */
+    /* dt is in seconds. Long steps used to be skipped outright (dt > 1 s
+     * returned early, and glial_integration_step passed milliseconds, so the
+     * network never advanced). Now: clamp very long gaps (kinetics relax in
+     * ~1-5 s) and let astrocyte_update_calcium() substep internally. */
+    if (dt > 2.0F) {
+        dt = 2.0F;
     }
-
-    /* TODO: Implement full network dynamics */
-    /* For now, simple update of all astrocytes */
 
     /* Phase 8: Send heartbeat at start of network step */
     astrocyte_heartbeat("astrocyte_network_step", 0.0f);
 
+    /* Drain pending bio-async messages once per network step */
+    if (nimcp_atomic_load_bool(&g_astrocyte_bio_initialized, NIMCP_MEMORY_ORDER_ACQUIRE) &&
+        g_astrocyte_bio_ctx) {
+        bio_router_process_inbox(g_astrocyte_bio_ctx, 5);
+    }
+
     for (uint32_t i = 0; i < network->num_astrocytes; i++) {
         astrocyte_t* astro = network->astrocytes[i];
+        if (!astro) {
+            continue;
+        }
 
-        // Update calcium
-        astrocyte_update_calcium(astro, dt, 0.0F);
+        // Consume synaptic drive accumulated since the last step: mean
+        // (weight × events / s) per mapped synapse.
+        nimcp_spinlock_lock(&astro->lock);
+        float drive = astro->synaptic_drive;
+        astro->synaptic_drive = 0.0F;
+        uint32_t n_syn = astro->drive_synapses;
+        nimcp_spinlock_unlock(&astro->lock);
+        float stimulus = 0.0F;
+        if (drive > 0.0F && isfinite(drive)) {
+            stimulus = drive / ((float)(n_syn > 0 ? n_syn : 1) * dt);
+        }
+
+        // Update calcium (substeps internally)
+        astrocyte_update_calcium(astro, dt, stimulus);
 
         // Propagate waves
         astrocyte_propagate_calcium_wave(astro, network, dt);

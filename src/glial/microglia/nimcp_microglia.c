@@ -1311,28 +1311,31 @@ bool microglia_should_prune_synapse(const microglia_t* mg, uint64_t synapse_id)
         return false;
     }
 
-    for (uint32_t i = 0; i < mg->num_monitored_synapses; i++) {
-        if (mg->synapses[i].synapse_id == synapse_id) {
-            const monitored_synapse_t* syn = &mg->synapses[i];
-            float effective_threshold = compute_effective_threshold(mg, syn);
+    /* The lock is internal state; the API is const for callers. */
+    microglia_t* mut = (microglia_t*)mg;
+    bool prune = false;
+
+    nimcp_spinlock_lock(&mut->lock);
+    for (uint32_t i = 0; i < mut->num_monitored_synapses; i++) {
+        if (mut->synapses[i].synapse_id == synapse_id) {
+            const monitored_synapse_t* syn = &mut->synapses[i];
+            float effective_threshold = compute_effective_threshold(mut, syn);
 
             if (syn->filtered_activity >= effective_threshold) {
-                NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "microglia_should_prune_synapse: capacity exceeded");
-                return false;  // Activity above threshold
+                prune = false;  // Activity above threshold: normal decision, not an error
+            } else if (syn->protected_by_centrality &&
+                       syn->centrality_score >= NIMCP_CENTRALITY_PROTECTION_MIN &&
+                       syn->complement.tag != COMPLEMENT_C3) {
+                prune = false;  // Protected by centrality - normal decision
+            } else {
+                prune = true;   // Should prune
             }
-
-            // Check protection
-            if (syn->protected_by_centrality &&
-                syn->centrality_score >= NIMCP_CENTRALITY_PROTECTION_MIN &&
-                syn->complement.tag != COMPLEMENT_C3) {
-                return false;  // Protected by centrality - normal decision
-            }
-
-            return true;  // Should prune
+            break;
         }
     }
+    nimcp_spinlock_unlock(&mut->lock);
 
-    return false;  // Synapse not found - don't prune
+    return prune;  // Synapse not found - don't prune
 }
 
 //=============================================================================

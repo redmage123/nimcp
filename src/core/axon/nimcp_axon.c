@@ -297,6 +297,18 @@ void axon_destroy(axon_t* axon)
         axon_segment_pool_destroy(axon->segment_pool);
     }
 
+    // Free biophysics state (allocated by axon_init_biophysics; was leaked)
+    if (axon->biophysics) {
+        nimcp_myelin_biophysics_destroy(axon->biophysics);
+        axon->biophysics = NULL;
+    }
+
+    // Free spikes-in-flight buffer
+    if (axon->in_flight) {
+        axon_spike_queue_destroy(axon->in_flight);
+        axon->in_flight = NULL;
+    }
+
     // Free axon structure
     nimcp_free(axon);
 }
@@ -558,6 +570,102 @@ void axon_update_conduction(axon_t* axon)
 // SPIKE PROPAGATION
 //=============================================================================
 
+/* Heap helpers are defined with the spike queue below. */
+static void spike_heap_bubble_up(axon_spike_event_t* events, uint32_t i);
+static void spike_heap_bubble_down(axon_spike_event_t* events, uint32_t i, uint32_t size);
+
+/** a + b, saturating at UINT64_MAX (time math must not wrap) */
+static inline uint64_t axon_time_add_sat(uint64_t a, uint64_t b)
+{
+    return (a > UINT64_MAX - b) ? UINT64_MAX : a + b;
+}
+
+/** milliseconds (float) -> microseconds, rounded; non-finite/negative -> 0 */
+static inline uint64_t axon_ms_to_us(float ms)
+{
+    if (!isfinite(ms) || ms <= 0.0F) return 0;
+    double us = (double)ms * 1000.0 + 0.5;
+    if (us >= 1.8e19) return UINT64_MAX;
+    return (uint64_t)us;
+}
+
+/** Resize the event array of a spike queue. Caller holds queue->lock. */
+static bool spike_queue_resize_locked(axon_spike_queue_t* q, uint32_t new_capacity)
+{
+    if (new_capacity <= q->capacity) return true;
+    axon_spike_event_t* ev = (axon_spike_event_t*)nimcp_realloc(
+        q->events, (size_t)new_capacity * sizeof(axon_spike_event_t));
+    if (!ev) return false;
+    q->events = ev;
+    q->capacity = new_capacity;
+    return true;
+}
+
+/** Remove the heap root. Caller holds queue->lock and checked count > 0. */
+static void spike_queue_remove_root_locked(axon_spike_queue_t* q, axon_spike_event_t* out)
+{
+    if (out) *out = q->events[0];
+    q->count--;
+    if (q->count > 0) {
+        q->events[0] = q->events[q->count];
+        spike_heap_bubble_down(q->events, 0, q->count);
+    }
+    q->stats.current_size = q->count;
+}
+
+/**
+ * Put one spike on the axon's in-flight buffer. Caller holds axon->lock.
+ * Buffer policy: grow to NIMCP_AXON_IN_FLIGHT_EVICT_AT; beyond that, first
+ * evict spikes that already arrived (uncollected), then grow to
+ * NIMCP_AXON_IN_FLIGHT_MAX; beyond that, drop the new spike.
+ */
+static void axon_enqueue_in_flight_locked(axon_t* axon,
+                                          const axon_spike_event_t* ev,
+                                          uint64_t current_time)
+{
+    if (!axon->in_flight) {
+        axon->in_flight = axon_spike_queue_create(NIMCP_AXON_IN_FLIGHT_INITIAL);
+        if (!axon->in_flight) {
+            axon->in_flight_dropped++;
+            return;
+        }
+    }
+    axon_spike_queue_t* q = axon->in_flight;
+
+    nimcp_mutex_lock(&q->lock);
+
+    if (q->count >= q->capacity && q->capacity < NIMCP_AXON_IN_FLIGHT_EVICT_AT) {
+        uint32_t cap = q->capacity * 2;
+        if (cap > NIMCP_AXON_IN_FLIGHT_EVICT_AT) cap = NIMCP_AXON_IN_FLIGHT_EVICT_AT;
+        (void)spike_queue_resize_locked(q, cap);
+    }
+    while (q->count >= q->capacity && q->count > 0 &&
+           q->events[0].arrival_time <= current_time) {
+        spike_queue_remove_root_locked(q, NULL);
+        axon->in_flight_evicted++;
+    }
+    if (q->count >= q->capacity && q->capacity < NIMCP_AXON_IN_FLIGHT_MAX) {
+        uint32_t cap = q->capacity * 2;
+        if (cap > NIMCP_AXON_IN_FLIGHT_MAX) cap = NIMCP_AXON_IN_FLIGHT_MAX;
+        (void)spike_queue_resize_locked(q, cap);
+    }
+    if (q->count >= q->capacity) {
+        q->stats.total_dropped_full++;
+        axon->in_flight_dropped++;
+        nimcp_mutex_unlock(&q->lock);
+        return;
+    }
+
+    q->events[q->count] = *ev;
+    spike_heap_bubble_up(q->events, q->count);
+    q->count++;
+    q->stats.total_pushed++;
+    q->stats.current_size = q->count;
+    if (q->count > q->stats.peak_size) q->stats.peak_size = q->count;
+
+    nimcp_mutex_unlock(&q->lock);
+}
+
 bool axon_initiate_spike(axon_t* axon,
                          uint64_t current_time,
                          float amplitude)
@@ -574,34 +682,43 @@ bool axon_initiate_spike(axon_t* axon,
         return false;  /* Normal: fully damaged axon */
     }
 
+    // Acquire lock: the refractory / ATP gate and the state update must be
+    // one atomic step, or two threads can both pass the gate.
+    nimcp_mutex_lock(&axon->lock);
+
     // Check refractory period
     if (axon_is_refractory(axon, current_time)) {
+        nimcp_mutex_unlock(&axon->lock);
         return false;  /* Normal: refractory period */
     }
 
     // Check ATP level (metabolic gating)
     if (axon->atp_level < 0.1F) {
+        nimcp_mutex_unlock(&axon->lock);
         return false;  /* Normal: low ATP */
     }
-
-    // Acquire lock
-    nimcp_mutex_lock(&axon->lock);
 
     // Update state
     axon->state = AXON_STATE_ACTIVE;
 
-    // Set refractory period end
-    uint64_t refractory_us = (uint64_t)(NIMCP_AXON_REFRACTORY_PERIOD_MS * 1000.0F);
-    axon->refractory_end = current_time + refractory_us;
+    // Set refractory period end (absolute refractory = NIMCP_AXON_REFRACTORY_PERIOD_MS)
+    axon->refractory_end = axon_time_add_sat(
+        current_time, axon_ms_to_us(NIMCP_AXON_REFRACTORY_PERIOD_MS));
 
     // Update activity statistics
     axon->activity.total_spikes++;
     axon->activity.recent_spikes++;
 
-    // Calculate inter-spike interval
-    if (axon->activity.last_spike_time > 0) {
-        float isi = (float)(current_time - axon->activity.last_spike_time) / 1000.0F;
-        float new_isi = 0.9F * axon->activity.mean_isi + 0.1F * isi;
+    // Calculate inter-spike interval (needs a previous spike; a spike at t=0
+    // is a valid previous spike, and time must not run backwards)
+    if (axon->activity.total_spikes > 1 &&
+        current_time > axon->activity.last_spike_time) {
+        float isi = (float)((double)(current_time - axon->activity.last_spike_time) / 1000.0);
+        // Seed the EMA with the first ISI (an EMA from 0 under-reports the ISI
+        // 10x and over-reports the firing rate 10x for the first spikes)
+        float new_isi = (axon->activity.mean_isi > 0.0F)
+                            ? 0.9F * axon->activity.mean_isi + 0.1F * isi
+                            : isi;
         if (isfinite(new_isi)) axon->activity.mean_isi = new_isi;
     }
     axon->activity.last_spike_time = current_time;
@@ -610,9 +727,49 @@ bool axon_initiate_spike(axon_t* axon,
     axon->atp_level -= 0.01F;
     if (axon->atp_level < 0.0F) axon->atp_level = 0.0F;
 
+    // Launch the spike down the axon: it arrives after the propagation delay
+    axon_spike_event_t ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.axon_id = axon->id;
+    ev.initiation_time = current_time;
+    ev.arrival_time = axon_time_add_sat(current_time,
+                                        axon_ms_to_us(axon->propagation_delay_ms));
+    ev.amplitude = isfinite(amplitude) ? amplitude : 1.0F;
+    ev.source_neuron_id = axon->source_neuron_id;
+    ev.target_synapse_id = axon->target_synapse_id;
+    axon_enqueue_in_flight_locked(axon, &ev, current_time);
+
     nimcp_mutex_unlock(&axon->lock);
 
     return true;
+}
+
+uint32_t axon_pop_arrivals(axon_t* axon, uint64_t current_time,
+                           axon_spike_event_t* out, uint32_t max_events)
+{
+    if (!axon) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "axon_pop_arrivals: axon is NULL");
+        return 0;
+    }
+    if (out && max_events == 0) return 0;  /* nowhere to write */
+
+    nimcp_mutex_lock(&axon->lock);
+    axon_spike_queue_t* q = axon->in_flight;
+    if (!q) {
+        nimcp_mutex_unlock(&axon->lock);
+        return 0;
+    }
+
+    uint32_t n = 0;
+    while (max_events == 0 || n < max_events) {
+        axon_spike_event_t ev;
+        if (!axon_spike_queue_pop(q, current_time, &ev)) break;
+        if (out) out[n] = ev;
+        n++;
+    }
+
+    nimcp_mutex_unlock(&axon->lock);
+    return n;
 }
 
 bool axon_spike_arrived(axon_t* axon, uint64_t current_time)
@@ -621,15 +778,20 @@ bool axon_spike_arrived(axon_t* axon, uint64_t current_time)
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "axon_spike_arrived: axon is NULL");
         return false;
     }
-    if (axon->state != AXON_STATE_ACTIVE) {
-        return false;
-    }
+    return axon_pop_arrivals(axon, current_time, NULL, 1) == 1;
+}
 
-    // Check if enough time has passed for spike to arrive
-    uint64_t delay_us = (uint64_t)(axon->propagation_delay_ms * 1000.0F);
-    uint64_t spike_time = axon->activity.last_spike_time;
+uint32_t axon_spikes_in_flight(const axon_t* axon)
+{
+    if (!axon) return 0;
+    return axon_spike_queue_size(axon->in_flight);
+}
 
-    return (current_time >= spike_time + delay_us);
+uint32_t axon_process_bio_inbox(uint32_t max_messages)
+{
+    bio_module_context_t ctx = bio_ctx;
+    if (!ctx) return 0;
+    return bio_router_process_inbox(ctx, max_messages);
 }
 
 float axon_get_propagation_delay(const axon_t* axon)
@@ -700,12 +862,10 @@ void axon_receive_lactate(axon_t* axon, float lactate_amount)
 // ACTIVITY TRACKING
 //=============================================================================
 
-void axon_update_activity(axon_t* axon, uint64_t current_time)
+/** Activity update over dt_ms (EMA decay is ACTIVITY_DECAY_FACTOR per ms). */
+static void axon_update_activity_dt(axon_t* axon, float dt_ms)
 {
-    if (!axon) return;
-
-    // Calculate time since last update (assume 1ms if unknown)
-    float dt_ms = 1.0F;
+    if (!isfinite(dt_ms) || dt_ms < 0.0F) dt_ms = 1.0F;
 
     // Decay activity EMA
     float decay = powf(ACTIVITY_DECAY_FACTOR, dt_ms);
@@ -737,6 +897,15 @@ void axon_update_activity(axon_t* axon, uint64_t current_time)
     axon->activity.myelination_signal = axon_get_myelination_signal(axon);
 }
 
+void axon_update_activity(axon_t* axon, uint64_t current_time)
+{
+    (void)current_time;
+    if (!axon) return;
+    // No dt available here: one call = 1 ms (legacy contract). axon_step()
+    // uses its own dt instead.
+    axon_update_activity_dt(axon, 1.0F);
+}
+
 float axon_get_firing_rate(const axon_t* axon)
 {
     if (!axon) return 0.0F;
@@ -758,30 +927,27 @@ void axon_get_activity_stats(const axon_t* axon, axon_activity_stats_t* stats)
 
 void axon_step(axon_t* axon, uint64_t current_time, float dt)
 {
-    // Process pending bio-async messages
-    if (bio_ctx) {
-        bio_router_process_inbox(bio_ctx, 5);
-    }
+    /* Bio-async inbox draining is NOT done here (it was a per-axon-per-step
+     * cost); call axon_process_bio_inbox() once per simulation step. */
 
     if (!axon) return;
     if (!axon->is_functional) return;
 
     nimcp_mutex_lock(&axon->lock);
 
-    // Update refractory state
-    if (axon->state == AXON_STATE_REFRACTORY) {
-        if (current_time >= axon->refractory_end) {
-            axon->state = AXON_STATE_RESTING;
-        }
-    } else if (axon->state == AXON_STATE_ACTIVE) {
-        // Transition to refractory after spike
-        if (current_time >= axon->refractory_end) {
-            axon->state = AXON_STATE_REFRACTORY;
-        }
+    // Update refractory state. The refractory window is [spike, refractory_end)
+    // and is decided by time alone (see axon_is_refractory). The old machine
+    // went ACTIVE -> REFRACTORY only once refractory_end had passed and back to
+    // RESTING one call later, so with 1 ms steps the absolute refractory period
+    // was 2 ms instead of NIMCP_AXON_REFRACTORY_PERIOD_MS.
+    if (axon->state == AXON_STATE_ACTIVE || axon->state == AXON_STATE_REFRACTORY) {
+        axon->state = (current_time >= axon->refractory_end)
+                          ? AXON_STATE_RESTING
+                          : AXON_STATE_REFRACTORY;
     }
 
-    // Update activity tracking
-    axon_update_activity(axon, current_time);
+    // Update activity tracking over this step's dt
+    axon_update_activity_dt(axon, dt);
 
     // Regenerate ATP slowly
     axon->atp_level += 0.001F * dt;
@@ -801,9 +967,10 @@ bool axon_is_refractory(const axon_t* axon, uint64_t current_time)
     if (!axon) {
         return false;
     }
-    return (axon->state == AXON_STATE_REFRACTORY ||
-            (axon->state == AXON_STATE_ACTIVE &&
-             current_time < axon->refractory_end));
+    if (axon->state != AXON_STATE_ACTIVE && axon->state != AXON_STATE_REFRACTORY) {
+        return false;
+    }
+    return current_time < axon->refractory_end;
 }
 
 const char* axon_state_to_string(axon_state_t state)
@@ -989,7 +1156,7 @@ bool axon_spike_queue_push(axon_spike_queue_t* queue,
     // WHY:  NaN/Inf spikes would corrupt downstream calculations
     // HOW:  Reject spikes with invalid amplitude values
     if (isnan(event->amplitude) || isinf(event->amplitude)) {
-        LOG_WARN(LOG_MODULE, "Rejecting spike with invalid amplitude: "
+        LOG_WARN("Rejecting spike with invalid amplitude: "
                  "axon=%u amplitude=%f", event->axon_id, event->amplitude);
         nimcp_mutex_lock(&queue->lock);
         queue->stats.total_dropped_invalid++;
@@ -1003,7 +1170,7 @@ bool axon_spike_queue_push(axon_spike_queue_t* queue,
     // Check capacity
     if (queue->count >= queue->capacity) {
         queue->stats.total_dropped_full++;
-        LOG_WARN(LOG_MODULE, "Spike queue full, dropping spike from axon=%u",
+        LOG_WARN("Spike queue full, dropping spike from axon=%u",
                  event->axon_id);
         nimcp_mutex_unlock(&queue->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE, "axon_spike_queue_push: capacity exceeded");
@@ -1337,6 +1504,20 @@ uint32_t axon_network_process_arrivals(axon_network_t* network,
         network->total_spikes_processed++;
     }
 
+    // Spikes launched by axon_initiate_spike() travel on each axon's own
+    // in-flight buffer; deliver the ones that have arrived.
+    for (uint32_t i = 0; i < network->count; i++) {
+        axon_t* axon = network->axons[i];
+        if (!axon || !axon->in_flight) continue;
+        while (axon_pop_arrivals(axon, current_time, &event, 1) == 1) {
+            if (callback) {
+                callback(axon, &event, user_data);
+            }
+            delivered++;
+            network->total_spikes_processed++;
+        }
+    }
+
     return delivered;
 }
 
@@ -1386,6 +1567,11 @@ void axon_network_get_stats(const axon_network_t* network,
     }
 
     stats->spikes_in_transit = axon_spike_queue_size(network->spike_queue);
+    for (uint32_t i = 0; i < network->count; i++) {
+        if (network->axons[i]) {
+            stats->spikes_in_transit += axon_spikes_in_flight(network->axons[i]);
+        }
+    }
 }
 
 //=============================================================================
@@ -1890,6 +2076,12 @@ void axon_cow_release(axon_t* axon)
         if (axon->segment_pool) {
             axon_segment_pool_destroy(axon->segment_pool);
         }
+        if (axon->biophysics) {
+            nimcp_myelin_biophysics_destroy(axon->biophysics);
+        }
+        if (axon->in_flight) {
+            axon_spike_queue_destroy(axon->in_flight);
+        }
         nimcp_mutex_destroy(&axon->lock);
         nimcp_free(axon);
     }
@@ -1922,12 +2114,18 @@ bool axon_init_biophysics(axon_t* axon, bool use_stochastic, uint64_t seed)
 
     nimcp_mutex_lock(&axon->lock);
 
-    // Create biophysics state
+    // Create biophysics state (replacing, not leaking, any previous one)
+    nimcp_myelin_biophysics_t* old_bio = axon->biophysics;
     axon->biophysics = nimcp_myelin_biophysics_create(use_stochastic, seed);
     if (!axon->biophysics) {
+        axon->biophysics = old_bio;  /* keep the previous state on failure */
         nimcp_mutex_unlock(&axon->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "axon_init_biophysics: axon->biophysics is NULL");
         return false;
+    }
+
+    if (old_bio) {
+        nimcp_myelin_biophysics_destroy(old_bio);
     }
 
     // Initialize temperature to normal body temperature

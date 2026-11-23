@@ -1553,6 +1553,9 @@ struct brain_struct {
     struct hypothalamus_thalamic_bridge* hypothalamus_thalamic_bridge;    // Thalamic signal routing
     struct hypothalamus_quantum_bridge* hypothalamus_quantum_bridge;      // Quantum-accelerated optimization
     bool hypothalamus_enabled;                                        // Hypothalamus enabled for this brain
+    void*                             thalamus;                       // thalamus_t* (anonymous typedef, so void*). Thalamic nuclei: LGN/MGN relay + TRN (nimcp_brain_init_thalamus.c; created in eager init from 2026-11-23)
+    bool                              thalamus_enabled;
+    uint64_t                          last_thalamus_update_us;
     uint64_t last_hypothalamus_update_us;                             // Last hypothalamus update timestamp
 
     // Entorhinal adapter (Wave 8B-c tick target). Owned at brain level
@@ -1990,6 +1993,10 @@ struct brain_struct {
     struct cochlea_verification_bridge*     cochlea_verification_bridge;  // Cochlea self-verification
     bool                                    cochlea_bridges_enabled;      // True if register_driven succeeded
     void*                                   cochlea_output_buffer;        // Wave 8A+ (2026-04-24): cochlea_output_t* — shared zero-fill output buffer passed to all 11 NULL-rejecting bridges; owned by brain, created/destroyed with cochlea. Void* because cochlea_output_t is an anonymous-struct typedef.
+    void*                                   hearing;                      // brain_hearing_t* (nimcp_brain_hearing.c, 2026-11-23): cochlea output -> Wernicke predictor (e-prop SNN); created with the cochlea, saved as the .hear sidecar
+    void*                                   vision;                       // brain_vision_t* (nimcp_brain_vision.c, 2026-11-23): retina -> optic nerve -> sensory hub; .retina sidecar
+    void*                                   sensory_hub;                  // brain_sensory_hub_t* (nimcp_brain_sensory_hub.c, 2026-11-23): fans hearing/vision out to router, immune, columns, lobes, language, hippocampus, subcortex, logic, KG, health
+    bool                                    dormant_subsystems_initialized; // eager init created the never-created subsystems (2026-11-23)
 
     //=========================================================================
     // Physics Bridges (Wave 8C, 2026-04-24)

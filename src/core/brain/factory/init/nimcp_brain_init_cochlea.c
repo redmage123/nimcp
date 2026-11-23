@@ -41,6 +41,7 @@
  * ABI is unaffected by the rename. */
 #include "core/brain/nimcp_brain_internal.h"
 #include "core/brain/nimcp_brain_cycle_coordinator.h"
+#include "core/brain/nimcp_brain_hearing.h"
 
 /* Now include cochlea + the 11 wireable bridge headers. Rename every
  * colliding typedef to a file-local alias via #define. We only ever touch
@@ -595,11 +596,10 @@ bool nimcp_brain_factory_init_cochlea_subsystem(brain_t brain) {
 
     brain_cycle_coordinator_t* coord =
         (brain_cycle_coordinator_t*)brain->cycle_coordinator;
-    if (!coord || !brain->cycle_coordinator_enabled) {
-        LOG_MODULE_INFO(COCHLEA_INIT_LOG_MODULE,
-            "cycle coordinator absent — skipping cochlea wiring");
-        return false;
-    }
+    /* The cochlea and hearing do not need the cycle coordinator; only the
+     * periodic bridge ticks do (2026-11-23: no code creates the
+     * coordinator, so this guard used to leave every brain deaf). */
+    const bool have_coord = coord && brain->cycle_coordinator_enabled;
 
     LOG_MODULE_INFO(COCHLEA_INIT_LOG_MODULE,
         "Initializing cochlea + 12 bridges (Wave 8A)");
@@ -635,6 +635,24 @@ bool nimcp_brain_factory_init_cochlea_subsystem(brain_t brain) {
             LOG_MODULE_WARN(COCHLEA_INIT_LOG_MODULE,
                 "cochlea_output_create failed — bridges will early-return on NULL");
         }
+    }
+
+    /* Hearing (2026-11-23): the learner that consumes the cochlea's
+     * auditory-nerve output (brain_feed_audio -> brain_hearing_feed). */
+    if (brain->cochlea && brain->cochlea_output_buffer && !brain->hearing) {
+        if (brain_hearing_create(brain) == 0) {
+            LOG_MODULE_INFO(COCHLEA_INIT_LOG_MODULE,
+                "hearing created (Wernicke predictor, 512 ALIF neurons, e-prop)");
+        } else {
+            LOG_MODULE_WARN(COCHLEA_INIT_LOG_MODULE,
+                "brain_hearing_create failed — audio will not be learned from");
+        }
+    }
+
+    if (!have_coord) {
+        LOG_MODULE_INFO(COCHLEA_INIT_LOG_MODULE,
+            "cycle coordinator absent — cochlea + hearing created, bridges skipped");
+        return brain->cochlea != NULL;
     }
 
     /* Bridge inits — each is independently failure-tolerant. */
@@ -792,6 +810,14 @@ void nimcp_brain_factory_destroy_cochlea_subsystem(brain_t brain) {
         cochlea_audio_cortex_bridge_destroy(brain->cochlea_audio_cortex_bridge);
         brain->cochlea_audio_cortex_bridge = NULL;
     }
+
+    /* The sensory hub is posted to by hearing; hearing reads the cochlea and
+     * its output buffer: destroy them first. */
+    extern void brain_sensory_hub_destroy(struct brain_struct* brain);
+    extern void brain_vision_destroy(struct brain_struct* brain);
+    brain_vision_destroy(brain);
+    brain_sensory_hub_destroy(brain);
+    brain_hearing_destroy(brain);
 
     /* Shared output buffer (Wave 8A+ 2026-04-24) — destroy BEFORE the
      * cochlea itself, because cochlea_output_destroy may read cochlea state

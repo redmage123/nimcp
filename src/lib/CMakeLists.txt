@@ -40,6 +40,9 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_state.c        # State accessors, COW (~1200 lines)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_io.c           # Metadata, JSON I/O (~900 lines)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_multimodal.c   # Multimodal processing (~1500 lines)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_hearing.c      # Hearing: cochlea -> Wernicke predictor (2026-11-23)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_sensory_hub.c  # Sensory hub: hearing/vision fan-out (2026-11-23)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_vision.c       # Vision: retina -> optic nerve -> hub (2026-11-23)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/nimcp_brain_cycle_coordinator.c  # Brain cycle coordinator (unified cycle observability)
 
     # Brain modular architecture (Phase 11: SRP Modularization) - 7 extracted modules
@@ -402,6 +405,8 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/regions/temporal/nimcp_temporal_substrate_bridge.c        # Temporal substrate bridge
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/regions/temporal/nimcp_temporal_thalamic_bridge.c         # Temporal thalamic bridge
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/factory/init/nimcp_brain_init_temporal.c                  # Temporal factory init
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/factory/init/nimcp_brain_init_occipital.c                 # Occipital factory init (compiled from 2026-11-23)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/factory/init/nimcp_brain_init_thalamus.c                  # Thalamus (LGN/MGN/VA/MD) factory init (compiled from 2026-11-23)
 
     # Wernicke's Area - Language comprehension (posterior STG, BA 22) (Phase W1-W5 Complete)
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/regions/wernicke/nimcp_wernicke_adapter.c                 # Wernicke core adapter
@@ -2275,6 +2280,9 @@ set(NIMCP_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_auditory_nerve.c        # Auditory nerve fibers
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_cochlea_extended.c      # Extended cochlea (dog/bat modes)
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_cochlea.c               # Main cochlea integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_auditory_predictor.c    # Wernicke predictor: e-prop ALIF SNN on the auditory nerve
+    ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_retina_circuit.c        # Retina: rods, cones, horizontal, bipolar, amacrine, ganglion cells (per-cell base modules)
+    ${CMAKE_CURRENT_SOURCE_DIR}/perception/nimcp_optic_nerve.c           # Optic nerve: myelinated ganglion-cell axons, oligodendrocytes, delay lines
 
     # Cochlear Brain Integration Bridges (Phase 3: Auditory pathway)
     ${CMAKE_CURRENT_SOURCE_DIR}/perception/bridges/nimcp_cochlea_medulla_bridge.c       # Brainstem pathway

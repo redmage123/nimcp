@@ -946,6 +946,29 @@ class BrainProxy:
         resp = self._send({"cmd": "get_speech_lexicon_stats"})
         return resp.get("stats", {})
 
+    def feed_audio(self, pcm):
+        """Hear mono 16 kHz audio (float32 array-like). Returns frames learned."""
+        import numpy as np
+        from base64 import b64encode
+        arr = np.ascontiguousarray(pcm, dtype=np.float32)
+        resp = self._send({"cmd": "feed_audio",
+                           "pcm_b64": b64encode(arr.tobytes()).decode("ascii")})
+        if "error" in resp:
+            raise RuntimeError(resp["error"])
+        return resp.get("frames", 0)
+
+    def get_sensory_hub_stats(self):
+        resp = self._send({"cmd": "get_sensory_hub_stats"})
+        return resp.get("stats", {})
+
+    def get_vision_stats(self):
+        resp = self._send({"cmd": "get_vision_stats"})
+        return resp.get("stats", {})
+
+    def get_hearing_stats(self):
+        resp = self._send({"cmd": "get_hearing_stats"})
+        return resp.get("stats", {})
+
     def get_nlp_immune_stats(self):
         resp = self._send({"cmd": "get_nlp_immune_stats"})
         return resp.get("stats", {})

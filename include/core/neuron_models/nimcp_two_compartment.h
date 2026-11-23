@@ -248,6 +248,17 @@ typedef enum {
 const neuron_model_vtable_t* two_compartment_get_vtable(void);
 
 /**
+ * @brief Drain the two-compartment module's bio-async inbox explicitly
+ *
+ * WHAT: Processes up to max_messages pending bio-router messages (0 = all).
+ * WHY:  The per-neuron update no longer drains the inbox every step.
+ * HOW:  No-op (returns 0) if the module never registered with the router.
+ *
+ * @return Messages processed
+ */
+uint32_t two_compartment_process_bio_inbox(uint32_t max_messages);
+
+/**
  * @brief Get default parameters
  *
  * WHAT: Returns sensible default parameter set

@@ -1202,6 +1202,24 @@ bool brain_save(brain_t brain, const char* filepath)
             }
         }
 
+        /* Hearing sidecar (2026-11-23): the Wernicke predictor's learned
+         * weights, excitability and listening state. */
+        if (brain->hearing) {
+            extern int brain_hearing_save(struct brain_struct* brain,
+                                          const char* checkpoint_path);
+            if (brain_hearing_save(brain, filepath) != 0) {
+                fprintf(stderr, "[WARN] brain_hearing_save failed for %s.hear — "
+                        "what the brain has learned to hear NOT persisted\n", filepath);
+            }
+        }
+
+        /* Vision sidecar (2026-11-23): retina adaptation + optic-nerve myelination. */
+        if (brain->vision) {
+            extern int brain_vision_save(struct brain_struct* brain, const char* checkpoint_path);
+            if (brain_vision_save(brain, filepath) != 0)
+                fprintf(stderr, "[WARN] brain_vision_save failed for %s.retina\n", filepath);
+        }
+
         /* Grounded language sidecar — preserves the trained lexicon
          * (vocab_list, lexicon hash table, learned word classes,
          * distributional context vectors, valence/arousal) and syntactic
@@ -2478,6 +2496,29 @@ void brain_load_post_init_sidecars(brain_t brain)
             fprintf(stderr, "[INFO] brain_kg_load: no sidecar at %s — "
                     "KG starts cold\n", kg_path);
         }
+    }
+
+    /* Hearing sidecar (2026-11-23). */
+    if (brain->hearing) {
+        extern int brain_hearing_load(struct brain_struct* brain,
+                                      const char* checkpoint_path);
+        int hrc = brain_hearing_load(brain, filepath);
+        if (hrc == 0) {
+            fprintf(stderr, "[INFO] Restored hearing from %s.hear\n", filepath);
+        } else if (hrc == 1) {
+            fprintf(stderr, "[INFO] no hearing sidecar at %s.hear — "
+                    "hearing starts fresh\n", filepath);
+        } else {
+            fprintf(stderr, "[WARN] brain_hearing_load failed for %s.hear — "
+                    "hearing starts fresh\n", filepath);
+        }
+    }
+
+    if (brain->vision) {
+        extern int brain_vision_load(struct brain_struct* brain, const char* checkpoint_path);
+        int vrc = brain_vision_load(brain, filepath);
+        if (vrc == 0) fprintf(stderr, "[INFO] Restored vision from %s.retina\n", filepath);
+        else if (vrc < 0) fprintf(stderr, "[WARN] brain_vision_load failed for %s.retina\n", filepath);
     }
 
     /* Grounded language sidecar — restore trained lexicon + templates.

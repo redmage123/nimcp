@@ -326,6 +326,68 @@ const neuron_model_vtable_t* neuron_model_get_izhikevich_vtable(void);
  */
 const neuron_model_vtable_t* neuron_model_get_lif_vtable(void);
 
+//=============================================================================
+// LIF Model Parameters
+//=============================================================================
+
+/**
+ * @brief Leaky integrate-and-fire parameters (for neuron_model_get_lif_vtable)
+ *
+ * DYNAMICS (between spikes):
+ *   tau_m * dV/dt = -(V - v_rest) + resistance * I
+ * SPIKE: when V >= v_thresh, the model spikes, V <- v_reset and V is clamped
+ *   at v_reset for t_ref ms (absolute refractory period).
+ *
+ * INPUT CURRENT CONVENTION (same as the Izhikevich model):
+ *   The Izhikevich model adds I directly to dv/dt (mV/ms per input unit,
+ *   i.e. unit membrane capacitance). With resistance == tau_m the LIF obeys
+ *   dV/dt = (v_rest - V)/tau_m + I, i.e. the same convention, so the same
+ *   input vector can drive either model. lif_model_default_params() does this.
+ *   Rheobase (smallest constant I that ever fires) = (v_thresh - v_rest) / resistance.
+ *
+ * INTEGRATION: exact exponential solution for constant I over the step, so it
+ *   is stable for any dt (neuron_model_set_integration_method is a no-op).
+ *
+ * UNITS: ms, mV, input units as above; resistance in mV per input unit.
+ */
+typedef struct {
+    float tau_m;       /**< Membrane time constant (ms), > 0 */
+    float v_rest;      /**< Resting / leak reversal potential (mV) */
+    float v_reset;     /**< Post-spike reset potential (mV), < v_thresh */
+    float v_thresh;    /**< Spike threshold (mV) */
+    float t_ref;       /**< Absolute refractory period (ms), >= 0 */
+    float resistance;  /**< Membrane resistance (mV per input unit), > 0 */
+} lif_model_params_t;
+
+/**
+ * @brief Default LIF parameters
+ *
+ * tau_m 10 ms, v_rest -65 mV, v_reset -65 mV, v_thresh -50 mV, t_ref 2 ms,
+ * resistance 10 (== tau_m, Izhikevich-compatible input). Rheobase 1.5.
+ */
+lif_model_params_t lif_model_default_params(void);
+
+/**
+ * @brief Build a LIF parameter set (no validation; invalid sets are replaced by
+ *        the defaults at neuron_model_create() time with a warning)
+ */
+lif_model_params_t lif_model_create_params(float tau_m, float v_rest, float v_reset,
+                                           float v_thresh, float t_ref, float resistance);
+
+/**
+ * @brief Drain the neuron-model bio-async inboxes explicitly
+ *
+ * WHAT: Processes up to max_messages pending bio-router messages for each of
+ *       the neuron_model, izhikevich and two_compartment module contexts.
+ * WHY:  Inbox draining used to happen inside every per-neuron update (a
+ *       per-neuron-per-step cost); it is now an explicit, once-per-step call.
+ * HOW:  No-op for contexts that never registered with the bio-router.
+ *
+ * @param max_messages Max messages per inbox (0 = all pending)
+ * @return Total messages processed
+ */
+uint32_t neuron_model_process_bio_inbox(uint32_t max_messages);
+
 /**
  * @brief Set ODE integration method for neuron model (universal interface)
  *

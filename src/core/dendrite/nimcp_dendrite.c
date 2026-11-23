@@ -72,8 +72,8 @@ NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(dendrite)
 #define SPINE_HEAD_DIAMETER_FILOPODIA 0.2f  // μm
 
 // Plasticity constants
-#define LTP_THRESHOLD_DEFAULT 0.8f          // mV (calcium threshold for LTP)
-#define LTD_THRESHOLD_DEFAULT 0.3f          // mV (calcium threshold for LTD)
+#define LTP_THRESHOLD_DEFAULT 0.8f          // μM (calcium threshold for LTP)
+#define LTD_THRESHOLD_DEFAULT 0.3f          // μM (calcium threshold for LTD)
 #define STRUCTURAL_PLASTICITY_RATE 0.001f   // Per timestep
 
 // Calcium dynamics
@@ -87,7 +87,49 @@ NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(dendrite)
 
 // bAP parameters
 #define BAP_NA_BOOST_FACTOR 1.5f            // Na+ channel boost at distal
-#define BAP_CALCIUM_PER_MV 0.1f             // Ca²⁺ influx per mV of bAP
+#define BAP_CALCIUM_PER_MV 0.005f           // Ca²⁺ influx (μM) per mV of local bAP
+                                            // (x NIMCP_BAP_CALCIUM_FACTOR: 100 mV -> 0.25 μM)
+
+// ----------------------------------------------------------------------------
+// UNIT CONVENTIONS (2026-11 unit audit)
+//
+//   segment->voltage, spine->voltage : VOLTS, relative to rest (0 = rest).
+//                                      Absolute potential = E_REST + 1000*V mV.
+//   segment->R_m  : Ω    (absolute: R_m_specific / area)
+//   segment->C_m  : μF   (absolute: C_m_specific * area)   -> pF = C_m * 1e6
+//   segment->R_a  : Ω    (absolute: R_i * L / cross-section)
+//   segment->path_resistance : Ω, cumulative axial resistance to the soma
+//   segment->g_axial : nS
+//   spine->neck_resistance : MΩ ;  spine->head_capacitance : fF
+//   spine->g_ampa/g_nmda/g_gaba : nS
+//   currents : pA ;  time : ms (timestamps μs) ;  lengths : μm ; Ca : μM
+//
+//   Handy identities: nS * mV = pA ; pA * ms / pF = mV ; nS * MΩ = 1e-3.
+// ----------------------------------------------------------------------------
+#define DENDRITE_E_REST_MV      (-70.0f)    // resting potential (absolute)
+#define DENDRITE_E_EXC_REL_MV   (70.0f)     // AMPA/NMDA reversal (0 mV abs)
+#define DENDRITE_E_GABA_REL_MV  (0.0f)      // GABA_A reversal (-70 mV abs, shunting)
+#define DENDRITE_V_MIN_REL      (-0.020f)   // safety floor: E_K (-90 mV abs), volts rel
+#define DENDRITE_V_MAX_REL      (0.125f)    // safety ceiling: E_Na (+55 mV abs), volts rel
+#define DENDRITE_INPUT_PULSE_MS 1.0f        // dendrite_receive_input(): current is a 1 ms pulse
+#define DENDRITE_CM_PF_PER_UM2  0.01f       // 1 μF/cm² = 0.01 pF/μm²
+#define DENDRITE_SOMA_LOAD_PF   100.0f      // capacitance of the soma + rest of the cell that
+                                            // the dendrite drains into (tau_m -> 5 nS, 200 MΩ)
+#define DENDRITE_MAX_SUBSTEP_MS 0.5f        // integration sub-step for segment<->soma coupling
+
+// Spine synaptic receptor kinetics / quantal sizes
+#define SPINE_TAU_AMPA_MS        2.0f       // AMPA decay
+#define SPINE_TAU_NMDA_MS        100.0f     // NMDA decay
+#define SPINE_TAU_GABA_MS        6.0f       // GABA_A decay
+#define SPINE_G_AMPA_PER_INPUT_NS 0.5f      // peak AMPA conductance per unit input at weight 1
+#define SPINE_G_NMDA_PER_INPUT_NS 0.25f     // peak NMDA conductance per unit input at weight 1
+#define SPINE_AMPA_RECEPTORS_REF 100.0f     // receptor count at creation (scales g)
+#define SPINE_NMDA_RECEPTORS_REF 20.0f
+#define SPINE_G_MAX_NS           20.0f      // saturation of receptor pool per spine
+#define SPINE_CA_UM_PER_FC_NMDA  0.0025f    // spine Ca²⁺ per fC of NMDA charge (~0.2 μM per
+                                            // isolated EPSP at rest, ~0.7 μM when depolarised)
+#define NMDA_MG_HALF_BLOCK_MM    3.57f      // Jahr & Stevens (1990)
+#define NMDA_MIN_UNBLOCK         0.10f      // B(V) needed for regenerative NMDA spike (~-54 mV)
 
 // ============================================================================
 // Helper Function Prototypes
@@ -110,9 +152,37 @@ static dendritic_spine_t* create_spine(
 );
 
 static void calculate_cable_properties(dendritic_segment_t* segment);
-static void update_segment_voltage(dendritic_segment_t* segment, float dt_ms);
 static void update_segment_calcium(dendritic_segment_t* segment, float dt_ms);
 static float calculate_attenuation(dendrite_t* dendrite, uint32_t segment_id);
+static void flush_pending_locked(dendrite_t* dendrite);
+static float calculate_mg_block(float voltage_abs_mv);
+static void finalize_tree_properties_locked(dendrite_t* dendrite);
+static bool cow_unshare_locked(dendrite_t* dendrite);
+
+/** Segment membrane capacitance in pF (C_m is stored in μF). */
+static inline float segment_cap_pf(const dendritic_segment_t* s) {
+    return s->C_m * 1e6F;
+}
+
+/** Segment membrane time constant in ms (R_m Ω * C_m μF * 1e-6 F/μF * 1e3 ms/s). */
+static inline float segment_tau_ms(const dendritic_segment_t* s) {
+    float tau = s->R_m * s->C_m * 1e-3F;
+    return (isfinite(tau) && tau > 1e-3F) ? tau : 20.0F;
+}
+
+/** Length constant λ (μm) of a cylinder of diameter d (μm): sqrt(Rm*d/(4*Ri)). */
+static inline float length_constant_um(float diameter_um) {
+    if (!(diameter_um > 0.0F)) return 0.0F;
+    float lambda_cm = sqrtf(DENDRITE_R_M * (diameter_um * 1e-4F) / (4.0F * DENDRITE_R_A));
+    return lambda_cm * 1e4F;
+}
+
+static inline float clamp_seg_voltage(float v) {
+    if (!isfinite(v)) return 0.0F;
+    if (v < DENDRITE_V_MIN_REL) return DENDRITE_V_MIN_REL;
+    if (v > DENDRITE_V_MAX_REL) return DENDRITE_V_MAX_REL;
+    return v;
+}
 
 // ============================================================================
 // Dendrite Creation and Destruction
@@ -206,16 +276,33 @@ void dendrite_destroy(dendrite_t* dendrite) {
 
     LOG_DEBUG(LOG_MODULE, "dendrite_destroy: Destroying dendrite %u", dendrite->id);
 
-    // Free segments
-    if (dendrite->segments) {
-        nimcp_free(dendrite->segments);
-        dendrite->segments = NULL;
+    // Segment/spine arrays may be shared with CoW copies (dendrite_cow_copy):
+    // only the last holder frees them.
+    bool free_arrays = true;
+    if (dendrite->cow_shared_refs) {
+        uint32_t left = __atomic_sub_fetch(dendrite->cow_shared_refs, 1U, __ATOMIC_ACQ_REL);
+        if (left == 0) {
+            nimcp_free(dendrite->cow_shared_refs);
+        } else {
+            free_arrays = false;
+        }
+        dendrite->cow_shared_refs = NULL;
     }
 
-    // Free spines
-    if (dendrite->spines) {
-        nimcp_free(dendrite->spines);
-        dendrite->spines = NULL;
+    if (free_arrays) {
+        if (dendrite->segments) nimcp_free(dendrite->segments);
+        if (dendrite->spines) nimcp_free(dendrite->spines);
+    }
+    dendrite->segments = NULL;
+    dendrite->spines = NULL;
+
+    // Free spine pool (never shared: CoW copies do not inherit it)
+    if (dendrite->spine_pool) {
+        nimcp_mutex_destroy(&dendrite->spine_pool->lock);
+        nimcp_free(dendrite->spine_pool->allocation_bitmap);
+        nimcp_free(dendrite->spine_pool->spines);
+        nimcp_free(dendrite->spine_pool);
+        dendrite->spine_pool = NULL;
     }
 
     // Destroy mutex
@@ -245,8 +332,11 @@ bool dendrite_create_segments(
         return false;
     }
 
+    nimcp_mutex_lock(&dendrite->lock);
+
     // Guard: Already has segments
     if (dendrite->segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_STATE, "dendrite_create_segments: dendrite already has segments");
         return false;
     }
@@ -257,6 +347,7 @@ bool dendrite_create_segments(
         sizeof(dendritic_segment_t)
     );
     if (!dendrite->segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_create_segments: failed to allocate segments");
         return false;
     }
@@ -287,7 +378,8 @@ bool dendrite_create_segments(
         segment->num_spines = 0;
         memset(segment->spine_ids, 0, sizeof(segment->spine_ids));
 
-        // Active properties
+        // Active properties (specific conductances, mS/cm²; informational —
+        // active behaviour is modelled by the NMDA-spike and bAP mechanisms)
         segment->has_active_properties = config->has_active_properties;
         if (segment->has_active_properties) {
             segment->g_na = 120.0F;  // mS/cm²
@@ -322,10 +414,67 @@ bool dendrite_create_segments(
         }
     }
 
+    finalize_tree_properties_locked(dendrite);
+
+    nimcp_mutex_unlock(&dendrite->lock);
+
     LOG_DEBUG(LOG_MODULE, "dendrite_create_segments: Created %u segments for dendrite %u",
               num_segments, dendrite->id);
 
     return true;
+}
+
+/**
+ * WHAT: Recompute tree-level electrical properties after a morphology change
+ * WHY:  path_resistance must be cumulative to the soma; the dendrite-level
+ *       input_resistance / time_constant / attenuation_factor / surface_area
+ *       were never computed (left 0).
+ * HOW:  Walk each segment's ancestor chain (bounded, cycle-safe).
+ *       Caller holds dendrite->lock.
+ */
+static void finalize_tree_properties_locked(dendrite_t* dendrite) {
+    if (!dendrite || !dendrite->segments || dendrite->num_segments == 0) return;
+
+    double g_total = 0.0;       // S, sum of membrane leak conductances
+    float area_um2 = 0.0F;
+    float min_att = 1.0F;
+    for (uint32_t i = 0; i < dendrite->num_segments; i++) {
+        dendritic_segment_t* s = &dendrite->segments[i];
+        float r = s->R_a;
+        uint32_t p = s->parent_segment;
+        for (uint32_t hops = 0; p < dendrite->num_segments && p != i &&
+             hops < dendrite->num_segments; hops++) {
+            r += dendrite->segments[p].R_a;
+            p = dendrite->segments[p].parent_segment;
+        }
+        s->path_resistance = r;
+        if (s->R_m > 0.0F) g_total += 1.0 / (double)s->R_m;
+        area_um2 += (float)M_PI * s->diameter * s->length;
+        float a = calculate_attenuation(dendrite, i);
+        if (a < min_att) min_att = a;
+        s->att_soma = a;
+
+        // Axial resistance from the input site (path_distance, but at least
+        // the segment midpoint) to the soma: ancestors' R_a plus the own
+        // cylinder over the remaining distance.
+        float r_anc = 0.0F, len_anc = 0.0F;
+        uint32_t q = s->parent_segment;
+        for (uint32_t hops = 0; q < dendrite->num_segments && q != i &&
+             hops < dendrite->num_segments; hops++) {
+            r_anc += dendrite->segments[q].R_a;
+            len_anc += dendrite->segments[q].length;
+            q = dendrite->segments[q].parent_segment;
+        }
+        float r_per_um = (s->length > 0.0F) ? s->R_a / s->length : 0.0F;
+        float own_um = fmaxf(s->path_distance - len_anc, 0.5F * s->length);
+        float r_soma = r_anc + r_per_um * own_um;
+        s->g_soma_ns = (r_soma > 0.0F && isfinite(r_soma)) ? 1e9F / r_soma : 0.0F;
+    }
+    dendrite->surface_area = area_um2;
+    // Membrane-only (sealed, isolated tree) input resistance, MΩ
+    dendrite->input_resistance = (g_total > 0.0) ? (float)(1e-6 / g_total) : 0.0F;
+    dendrite->time_constant = segment_tau_ms(&dendrite->segments[0]);  // Rm*Cm, ~20 ms
+    dendrite->attenuation_factor = min_att;
 }
 
 /**
@@ -346,16 +495,28 @@ uint32_t dendrite_add_branch(
         return UINT32_MAX;
     }
 
+    nimcp_mutex_lock(&dendrite->lock);
+
     // Guard: Invalid parent
     if (parent_segment_id >= dendrite->num_segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_add_branch: invalid parent segment id");
         return UINT32_MAX;
     }
+
+    // Guard: arrays shared with a CoW copy must be made private before realloc
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_add_branch: CoW unshare failed");
+        return UINT32_MAX;
+    }
+    flush_pending_locked(dendrite);
 
     dendritic_segment_t* parent = &dendrite->segments[parent_segment_id];
 
     // Guard: Parent has too many children
     if (parent->num_children >= NIMCP_DENDRITE_MAX_CHILDREN) {
+        nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_OUT_OF_RANGE, "dendrite_add_branch: parent has max children");
         return UINT32_MAX;
     }
@@ -370,6 +531,7 @@ uint32_t dendrite_add_branch(
         new_count * sizeof(dendritic_segment_t)
     );
     if (!new_segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_add_branch: failed to reallocate segments");
         return UINT32_MAX;
     }
@@ -405,6 +567,10 @@ uint32_t dendrite_add_branch(
     // Add to parent's children
     parent->child_segments[parent->num_children++] = new_id;
 
+    finalize_tree_properties_locked(dendrite);
+
+    nimcp_mutex_unlock(&dendrite->lock);
+
     LOG_DEBUG(LOG_MODULE, "dendrite_add_branch: Added branch segment %u to dendrite %u",
               new_id, dendrite->id);
 
@@ -432,9 +598,19 @@ uint32_t dendrite_add_spine(
         return UINT32_MAX;
     }
 
+    nimcp_mutex_lock(&dendrite->lock);
+
     // Guard: Invalid segment
     if (segment_id >= dendrite->num_segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
         LOG_ERROR(LOG_MODULE, "dendrite_add_spine: Invalid segment %u", segment_id);
+        return UINT32_MAX;
+    }
+
+    // Guard: arrays shared with a CoW copy must be made private before realloc
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        LOG_ERROR(LOG_MODULE, "dendrite_add_spine: CoW unshare failed");
         return UINT32_MAX;
     }
 
@@ -442,6 +618,7 @@ uint32_t dendrite_add_spine(
 
     // Guard: Segment has too many spines (use tier-optimized limit)
     if (segment->num_spines >= NIMCP_MAX_SPINE_IDS) {
+        nimcp_mutex_unlock(&dendrite->lock);
         LOG_ERROR(LOG_MODULE, "dendrite_add_spine: Segment %u has max spines (%u)",
                   segment_id, NIMCP_MAX_SPINE_IDS);
         return UINT32_MAX;
@@ -457,6 +634,7 @@ uint32_t dendrite_add_spine(
         new_count * sizeof(dendritic_spine_t)
     );
     if (!new_spines) {
+        nimcp_mutex_unlock(&dendrite->lock);
         LOG_ERROR(LOG_MODULE, "dendrite_add_spine: Failed to reallocate spines");
         return UINT32_MAX;
     }
@@ -508,9 +686,13 @@ uint32_t dendrite_add_spine(
     spine->head_volume = (4.0F / 3.0F) * M_PI * radius * radius * radius;
 
     // Calculate electrical properties
-    spine->neck_resistance = (4.0F * DENDRITE_R_A * spine->neck_length) /
+    // Neck: R = 4*Ri*L/(pi*d^2). With L, d in μm: L_cm/d_cm^2 = 1e4 * L/d^2,
+    // so R[Ω] = 4*Ri*1e4*L/(pi d^2) and R[MΩ] = 4*Ri*1e-2*L/(pi d^2).
+    // (thin spine: L=1, d=0.1 -> ~190 MΩ; literature 50-500 MΩ)
+    spine->neck_resistance = (4.0F * DENDRITE_R_A * spine->neck_length * 1e-2F) /
                              (M_PI * spine->neck_diameter * spine->neck_diameter);
-    spine->head_capacitance = DENDRITE_C_M * 4.0F * M_PI * radius * radius;
+    // Head: C = Cm * 4*pi*r^2 ; 1 μF/cm² = 10 fF/μm²
+    spine->head_capacitance = DENDRITE_C_M * 10.0F * 4.0F * M_PI * radius * radius;  // fF
 
     // Initialize state
     spine->voltage = 0.0F;
@@ -529,6 +711,8 @@ uint32_t dendrite_add_spine(
     // Add to segment's spine list
     segment->spine_ids[segment->num_spines++] = new_id;
 
+    nimcp_mutex_unlock(&dendrite->lock);
+
     LOG_DEBUG(LOG_MODULE, "dendrite_add_spine: Added spine %u (type=%d) to segment %u",
               new_id, type, segment_id);
 
@@ -540,13 +724,22 @@ uint32_t dendrite_add_spine(
  * WHY:  Support structural plasticity and spine elimination
  * HOW:  Remove from segment list, mark as inactive
  */
+static bool dendrite_remove_spine_locked(dendrite_t* dendrite, uint32_t spine_id);
+
 bool dendrite_remove_spine(dendrite_t* dendrite, uint32_t spine_id) {
     // Guard: NULL dendrite
     if (!dendrite) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "dendrite_remove_spine: dendrite is NULL");
         return false;
     }
+    nimcp_mutex_lock(&dendrite->lock);
+    bool ok = cow_unshare_locked(dendrite) && dendrite_remove_spine_locked(dendrite, spine_id);
+    nimcp_mutex_unlock(&dendrite->lock);
+    return ok;
+}
 
+/* Caller holds dendrite->lock and has unshared CoW arrays. */
+static bool dendrite_remove_spine_locked(dendrite_t* dendrite, uint32_t spine_id) {
     // Guard: Invalid spine ID
     if (spine_id >= dendrite->num_spines) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_remove_spine: capacity exceeded");
@@ -622,7 +815,10 @@ static void calculate_cable_properties(dendritic_segment_t* segment) {
 /**
  * WHAT: Receive input at specific segment
  * WHY:  Inject synaptic current at compartment location
- * HOW:  Add current to segment voltage
+ * HOW:  The current (pA) is treated as a DENDRITE_INPUT_PULSE_MS (1 ms) pulse:
+ *       its charge q = I * 1 ms is deposited on the segment membrane
+ *       capacitance (C = 1 μF/cm² * area), dV[mV] = I[pA] * 1[ms] / C[pF].
+ *       (Previously V += I * R_m with R_m in Ω: 1 pA -> ~1e9 "V".)
  */
 bool dendrite_receive_input(
     dendrite_t* dendrite,
@@ -630,22 +826,44 @@ bool dendrite_receive_input(
     float current,
     uint64_t timestamp
 ) {
+    (void)timestamp;
     // Guard: NULL dendrite
-    if (!dendrite || segment_id >= dendrite->num_segments) {
+    if (!dendrite) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_receive_input: dendrite is NULL");
+        return false;
+    }
+    if (!isfinite(current)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_receive_input: non-finite current");
         return false;
     }
 
     nimcp_mutex_lock(&dendrite->lock);
 
+    if (segment_id >= dendrite->num_segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_receive_input: segment_id out of range");
+        return false;
+    }
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_receive_input: CoW unshare failed");
+        return false;
+    }
+    // Apply any lazily-deferred passive decay before adding new charge
+    flush_pending_locked(dendrite);
+
     dendritic_segment_t* segment = &dendrite->segments[segment_id];
 
-    // Add current (will be integrated in voltage update)
-    segment->voltage += current * segment->R_m;
+    float c_pf = segment_cap_pf(segment);
+    if (c_pf > 1e-9F) {
+        float dv_mv = current * DENDRITE_INPUT_PULSE_MS / c_pf;
+        segment->voltage = clamp_seg_voltage(segment->voltage + dv_mv * 1e-3F);
+    }
 
     // Update calcium based on NMDA component
     if (current > 0) {
         segment->calcium += current * 0.1F;  // Simplified calcium influx
+        if (segment->calcium > CALCIUM_BUFFER_CAPACITY) segment->calcium = CALCIUM_BUFFER_CAPACITY;
     }
 
     // Update activity stats
@@ -661,7 +879,20 @@ bool dendrite_receive_input(
 /**
  * WHAT: Compute total somatic current from dendrite
  * WHY:  Integrate dendritic inputs to soma
- * HOW:  Sum attenuated currents from all segments
+ * HOW:  The segments drain through their axial paths (G_c,i) into a passive
+ *       soma-load compartment; the current arriving at the soma is the
+ *       cable-attenuated axial current att_i * G_c,i * (V_i - V_soma).
+ *       Returns the MEAN current (pA) delivered to the soma since the
+ *       previous call (poll once per consumer step: its integral is the
+ *       delivered charge, independent of dendrite_step's skip-frames); if
+ *       no simulated time has elapsed since the previous call, returns the
+ *       instantaneous current. Linear in input; saturates only near the
+ *       synaptic reversal potential.
+ *       Also sets somatic_voltage (volts rel. rest): the soma EPSP after the
+ *       charge now in the dendrite equilibrates (sub-ms):
+ *         (C_s V_s + sum att_i C_i V_i) / (C_s + sum C_i).
+ *       (Previously: sum of V*att returned as a "current" -> saturated at
+ *       ~0.04 regardless of input.)
  */
 float dendrite_compute_somatic_current(dendrite_t* dendrite) {
     // Guard: NULL dendrite
@@ -671,30 +902,53 @@ float dendrite_compute_somatic_current(dendrite_t* dendrite) {
 
     nimcp_mutex_lock(&dendrite->lock);
 
-    float total_current = 0.0F;
-
-    // Sum attenuated voltages from all segments
-    for (uint32_t i = 0; i < dendrite->num_segments; i++) {
-        dendritic_segment_t* segment = &dendrite->segments[i];
-
-        // Calculate attenuation factor
-        float attenuation = calculate_attenuation(dendrite, i);
-
-        // Add attenuated current
-        total_current += segment->voltage * attenuation;
+    if (dendrite->pending_dt_ms > 0.0F && cow_unshare_locked(dendrite)) {
+        flush_pending_locked(dendrite);
     }
 
-    dendrite->somatic_voltage = total_current;
+    const double c_s = DENDRITE_SOMA_LOAD_PF;
+    double vs_mv = (double)dendrite->soma_v * 1000.0;
+    double i_inst = 0.0;                 // pA
+    double q_num = c_s * vs_mv, c_den = c_s;
+
+    for (uint32_t i = 0; i < dendrite->num_segments; i++) {
+        dendritic_segment_t* segment = &dendrite->segments[i];
+        double v_mv = (double)segment->voltage * 1000.0;
+        double c = segment_cap_pf(segment);
+        i_inst += (double)segment->att_soma * segment->g_soma_ns * (v_mv - vs_mv);
+        q_num += (double)segment->att_soma * c * v_mv;
+        c_den += c;
+    }
+
+    double total_current;
+    if (dendrite->soma_charge_dt_ms > 0.0F) {
+        total_current = (double)dendrite->soma_charge_fc / dendrite->soma_charge_dt_ms;  // fC/ms = pA
+    } else {
+        total_current = i_inst;
+    }
+    dendrite->soma_charge_fc = 0.0F;
+    dendrite->soma_charge_dt_ms = 0.0F;
+    if (!isfinite(total_current)) total_current = 0.0;
+
+    double v_eq = q_num / c_den * 1e-3;
+    dendrite->somatic_voltage = isfinite(v_eq) ? (float)v_eq : 0.0F;
 
     nimcp_mutex_unlock(&dendrite->lock);
 
-    return total_current;
+    return (float)total_current;
 }
 
 /**
  * WHAT: Calculate signal attenuation from segment to soma
  * WHY:  Determine how much signal reaches soma (cable theory)
- * HOW:  Use path resistance and length constant
+ * HOW:  Electrotonic distance X = sum over the path of L_k / λ_k with
+ *       λ = sqrt(R_m * d / (4 * R_i)) (R_m Ω·cm², R_i Ω·cm, d cm);
+ *       attenuation = exp(-X) (infinite-cable steady state).
+ *       The path is the segment's ancestor chain; if the configured
+ *       path_distance is not consistent with it, path_distance / λ_own is
+ *       used. (Previously λ = sqrt(R_m/R_a) of absolute resistances, which
+ *       drops the diameter: 0.27 at 75 μm instead of ~0.9.)
+ *       Caller holds dendrite->lock (or owns the dendrite exclusively).
  */
 static float calculate_attenuation(dendrite_t* dendrite, uint32_t segment_id) {
     // Guard: Invalid inputs
@@ -703,14 +957,31 @@ static float calculate_attenuation(dendrite_t* dendrite, uint32_t segment_id) {
     }
 
     dendritic_segment_t* segment = &dendrite->segments[segment_id];
+    float lambda_self = length_constant_um(segment->diameter);
+    if (!(lambda_self > 0.0F)) return 0.0F;
 
-    // Length constant λ = sqrt(R_m / R_a)
-    float lambda = (segment->R_a > 1e-10f) ? sqrtf(segment->R_m / segment->R_a) : 1.0f;
+    float dist = segment->path_distance > 0.0F ? segment->path_distance : 0.0F;
 
-    // Attenuation factor: exp(-distance / lambda)
-    float attenuation = (lambda > 1e-10f)
-        ? expf(fminf(-segment->path_distance / lambda, 88.0f))
-        : 0.0f;
+    // Electrotonic length of ancestors
+    float x_anc = 0.0F, len_anc = 0.0F;
+    uint32_t p = segment->parent_segment;
+    for (uint32_t hops = 0; p < dendrite->num_segments && p != segment_id &&
+         hops < dendrite->num_segments; hops++) {
+        const dendritic_segment_t* a = &dendrite->segments[p];
+        float lam = length_constant_um(a->diameter);
+        if (lam > 0.0F) x_anc += a->length / lam;
+        len_anc += a->length;
+        p = a->parent_segment;
+    }
+
+    float X;
+    if (len_anc > 0.0F && len_anc <= dist + 1e-3F) {
+        X = x_anc + (dist - len_anc) / lambda_self;
+    } else {
+        X = dist / lambda_self;
+    }
+
+    float attenuation = expf(-fminf(X, 80.0F));
     if (!isfinite(attenuation)) attenuation = 0.0f;
 
     return attenuation;
@@ -739,39 +1010,128 @@ float dendrite_get_attenuation(dendrite_t* dendrite, uint32_t segment_id) {
 // ============================================================================
 
 /**
+ * WHAT: Integrate the passive dendrite + soma-load over the deferred time
+ * WHY:  dendrite_step() only does the full compartment update every 10th
+ *       call; the skipped time must not be lost (previously it was, so the
+ *       effective time constant was 10x too long after the first 10 steps).
+ * HOW:  Each segment i (C_i, leak G_m,i, tau = Rm*Cm ~ 20 ms) is coupled by
+ *       G_c,i (axial path) to a passive soma-load compartment (100 pF,
+ *       tau_m). Per sub-step (<= 0.5 ms) the segment is advanced exactly
+ *       (exponential Euler, soma voltage held), the charge it passes to the
+ *       soma is integrated exactly and delivered attenuated by the cable
+ *       (att_i = exp(-X)); the soma then decays with tau_m. Unconditionally
+ *       stable. Idle dendrites take a fast path. Caller holds dendrite->lock
+ *       and has unshared CoW arrays.
+ */
+static void flush_pending_locked(dendrite_t* dendrite) {
+    float dt = dendrite->pending_dt_ms;
+    dendrite->pending_dt_ms = 0.0F;
+    if (!(dt > 0.0F) || !isfinite(dt)) return;
+
+    // Fast path: nothing to integrate except calcium decay
+    bool idle = fabsf(dendrite->soma_v) < 1e-9F;
+    for (uint32_t i = 0; idle && i < dendrite->num_segments; i++) {
+        if (fabsf(dendrite->segments[i].voltage) >= 1e-9F) idle = false;
+    }
+    if (idle) {
+        for (uint32_t i = 0; i < dendrite->num_segments; i++) {
+            dendrite->segments[i].voltage = 0.0F;
+            update_segment_calcium(&dendrite->segments[i], dt);
+        }
+        dendrite->soma_v = 0.0F;
+        dendrite->soma_charge_dt_ms += dt;
+        return;
+    }
+
+    const float c_s = DENDRITE_SOMA_LOAD_PF;
+    float tau_s = dendrite->num_segments > 0 ? segment_tau_ms(&dendrite->segments[0]) : 20.0F;
+    int nsub = (int)ceilf(dt / DENDRITE_MAX_SUBSTEP_MS);
+    if (nsub < 1) nsub = 1;
+    if (nsub > 100000) nsub = 100000;
+    float h = dt / (float)nsub;
+    float e_s = expf(-h / tau_s);
+    float e_s_half = expf(-0.5F * h / tau_s);
+
+    for (int k = 0; k < nsub; k++) {
+        float vs = dendrite->soma_v * 1000.0F;   // mV
+        double q_soma = 0.0;                      // fC
+        for (uint32_t i = 0; i < dendrite->num_segments; i++) {
+            dendritic_segment_t* seg = &dendrite->segments[i];
+            float c = segment_cap_pf(seg);
+            if (!(c > 0.0F)) continue;
+            float g_m = (seg->R_m > 0.0F) ? 1e9F / seg->R_m : 0.0F;   // nS
+            float g_c = seg->g_soma_ns;
+            float g = g_m + g_c;
+            float v = seg->voltage * 1000.0F;
+            if (!(g > 0.0F)) continue;
+            float tau = c / g;                     // pF/nS = ms
+            float v_inf = g_c * vs / g;
+            float e = expf(-fminf(h / tau, 80.0F));
+            float v_new = v_inf + (v - v_inf) * e;
+            // charge through g_c during h: g_c * integral(v(t) - vs) dt
+            double q = (double)g_c * ((double)(v - v_inf) * tau * (1.0F - e) +
+                                      (double)(v_inf - vs) * h);
+            q_soma += (double)seg->att_soma * q;
+            seg->voltage = clamp_seg_voltage(v_new * 1e-3F);
+        }
+        if (!isfinite(q_soma)) q_soma = 0.0;
+        float vs_new = vs * e_s + (float)(q_soma / c_s) * e_s_half;
+        dendrite->soma_v = clamp_seg_voltage(vs_new * 1e-3F);
+        dendrite->soma_charge_fc += (float)q_soma;
+    }
+    dendrite->soma_charge_dt_ms += dt;
+
+    for (uint32_t i = 0; i < dendrite->num_segments; i++) {
+        update_segment_calcium(&dendrite->segments[i], dt);
+    }
+}
+
+/**
  * WHAT: Advance dendrite simulation by one timestep
  * WHY:  Update voltage, calcium, and plasticity
- * HOW:  Integrate differential equations for all segments
+ * HOW:  Integrate differential equations for all segments. Full compartment
+ *       update every 10th call (every call for the first 10); in between the
+ *       elapsed time is accumulated in pending_dt_ms and applied exactly at
+ *       the next full update or before any API reads/writes segment state.
+ *       mean_voltage / calcium_level are decayed exactly on skipped frames.
  */
 void dendrite_step(dendrite_t* dendrite, float dt_ms, uint64_t timestamp) {
+    (void)timestamp;
     // Guard: NULL dendrite
     if (!dendrite) {
+        return;
+    }
+    if (!(dt_ms > 0.0F) || !isfinite(dt_ms)) {
         return;
     }
 
     nimcp_mutex_lock(&dendrite->lock);
 
-    // Dendritic cable equations change slowly — full computation every 10 steps
-    // Interpolate between full computations using cached gradient
     dendrite->update_counter++;
+    dendrite->pending_dt_ms += dt_ms;
+
     if (dendrite->update_counter % 10 != 0 && dendrite->update_counter > 10) {
-        // Interpolate: use cached gradient from last full computation
-        dendrite->mean_voltage += dendrite->cached_mean_dv * (dt_ms / 1000.0F);
-        // Clamp interpolated voltage
-        if (dendrite->mean_voltage < -0.080F) dendrite->mean_voltage = -0.080F;
-        if (dendrite->mean_voltage > 0.040F) dendrite->mean_voltage = 0.040F;
+        // Skip-frame: aggregate means follow the exact passive decay
+        float tau_m = dendrite->time_constant > 0.0F ? dendrite->time_constant : 20.0F;
+        dendrite->mean_voltage *= expf(-dt_ms / tau_m);
+        dendrite->calcium_level *= expf(-dt_ms / CALCIUM_DECAY_TAU);
         dendrite->activity.mean_voltage = dendrite->mean_voltage;
+        dendrite->activity.mean_calcium = dendrite->calcium_level;
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+
+    if (!cow_unshare_locked(dendrite)) {
+        // OOM: keep the time pending, try again next step
         nimcp_mutex_unlock(&dendrite->lock);
         return;
     }
 
     float old_mean_voltage = dendrite->mean_voltage;
+    float elapsed_ms = dendrite->pending_dt_ms;
 
     // Update all segments (full compartmental model computation)
-    for (uint32_t i = 0; i < dendrite->num_segments; i++) {
-        update_segment_voltage(&dendrite->segments[i], dt_ms);
-        update_segment_calcium(&dendrite->segments[i], dt_ms);
-    }
+    flush_pending_locked(dendrite);
 
     // BUGFIX: Guard against division by zero when num_segments is 0
     if (dendrite->num_segments > 0) {
@@ -782,8 +1142,8 @@ void dendrite_step(dendrite_t* dendrite, float dt_ms, uint64_t timestamp) {
         }
         dendrite->mean_voltage = voltage_sum / (float)dendrite->num_segments;
 
-        // Cache voltage gradient for interpolation in skip-frames
-        float dt_s = dt_ms / 1000.0F;
+        // Cache voltage gradient (V/s) over the elapsed interval
+        float dt_s = elapsed_ms / 1000.0F;
         if (dt_s > 1e-10F) {
             dendrite->cached_mean_dv = (dendrite->mean_voltage - old_mean_voltage) / dt_s;
         }
@@ -809,44 +1169,6 @@ void dendrite_step(dendrite_t* dendrite, float dt_ms, uint64_t timestamp) {
     }
 
     nimcp_mutex_unlock(&dendrite->lock);
-}
-
-/**
- * WHAT: Update segment voltage using cable equation
- * WHY:  Model voltage dynamics in compartment
- * HOW:  dV/dt = (I_syn - V/R_m + I_axial) / C_m
- */
-static void update_segment_voltage(dendritic_segment_t* segment, float dt_ms) {
-    // Guard: NULL segment
-    if (!segment) {
-        return;
-    }
-
-    // Leak current
-    float I_leak = -segment->voltage / segment->R_m;
-
-    // Axial current (simplified - from parent)
-    float I_axial = 0.0F;  // Would need parent reference for full implementation
-
-    // Active currents (if segment has active properties)
-    float I_active = 0.0F;
-    if (segment->has_active_properties && segment->voltage > 0.5F) {
-        // Simplified Hodgkin-Huxley
-        I_active = -segment->g_na * segment->voltage;  // Sodium
-        I_active += -segment->g_k * (segment->voltage + 0.012F);  // Potassium
-    }
-
-    // Total current
-    float I_total = I_leak + I_axial + I_active;
-
-    // Update voltage: dV/dt = I / C_m
-    float dV = (segment->C_m > 1e-10f) ? (I_total / segment->C_m) * (dt_ms / 1000.0F) : 0.0F;
-    segment->voltage += dV;
-    if (!isfinite(segment->voltage)) segment->voltage = 0.0F;
-
-    // Clamp voltage
-    if (segment->voltage < -0.080F) segment->voltage = -0.080F;  // -80 mV
-    if (segment->voltage > 0.040F) segment->voltage = 0.040F;    // +40 mV
 }
 
 /**
@@ -907,6 +1229,11 @@ void dendrite_induce_ltp(dendrite_t* dendrite, uint32_t spine_id, float magnitud
 
     nimcp_mutex_lock(&dendrite->lock);
 
+    if (spine_id >= dendrite->num_spines || !cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+
     dendritic_spine_t* spine = &dendrite->spines[spine_id];
 
     // Check calcium threshold
@@ -946,6 +1273,11 @@ void dendrite_induce_ltd(dendrite_t* dendrite, uint32_t spine_id, float magnitud
     }
 
     nimcp_mutex_lock(&dendrite->lock);
+
+    if (spine_id >= dendrite->num_spines || !cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
 
     dendritic_spine_t* spine = &dendrite->spines[spine_id];
 
@@ -994,6 +1326,11 @@ void dendrite_update_structural_plasticity(dendrite_t* dendrite, uint64_t timest
 
     nimcp_mutex_lock(&dendrite->lock);
 
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+
     // Check each spine for elimination
     for (uint32_t i = 0; i < dendrite->num_spines; i++) {
         dendritic_spine_t* spine = &dendrite->spines[i];
@@ -1010,7 +1347,9 @@ void dendrite_update_structural_plasticity(dendrite_t* dendrite, uint64_t timest
             // Gradual elimination
             spine->stability -= dendrite->structural_plasticity;
             if (spine->stability <= 0.0F) {
-                dendrite_remove_spine(dendrite, i);
+                // Already holding dendrite->lock: use the unlocked variant
+                // (the public one now locks).
+                dendrite_remove_spine_locked(dendrite, i);
                 dendrite->activity.spine_eliminations++;
             }
         }
@@ -1306,15 +1645,23 @@ dendrite_network_stats_t dendrite_network_get_stats(dendrite_network_t* network)
 // ============================================================================
 
 /**
- * WHAT: Calculate Mg²⁺ block factor
+ * WHAT: Calculate Mg²⁺ block factor (fraction of NMDA conductance unblocked)
  * WHY:  NMDA receptors are voltage-gated via Mg²⁺
- * HOW:  Boltzmann function: B(V) = 1 / (1 + [Mg]_o * exp(-0.062*V))
+ * HOW:  Jahr & Stevens (1990): B(V) = 1 / (1 + [Mg]_o/3.57 mM * exp(-0.062*V))
+ *       with V the ABSOLUTE membrane potential in mV (B(-70) ~ 0.04,
+ *       B(-20) ~ 0.5, B(0) ~ 0.78). (Previously V relative to rest and no
+ *       /3.57: B = 0.5 at rest.)
  */
-static float calculate_mg_block(float voltage_mv) {
-    if (!isfinite(voltage_mv)) return 0.0F;
-    float block = 1.0F / (1.0F + NMDA_MG_CONCENTRATION *
-                          expf(fminf(-NMDA_MG_BLOCK_CONSTANT * voltage_mv, 88.0f)));
+static float calculate_mg_block(float voltage_abs_mv) {
+    if (!isfinite(voltage_abs_mv)) return 0.0F;
+    float block = 1.0F / (1.0F + (NMDA_MG_CONCENTRATION / NMDA_MG_HALF_BLOCK_MM) *
+                          expf(fminf(-NMDA_MG_BLOCK_CONSTANT * voltage_abs_mv, 80.0f)));
     return isfinite(block) ? block : 0.0F;
+}
+
+/** Absolute membrane potential (mV) of a relative segment/spine voltage (V). */
+static inline float abs_mv(float v_rel_volts) {
+    return DENDRITE_E_REST_MV + v_rel_volts * 1000.0F;
 }
 
 bool dendrite_initiate_nmda_spike(dendrite_t* dendrite, uint32_t segment_id,
@@ -1325,34 +1672,35 @@ bool dendrite_initiate_nmda_spike(dendrite_t* dendrite, uint32_t segment_id,
         return false;
     }
 
+    nimcp_mutex_lock(&dendrite->lock);
+
     // Guard: Invalid segment
     if (segment_id >= dendrite->num_segments) {
+        nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_initiate_nmda_spike: segment_id out of range");
         return false;
     }
 
-    // Guard: Already in NMDA spike
+    // Guard: Already in NMDA spike (checked under the lock: no TOCTOU)
     if (dendrite->nmda_state.active) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_initiate_nmda_spike: NMDA spike already active");
+        nimcp_mutex_unlock(&dendrite->lock);
         return false;
     }
 
-    nimcp_mutex_lock(&dendrite->lock);
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_initiate_nmda_spike: CoW unshare failed");
+        return false;
+    }
+    flush_pending_locked(dendrite);
 
     dendritic_segment_t* segment = &dendrite->segments[segment_id];
 
-    // Check threshold conditions
-    float voltage_mv = segment->voltage * 1000.0F;  // Convert to mV
-    if (voltage_mv < NIMCP_NMDA_SPIKE_THRESHOLD_MV) {
+    // Check threshold conditions (depolarisation relative to rest, mV).
+    // Not reaching threshold is a normal outcome, not an error.
+    float depol_mv = segment->voltage * 1000.0F;
+    if (depol_mv < NIMCP_NMDA_SPIKE_THRESHOLD_MV || !segment->has_active_properties) {
         nimcp_mutex_unlock(&dendrite->lock);
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_initiate_nmda_spike: voltage below threshold");
-        return false;
-    }
-
-    // Check if segment has active properties
-    if (!segment->has_active_properties) {
-        nimcp_mutex_unlock(&dendrite->lock);
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_initiate_nmda_spike: segment lacks active properties");
         return false;
     }
 
@@ -1362,7 +1710,9 @@ bool dendrite_initiate_nmda_spike(dendrite_t* dendrite, uint32_t segment_id,
     dendrite->nmda_state.duration_remaining_ms = NIMCP_NMDA_PLATEAU_DURATION_MS;
     dendrite->nmda_state.peak_voltage_mv = NIMCP_NMDA_SPIKE_AMPLITUDE_MV;
     dendrite->nmda_state.segment_id = segment_id;
-    dendrite->nmda_state.mg_block_factor = calculate_mg_block(voltage_mv);
+    // Block at the plateau potential that the spike establishes
+    float plateau_rel_v = fmaxf(segment->voltage, NIMCP_NMDA_SPIKE_AMPLITUDE_MV / 1000.0F);
+    dendrite->nmda_state.mg_block_factor = calculate_mg_block(abs_mv(plateau_rel_v));
     dendrite->nmda_state.calcium_influx_rate =
         NMDA_CALCIUM_PERMEABILITY * dendrite->nmda_state.mg_block_factor;
 
@@ -1370,6 +1720,7 @@ bool dendrite_initiate_nmda_spike(dendrite_t* dendrite, uint32_t segment_id,
     segment->nmda_spike_active = true;
     segment->nmda_spike_voltage = NIMCP_NMDA_SPIKE_AMPLITUDE_MV / 1000.0F;
     segment->nmda_spike_remaining_ms = NIMCP_NMDA_PLATEAU_DURATION_MS;
+    segment->voltage = clamp_seg_voltage(fmaxf(segment->voltage, segment->nmda_spike_voltage));
 
     // Update dendrite state
     dendrite->state = DENDRITE_STATE_PLATEAU;
@@ -1386,10 +1737,16 @@ void dendrite_update_nmda_spike(dendrite_t* dendrite, float dt_ms) {
     // Guard: NULL dendrite
     if (!dendrite) return;
 
-    // Guard: No active NMDA spike
-    if (!dendrite->nmda_state.active) return;
-
     nimcp_mutex_lock(&dendrite->lock);
+
+    // Guard: No active NMDA spike (checked under the lock)
+    if (!dendrite->nmda_state.active ||
+        dendrite->nmda_state.segment_id >= dendrite->num_segments ||
+        !cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+    flush_pending_locked(dendrite);
 
     dendritic_segment_t* segment = &dendrite->segments[dendrite->nmda_state.segment_id];
 
@@ -1397,7 +1754,10 @@ void dendrite_update_nmda_spike(dendrite_t* dendrite, float dt_ms) {
     dendrite->nmda_state.duration_remaining_ms -= dt_ms;
     segment->nmda_spike_remaining_ms -= dt_ms;
 
-    // Calculate calcium influx
+    // Calcium influx through unblocked NMDA receptors at the current voltage
+    dendrite->nmda_state.mg_block_factor = calculate_mg_block(abs_mv(segment->voltage));
+    dendrite->nmda_state.calcium_influx_rate =
+        NMDA_CALCIUM_PERMEABILITY * dendrite->nmda_state.mg_block_factor;
     float ca_influx = dendrite->nmda_state.calcium_influx_rate * dt_ms;
     segment->calcium += ca_influx;
 
@@ -1407,9 +1767,9 @@ void dendrite_update_nmda_spike(dendrite_t* dendrite, float dt_ms) {
     }
 
     // Maintain plateau voltage (slight decay)
-    float decay_factor = expf(fminf(-dt_ms / (NIMCP_NMDA_PLATEAU_DURATION_MS * 2.0F), 88.0f));
+    float decay_factor = expf(fminf(-dt_ms / (NIMCP_NMDA_PLATEAU_DURATION_MS * 2.0F), 80.0f));
     segment->nmda_spike_voltage *= decay_factor;
-    segment->voltage = fmaxf(segment->voltage, segment->nmda_spike_voltage);
+    segment->voltage = clamp_seg_voltage(fmaxf(segment->voltage, segment->nmda_spike_voltage));
 
     // Check for termination
     if (dendrite->nmda_state.duration_remaining_ms <= 0.0F) {
@@ -1429,35 +1789,24 @@ bool dendrite_can_generate_nmda_spike(dendrite_t* dendrite, uint32_t segment_id)
     if (!dendrite) {
         return false;
     }
-    if (segment_id >= dendrite->num_segments) {
-        return false;
+
+    nimcp_mutex_lock(&dendrite->lock);
+    bool ok = false;
+    if (segment_id < dendrite->num_segments) {
+        dendritic_segment_t* segment = &dendrite->segments[segment_id];
+        // Deferred passive decay (if any) applied analytically for the read
+        float v = segment->voltage;
+        if (dendrite->pending_dt_ms > 0.0F) v *= expf(-dendrite->pending_dt_ms / segment_tau_ms(segment));
+        float depol_mv = v * 1000.0F;
+        ok = depol_mv >= NIMCP_NMDA_SPIKE_THRESHOLD_MV * 0.8F &&
+             segment->has_active_properties &&
+             !segment->nmda_spike_active &&
+             // Mg²⁺ block sufficiently relieved for a regenerative spike
+             // (B >= 0.10 at >= -54 mV absolute)
+             calculate_mg_block(abs_mv(v)) >= NMDA_MIN_UNBLOCK;
     }
-
-    dendritic_segment_t* segment = &dendrite->segments[segment_id];
-
-    // Check voltage threshold
-    float voltage_mv = segment->voltage * 1000.0F;
-    if (voltage_mv < NIMCP_NMDA_SPIKE_THRESHOLD_MV * 0.8F) {
-        return false;
-    }
-
-    // Check active properties
-    if (!segment->has_active_properties) {
-        return false;
-    }
-
-    // Check if already in NMDA spike
-    if (segment->nmda_spike_active) {
-        return false;
-    }
-
-    // Check Mg²⁺ block is sufficiently relieved
-    float mg_block = calculate_mg_block(voltage_mv);
-    if (mg_block < 0.5F) {
-        return false;
-    }
-
-    return true;
+    nimcp_mutex_unlock(&dendrite->lock);
+    return ok;
 }
 
 // ============================================================================
@@ -1468,17 +1817,23 @@ bool dendrite_initiate_bap(dendrite_t* dendrite, float amplitude_mv,
                             uint64_t timestamp) {
     // Guard: NULL dendrite
     if (!dendrite) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "dendrite_can_generate_nmda_spike: dendrite is NULL");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "dendrite_initiate_bap: dendrite is NULL");
         return false;
     }
-
-    // Guard: Already propagating
-    if (dendrite->bap_state.active) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_can_generate_nmda_spike: validation failed");
+    if (!isfinite(amplitude_mv)) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_initiate_bap: non-finite amplitude");
         return false;
     }
 
     nimcp_mutex_lock(&dendrite->lock);
+
+    // Guard: Already propagating (checked under the lock: no TOCTOU).
+    // A new AP during a propagating bAP is a normal event, not an error.
+    if (dendrite->bap_state.active || !cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return false;
+    }
+    flush_pending_locked(dendrite);
 
     // Initialize bAP state
     dendrite->bap_state.active = true;
@@ -1518,17 +1873,21 @@ void dendrite_update_bap(dendrite_t* dendrite, float dt_ms) {
     // Guard: NULL dendrite
     if (!dendrite) return;
 
-    // Guard: No active bAP
-    if (!dendrite->bap_state.active) return;
-
     nimcp_mutex_lock(&dendrite->lock);
+
+    // Guard: No active bAP (checked under the lock)
+    if (!dendrite->bap_state.active || !cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+    flush_pending_locked(dendrite);
 
     // Advance wavefront
     float distance_traveled = dendrite->bap_state.velocity_um_ms * dt_ms;
     dendrite->bap_state.wavefront_position_um += distance_traveled;
 
     // Attenuate amplitude
-    float attenuation = expf(fminf(-NIMCP_BAP_ATTENUATION_PER_UM * distance_traveled, 88.0f));
+    float attenuation = expf(fminf(-NIMCP_BAP_ATTENUATION_PER_UM * distance_traveled, 80.0f));
     dendrite->bap_state.current_amplitude_mv *= attenuation;
 
     // Update segments reached by wavefront
@@ -1547,22 +1906,27 @@ void dendrite_update_bap(dendrite_t* dendrite, float dt_ms) {
 
             // Calculate local amplitude with distance-based attenuation
             float local_attenuation = expf(fminf(-NIMCP_BAP_ATTENUATION_PER_UM *
-                                           segment->path_distance, 88.0f));
+                                           segment->path_distance, 80.0f));
 
             // Boost at distal segments with active properties
             if (segment->has_active_properties && segment->path_distance > 200.0F) {
                 local_attenuation *= BAP_NA_BOOST_FACTOR;
             }
 
+            // bap_amplitude in volts (relative to rest), like segment->voltage
             segment->bap_amplitude = (dendrite->bap_state.peak_amplitude_mv / 1000.0F) *
                                      local_attenuation;
 
-            // Inject calcium
-            segment->calcium += segment->bap_amplitude * BAP_CALCIUM_PER_MV *
-                                NIMCP_BAP_CALCIUM_FACTOR;
+            // Inject calcium: per mV of local bAP (was applied to volts ->
+            // 1000x too small)
+            float bap_mv = segment->bap_amplitude * 1000.0F;
+            if (bap_mv > 0.0F) {
+                segment->calcium += bap_mv * BAP_CALCIUM_PER_MV * NIMCP_BAP_CALCIUM_FACTOR;
+                if (segment->calcium > CALCIUM_BUFFER_CAPACITY) segment->calcium = CALCIUM_BUFFER_CAPACITY;
+            }
 
-            // Update segment voltage (transient)
-            segment->voltage = fmaxf(segment->voltage, segment->bap_amplitude);
+            // Update segment voltage (transient; decays with tau_m)
+            segment->voltage = clamp_seg_voltage(fmaxf(segment->voltage, segment->bap_amplitude));
 
             dendrite->bap_state.segments_reached++;
         }
@@ -1588,88 +1952,106 @@ bool dendrite_bap_reached_spine(dendrite_t* dendrite, uint32_t spine_id) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "dendrite_bap_reached_spine: dendrite is NULL");
         return false;
     }
-    if (spine_id >= dendrite->num_spines) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_bap_reached_spine: capacity exceeded");
-        return false;
+
+    nimcp_mutex_lock(&dendrite->lock);
+    bool reached = false;
+    if (spine_id < dendrite->num_spines) {
+        uint32_t segment_id = dendrite->spines[spine_id].segment_id;
+        if (segment_id < dendrite->num_segments) {
+            reached = dendrite->segments[segment_id].bap_reached;
+        }
     }
-
-    dendritic_spine_t* spine = &dendrite->spines[spine_id];
-    uint32_t segment_id = spine->segment_id;
-
-    if (segment_id >= dendrite->num_segments) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_bap_reached_spine: capacity exceeded");
-        return false;
-    }
-
-    return dendrite->segments[segment_id].bap_reached;
+    nimcp_mutex_unlock(&dendrite->lock);
+    return reached;
 }
 
 // ============================================================================
 // Inter-Segment Coupling (Cable Theory) Implementation
 // ============================================================================
 
+/**
+ * WHAT: Axial current flow between connected compartments
+ * WHY:  Cable coupling between segments
+ * HOW:  Coupling conductance between a segment and its parent (centre to
+ *       centre) g = 1 / (R_a,child/2 + R_a,parent/2), in nS. Each
+ *       parent-child pair relaxes exactly towards its capacitance-weighted
+ *       mean: dV_diff decays as exp(-g (1/C1 + 1/C2) dt). Charge-conserving
+ *       and unconditionally stable. (Previously nS*V / μF was integrated
+ *       with forward Euler: 1000x unit error, and coupling time constants
+ *       of ~0.1 ms with dt = 1 ms made it blow up into the clamps.)
+ *       I_axial_parent / I_axial_children record the currents (pA) at the
+ *       start of the step. NOTE: dendrite_compute_somatic_current() applies
+ *       analytic cable attenuation to each segment; combining it with
+ *       explicit axial coupling counts the cable twice for distal inputs.
+ */
 void dendrite_update_axial_currents(dendrite_t* dendrite, float dt_ms) {
     // Guard: NULL dendrite
     if (!dendrite) return;
+    if (!(dt_ms > 0.0F) || !isfinite(dt_ms)) return;
 
     nimcp_mutex_lock(&dendrite->lock);
 
-    // First pass: Calculate axial conductances and currents
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+    flush_pending_locked(dendrite);
+
+    // First pass: conductances and (diagnostic) currents
     for (uint32_t i = 0; i < dendrite->num_segments; i++) {
         dendritic_segment_t* segment = &dendrite->segments[i];
-
-        // Reset axial currents
         segment->I_axial_parent = 0.0F;
         segment->I_axial_children = 0.0F;
-
-        // Calculate axial conductance: g = pi * d^2 / (4 * Ra * L)
-        float radius_cm = (segment->diameter / 2.0F) * 1e-4F;
-        float length_cm = segment->length * 1e-4F;
-        segment->g_axial = (M_PI * radius_cm * radius_cm) /
-                           (DENDRITE_R_A * length_cm) * 1e9F;  // Convert to nS
-
-        // Current from parent
-        if (segment->parent_segment < dendrite->num_segments) {
+        segment->g_axial = 0.0F;
+        if (segment->parent_segment < dendrite->num_segments && segment->parent_segment != i) {
             dendritic_segment_t* parent = &dendrite->segments[segment->parent_segment];
-
-            float V_diff = parent->voltage - segment->voltage;
-            segment->I_axial_parent = segment->g_axial * V_diff;
-        }
-
-        // Current from children
-        for (uint32_t c = 0; c < segment->num_children; c++) {
-            uint32_t child_id = segment->child_segments[c];
-            if (child_id < dendrite->num_segments) {
-                dendritic_segment_t* child = &dendrite->segments[child_id];
-
-                float V_diff = child->voltage - segment->voltage;
-                segment->I_axial_children += child->g_axial * V_diff;
-            }
+            float r_ohm = 0.5F * segment->R_a + 0.5F * parent->R_a;
+            segment->g_axial = (r_ohm > 0.0F) ? 1e9F / r_ohm : 0.0F;   // nS
         }
     }
-
-    // Second pass: Apply axial currents to voltage
     for (uint32_t i = 0; i < dendrite->num_segments; i++) {
         dendritic_segment_t* segment = &dendrite->segments[i];
+        if (segment->g_axial <= 0.0F) continue;
+        dendritic_segment_t* parent = &dendrite->segments[segment->parent_segment];
+        float i_pa = segment->g_axial * (parent->voltage - segment->voltage) * 1000.0F;  // nS*mV = pA
+        segment->I_axial_parent += i_pa;
+        parent->I_axial_children -= i_pa;
+    }
 
-        float I_total_axial = segment->I_axial_parent + segment->I_axial_children;
-
-        // dV = I * dt / C
-        float dV = (I_total_axial / segment->C_m) * (dt_ms / 1000.0F);
-        segment->voltage += dV;
-
-        // Clamp voltage
-        segment->voltage = fmaxf(-0.080F, fminf(0.040F, segment->voltage));
+    // Second pass: exact pairwise relaxation (operator splitting over edges)
+    for (uint32_t i = 0; i < dendrite->num_segments; i++) {
+        dendritic_segment_t* seg = &dendrite->segments[i];
+        if (seg->g_axial <= 0.0F) continue;
+        dendritic_segment_t* par = &dendrite->segments[seg->parent_segment];
+        float c1 = segment_cap_pf(seg), c2 = segment_cap_pf(par);
+        if (!(c1 > 0.0F) || !(c2 > 0.0F)) continue;
+        // g[nS] / C[pF] = 1/ms
+        float k = seg->g_axial * (1.0F / c1 + 1.0F / c2);
+        float v_mean = (c1 * seg->voltage + c2 * par->voltage) / (c1 + c2);
+        float diff = (seg->voltage - par->voltage) * expf(-fminf(k * dt_ms, 80.0F));
+        // seg - par = diff ; c1*seg + c2*par = (c1+c2)*v_mean
+        seg->voltage = clamp_seg_voltage(v_mean + diff * c2 / (c1 + c2));
+        par->voltage = clamp_seg_voltage(v_mean - diff * c1 / (c1 + c2));
     }
 
     nimcp_mutex_unlock(&dendrite->lock);
 }
 
+static float dendrite_calculate_rall_ratio_locked(dendrite_t* dendrite, uint32_t segment_id);
+
 float dendrite_calculate_rall_ratio(dendrite_t* dendrite, uint32_t segment_id) {
     // Guard clauses
     if (!dendrite) return 0.0F;
-    if (segment_id >= dendrite->num_segments) return 0.0F;
+    nimcp_mutex_lock(&dendrite->lock);
+    float ratio = 0.0F;
+    if (segment_id < dendrite->num_segments && cow_unshare_locked(dendrite)) {
+        ratio = dendrite_calculate_rall_ratio_locked(dendrite, segment_id);
+    }
+    nimcp_mutex_unlock(&dendrite->lock);
+    return ratio;
+}
 
+static float dendrite_calculate_rall_ratio_locked(dendrite_t* dendrite, uint32_t segment_id) {
     dendritic_segment_t* segment = &dendrite->segments[segment_id];
 
     // No children = no branching
@@ -1727,7 +2109,9 @@ void dendrite_detect_spine_clusters(dendrite_t* dendrite, uint64_t timestamp) {
             uint32_t spine_id = segment->spine_ids[sp_i];
             if (spine_id < dendrite->num_spines) {
                 dendritic_spine_t* spine = &dendrite->spines[spine_id];
-                if (timestamp - spine->last_input_time < window_us) {
+                if (spine->state != SPINE_STATE_ELIMINATED && spine->total_inputs > 0 &&
+                    timestamp >= spine->last_input_time &&
+                    timestamp - spine->last_input_time < window_us) {
                     active_spines[num_active++] = spine_id;
                 }
             }
@@ -1738,11 +2122,14 @@ void dendrite_detect_spine_clusters(dendrite_t* dendrite, uint64_t timestamp) {
 
         // Simple clustering: all active spines on same segment form a cluster
         // (More sophisticated spatial clustering could use actual positions)
-        if (dendrite->num_clusters < 32) {
+        // Bounds follow the tier-optimised array sizes (previously hard-coded
+        // 32 clusters / 16 spines: overflowed on tiers with smaller arrays)
+        if (dendrite->num_clusters < (uint32_t)NIMCP_HISTORY_SIZE_MEDIUM) {
             spine_cluster_t* cluster = &dendrite->clusters[dendrite->num_clusters];
 
             cluster->segment_id = seg_i;
-            cluster->num_spines = (num_active > 16) ? 16 : num_active;
+            cluster->num_spines = (num_active > (uint32_t)NIMCP_MAX_SPINE_IDS) ?
+                                  (uint32_t)NIMCP_MAX_SPINE_IDS : num_active;
 
             for (uint32_t i = 0; i < cluster->num_spines; i++) {
                 cluster->spine_ids[i] = active_spines[i];
@@ -1758,7 +2145,8 @@ void dendrite_detect_spine_clusters(dendrite_t* dendrite, uint64_t timestamp) {
                 cluster->total_input += dendrite->spines[spine_id].voltage;
             }
 
-            // Check NMDA spike eligibility
+            // Check NMDA spike eligibility (segment voltage in volts rel.
+            // to rest: half of the spike threshold)
             cluster->nmda_spike_eligible =
                 (cluster->num_spines >= NIMCP_CLUSTER_MIN_SPINES) &&
                 (segment->voltage > NIMCP_NMDA_SPIKE_THRESHOLD_MV / 2000.0F);
@@ -1773,7 +2161,12 @@ void dendrite_detect_spine_clusters(dendrite_t* dendrite, uint64_t timestamp) {
 float dendrite_apply_cluster_boost(dendrite_t* dendrite, uint32_t cluster_id) {
     // Guard clauses
     if (!dendrite) return 0.0F;
-    if (cluster_id >= dendrite->num_clusters) return 0.0F;
+
+    nimcp_mutex_lock(&dendrite->lock);
+    if (cluster_id >= dendrite->num_clusters) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return 0.0F;
+    }
 
     spine_cluster_t* cluster = &dendrite->clusters[cluster_id];
 
@@ -1787,8 +2180,10 @@ float dendrite_apply_cluster_boost(dendrite_t* dendrite, uint32_t cluster_id) {
     }
 
     cluster->nonlinear_output = cluster->total_input * boost_factor;
+    float out = cluster->nonlinear_output;
 
-    return cluster->nonlinear_output;
+    nimcp_mutex_unlock(&dendrite->lock);
+    return out;
 }
 
 // ============================================================================
@@ -1832,7 +2227,9 @@ void dendrite_stdp_pre_spike(dendrite_t* dendrite, uint32_t spine_id,
     if (!dendrite) return;
     if (spine_id >= dendrite->num_spines) return;
     nimcp_mutex_lock(&dendrite->lock);
-    dendrite_stdp_pre_spike_unlocked(dendrite, spine_id, timestamp);
+    if (cow_unshare_locked(dendrite)) {
+        dendrite_stdp_pre_spike_unlocked(dendrite, spine_id, timestamp);
+    }
     nimcp_mutex_unlock(&dendrite->lock);
 }
 
@@ -1841,6 +2238,11 @@ void dendrite_stdp_post_spike(dendrite_t* dendrite, uint64_t timestamp) {
     if (!dendrite) return;
 
     nimcp_mutex_lock(&dendrite->lock);
+
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
 
     // Update all spines with postsynaptic spike
     for (uint32_t i = 0; i < dendrite->num_spines; i++) {
@@ -1877,6 +2279,11 @@ void dendrite_stdp_apply_weight_changes(dendrite_t* dendrite) {
     if (!dendrite) return;
 
     nimcp_mutex_lock(&dendrite->lock);
+
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
 
     for (uint32_t i = 0; i < dendrite->num_spines; i++) {
         dendritic_spine_t* spine = &dendrite->spines[i];
@@ -1933,13 +2340,20 @@ bool dendrite_create_spine_pool(dendrite_t* dendrite, uint32_t capacity) {
         return false;
     }
 
-    // Guard: Already has pool
-    if (dendrite->spine_pool) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_create_spine_pool: validation failed");
+    // Guard: zero capacity (bitmap/modulo arithmetic below needs >= 1)
+    if (capacity == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_create_spine_pool: capacity is zero");
         return false;
     }
 
     nimcp_mutex_lock(&dendrite->lock);
+
+    // Guard: Already has pool (checked under the lock)
+    if (dendrite->spine_pool) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "dendrite_create_spine_pool: pool already exists");
+        return false;
+    }
 
     // Allocate pool structure
     dendrite->spine_pool = (dendrite_spine_pool_t*)nimcp_calloc(
@@ -2072,6 +2486,74 @@ void dendrite_pool_free_spine(dendrite_t* dendrite, dendritic_spine_t* spine) {
 // Copy-on-Write (CoW) Implementation
 // ============================================================================
 
+/*
+ * CoW model (fixed 2026-11): every handle (original or copy) is an
+ * independently owned dendrite_t. Handles created by dendrite_cow_copy()
+ * share the segment and spine arrays; sharers hold a pointer to one heap
+ * counter (cow_shared_refs, atomically updated) of how many handles share
+ * those arrays. Every API that writes segment/spine state first calls
+ * cow_unshare_locked(), which gives the handle private arrays, so shared
+ * arrays are immutable while shared. dendrite_destroy() / dendrite_cow_release()
+ * drop one handle and free the arrays only when the last sharer goes.
+ *
+ * Previously: the copy got cow_ref_count = 1, so its prepare_write was a
+ * no-op and writes (including realloc in add_spine/add_branch) went to the
+ * shared arrays; destroying either handle freed arrays still used by the
+ * other (use-after-free / double free); the spine pool pointer was shared
+ * too.
+ */
+
+/* Caller holds dendrite->lock. Returns false on OOM (arrays stay shared and
+ * must not be written). */
+static bool cow_unshare_locked(dendrite_t* dendrite) {
+    uint32_t* refs = dendrite->cow_shared_refs;
+    if (!refs) return true;
+
+    if (__atomic_load_n(refs, __ATOMIC_ACQUIRE) <= 1U) {
+        // Sole remaining holder (new sharers can only be created from a
+        // handle under its own lock, i.e. ours): take exclusive ownership.
+        nimcp_free(refs);
+        dendrite->cow_shared_refs = NULL;
+        dendrite->cow_ref_count = 1;
+        return true;
+    }
+
+    dendritic_segment_t* new_segments = NULL;
+    dendritic_spine_t* new_spines = NULL;
+    if (dendrite->segments && dendrite->num_segments > 0) {
+        new_segments = (dendritic_segment_t*)nimcp_malloc(
+            dendrite->num_segments * sizeof(dendritic_segment_t));
+        if (!new_segments) return false;
+        memcpy(new_segments, dendrite->segments,
+               dendrite->num_segments * sizeof(dendritic_segment_t));
+    }
+    if (dendrite->spines && dendrite->num_spines > 0) {
+        new_spines = (dendritic_spine_t*)nimcp_malloc(
+            dendrite->num_spines * sizeof(dendritic_spine_t));
+        if (!new_spines) {
+            nimcp_free(new_segments);
+            return false;
+        }
+        memcpy(new_spines, dendrite->spines,
+               dendrite->num_spines * sizeof(dendritic_spine_t));
+    }
+
+    dendritic_segment_t* old_segments = dendrite->segments;
+    dendritic_spine_t* old_spines = dendrite->spines;
+    dendrite->segments = new_segments;
+    dendrite->spines = new_spines;
+    dendrite->cow_shared_refs = NULL;
+    dendrite->cow_ref_count = 1;
+
+    if (__atomic_sub_fetch(refs, 1U, __ATOMIC_ACQ_REL) == 0) {
+        // Every other sharer unshared concurrently: old arrays are orphaned
+        nimcp_free(old_segments);
+        nimcp_free(old_spines);
+        nimcp_free(refs);
+    }
+    return true;
+}
+
 dendrite_t* dendrite_cow_copy(dendrite_t* dendrite) {
     // Guard: NULL dendrite
     if (!dendrite) {
@@ -2081,35 +2563,42 @@ dendrite_t* dendrite_cow_copy(dendrite_t* dendrite) {
 
     nimcp_mutex_lock(&dendrite->lock);
 
-    // Increment reference count
-    dendrite->cow_ref_count++;
-
-    // Create shallow copy (shares data)
     dendrite_t* copy = (dendrite_t*)nimcp_calloc(1, sizeof(dendrite_t));
     if (!copy) {
-        dendrite->cow_ref_count--;
         nimcp_mutex_unlock(&dendrite->lock);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_cow_copy: copy is NULL");
         return NULL;
     }
 
-    // Copy header data
+    if (!dendrite->cow_shared_refs) {
+        dendrite->cow_shared_refs = (uint32_t*)nimcp_malloc(sizeof(uint32_t));
+        if (!dendrite->cow_shared_refs) {
+            nimcp_free(copy);
+            nimcp_mutex_unlock(&dendrite->lock);
+            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_cow_copy: refcount alloc failed");
+            return NULL;
+        }
+        __atomic_store_n(dendrite->cow_shared_refs, 1U, __ATOMIC_RELEASE);
+    }
+    uint32_t sharers = __atomic_add_fetch(dendrite->cow_shared_refs, 1U, __ATOMIC_ACQ_REL);
+
+    // Copy header data; segment/spine arrays are shared (shallow)
     memcpy(copy, dendrite, sizeof(dendrite_t));
 
-    // Share segment and spine arrays (shallow)
-    // These will be copied on first write
+    // The spine pool is owned by the original only
+    copy->spine_pool = NULL;
+    copy->use_spine_pool = false;
 
-    // Initialize copy's lock
+    // Fresh lock for the copy (the memcpy'd mutex bytes are not a valid mutex)
     nimcp_mutex_init(&copy->lock, NULL);
 
-    // Mark as shared (not modified)
     copy->cow_modified = false;
-    copy->cow_ref_count = 1;
+    copy->cow_ref_count = sharers;      // informational: handles sharing arrays
+    dendrite->cow_ref_count = sharers;
 
     nimcp_mutex_unlock(&dendrite->lock);
 
-    LOG_DEBUG(LOG_MODULE, "dendrite_cow_copy: CoW copy created (ref=%u)",
-              dendrite->cow_ref_count);
+    LOG_DEBUG(LOG_MODULE, "dendrite_cow_copy: CoW copy created (sharers=%u)", sharers);
 
     return copy;
 }
@@ -2122,170 +2611,220 @@ bool dendrite_cow_prepare_write(dendrite_t* dendrite) {
     }
 
     nimcp_mutex_lock(&dendrite->lock);
-
-    // If already exclusive owner, no copy needed
-    if (dendrite->cow_ref_count <= 1 || dendrite->cow_modified) {
-        dendrite->cow_modified = true;
-        nimcp_mutex_unlock(&dendrite->lock);
-        return true;
-    }
-
-    // Need to make a deep copy of shared data
-    // Copy segments
-    dendritic_segment_t* new_segments = NULL;
-    if (dendrite->segments && dendrite->num_segments > 0) {
-        new_segments = (dendritic_segment_t*)nimcp_malloc(
-            dendrite->num_segments * sizeof(dendritic_segment_t)
-        );
-        if (new_segments) {
-            memcpy(new_segments, dendrite->segments,
-                   dendrite->num_segments * sizeof(dendritic_segment_t));
-        }
-    }
-
-    // Copy spines
-    dendritic_spine_t* new_spines = NULL;
-    if (dendrite->spines && dendrite->num_spines > 0 && !dendrite->use_spine_pool) {
-        new_spines = (dendritic_spine_t*)nimcp_malloc(
-            dendrite->num_spines * sizeof(dendritic_spine_t)
-        );
-        if (!new_spines && new_segments) {
-            // BUGFIX: Free new_segments if new_spines allocation fails
-            nimcp_free(new_segments);
-            nimcp_mutex_unlock(&dendrite->lock);
-            LOG_ERROR(LOG_MODULE, "dendrite_cow_prepare_write: Failed to allocate spines copy");
-            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_cow_prepare_write: new_spines is NULL");
-            return false;
-        }
-        if (new_spines) {
-            memcpy(new_spines, dendrite->spines,
-                   dendrite->num_spines * sizeof(dendritic_spine_t));
-        }
-    }
-
-    // Apply the copies after both allocations succeed
-    if (new_segments) {
-        dendrite->segments = new_segments;
-    }
-    if (new_spines) {
-        dendrite->spines = new_spines;
-    }
-
-    dendrite->cow_modified = true;
-    dendrite->cow_ref_count = 1;
-
+    bool ok = cow_unshare_locked(dendrite);
+    if (ok) dendrite->cow_modified = true;
     nimcp_mutex_unlock(&dendrite->lock);
 
-    LOG_DEBUG(LOG_MODULE, "dendrite_cow_prepare_write: Deep copy made");
-
-    return true;
+    if (!ok) {
+        LOG_ERROR(LOG_MODULE, "dendrite_cow_prepare_write: Failed to allocate private copy");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "dendrite_cow_prepare_write: unshare failed");
+    }
+    return ok;
 }
 
+/**
+ * Drop this handle. Arrays shared with other CoW handles survive until the
+ * last sharer is released/destroyed. Equivalent to dendrite_destroy().
+ */
 void dendrite_cow_release(dendrite_t* dendrite) {
     // Guard: NULL dendrite
     if (!dendrite) return;
-
-    nimcp_mutex_lock(&dendrite->lock);
-
-    if (dendrite->cow_ref_count > 0) {
-        dendrite->cow_ref_count--;
-    }
-
-    if (dendrite->cow_ref_count == 0) {
-        nimcp_mutex_unlock(&dendrite->lock);
-        // Last reference - full cleanup
-        dendrite_destroy(dendrite);
-        return;
-    }
-
-    nimcp_mutex_unlock(&dendrite->lock);
+    dendrite_destroy(dendrite);
 }
 
 // ============================================================================
 // Spine-Level Input Processing Implementation
 // ============================================================================
 
+/*
+ * Spine synapse model (fixed 2026-11; previously g_ampa/g_nmda were never
+ * raised, so every spine returned 0 pA):
+ *
+ *   Presynaptic input x >= 0 (1.0 = one release event; graded values for
+ *   graded release) opens conductances in proportion to weight * x:
+ *     g_ampa += 0.5  nS * w * x * (AMPA receptors / 100)   tau 2 ms
+ *     g_nmda += 0.25 nS * w * x * (NMDA receptors / 20)    tau 100 ms
+ *   (each capped at 20 nS). Synaptic current (pA, + = depolarising):
+ *     I = g_ampa (E - V_h) + g_nmda B(V_h) (E - V_h) + g_gaba (E_gaba - V_h)
+ *   E = 0 mV abs; B = Jahr-Stevens Mg²⁺ block at the absolute head voltage.
+ *   The head is coupled to the dendrite through the neck resistance (head
+ *   RC ~ 1 μs, i.e. quasi-static): V_h = V_seg + I * R_neck, solved by
+ *   fixed-point iteration. spine->voltage = V_h (volts, rel. to rest).
+ */
+
+typedef struct {
+    float i_total;   // pA
+    float i_nmda;    // pA
+    float v_head;    // mV rel. to rest
+} spine_current_t;
+
+/* Caller holds dendrite->lock. v_seg_mv: segment voltage, mV rel. to rest. */
+static spine_current_t spine_current_locked(const dendritic_spine_t* spine, float v_seg_mv) {
+    spine_current_t r = {0.0F, 0.0F, v_seg_mv};
+    float gA = spine->g_ampa, gN = spine->g_nmda, gG = spine->g_gaba;
+    if (!(gA > 0.0F) && !(gN > 0.0F) && !(gG > 0.0F)) return r;
+    float rn = spine->neck_resistance > 0.0F ? spine->neck_resistance * 1e-3F : 0.0F; // MΩ->(mV per pA)
+    float vh = v_seg_mv;
+    float B = 0.0F;
+    for (int it = 0; it < 4; it++) {
+        B = calculate_mg_block(DENDRITE_E_REST_MV + vh);
+        float g_exc = gA + gN * B;               // nS
+        float g_all = g_exc + gG;
+        float drive = g_exc * DENDRITE_E_EXC_REL_MV + gG * DENDRITE_E_GABA_REL_MV; // nS*mV
+        // I = drive - g_all*V_h, V_h = V_seg + I*rn  ->  I = (drive - g_all V_seg) / (1 + g_all rn)
+        float I = (drive - g_all * v_seg_mv) / (1.0F + g_all * rn);
+        vh = v_seg_mv + I * rn;
+        r.i_total = I;
+    }
+    r.i_nmda = gN * B * (DENDRITE_E_EXC_REL_MV - vh);
+    r.v_head = vh;
+    if (!isfinite(r.i_total)) { r.i_total = 0.0F; r.i_nmda = 0.0F; r.v_head = v_seg_mv; }
+    return r;
+}
+
+/* Segment voltage (mV rel. to rest) with any deferred passive decay applied. */
+static float spine_segment_mv_locked(dendrite_t* dendrite, const dendritic_spine_t* spine) {
+    if (spine->segment_id >= dendrite->num_segments) return 0.0F;
+    return dendrite->segments[spine->segment_id].voltage * 1000.0F;
+}
+
 float dendrite_spine_process_input(dendrite_t* dendrite, uint32_t spine_id,
                                     float current, uint64_t timestamp) {
     // Guard clauses
     if (!dendrite) return 0.0F;
-    if (spine_id >= dendrite->num_spines) return 0.0F;
 
     nimcp_mutex_lock(&dendrite->lock);
 
+    if (spine_id >= dendrite->num_spines || !cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return 0.0F;
+    }
+    flush_pending_locked(dendrite);
+
     dendritic_spine_t* spine = &dendrite->spines[spine_id];
+    if (spine->state == SPINE_STATE_ELIMINATED) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return 0.0F;
+    }
+
+    float x = (isfinite(current) && current > 0.0F) ? current : 0.0F;
+
+    // Event-driven kinetics: when nobody calls dendrite_update_spine_conductances(),
+    // decay the conductances / Ca²⁺ over the time since this spine's last input.
+    if (!dendrite->spine_kinetics_stepped && spine->total_inputs > 0 &&
+        timestamp > spine->last_input_time) {
+        float el_ms = (float)(timestamp - spine->last_input_time) * 1e-3F;
+        spine->g_ampa *= expf(-fminf(el_ms / SPINE_TAU_AMPA_MS, 80.0F));
+        spine->g_nmda *= expf(-fminf(el_ms / SPINE_TAU_NMDA_MS, 80.0F));
+        spine->g_gaba *= expf(-fminf(el_ms / SPINE_TAU_GABA_MS, 80.0F));
+        spine->calcium *= expf(-fminf(el_ms / CALCIUM_DECAY_TAU, 80.0F));
+    }
 
     // Update input timing
     spine->last_input_time = timestamp;
     spine->total_inputs++;
 
-    // Spine neck RC filtering
-    // Time constant: tau = R_neck * C_head
-    float tau_ms = spine->neck_resistance * spine->head_capacitance * 1e-6F;  // Convert fF to pF
-    if (tau_ms < 0.1F) tau_ms = 0.1F;
+    // Open receptors in proportion to weight x input
+    float w = spine->synaptic_weight > 0.0F ? spine->synaptic_weight : 0.0F;
+    float ampa_scale = spine->ampa_receptors / SPINE_AMPA_RECEPTORS_REF;
+    float nmda_scale = spine->nmda_receptors / SPINE_NMDA_RECEPTORS_REF;
+    if (!(ampa_scale > 0.0F)) ampa_scale = 0.0F;
+    if (!(nmda_scale > 0.0F)) nmda_scale = 0.0F;
+    float dgN = SPINE_G_NMDA_PER_INPUT_NS * w * x * nmda_scale;
+    spine->g_ampa = fminf(spine->g_ampa + SPINE_G_AMPA_PER_INPUT_NS * w * x * ampa_scale, SPINE_G_MAX_NS);
+    spine->g_nmda = fminf(spine->g_nmda + dgN, SPINE_G_MAX_NS);
 
-    // Simple first-order filter
-    float alpha = 0.1F;  // Integration rate
-    spine->voltage = (1.0F - alpha) * spine->voltage + alpha * (current * spine->neck_resistance * 1e-6F);
-    if (!isfinite(spine->voltage)) spine->voltage = 0.0F;
+    spine_current_t sc = spine_current_locked(spine, spine_segment_mv_locked(dendrite, spine));
+    spine->voltage = sc.v_head * 1e-3F;
 
-    // AMPA receptor activation
-    float I_ampa = spine->g_ampa * spine->ampa_receptors * spine->voltage;
-
-    // NMDA receptor activation (voltage-dependent via Mg block)
-    float mg_block = calculate_mg_block(spine->voltage * 1000.0F);
-    float I_nmda = spine->g_nmda * spine->nmda_receptors * spine->voltage * mg_block;
-
-    // Calcium influx (primarily through NMDA)
-    spine->calcium += I_nmda * 0.01F * mg_block;
+    // Event-driven mode: charge the expected NMDA Ca²⁺ of this release now
+    // (stepped mode integrates it continuously instead).
+    if (!dendrite->spine_kinetics_stepped && dgN > 0.0F) {
+        float B = calculate_mg_block(DENDRITE_E_REST_MV + sc.v_head);
+        float q_fc = dgN * B * (DENDRITE_E_EXC_REL_MV - sc.v_head) * SPINE_TAU_NMDA_MS; // nS*mV*ms = fC
+        if (q_fc > 0.0F) spine->calcium += q_fc * SPINE_CA_UM_PER_FC_NMDA;
+    }
     if (spine->calcium > CALCIUM_BUFFER_CAPACITY) {
         spine->calcium = CALCIUM_BUFFER_CAPACITY;
     }
 
-    // Total current delivered to dendrite (attenuated by neck)
-    float I_dendrite = (I_ampa + I_nmda) / spine->neck_resistance * 1e6F;
-
-    // Apply synaptic weight
-    I_dendrite *= spine->synaptic_weight;
-
     // Register pre-spike for STDP (use unlocked variant - we already hold dendrite->lock)
-    dendrite_stdp_pre_spike_unlocked(dendrite, spine_id, timestamp);
+    if (x > 0.0F) {
+        dendrite_stdp_pre_spike_unlocked(dendrite, spine_id, timestamp);
+    }
 
     nimcp_mutex_unlock(&dendrite->lock);
 
-    return I_dendrite;
+    return sc.i_total;
 }
 
+/*
+ * Time-stepped spine kinetics: for each spine, the synaptic charge delivered
+ * during dt (exact integral of the exponentially decaying conductances at the
+ * start-of-step driving force) is deposited on the parent segment's membrane
+ * capacitance (dV[mV] = Q[fC] / C[pF]); NMDA charge loads spine Ca²⁺; then the
+ * conductances decay. Call before dendrite_step(dt) each step. Once called,
+ * dendrite_spine_process_input() leaves decay to this function.
+ */
 void dendrite_update_spine_conductances(dendrite_t* dendrite, float dt_ms) {
     // Guard: NULL dendrite
     if (!dendrite) return;
+    if (!(dt_ms > 0.0F) || !isfinite(dt_ms)) return;
 
     nimcp_mutex_lock(&dendrite->lock);
 
-    // Time constants for receptor kinetics
-    const float tau_ampa = 2.0F;   // AMPA decay (ms)
-    const float tau_nmda = 100.0F; // NMDA decay (ms)
-    const float tau_gaba = 6.0F;   // GABA decay (ms)
+    if (!cow_unshare_locked(dendrite)) {
+        nimcp_mutex_unlock(&dendrite->lock);
+        return;
+    }
+    flush_pending_locked(dendrite);
+    dendrite->spine_kinetics_stepped = true;
 
-    float decay_ampa = expf(fminf(-dt_ms / tau_ampa, 88.0f));
-    float decay_nmda = expf(fminf(-dt_ms / tau_nmda, 88.0f));
-    float decay_gaba = expf(fminf(-dt_ms / tau_gaba, 88.0f));
+    float decay_ampa = expf(fminf(-dt_ms / SPINE_TAU_AMPA_MS, 80.0f));
+    float decay_nmda = expf(fminf(-dt_ms / SPINE_TAU_NMDA_MS, 80.0f));
+    float decay_gaba = expf(fminf(-dt_ms / SPINE_TAU_GABA_MS, 80.0f));
+    float decay_ca = expf(fminf(-dt_ms / CALCIUM_DECAY_TAU, 80.0f));
+    // Effective time a conductance is "on" during dt: tau (1 - exp(-dt/tau))
+    float teff_ampa = SPINE_TAU_AMPA_MS * (1.0F - decay_ampa);
+    float teff_nmda = SPINE_TAU_NMDA_MS * (1.0F - decay_nmda);
+    float teff_gaba = SPINE_TAU_GABA_MS * (1.0F - decay_gaba);
 
     for (uint32_t i = 0; i < dendrite->num_spines; i++) {
         dendritic_spine_t* spine = &dendrite->spines[i];
+        if (spine->state == SPINE_STATE_ELIMINATED) continue;
+
+        if (spine->g_ampa > 1e-9F || spine->g_nmda > 1e-9F || spine->g_gaba > 1e-9F) {
+            float v_seg = spine_segment_mv_locked(dendrite, spine);
+            spine_current_t sc = spine_current_locked(spine, v_seg);
+            float vh = sc.v_head;
+            float B = calculate_mg_block(DENDRITE_E_REST_MV + vh);
+            float q_nmda = spine->g_nmda * B * (DENDRITE_E_EXC_REL_MV - vh) * teff_nmda;  // fC
+            float q = spine->g_ampa * (DENDRITE_E_EXC_REL_MV - vh) * teff_ampa + q_nmda +
+                      spine->g_gaba * (DENDRITE_E_GABA_REL_MV - vh) * teff_gaba;
+            if (spine->segment_id < dendrite->num_segments && isfinite(q)) {
+                dendritic_segment_t* seg = &dendrite->segments[spine->segment_id];
+                float c_pf = segment_cap_pf(seg);
+                if (c_pf > 1e-9F) {
+                    float v_new_mv = seg->voltage * 1000.0F + q / c_pf;
+                    // A synaptic current cannot drive past its reversal potential
+                    if (q > 0.0F && v_new_mv > DENDRITE_E_EXC_REL_MV) v_new_mv = fmaxf(DENDRITE_E_EXC_REL_MV, seg->voltage * 1000.0F);
+                    seg->voltage = clamp_seg_voltage(v_new_mv * 1e-3F);
+                }
+            }
+            if (q_nmda > 0.0F && isfinite(q_nmda)) spine->calcium += q_nmda * SPINE_CA_UM_PER_FC_NMDA;
+            spine->voltage = vh * 1e-3F;
+        } else {
+            spine->voltage = spine_segment_mv_locked(dendrite, spine) * 1e-3F;
+        }
 
         // Decay conductances
         spine->g_ampa *= decay_ampa;
         spine->g_nmda *= decay_nmda;
         spine->g_gaba *= decay_gaba;
 
-        // Decay voltage
-        float tau_voltage = spine->neck_resistance * spine->head_capacitance * 1e-6F;
-        if (tau_voltage < 0.1F) tau_voltage = 0.1F;
-        spine->voltage *= expf(fminf(-dt_ms / tau_voltage, 88.0f));
-
         // Decay calcium
-        spine->calcium *= expf(fminf(-dt_ms / CALCIUM_DECAY_TAU, 88.0f));
+        spine->calcium *= decay_ca;
+        if (spine->calcium > CALCIUM_BUFFER_CAPACITY) spine->calcium = CALCIUM_BUFFER_CAPACITY;
     }
 
     nimcp_mutex_unlock(&dendrite->lock);

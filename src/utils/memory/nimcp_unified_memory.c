@@ -178,6 +178,8 @@ struct unified_mem_handle_struct {
 
     // Linked list
     struct unified_mem_handle_struct* next;
+    struct unified_mem_handle_struct* prev;   /* doubly linked: O(1) removal (2026-11-23) */
+    bool in_list;                             /* on manager->handles */
 };
 
 /**
@@ -375,8 +377,11 @@ static void add_handle_to_list(
     unified_mem_manager_t manager,
     unified_mem_handle_t handle
 ) {
+    handle->prev = NULL;
     handle->next = manager->handles;
+    if (manager->handles) manager->handles->prev = handle;
     manager->handles = handle;
+    handle->in_list = true;
     manager->handle_count++;
 }
 
@@ -387,17 +392,17 @@ static void remove_handle_from_list(
     unified_mem_manager_t manager,
     unified_mem_handle_t handle
 ) {
-    struct unified_mem_handle_struct** current = &manager->handles;
-    while (*current) {
-    
-        if (*current == handle) {
-        
-            *current = handle->next;
-            manager->handle_count--;
-            break;
-        }
-        current = &(*current)->next;
-    }
+    /* O(1) unlink. This used to scan the singly linked list from the head,
+     * making every free O(live handles) and brain teardown quadratic (a
+     * small test brain with all subsystems created hung > 10 min in
+     * unified_mem_free at exit, 2026-11-23). */
+    if (!handle->in_list) return;
+    if (handle->prev) handle->prev->next = handle->next;
+    else manager->handles = handle->next;
+    if (handle->next) handle->next->prev = handle->prev;
+    handle->next = handle->prev = NULL;
+    handle->in_list = false;
+    manager->handle_count--;
 }
 
 //=============================================================================
@@ -473,6 +478,7 @@ NIMCP_EXPORT void unified_mem_destroy(unified_mem_manager_t manager) {
     // Force cleanup of remaining handles (now safe: list is detached)
     while (pending) {
         struct unified_mem_handle_struct* next = pending->next;
+        pending->in_list = false;   /* detached above: unified_mem_free must not unlink */
         unified_mem_free(pending);
         pending = next;
     }

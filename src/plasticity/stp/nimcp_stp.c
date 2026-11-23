@@ -11,9 +11,19 @@
  *   dx/dt = (1 - x) / τ_D            (resource recovery)
  *   du/dt = (U - u) / τ_F            (facilitation decay)
  *
- * With instantaneous updates on spike:
- *   u ← u + U(1 - u)                 (facilitation jump)
- *   x ← x(1 - u)                     (resource depletion)
+ * With instantaneous updates on spike (Tsodyks, Pawelzik & Markram 1998;
+ * Maass & Markram 2002 -- the variant in which u relaxes to U):
+ *   release fraction  R = u⁻ x⁻       (PSC amplitude ∝ u⁻ x⁻)
+ *   x ← x⁻ (1 - u⁻)                  (resource depletion, uses u BEFORE the jump)
+ *   u ← u⁻ + U(1 - u⁻)               (facilitation jump, AFTER release)
+ *
+ * so u_1 = U, x_1 = 1 for the first spike after rest and
+ *   u_{n+1} = U + u_n (1-U) e^{-Δ/τ_F},  x_{n+1} = 1 - (1 - x_n(1-u_n)) e^{-Δ/τ_D}.
+ * (Jumping u first and depleting with the jumped value belongs to the other
+ *  convention, in which u relaxes to 0; mixing the two -- as this file did
+ *  before 2026-11-23 -- over-depletes: first-spike depletion 2U-U² instead of U.)
+ *
+ * TIMESTAMPS are uint64 milliseconds; τ_D and τ_F are milliseconds.
  *
  * NUMERICAL INTEGRATION:
  * Uses exponential decay formulas (exact solution for linear ODEs):
@@ -83,8 +93,10 @@ static const stp_params_t PRESET_TABLE[] = {
     // Slow Depressing: High U, very slow recovery
     {.U = 0.5F, .tau_D = 1500.0F, .tau_F = 50.0F},
 
-    // None: No STP (static synapse)
-    {.U = 1.0F, .tau_D = 1.0F, .tau_F = 1.0F}
+    // None: No STP (static synapse). U = 1 so u ≡ 1; τ_D = 1 µs so the
+    // resources are fully back (e^-1000) by the next integer-ms timestamp.
+    // (τ_D = 1 ms left x at 1-e^-1 = 0.63 at 1 kHz: not static.)
+    {.U = 1.0F, .tau_D = 0.001F, .tau_F = 1.0F}
 };
 
 /**
@@ -206,13 +218,13 @@ void stp_process_spike(stp_state_t* state, uint64_t timestamp) {
     // First update continuous decay to current time
     stp_update(state, timestamp);
 
-    // Instantaneous facilitation jump: u ← u + U(1-u)
-    const float du = state->params.U * (1.0F - state->u);
-    state->u = nimcp_clamp01(state->u + du);
+    // Release uses the utilisation BEFORE the jump (u relaxes to U, so the
+    // first spike after rest releases exactly U·x): x ← x(1-u⁻)
+    const float u_pre = state->u;
+    state->x = nimcp_clamp01(state->x * (1.0F - u_pre));
 
-    // Instantaneous resource depletion: x ← x(1-u)
-    state->x = state->x * (1.0F - state->u);
-    state->x = nimcp_clamp01(state->x);
+    // Then the facilitation jump: u ← u⁻ + U(1-u⁻)
+    state->u = nimcp_clamp01(u_pre + state->params.U * (1.0F - u_pre));
 
     // Timestamp already updated by stp_update()
 }
@@ -314,9 +326,12 @@ void stp_compute_steady_state(const stp_params_t* params, float frequency, float
     // Solve fixed-point equations
     // At steady state: x(t+ISI) = x(t), u(t+ISI) = u(t)
 
-    // u_ss = U + (u_ss + U(1-u_ss) - U) * exp(-ISI/τ_F)
-    // Simplifying: u_ss = U * (1 - exp(-ISI/τ_F)) / (1 - (1-U)*exp(-ISI/τ_F))
-    const float numerator_u = params->U * (1.0F - decay_F);
+    // Values are those seen by a spike (just before its release).
+    // u_ss = U + (u_ss + U(1-u_ss) - U) * exp(-ISI/τ_F) = U + u_ss(1-U)exp(-ISI/τ_F)
+    // => u_ss = U / (1 - (1-U)*exp(-ISI/τ_F))
+    // (The numerator was U*(1-exp(-ISI/τ_F)) before 2026-11-23, which gave
+    //  u_ss -> 0 instead of 1 at high rates.)
+    const float numerator_u = params->U;
     const float denominator_u = 1.0F - (1.0F - params->U) * decay_F;
     *u_ss = (denominator_u > 1e-6F) ? (numerator_u / denominator_u) : params->U;
     *u_ss = nimcp_clamp01(*u_ss);

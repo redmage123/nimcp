@@ -1259,9 +1259,12 @@ bool nimcp_gpu_stp_update(
 /**
  * @brief Kernel to process presynaptic spikes for STP
  *
- * On spike:
- * u = u + U * (1 - u)  (facilitation)
- * x = x - u * x        (depression)
+ * On spike (u relaxes to U between spikes, kernel_stp_update):
+ * x = x - u * x        (depression: release with the PRE-spike u)
+ * u = u + U * (1 - u)  (then facilitation)
+ * Tsodyks, Pawelzik & Markram 1998; matches stp_process_spike (CPU).
+ * Before 2026-11-23 u jumped first, so a rested synapse released
+ * 2U - U^2 instead of U.
  */
 __global__ void kernel_stp_process_spikes(
     float* __restrict__ x,
@@ -1274,11 +1277,13 @@ __global__ void kernel_stp_process_spikes(
     if (idx >= n) return;
 
     if (spikes[idx] > 0.5f) {
-        // Facilitation (before depression)
-        float u_new = u[idx] + U * (1.0f - u[idx]);
+        const float u_old = u[idx];
 
-        // Depression
-        float x_new = x[idx] * (1.0f - u_new);
+        // Depression with the pre-spike utilisation
+        float x_new = x[idx] * (1.0f - u_old);
+
+        // Facilitation after release
+        float u_new = u_old + U * (1.0f - u_old);
 
         x[idx] = x_new;
         u[idx] = u_new;

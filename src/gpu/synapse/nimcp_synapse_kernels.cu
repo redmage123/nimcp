@@ -656,12 +656,10 @@ bool nimcp_gpu_vesicle_release(
 
     size_t n_synapses = pre_spikes->numel;
 
-    // First update release probability
-    if (!nimcp_gpu_vesicle_update_release_prob(ctx, state, pre_spikes)) {
-        return false;
-    }
-
-    // Then update pool dynamics
+    // Pool dynamics first: a spike releases with the PRE-spike utilisation u
+    // (u relaxes to U between spikes, so facilitating before release would
+    // make a rested synapse release 2U - U^2 instead of U — Tsodyks,
+    // Pawelzik & Markram 1998; same fix as stp_process_spike, 2026-11-23).
     kernel_vesicle_release<<<GRID_SIZE(n_synapses), BLOCK_SIZE>>>(
         (float*)state->x->data,
         (float*)state->y->data,
@@ -674,6 +672,11 @@ bool nimcp_gpu_vesicle_release(
         n_synapses);
 
     NIMCP_CUDA_RECOVER_LAST(GPU_ERROR_KERNEL_LAUNCH);
+
+    // Then relax u toward U and facilitate on this step's spikes.
+    if (!nimcp_gpu_vesicle_update_release_prob(ctx, state, pre_spikes)) {
+        return false;
+    }
     return true;
 }
 

@@ -16,6 +16,7 @@
 #include "cognitive/language/nimcp_emergent_language_bridge.h"  /* emergent stats */
 #include "nlp/nimcp_multimodal_nlp_bridge.h"                     /* spoken-word lexicon */
 #include "nlp/immune/nimcp_nlp_immune_brain.h"                   /* NLP-immune coupling */
+#include "core/brain/nimcp_brain_hearing.h"                        /* hearing */
 
 
 //=============================================================================
@@ -418,6 +419,38 @@ nimcp_status_t nimcp_brain_get_speech_lexicon_stats(nimcp_brain_t brain,
     out->units_seeded = s.units_seeded;
     out->mean_units = s.mean_units;
     snprintf(out->last_heard, sizeof(out->last_heard), "%s", s.last_heard);
+    return NIMCP_OK;
+}
+
+nimcp_status_t nimcp_brain_feed_audio(nimcp_brain_t brain, const float* audio,
+                                      uint32_t num_samples, int32_t* frames_out)
+{
+    if (frames_out) *frames_out = 0;
+    if (!brain || !brain->internal_brain || !audio) return NIMCP_ERROR_NULL_POINTER;
+    if (!brain->internal_brain->hearing) return NIMCP_ERROR_INVALID;   /* no cochlea at init */
+    int frames = brain_hearing_feed(brain->internal_brain, audio, num_samples);
+    if (frames < 0) return NIMCP_ERROR;
+    if (frames_out) *frames_out = frames;
+    return NIMCP_OK;
+}
+
+nimcp_status_t nimcp_brain_get_hearing_stats(nimcp_brain_t brain,
+                                             nimcp_brain_hearing_stats_t* out)
+{
+    if (!out) return NIMCP_ERROR_NULL_POINTER;
+    memset(out, 0, sizeof(*out));
+    if (!brain || !brain->internal_brain) return NIMCP_ERROR_NULL_POINTER;
+    auditory_predictor_stats_t s;
+    if (!brain_hearing_get_stats(brain->internal_brain, &s)) return NIMCP_OK;
+    out->enabled = true;
+    out->frames = s.frames;
+    out->scored = s.scored;
+    out->hours = s.hours;
+    out->rate_hz = s.rate_hz;
+    out->skill_recent = s.skill_recent;
+    out->skill_total = s.skill_total;
+    out->mse_recent = s.mse_recent;
+    out->copy_mse_recent = s.copy_mse_recent;
     return NIMCP_OK;
 }
 
@@ -7083,6 +7116,146 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
         }
     }
 
+    /* === Dormant subsystems (2026-11-23) ==================================
+     * Every brain is built with lazy_init_mode, and a resumed brain skips the
+     * init waves entirely, so these were never created in any production
+     * brain (audit 2026-11-23): the cycle coordinator (no caller at all), the
+     * thalamus and occipital lobe (init files were not even compiled), the
+     * cochlea + hearing, the perception cortices, cortical columns, and the
+     * coordinator-driven clusters. Created here because eager init runs on
+     * fresh and resumed brains, after broca/wernicke/hippocampus exist and
+     * before the sidecars (.hear) are loaded. Each is idempotent-guarded on
+     * its brain field; NIMCP_EAGER_SKIP="name,name" skips any by name (a
+     * kill switch if one misbehaves live). Not created: the per-neuron axon
+     * and dendrite networks (one heap object per neuron x 2M neurons). */
+    if (!b->dormant_subsystems_initialized) {
+        b->dormant_subsystems_initialized = true;
+        const char* skip = getenv("NIMCP_EAGER_SKIP");
+        #define EAGER_SKIPPED(name) (skip && strstr(skip, name) != NULL)
+        #define EAGER_TRY(name, present, fn) do { \
+            extern bool fn(brain_t); \
+            if (EAGER_SKIPPED(name)) { \
+                fprintf(stderr, "[EAGER] %s skipped (NIMCP_EAGER_SKIP)\n", name); \
+            } else if (present) { \
+                /* already exists */ \
+            } else if (fn(b)) { \
+                if (present) { \
+                    count++; \
+                    fprintf(stderr, "[EAGER] %s created\n", name); \
+                } else { \
+                    fprintf(stderr, "[EAGER] %s: init ok but nothing created (disabled by config?)\n", name); \
+                } \
+            } else { \
+                fprintf(stderr, "[EAGER] %s init returned false\n", name); \
+            } \
+        } while (0)
+
+        /* Internal lazy gates inside some init functions (cortical columns,
+         * creative) re-check these flags; lift them for this block only. */
+        const bool saved_lazy = b->config.lazy_init_mode;
+        const bool saved_lazy_cort = b->config.lazy_cortical_init;
+        const bool saved_lazy_creat = b->config.lazy_creative_init;
+        const bool saved_lazy_wm = b->config.lazy_world_model_init;
+        const bool saved_lazy_pr = b->config.lazy_pr_memory_init;
+        b->config.lazy_init_mode = false;
+        b->config.lazy_cortical_init = false;
+        b->config.lazy_creative_init = false;
+        b->config.lazy_world_model_init = false;
+        b->config.lazy_pr_memory_init = false;
+
+        b->config.enable_cycle_coordinator = true;
+        b->config.enable_internal_kg = true;
+        b->config.enable_health_agent = true;
+        b->config.enable_visual_cortex = true;
+        b->config.enable_audio_cortex = true;
+        if (b->config.visual_feature_dim == 0) b->config.visual_feature_dim = 256;
+        if (b->config.audio_feature_dim == 0) b->config.audio_feature_dim = 128;
+        if (b->config.speech_feature_dim == 0) b->config.speech_feature_dim = 128;
+        b->config.enable_cortical_columns = true;
+        b->config.enable_visual_topographic = true;
+        b->config.enable_auditory_topographic = true;
+        b->config.enable_orientation_columns = true;
+        b->config.enable_meta_learning = true;
+        b->config.enable_salience = true;
+        b->config.enable_multihead_attention = true;
+        b->config.enable_consolidation = true;
+        b->config.enable_creative_system = true;
+        b->config.enable_world_model = true;
+        b->config.enable_pr_memory = true;
+
+        /* The coordinator first: cochlea bridges, biology, chemistry,
+         * predictive immune and region cycles register driven ticks on it. */
+        EAGER_TRY("cycle_coordinator", b->cycle_coordinator,
+                  nimcp_brain_factory_init_cycle_coordinator_subsystem);
+        /* KG / health agent / symbolic logic: resumed brains had none (the
+         * .kg sidecar could never load); the sensory hub registers into them. */
+        EAGER_TRY("internal_kg", b->internal_kg, nimcp_brain_factory_init_internal_kg_subsystem);
+        EAGER_TRY("health_agent", b->health_agent, nimcp_brain_factory_init_health_agent_subsystem);
+        /* nimcp_brain_factory_init_symbolic_logic_subsystem creates the
+         * neural logic network (brain->logic), not brain->symbolic_logic
+         * (the first-order KB that brain_add_logical_fact uses); call the
+         * real constructor. */
+        if (!b->symbolic_logic && !EAGER_SKIPPED("symbolic_logic")) {
+            extern bool brain_create_symbolic_logic(brain_t, const void*);
+            if (brain_create_symbolic_logic(b, NULL) && b->symbolic_logic) {
+                count++;
+                fprintf(stderr, "[EAGER] symbolic_logic created\n");
+            } else {
+                fprintf(stderr, "[EAGER] symbolic_logic create failed\n");
+            }
+        }
+        EAGER_TRY("thalamus", b->thalamus, nimcp_brain_factory_init_thalamus_subsystem);
+        EAGER_TRY("multimodal", b->visual_cortex, nimcp_brain_factory_init_multimodal_subsystems);
+        EAGER_TRY("temporal", b->temporal, nimcp_brain_factory_init_temporal_subsystem);
+        EAGER_TRY("occipital", b->occipital, nimcp_brain_factory_init_occipital_subsystem);
+        if (!b->vision && !EAGER_SKIPPED("vision")) {
+            extern int brain_vision_create(brain_t);
+            if (brain_vision_create(b) == 0) {
+                count++;
+                fprintf(stderr, "[EAGER] vision created (retina + optic nerve)\n");
+            } else {
+                fprintf(stderr, "[EAGER] vision create failed\n");
+            }
+        }
+        EAGER_TRY("cortical_columns", b->cortical_column_pool,
+                  nimcp_brain_factory_init_cortical_columns_subsystem);
+        EAGER_TRY("cochlea", b->cochlea_bridges_enabled,
+                  nimcp_brain_factory_init_cochlea_subsystem);
+        EAGER_TRY("biology", b->epigenetics, nimcp_brain_factory_init_biology_subsystem);
+        EAGER_TRY("chemistry", b->chemistry_enabled, nimcp_brain_factory_init_chemistry_subsystem);
+        EAGER_TRY("predictive_immune", b->predictive_immune,
+                  nimcp_brain_factory_init_predictive_immune_subsystem);
+        EAGER_TRY("physics_bridges", b->physics_bridges_enabled,
+                  nimcp_brain_factory_init_physics_bridges_subsystem);
+        {   /* no single brain field to test: run once, report the result */
+            extern bool nimcp_brain_factory_init_region_cycles_subsystem(brain_t);
+            if (!EAGER_SKIPPED("region_cycles"))
+                fprintf(stderr, "[EAGER] region_cycles %s\n",
+                        nimcp_brain_factory_init_region_cycles_subsystem(b) ? "registered" : "failed");
+        }
+        EAGER_TRY("meta_learning", b->meta_learner, nimcp_brain_factory_init_meta_learning_subsystem);
+        EAGER_TRY("salience", b->salience, nimcp_brain_factory_init_salience_subsystem);
+        EAGER_TRY("self_model", b->self_model, nimcp_brain_factory_init_self_model_subsystem);
+        EAGER_TRY("empathy", b->empathy_network, nimcp_brain_factory_init_empathy_network_subsystem);
+        EAGER_TRY("somatosensory", b->somatosensory, nimcp_brain_factory_init_somatosensory_subsystem);
+        EAGER_TRY("olfactory", b->olfactory, nimcp_brain_factory_init_olfactory_subsystem);
+        EAGER_TRY("gustatory", b->gustatory, nimcp_brain_factory_init_gustatory_subsystem);
+        EAGER_TRY("creative", b->creative_enabled, nimcp_brain_factory_init_creative_subsystem);
+        EAGER_TRY("attention", b->multihead_attention, nimcp_brain_factory_init_attention_subsystem);
+        EAGER_TRY("consolidation", b->consolidation, nimcp_brain_factory_init_consolidation_subsystem);
+        EAGER_TRY("world_model", b->multimodal_world_model, nimcp_brain_factory_init_world_model_subsystem);
+        EAGER_TRY("pr_memory", b->pr_memory_enabled, nimcp_brain_factory_init_pr_memory_subsystem);
+
+        b->config.lazy_init_mode = saved_lazy;
+        b->config.lazy_cortical_init = saved_lazy_cort;
+        b->config.lazy_creative_init = saved_lazy_creat;
+        b->config.lazy_world_model_init = saved_lazy_wm;
+        b->config.lazy_pr_memory_init = saved_lazy_pr;
+        #undef EAGER_TRY
+        #undef EAGER_SKIPPED
+
+    }
+
     /* Post-init sidecar load (.immune / .kg / .gl_lang).
      *
      * These sidecars used to be loaded inside brain_load() itself, gated on
@@ -7096,6 +7269,16 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
     {
         extern void brain_load_post_init_sidecars(brain_t brain);
         brain_load_post_init_sidecars(b);
+    }
+
+    /* Sensory hub (2026-11-23): hearing/vision fan-out into the rest of the
+     * brain. After the sidecars, so its knowledge-graph structure is added
+     * to the restored graph instead of being replaced by the .kg load. */
+    {
+        const char* skip = getenv("NIMCP_EAGER_SKIP");
+        extern int brain_sensory_hub_attach(brain_t);
+        if (!(skip && strstr(skip, "sensory_hub")) && !b->sensory_hub &&
+            brain_sensory_hub_attach(b) == 0) count++;
     }
 
     /* === Toxicity wire-up — FORCED late-binding (2026-05-21 fix) ===
