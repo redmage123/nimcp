@@ -11360,7 +11360,7 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                 '.cortex_speech', '.cortex_somato', '.meta', '.tokenizer',
                 '.mirror_neurons', '.executive', '.gl_lang', '.gl_multiturn',
                 '.kg', '.immune', '.concept_registry', '.knowledge',
-                '.pink_noise', '.temperature'] if os.path.exists(_tgt + _e))
+                '.pink_noise', '.temperature', '.hear', '.retina', '.cortical_columns'] if os.path.exists(_tgt + _e))
         # The canonical target may lack a .snn (a previous save failed) while a
         # stale 21 GB .snn still occupies the tmpfs: size the headroom from the
         # largest .snn present AND the expected sidecar size, not only from
@@ -11405,7 +11405,7 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                                     '.meta', '.tokenizer', '.mirror_neurons', '.executive',
                                     '.gl_lang', '.gl_multiturn', '.kg', '.immune',
                                     '.concept_registry', '.knowledge', '.pink_noise',
-                                    '.temperature']
+                                    '.temperature', '.hear', '.retina', '.cortical_columns']
                         files = [target_path + ext for ext in sidecars
                                  if os.path.exists(target_path + ext)]
                         if files:
@@ -11540,7 +11540,11 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
                         # on resume → silent "no sidecar at..." log →
                         # trained state lost. The .gl_lang miss is what
                         # caused the lexicon to wipe on every restart.
-                        '.gl_lang', '.gl_multiturn', '.immune', '.kg']
+                        '.gl_lang', '.gl_multiturn', '.immune', '.kg',
+                        # 2026-11-23: hearing / vision sidecars, plus three that
+                        # were also never linked (restore silently skipped).
+                        '.hear', '.retina', '.concept_registry', '.temperature',
+                        '.cortical_columns']
         import glob as _g
         sidecar_tmps = _g.glob(snapshot_tmp + ".*")
         renamed_exts = set()
@@ -11585,6 +11589,15 @@ def _save_checkpoint_sync(brain, decoder, stage, step):
             os.replace(tmp_link, dst)
             return True
 
+        # Any other sidecar the C library writes next to the snapshot is
+        # (after the .tmp renames above, so the final names exist)
+        # linked too: a fixed list keeps falling behind (see ALL_SIDECARS).
+        import glob as _glob_mod
+        for _f in _glob_mod.glob(_glob_mod.escape(snapshot_path) + ".*"):
+            _ext = _f[len(snapshot_path):]
+            if (_ext not in ALL_SIDECARS and "/" not in _ext and
+                    not _ext.endswith((".tmp", ".lnk", ".partial"))):
+                ALL_SIDECARS.append(_ext)
         retry_failures = []
         for ext in ALL_SIDECARS:
             try:
@@ -11756,7 +11769,7 @@ def _ship_and_remove_previous_snapshot():
                 '.meta', '.tokenizer', '.mirror_neurons', '.executive',
                 '.gl_lang', '.gl_multiturn', '.kg', '.immune',
                 '.concept_registry', '.knowledge', '.pink_noise',
-                '.temperature']
+                '.temperature', '.hear', '.retina', '.cortical_columns']
     files = [target_path] + [target_path + ext for ext in sidecars
                               if os.path.exists(target_path + ext)]
     if not files:
@@ -11855,7 +11868,7 @@ def _ship_to_hetzner(snapshot_path, snapshot_name, stage, step):
                 '.meta', '.tokenizer', '.mirror_neurons', '.executive',
                 '.gl_lang', '.gl_multiturn', '.kg', '.immune',
                 '.concept_registry', '.knowledge', '.pink_noise',
-                '.temperature']
+                '.temperature', '.hear', '.retina', '.cortical_columns']
     # Min sizes (bytes) — refuse to ship truncated files.
     # .snn is the big one (gzipped, expect 5+ GB for 1.45B synapses)
     min_sizes = {
