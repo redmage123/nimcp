@@ -21,6 +21,7 @@ import numpy as np
 import torch
 
 from athena import scoreboard
+from athena.bio.eprop import EpropConfig, EpropSNN
 from athena.bio.learners import Hippocampus, RSTDPReadout, STDPCortex
 
 TASK = "digits_fewshot"
@@ -75,6 +76,14 @@ def rstdp_pixels(Xp, yp, idx, Xte, seed, epochs=60):
     return r.predict(Xte)
 
 
+def eprop_pixels(Xp, yp, idx, Xte, seed, steps=1500):
+    """Recurrent LIF network trained by random e-prop on the labelled images
+    only; about `steps` presentations whatever the budget (at most 100 epochs)."""
+    net = EpropSNN(Xp.shape[1], 10, EpropConfig(n_rec=256, seed=seed))
+    net.fit(Xp[idx], yp[idx], epochs=min(100, max(5, steps // len(idx))), batch=8)
+    return net.predict(Xte, repeats=3)
+
+
 # --- baselines ------------------------------------------------------------
 def _sk(model):
     def run(Xp, yp, idx, Xte, seed):
@@ -109,6 +118,7 @@ def learners():
         "snn:cortex+hippocampus": ("train", "strict", cortex_hippocampus(semi=False)),
         "snn:cortex(pool)+hippocampus": ("train", "semi", cortex_hippocampus(semi=True)),
         "snn:rstdp": ("train", "strict", rstdp_pixels),
+        "snn:eprop": ("train", "strict", eprop_pixels),
     }
 
 
