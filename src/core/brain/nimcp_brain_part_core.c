@@ -1886,6 +1886,7 @@ static brain_decision_t* brain_decide_impl(brain_t brain, const float* features,
                                            features, seq_len, NULL, attended)) {
                 // Blend attended features with original (residual connection)
                 uint32_t blend_len = num_features;
+                nimcp_decide_trace("d00c_attention_out", attended, num_features);
                 for (uint32_t i = 0; i < blend_len; i++) {
                     local_features[i] = 0.6f * local_features[i] + 0.4f * attended[i];
                 }

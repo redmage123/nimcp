@@ -4971,6 +4971,7 @@ float brain_learn_example(brain_t brain, const float* features, uint32_t num_fea
             );
 
             if (attn_ok) {
+                nimcp_decide_trace("learn_attention_out", attended_features, num_features);
                 // Get overall attention strength for LR modulation
                 float attn_strength = multihead_attention_get_strength(
                     brain->multihead_attention);

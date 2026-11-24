@@ -2948,6 +2948,12 @@ class AdaptiveLRController:
         self.check_trigger_file()
         return self.lr
 
+    def set_lr(self, lr):
+        """Set the LR directly (clamped to [min_lr, max_lr])."""
+        self.lr = max(self.min_lr, min(self.max_lr, float(lr)))
+        self.stale_count = 0
+        return self.lr
+
     def update_from_utm(self, brain, step):
         """Use UTM DFA health to guide LR adjustment (supplements loss-based).
 
@@ -8890,6 +8896,15 @@ def run_stage_1(brain, composer, parent, clock, source, decoder,
                         _corrupt = True
             except Exception:
                 pass
+        _streak = getattr(run_stage_1, "_corrupt_streak", 0)
+        run_stage_1._corrupt_streak = (_streak + 1) if _corrupt else 0
+        if _corrupt and run_stage_1._corrupt_streak >= 3:
+            # Repair did not take: the live brain state is non-finite. Exit
+            # WITHOUT checkpointing so a poisoned brain never overwrites a
+            # good snapshot (the daemon must be reloaded from the last save).
+            print(f"  *** CORRUPTION PERSISTS ({run_stage_1._corrupt_streak} consecutive steps) "
+                  f"— exiting without saving ***", flush=True)
+            os._exit(43)
         if _corrupt:
             import time as _time
             print(f"  *** REPAIRING: zeroing NaN weights and reducing LR ***", flush=True)

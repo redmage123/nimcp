@@ -9,6 +9,9 @@
  * found. learn_vector records its target and the ANN prediction too.
  *
  * Enabled by NIMCP_DECIDE_TRACE=<file>. Off (one cached getenv) otherwise.
+ * NIMCP_DECIDE_TRACE_NAN=1 (without NIMCP_DECIDE_TRACE): write nothing, but
+ * report on stderr every stage whose vector holds NaN/Inf ("[NAN-TRIP] ..."),
+ * first 200 reports then every 1000th. Used to find where a NaN originates.
  * Record layout, appended to <file>, little-endian:
  *   uint32 magic 0x54524344 ("DCRT"), uint64 seq, char stage[32],
  *   uint32 n, float v[n]
@@ -25,7 +28,7 @@
 extern "C" {
 #endif
 
-/** True when NIMCP_DECIDE_TRACE is set (cached after the first call). */
+/** True when NIMCP_DECIDE_TRACE or NIMCP_DECIDE_TRACE_NAN=1 is set (cached). */
 bool nimcp_decide_trace_enabled(void);
 
 /** Start a new call: bumps the sequence number that tags later records. */

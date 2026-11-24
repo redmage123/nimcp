@@ -4390,6 +4390,10 @@ class BrainService:
     def _cmd_repair_nan_weights(self, _req):
         """Zero out any NaN/Inf weights in the adaptive network."""
         import math
+        if not (hasattr(self.brain, 'get_neuron_bias') and hasattr(self.brain, 'set_neuron_bias')):
+            # No per-neuron bias accessors in the binding: nothing to repair here.
+            logger.warning("repair_nan_weights: per-neuron bias accessors unavailable; no-op")
+            return {"ok": False, "fixed": 0, "error": "unsupported"}
         try:
             count = self.brain.get_neuron_count()
             fixed = 0

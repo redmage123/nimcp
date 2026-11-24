@@ -483,6 +483,14 @@ while [ "$restart_count" -lt "$MAX_RESTARTS" ]; do
             log_wd "FATAL: trainer refused to resume (exit 3: lineage on record but no local checkpoint) - not restarting"
             exit 3
             ;;
+        43)
+            # Trainer saw persistent NaN/Inf output: the daemon's live brain
+            # is poisoned. SIGKILL (no shutdown save) so ensure_daemon
+            # reloads it from the last good checkpoint.
+            log_wd "Persistent NaN in brain output (code 43) - killing daemon WITHOUT save, reloading from last checkpoint"
+            for p in $(daemon_pids); do kill -9 "$p" 2>/dev/null; done
+            sleep 3
+            ;;
         42)
             log_wd "GPU error detected (code 42) - diagnosing and fixing"
             # The daemon owns the dead CUDA context: stop it before the fix.
