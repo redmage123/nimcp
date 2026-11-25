@@ -5,7 +5,7 @@
  * @date 2025-11-04
  */
 
-#include "include/nimcp.h"
+#include "nimcp.h"
 #include "cognitive/checkpointing/nimcp_checkpointing.h"
 #include "core/brain/nimcp_brain.h"
 #include "utils/memory/nimcp_memory.h"
@@ -23,10 +23,10 @@
 // Handle Conversion (from nimcp.c)
 //=============================================================================
 
-// Access internal brain handle structure (defined in nimcp.c)
-struct nimcp_brain_handle {
-    brain_t internal_brain;
-};
+// Internal brain handle layout: use the canonical definition so this TU
+// agrees with the API layer (the old local copy omitted last_loss /
+// last_gradient_norm and under-allocated handles in load_checkpoint).
+#include "api/nimcp_api_internal.h"
 
 //=============================================================================
 // Checkpoint Configuration Defaults
@@ -80,7 +80,7 @@ nimcp_status_t nimcp_brain_enable_checkpointing(nimcp_brain_t brain,
     }
 
     if (!config->checkpoint_dir) {
-        return NIMCP_ERROR_INVALID_ARG;
+        return NIMCP_ERROR_INVALID;
     }
 
     // Create checkpoint directory if it doesn't exist
@@ -566,7 +566,7 @@ nimcp_status_t nimcp_checkpoint_export(const char* checkpoint_filepath,
     }
 
     // Export feature not implemented yet
-    return NIMCP_ERROR_NOT_IMPLEMENTED;
+    return NIMCP_ERROR;  // not implemented
 }
 
 float nimcp_checkpoint_compare(const char* checkpoint1,

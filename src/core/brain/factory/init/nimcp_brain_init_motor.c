@@ -52,253 +52,21 @@ BRIDGE_BOILERPLATE_MESH_ONLY(brain_init_motor, MESH_ADAPTER_CATEGORY_SYSTEM)
 
 #include <string.h>
 
-// Forward declarations for substrate and thalamic bridges
-// (will be implemented in separate files following Broca pattern)
-struct motor_substrate_bridge;
-typedef struct motor_substrate_bridge motor_substrate_bridge_t;
-
-struct motor_thalamic_bridge;
-typedef struct motor_thalamic_bridge motor_thalamic_bridge_t;
-
-// Motor substrate config (duplicated to avoid header conflicts)
-typedef struct {
-    bool enable_fatigue_modeling;
-    bool enable_atp_modulation;
-    float fatigue_recovery_rate;
-    float atp_consumption_rate;
-} motor_substrate_config_t;
-
-// Motor thalamic config (duplicated to avoid header conflicts)
-typedef struct {
-    bool enable_va_routing;
-    bool enable_vl_routing;
-    bool enable_gating;
-    float min_gating_threshold;
-} motor_thalamic_config_t;
-
-// Substrate bridge API declarations (to avoid header conflicts)
-extern motor_substrate_config_t motor_substrate_default_config(void);
-extern motor_substrate_bridge_t* motor_substrate_bridge_create(
-    void* motor, void* substrate, const motor_substrate_config_t* config);
-extern void motor_substrate_bridge_destroy(motor_substrate_bridge_t* bridge);
-extern int motor_substrate_bridge_update(motor_substrate_bridge_t* bridge);
-
-// Thalamic bridge API declarations (to avoid header conflicts)
-extern motor_thalamic_config_t motor_thalamic_default_config(void);
-extern motor_thalamic_bridge_t* motor_thalamic_bridge_create(
-    void* motor, void* router, const motor_thalamic_config_t* config);
-extern void motor_thalamic_bridge_destroy(motor_thalamic_bridge_t* bridge);
-extern int motor_thalamic_bridge_reset(motor_thalamic_bridge_t* bridge);
+// Substrate / thalamic motor bridges: use the real headers. The old local
+// duplicate config structs had a different field layout from the compiled
+// bridges (an ABI mismatch on the by-value default_config return).
+#include "core/motor/nimcp_motor_substrate_bridge.h"
+#include "core/motor/nimcp_motor_thalamic_bridge.h"
 
 //=============================================================================
 // Internal Helper Functions
 //=============================================================================
 
-/**
- * @brief Message handler for motor command requests
- *
- * WHAT: Process motor command execution requests from other brain regions
- * WHY:  Enable coordinated movement initiation from prefrontal/basal ganglia
- * HOW:  Queue motor command and initiate execution pipeline
- *
- * @param msg Motor command request message
- * @param msg_size Message size
- * @param response_promise Promise for response (execution result)
- * @param user_data Motor cortex adapter pointer
- * @return NIMCP_SUCCESS or error code
- */
-static nimcp_error_t motor_handle_command_request(
-    const void* msg, size_t msg_size,
-    nimcp_bio_promise_t response_promise, void* user_data) {
-    (void)msg; (void)msg_size; (void)response_promise; (void)user_data;
-
-    /*
-     * TODO: Full implementation when motor command format is finalized
-     *
-     * Implementation would:
-     * 1. Validate motor command parameters (target, velocity, duration)
-     * 2. Check motor readiness and inhibition status
-     * 3. Queue command in motor planning buffer
-     * 4. Initiate execution sequence via M1 activation
-     * 5. Send acknowledgment with estimated execution time
-     */
-
-    LOG_TRACE(LOG_MODULE, "Motor cortex received command request (stub)");
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Message handler for motor stop requests
- *
- * WHAT: Process emergency stop or inhibition requests
- * WHY:  Enable rapid motor inhibition from prefrontal/basal ganglia
- * HOW:  Interrupt current execution and activate motor inhibition
- *
- * @param msg Motor stop request message
- * @param msg_size Message size
- * @param response_promise Promise for response (stop confirmation)
- * @param user_data Motor cortex adapter pointer
- * @return NIMCP_SUCCESS or error code
- */
-static nimcp_error_t motor_handle_stop_request(
-    const void* msg, size_t msg_size,
-    nimcp_bio_promise_t response_promise, void* user_data) {
-    (void)msg; (void)msg_size; (void)response_promise; (void)user_data;
-
-    /*
-     * TODO: Full implementation when motor stop format is finalized
-     *
-     * Implementation would:
-     * 1. Immediately halt current motor execution
-     * 2. Clear pending motor commands from queue
-     * 3. Activate antagonist muscle groups for rapid deceleration
-     * 4. Update motor state to INHIBITED
-     * 5. Send confirmation with stop latency metrics
-     */
-
-    LOG_TRACE(LOG_MODULE, "Motor cortex received stop request (stub)");
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief Message handler for cerebellar correction signals
- *
- * WHAT: Process real-time motor corrections from cerebellum
- * WHY:  Enable online motor adjustment for precision movements
- * HOW:  Apply correction to ongoing motor commands
- *
- * @param msg Cerebellar correction message
- * @param msg_size Message size
- * @param response_promise Promise for response (may be NULL)
- * @param user_data Motor cortex adapter pointer
- * @return NIMCP_SUCCESS or error code
- */
-static nimcp_error_t motor_handle_cerebellar_correction(
-    const void* msg, size_t msg_size,
-    nimcp_bio_promise_t response_promise, void* user_data) {
-    (void)msg; (void)msg_size; (void)response_promise; (void)user_data;
-
-    /*
-     * TODO: Full implementation when cerebellar correction format is finalized
-     *
-     * Implementation would:
-     * 1. Extract correction vector from cerebellar signal
-     * 2. Validate correction is within safe bounds
-     * 3. Apply correction to active motor commands
-     * 4. Update internal forward model with error signal
-     * 5. Optionally trigger motor learning if error is systematic
-     */
-
-    LOG_TRACE(LOG_MODULE, "Motor cortex received cerebellar correction (stub)");
-    return NIMCP_SUCCESS;
-}
-
-/**
- * @brief KG-driven wiring handler callback for Motor Cortex
- *
- * WHAT: Register message handlers based on KG-discovered message types
- * WHY:  Enable dynamic wiring driven by knowledge graph
- * HOW:  Iterate discovered message types and register appropriate handlers
- *
- * @param ctx Bio-async module context
- * @param message_types Array of message types to handle (from KG)
- * @param message_count Number of message types
- * @param user_data Motor cortex adapter pointer
- * @return 0 on success, -1 on error
- */
-static int motor_init_wiring_handler_callback(
-    bio_module_context_t ctx,
-    const bio_message_type_t* message_types,
-    uint32_t message_count,
-    void* user_data
-) {
-    if (!ctx || !message_types || message_count == 0) {
-        return 0;  /* No handlers to register */
-    }
-
-    LOG_INFO(LOG_MODULE, "motor_init_wiring_handler_callback: registering %u handlers from KG",
-             message_count);
-
-    for (uint32_t i = 0; i < message_count; i++) {
-        switch (message_types[i]) {
-            case BIO_MSG_MOTOR_COMMAND_REQUEST:
-                bio_router_register_handler(ctx, message_types[i], motor_handle_command_request);
-                LOG_DEBUG(LOG_MODULE, "  Registered handler for BIO_MSG_MOTOR_COMMAND_REQUEST");
-                break;
-
-            case BIO_MSG_MOTOR_STOP_REQUEST:
-                bio_router_register_handler(ctx, message_types[i], motor_handle_stop_request);
-                LOG_DEBUG(LOG_MODULE, "  Registered handler for BIO_MSG_MOTOR_STOP_REQUEST");
-                break;
-
-            case BIO_MSG_CEREBELLAR_CORRECTION:
-                bio_router_register_handler(ctx, message_types[i], motor_handle_cerebellar_correction);
-                LOG_DEBUG(LOG_MODULE, "  Registered handler for BIO_MSG_CEREBELLAR_CORRECTION");
-                break;
-
-            default:
-                LOG_DEBUG(LOG_MODULE, "  Unknown message type %u - skipping", message_types[i]);
-                break;
-        }
-    }
-
-    return 0;
-}
-
-/**
- * @brief Connect motor to bio-async messaging
- */
-static bool connect_motor_to_bio_async(brain_t brain) {
-    if (!brain || !brain->motor) return true; /* Non-fatal if not available */
-
-    /* Register with bio-async if enabled */
-    if (brain->bio_async_enabled && brain->bio_async_ctx) {
-        /* Register motor cortex module with bio-async router */
-        bio_module_info_t info = {
-            .module_id = BIO_MODULE_MOTOR_CORTEX,
-            .module_name = "motor_cortex",
-            .inbox_capacity = 64,
-            .user_data = brain->motor
-        };
-
-        bio_module_context_t ctx = bio_router_register_module(&info);
-        if (ctx) {
-            /* KG-Driven Wiring: Register callback for orchestrator to invoke
-             * When orchestrator starts, it discovers HANDLES_MESSAGE relations
-             * from the KG and invokes this callback with the message types */
-            nimcp_error_t cb_result = bio_router_register_wiring_callback(
-                BIO_MODULE_MOTOR_CORTEX,
-                (void*)motor_init_wiring_handler_callback,
-                brain->motor
-            );
-
-            if (cb_result == NIMCP_SUCCESS) {
-                LOG_DEBUG(LOG_MODULE, "Motor cortex bio-async registered with KG-driven wiring (module_id=0x%04X)",
-                          BIO_MODULE_MOTOR_CORTEX);
-            } else {
-                /* Fallback: Direct registration if orchestrator not available */
-                LEGACY_HANDLER_REGISTRATION(
-                    bio_router_register_handler(ctx, BIO_MSG_MOTOR_COMMAND_REQUEST,
-                                                motor_handle_command_request)
-                );
-                LEGACY_HANDLER_REGISTRATION(
-                    bio_router_register_handler(ctx, BIO_MSG_MOTOR_STOP_REQUEST,
-                                                motor_handle_stop_request)
-                );
-                LEGACY_HANDLER_REGISTRATION(
-                    bio_router_register_handler(ctx, BIO_MSG_CEREBELLAR_CORRECTION,
-                                                motor_handle_cerebellar_correction)
-                );
-                LOG_DEBUG(LOG_MODULE, "Motor cortex bio-async registered with legacy handlers (module_id=0x%04X)",
-                          BIO_MODULE_MOTOR_CORTEX);
-            }
-        } else {
-            LOG_WARN(LOG_MODULE, "Failed to register motor cortex with bio-async");
-        }
-    }
-
-    return true;
-}
+/* Bio-async: motor_create() registers BIO_MODULE_MOTOR_CORTEX itself (with
+ * its real handlers and KG wiring callback) when cfg.enable_bio_async is set,
+ * and motor_destroy() unregisters it. The former connect_motor_to_bio_async()
+ * here registered the same module id a second time with TODO stub handlers;
+ * it was removed when this file was wired (2026-11-24). */
 
 /**
  * @brief Connect motor substrate bridge to neural substrate
@@ -404,11 +172,6 @@ bool nimcp_brain_factory_init_motor_subsystem(brain_t brain) {
         LOG_WARN(LOG_MODULE, "Motor-Immune connection failed (non-fatal)");
     }
 
-    /* Connect to bio-async */
-    if (!connect_motor_to_bio_async(brain)) {
-        LOG_WARN(LOG_MODULE, "Motor bio-async connection failed (non-fatal)");
-    }
-
     LOG_INFO(LOG_MODULE, "Motor Cortex subsystem initialized successfully");
     return true;
 }
@@ -434,12 +197,13 @@ bool nimcp_brain_factory_init_motor_substrate_bridge(brain_t brain) {
 
     LOG_DEBUG(LOG_MODULE, "Initializing motor substrate bridge");
 
-    /* Get neural substrate - may be NULL in simple configurations */
-    void* substrate = NULL;
-    /*
-     * TODO: Get substrate from brain if available
-     * substrate = brain->substrate;
-     */
+    /* Neural substrate (metabolic state). The bridge rejects a NULL
+     * substrate, so skip it on brains created without one. */
+    neural_substrate_t* substrate = (neural_substrate_t*)brain->substrate;
+    if (!substrate) {
+        LOG_DEBUG(LOG_MODULE, "No neural substrate; skipping motor substrate bridge");
+        return true;
+    }
 
     /* Create substrate bridge with default config */
     motor_substrate_config_t config = motor_substrate_default_config();
@@ -481,12 +245,12 @@ bool nimcp_brain_factory_init_motor_thalamic_bridge(brain_t brain) {
 
     LOG_DEBUG(LOG_MODULE, "Initializing motor thalamic bridge");
 
-    /* Get thalamic router - may be NULL in simple configurations */
-    void* router = NULL;
-    /*
-     * TODO: Get thalamic router from brain if available
-     * router = brain->thalamic_router;
-     */
+    /* Thalamic router (VA/VL relay). Skip the bridge when absent. */
+    thalamic_router_t* router = (thalamic_router_t*)brain->thalamic_router;
+    if (!router) {
+        LOG_DEBUG(LOG_MODULE, "No thalamic router; skipping motor thalamic bridge");
+        return true;
+    }
 
     /* Create thalamic bridge with default config */
     motor_thalamic_config_t thal_config = motor_thalamic_default_config();
@@ -727,22 +491,16 @@ bool nimcp_brain_factory_update_motor_subsystem(brain_t brain, uint64_t dt_us) {
         return true;  /* Nothing to update */
     }
 
-    /* Convert to milliseconds for motor update */
-    float dt_ms = (float)dt_us / 1000.0f;
+    /* Trajectory execution (motor_update_execution) is advanced every
+     * training step by brain_tick_sensorimotor(); doing it here as well
+     * would double-step the motor cortex. This update drains the motor
+     * bio-router inbox (nothing else does) and refreshes the metabolic
+     * (substrate) modulation. */
+    (void)dt_us;
 
-    /* Update motor execution */
-    motor_status_t status = motor_get_status(brain->motor);
-
-    if (status == MOTOR_STATUS_EXECUTING) {
-        bool still_executing = motor_update_execution(brain->motor, dt_ms);
-        if (!still_executing) {
-            LOG_DEBUG(LOG_MODULE, "Motor execution completed");
-        }
-    }
-
-    /* Process bio-async messages if enabled */
+    /* Process bio-async messages if enabled (bounded batch). */
     if (brain->bio_async_enabled) {
-        motor_process_bio_messages(brain->motor, 10);  /* Process up to 10 messages */
+        motor_process_bio_messages(brain->motor, 10);
     }
 
     /* Update substrate bridge periodically */

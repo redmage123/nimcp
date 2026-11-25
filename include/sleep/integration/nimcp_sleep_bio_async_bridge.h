@@ -400,6 +400,17 @@ int sleep_bio_async_update(
     uint32_t delta_ms
 );
 
+/**
+ * @brief Mirror the connected sleep system's live state into the bridge
+ *
+ * Reads sleep_get_current_state()/sleep_get_pressure() (each takes the sleep
+ * system's own lock), caches pressure/adenosine (NaN/Inf rejected, clamped to
+ * [0,1]) and broadcasts BIO_MSG_SLEEP_STAGE_CHANGE only on a real transition.
+ *
+ * @return 1 if a stage transition was broadcast, 0 otherwise
+ */
+int sleep_bio_async_sync_from_system(sleep_bio_async_bridge_t* bridge);
+
 /* ============================================================================
  * Broadcast API
  * ============================================================================ */

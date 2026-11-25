@@ -23,7 +23,7 @@
 #include <stdint.h>
 #include <time.h>
 #include "common/nimcp_export.h"
-#include "include/nimcp.h"  // For nimcp_brain_t and nimcp_status_t
+#include "nimcp.h"  // For nimcp_brain_t and nimcp_status_t
 
 #ifdef __cplusplus
 extern "C" {

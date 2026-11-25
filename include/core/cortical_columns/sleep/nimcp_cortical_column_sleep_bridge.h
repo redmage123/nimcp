@@ -208,7 +208,9 @@ int cortical_column_sleep_update(cortical_column_sleep_bridge_t bridge);
 /**
  * WHAT: Apply sleep modulation to hypercolumn
  * WHY:  Actively modify column parameters based on sleep state
- * HOW:  Update competition mode, inhibition, and thresholds
+ * HOW:  Set competition mode, temperature and lateral inhibition via the
+ *       hypercolumn's locked setters (awake values saved on sleep entry,
+ *       restored on wake)
  *
  * @param bridge Bridge handle (must be non-NULL)
  * @return 0 on success, -1 on error
@@ -219,6 +221,14 @@ int cortical_column_sleep_update(cortical_column_sleep_bridge_t bridge);
  * NOTE: Should be called before hypercolumn_compute()
  */
 int cortical_column_sleep_apply_modulation(cortical_column_sleep_bridge_t bridge);
+
+/**
+ * WHAT: Restore the hypercolumn's awake competition/inhibition parameters
+ * WHY:  Called on teardown so a brain destroyed mid-sleep leaves the
+ *       hypercolumn as it was before sleep
+ * @return 0 on success (or nothing to restore), -1 on error
+ */
+int cortical_column_sleep_restore_awake(cortical_column_sleep_bridge_t bridge);
 
 /* ========================================================================
  * STATE ACCESS FUNCTIONS

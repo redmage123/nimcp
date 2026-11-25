@@ -277,6 +277,10 @@ typedef struct {
     PyObject* cloud_brain_ref;  /* Strong ref to cloud brain (prevents GC while connected) */
 } BrainObject;
 
+/* Quantum-walk config methods (dead-code audit 2026-11-24): defines
+ * NIMCP_QUANTUM_BINDINGS_METHODS, spliced into Brain_methods[] below. */
+#include "../../python/nimcp_quantum_bindings.c"
+
 /**
  * WHAT: Deallocate Brain object
  * WHY:  Clean up resources when Python object is garbage collected
@@ -4491,6 +4495,20 @@ static PyObject* Brain_get_vision_stats(BrainObject* self, PyObject* Py_UNUSED(i
         "lgn_rate_hz", (double)s.lgn_rate_hz, "latency_ms", (double)s.latency_ms,
         "rod_activation", (double)s.rod_activation, "cone_activation", (double)s.cone_activation,
         "mean_myelination", (double)s.mean_myelination, "wall_ms", (double)s.wall_ms);
+}
+
+/* Wired-module groups (dead-code audit 2026-11-24): JSON status string. */
+static PyObject* Brain_get_wired_status(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
+    if (!self->brain || !self->brain->internal_brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized"); return NULL;
+    }
+    extern int brain_wired_status_json(struct brain_struct*, char*, uint32_t);
+    char* buf = (char*)malloc(65536);
+    if (!buf) return PyErr_NoMemory();
+    int n = brain_wired_status_json(self->brain->internal_brain, buf, 65536);
+    PyObject* r = PyUnicode_FromStringAndSize(buf, n > 0 ? n : 0);
+    free(buf);
+    return r;
 }
 
 /* Direct seeing (tests, tools): uint8 HWC bytes. */
@@ -13255,6 +13273,7 @@ static PyObject* Brain_cow_trial_restore(BrainObject* self, PyObject* args) {
 }
 
 static PyMethodDef Brain_methods[] = {
+    NIMCP_QUANTUM_BINDINGS_METHODS
     {"learn", (PyCFunction)Brain_learn, METH_VARARGS,
      "Learn from example: learn(features, label, lr=0.0, confidence=1.0) -> float (loss value)\n"
      "  lr: per-call learning rate override (0 = use brain default)"},
@@ -13700,6 +13719,8 @@ static PyMethodDef Brain_methods[] = {
      "Sensory hub counters: how often hearing/vision drove each brain target (thalamus, router, columns, wernicke, hippocampus, working memory, workspace, medulla, basal ganglia, cerebellum, immune, logic, KG, self-repair)."},
     {"get_vision_stats", (PyCFunction)Brain_get_vision_stats, METH_NOARGS,
      "Vision (retina -> optic nerve): {'enabled', 'frames', 'seconds_seen', 'rgc_rate_hz', 'lgn_rate_hz', 'latency_ms', 'rod_activation', 'cone_activation', 'mean_myelination', 'wall_ms'}."},
+    {"get_wired_status", (PyCFunction)Brain_get_wired_status, METH_NOARGS,
+     "Wired-module groups (sleep, bioasync, language, noise_immune, gpu, cognitive, compute): JSON string, null for groups not created."},
     {"see", (PyCFunction)Brain_see, METH_VARARGS,
      "see(pixels_uint8_hwc, w, h, ch, duration_ms=100): present a frame to the retina."},
     {"get_hearing_stats", (PyCFunction)Brain_get_hearing_stats, METH_NOARGS,

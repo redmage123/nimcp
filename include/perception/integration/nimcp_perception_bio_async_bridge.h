@@ -99,14 +99,16 @@ extern "C" {
  * Constants
  * ============================================================================ */
 
-/** Module ID for perception in bio-async system (0x3200 - 0x32FF reserved) */
-#define BIO_MODULE_ID_PERCEPTION            0x3200
-#define BIO_MODULE_ID_PERCEPTION_VISUAL     0x3210
-#define BIO_MODULE_ID_PERCEPTION_AUDITORY   0x3220
-#define BIO_MODULE_ID_PERCEPTION_SOMATO     0x3230
-#define BIO_MODULE_ID_PERCEPTION_OLFACTORY  0x3240
-#define BIO_MODULE_ID_PERCEPTION_GUSTATORY  0x3250
-#define BIO_MODULE_ID_PERCEPTION_BINDING    0x3260
+/** Source-module tags for perception messages (0x7B80 - 0x7BEF; moved 2026-11-24
+ *  from 0x3200 which collides with BIO_MODULE_ID_OLFACTORY). The bridge itself
+ *  registers on the router as PERCEPTION_BIO_ASYNC_WIRED_MODULE_ID (0x7B05). */
+#define BIO_MODULE_ID_PERCEPTION            0x7B80
+#define BIO_MODULE_ID_PERCEPTION_VISUAL     0x7B90
+#define BIO_MODULE_ID_PERCEPTION_AUDITORY   0x7BA0
+#define BIO_MODULE_ID_PERCEPTION_SOMATO     0x7BB0
+#define BIO_MODULE_ID_PERCEPTION_OLFACTORY  0x7BC0
+#define BIO_MODULE_ID_PERCEPTION_GUSTATORY  0x7BD0
+#define BIO_MODULE_ID_PERCEPTION_BINDING    0x7BE0
 
 /** Maximum number of module subscriptions per modality */
 #define PERCEPT_BIO_MAX_SUBSCRIPTIONS       64

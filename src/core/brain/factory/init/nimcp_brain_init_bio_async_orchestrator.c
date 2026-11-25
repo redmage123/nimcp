@@ -112,7 +112,13 @@ bool nimcp_brain_factory_init_bio_async_orchestrator_subsystem(brain_t brain) {
     extern nimcp_error_t bio_router_init(const bio_router_config_t* config);
     extern struct bio_router_struct* bio_router_get_global(void);
 
-    if (bio_router_init(NULL) == NIMCP_SUCCESS) {
+    /* The router is a process-wide singleton: nimcp_init (or an earlier
+     * brain) may already have initialized it, in which case bio_router_init
+     * fails with "already initialized" and this brain used to be left with
+     * bio_router = NULL — silently cutting every bio-async adapter off
+     * (2026-11-24). Attach to the existing global router instead. */
+    extern bool bio_router_is_initialized(void);
+    if (bio_router_is_initialized() || bio_router_init(NULL) == NIMCP_SUCCESS) {
         brain->bio_router = bio_router_get_global();
         if (brain->bio_router) {
             brain->bio_router_enabled = true;

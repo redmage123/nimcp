@@ -56,6 +56,26 @@ void brain_vision_destroy(struct brain_struct* b) {
     free(v);
 }
 
+int brain_vision_get_illuminance(struct brain_struct* b, float* out) {
+    if (!b || !b->vision || !out) return -1;
+    brain_vision_t* v = (brain_vision_t*)b->vision;
+    nimcp_mutex_lock(v->mu);
+    int rc = retina_circuit_get_illuminance(v->retina, out);
+    nimcp_mutex_unlock(v->mu);
+    return rc;
+}
+
+int brain_vision_set_illuminance(struct brain_struct* b, float illuminance) {
+    if (!b || !b->vision) return -1;
+    if (!isfinite(illuminance) || illuminance < 0.0f) return -1;
+    if (illuminance > BRAIN_VISION_MAX_ILLUMINANCE) illuminance = BRAIN_VISION_MAX_ILLUMINANCE;
+    brain_vision_t* v = (brain_vision_t*)b->vision;
+    nimcp_mutex_lock(v->mu);
+    int rc = retina_circuit_set_illuminance(v->retina, illuminance);
+    nimcp_mutex_unlock(v->mu);
+    return rc;
+}
+
 int brain_vision_see(struct brain_struct* b, const uint8_t* pixels, uint32_t w, uint32_t h,
                      uint32_t ch, float duration_ms) {
     if (!b || !b->vision || !pixels || !w || !h || !ch) return -1;

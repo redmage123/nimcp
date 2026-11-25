@@ -1220,6 +1220,12 @@ bool brain_save(brain_t brain, const char* filepath)
                 fprintf(stderr, "[WARN] brain_vision_save failed for %s.retina\n", filepath);
         }
 
+        /* Wired-module group sidecars (<path>.wired_<group>), 2026-11-24. */
+        {
+            extern int brain_wired_save_all(struct brain_struct*, const char*);
+            (void)brain_wired_save_all(brain, filepath);
+        }
+
         /* Grounded language sidecar — preserves the trained lexicon
          * (vocab_list, lexicon hash table, learned word classes,
          * distributional context vectors, valence/arousal) and syntactic
@@ -2524,6 +2530,13 @@ void brain_load_post_init_sidecars(brain_t brain)
         int vrc = brain_vision_load(brain, filepath);
         if (vrc == 0) fprintf(stderr, "[INFO] Restored vision from %s.retina\n", filepath);
         else if (vrc < 0) fprintf(stderr, "[WARN] brain_vision_load failed for %s.retina\n", filepath);
+    }
+
+    /* Wired-module groups: only those already created (a reload into a live,
+     * eager-initialized brain); on --resume they load in eager init. */
+    {
+        extern int brain_wired_load_all(struct brain_struct*, const char*);
+        (void)brain_wired_load_all(brain, filepath);
     }
 
     /* Grounded language sidecar — restore trained lexicon + templates.

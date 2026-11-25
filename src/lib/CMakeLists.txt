@@ -3284,7 +3284,15 @@ set(NIMCP_CORE_SOURCES
     # Persistent Memory Store (SQLite + FTS5 + vector search)
     ${CMAKE_CURRENT_SOURCE_DIR}/../memory/nimcp_memory_store.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../memory/nimcp_memory_oodb.c
+
+    # Wired-module dispatcher (dead-code audit 2026-11-24); groups append below
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/wired/nimcp_brain_wired.c
 )
+
+# Wired-module groups: each fragment appends its own sources to NIMCP_CORE_SOURCES
+foreach(_wired_group sleep bioasync language noise_immune gpu cognitive compute)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../core/brain/wired/nimcp_brain_wired_${_wired_group}.cmake)
+endforeach()
 
 # Core library
 add_library(nimcp SHARED

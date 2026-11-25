@@ -53,6 +53,7 @@
 #include <stddef.h>
 #include "lnn/nimcp_lnn_types.h"
 #include "utils/ternary/nimcp_ternary.h"
+#include "lnn/nimcp_lnn_ternary.h"  /* lnn_ternary_matrix_t (lnn_ternary_wiring_to_matrix) */
 
 #ifdef __cplusplus
 extern "C" {

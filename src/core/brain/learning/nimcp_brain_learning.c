@@ -1807,6 +1807,13 @@ float brain_learn_vector(brain_t brain, const float* features, uint32_t num_feat
         nimcp_brain_toxicity_tick_inline(brain);
     }
 
+    /* Wired-module groups (dead-code audit 2026-11-24): no-op until eager
+     * init created them; each group rate-limits its own heavy work. */
+    {
+        extern void brain_wired_tick_all(struct brain_struct*, const float*, uint32_t, float);
+        brain_wired_tick_all(brain, features, num_features, 16.6f);
+    }
+
     /* Phase 4n-t: drive all JEPA bridges. Pair-driven ones (omni,
      * engram, consolidation, cerebellum) use features as the current
      * state vector via each bridge's tick_from_vec self-drive wrapper

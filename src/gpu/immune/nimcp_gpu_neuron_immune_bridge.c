@@ -6,6 +6,13 @@
  */
 
 #include "gpu/immune/nimcp_gpu_neuron_immune_bridge.h"
+/* nimcp_brain_immune.h already defined the device qualifiers (via
+ * neural_logic.h); nimcp_gpu_neuron.h defines them again. */
+#undef NIMCP_DEVICE
+#undef NIMCP_HOST
+#undef NIMCP_GLOBAL
+#undef NIMCP_SHARED
+#include "gpu/nimcp_gpu_neuron.h"
 #include "utils/bridge/nimcp_bridge_base.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/logging/nimcp_logging.h"
@@ -117,7 +124,7 @@ gpu_neuron_immune_bridge_t* gpu_neuron_immune_create(
     bridge->max_batch_size = config->max_batch_size;
 
     /* Initialize timing */
-    bridge->last_update_time = nimcp_platform_time_get_ms();
+    bridge->last_update_time = nimcp_platform_time_monotonic_ms();
     bridge->error_window_start = bridge->last_update_time;
 
     /* Create mutex */
@@ -371,17 +378,22 @@ int gpu_neuron_immune_update_error_state(gpu_neuron_immune_bridge_t* bridge) {
 int gpu_neuron_immune_update(gpu_neuron_immune_bridge_t* bridge) {
     NIMCP_CHECK_THROW(bridge, NIMCP_ERROR_NULL_POINTER, "bridge is NULL");
 
-    /* Update error state */
-    gpu_neuron_immune_update_error_state(bridge);
+    /* Update error state (needs a GPU network; skipped when the brain has
+     * none, so the cytokine path still runs without touching the GPU) */
+    if (bridge->gpu_network) {
+        gpu_neuron_immune_update_error_state(bridge);
+    }
 
     /* Apply cytokine effects */
     gpu_neuron_immune_apply_cytokine_effects(bridge);
 
     /* Monitor stress */
-    gpu_neuron_immune_monitor_stress(bridge);
+    if (bridge->gpu_network) {
+        gpu_neuron_immune_monitor_stress(bridge);
+    }
 
     bridge->total_updates++;
-    bridge->last_update_time = nimcp_platform_time_get_ms();
+    bridge->last_update_time = nimcp_platform_time_monotonic_ms();
 
     return NIMCP_SUCCESS;
 }

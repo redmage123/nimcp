@@ -186,7 +186,9 @@ core_bio_async_bridge_t* core_bio_async_bridge_create(
     memset(bridge, 0, sizeof(core_bio_async_bridge_t));
 
     /* Initialize base bridge */
-    if (bridge_base_init(&bridge->base, BIO_MODULE_BRAIN, "core_bio_async") != 0) {
+    /* 0x7B01: wired bio-async bridge range. BIO_MODULE_BRAIN is registered by
+     * nimcp_brain_bio_async.c; reusing it would merge the two inboxes. */
+    if (bridge_base_init(&bridge->base, 0x7B01, "core_bio_async") != 0) {
         nimcp_free(bridge);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NOT_INITIALIZED, "core_bio_async_bridge_create: validation failed");
         return NULL;

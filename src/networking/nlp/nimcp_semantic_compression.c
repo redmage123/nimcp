@@ -21,7 +21,7 @@
 #include <float.h>
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 
-NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(semantic_compression)
+NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(nlp_semantic_compression)
 
 /* ============================================================================
  * Internal Structures
@@ -393,7 +393,7 @@ nimcp_result_t semantic_add_primitive(
     target->vector_size = prim->vector_size;
     target->frequency = prim->frequency;
     target->mean_activation = prim->mean_activation;
-    strncpy(target->name, prim->name, sizeof(target->name) - 1);
+    snprintf(target->name, sizeof(target->name), "%.*s", (int)(sizeof(target->name) - 1), prim->name);
 
     // Copy and normalize vector
     memcpy(target->vector, prim->vector, prim->vector_size * sizeof(float));
@@ -466,7 +466,7 @@ nimcp_result_t semantic_learn_primitives(
     comp->stats.dictionary_updates++;
     comp->dictionary_version++;
 
-    LOG_INFO("Learned primitives from %u samples (%u iterations)", num_samples, iterations);
+    LOG_DEBUG("Learned primitives from %u samples (%u iterations)", num_samples, iterations);
 
     return NIMCP_SUCCESS;
 }
@@ -606,6 +606,12 @@ nimcp_result_t semantic_decompress(
         return NIMCP_INVALID_PARAM;
     }
 
+    // Header is 4 x uint32 + 1 float; reject truncated buffers
+    const uint32_t header_bytes = (uint32_t)(sizeof(uint32_t) * 4 + sizeof(float));
+    if (comp_size < header_bytes) {
+        return NIMCP_INVALID_PARAM;
+    }
+
     // Read header (use memcpy to avoid unaligned access UB)
     const uint8_t* ptr = compressed;
     uint32_t magic; memcpy(&magic, ptr, sizeof(uint32_t)); ptr += sizeof(uint32_t);
@@ -623,6 +629,14 @@ nimcp_result_t semantic_decompress(
     if (*data_size < original_size) {
         *data_size = original_size;
         return NIMCP_BUFFER_TOO_SMALL;
+    }
+
+    // Bound num_active by the decode buffer and by the bytes actually present
+    if (num_active > comp->config.max_active_primitives ||
+        (uint64_t)header_bytes + (uint64_t)num_active * (sizeof(uint32_t) + sizeof(float)) > comp_size ||
+        original_size > comp->config.primitive_vector_size) {
+        LOG_ERROR("Corrupt compressed payload: num_active=%u size=%u", num_active, original_size);
+        return NIMCP_INVALID_MSG;
     }
 
     // Read active primitives (use memcpy to avoid unaligned access UB)
@@ -754,7 +768,7 @@ nimcp_result_t semantic_handle_compression_request(
  * Statistics and Utilities
  * ============================================================================ */
 
-nimcp_result_t semantic_get_stats(
+nimcp_result_t semantic_compressor_get_stats(
     semantic_compressor_t* comp,
     semantic_compression_stats_t* out_stats
 ) {
@@ -764,7 +778,7 @@ nimcp_result_t semantic_get_stats(
     return NIMCP_SUCCESS;
 }
 
-nimcp_result_t semantic_reset_stats(semantic_compressor_t* comp) {
+nimcp_result_t semantic_compressor_reset_stats(semantic_compressor_t* comp) {
     if (!comp) return NIMCP_INVALID_PARAM;
 
     memset(&comp->stats, 0, sizeof(semantic_compression_stats_t));
@@ -889,58 +903,75 @@ nimcp_result_t semantic_load_dictionary(
         return NIMCP_INVALID_PARAM;
     }
 
-    if (num_prims > 100000) {
+    /* Only accept a dictionary that matches this compressor's geometry: every
+     * encode path indexes primitives[p].vector[0..primitive_vector_size). */
+    if (num_prims == 0 || num_prims > 10000) {
         fclose(fp);
-        LOG_ERROR("Dictionary too large: %u primitives", num_prims);
+        LOG_ERROR("Dictionary size out of range: %u primitives", num_prims);
         return NIMCP_INVALID_PARAM;
     }
 
-    /* Free existing primitives */
-    if (comp->primitives) {
-        for (uint32_t i = 0; i < comp->num_primitives; i++) {
-            if (comp->primitives[i].vector) {
-                nimcp_free(comp->primitives[i].vector);
-            }
-        }
-        nimcp_free(comp->primitives);
-    }
-
-    /* Allocate new primitives */
-    comp->primitives = nimcp_calloc(num_prims, sizeof(semantic_primitive_t));
-    if (!comp->primitives) {
+    const uint32_t dim = comp->config.primitive_vector_size;
+    semantic_primitive_t* loaded = nimcp_calloc(num_prims, sizeof(semantic_primitive_t));
+    if (!loaded) {
         fclose(fp);
-        comp->num_primitives = 0;
         return NIMCP_INVALID_PARAM;
     }
 
-    /* Read each primitive */
-    for (uint32_t i = 0; i < num_prims; i++) {
-        semantic_primitive_t* p = &comp->primitives[i];
+    /* Read everything into a staging array; the live dictionary is replaced
+     * only when the whole file is valid (no partial / NaN dictionaries). */
+    bool ok = true;
+    for (uint32_t i = 0; i < num_prims && ok; i++) {
+        semantic_primitive_t* p = &loaded[i];
         if (fread(&p->primitive_id, sizeof(uint32_t), 1, fp) != 1 ||
             fread(p->name, sizeof(p->name), 1, fp) != 1 ||
             fread(&p->vector_size, sizeof(uint32_t), 1, fp) != 1 ||
             fread(&p->frequency, sizeof(float), 1, fp) != 1 ||
             fread(&p->mean_activation, sizeof(float), 1, fp) != 1) {
             LOG_ERROR("Failed to read primitive %u", i);
+            ok = false;
             break;
         }
-
-        if (p->vector_size > 0 && p->vector_size <= 1048576) {
-            p->vector = nimcp_calloc(p->vector_size, sizeof(float));
-            if (p->vector) {
-                if (fread(p->vector, sizeof(float), p->vector_size, fp) != p->vector_size) {
-                    LOG_ERROR("Failed to read vector data for primitive %u", i);
-                    nimcp_free(p->vector);
-                    p->vector = NULL;
-                    p->vector_size = 0;
-                }
+        p->name[sizeof(p->name) - 1] = '\0';
+        if (p->vector_size != dim) {
+            LOG_ERROR("Primitive %u has dim %u, compressor expects %u", i, p->vector_size, dim);
+            ok = false;
+            break;
+        }
+        p->vector = nimcp_calloc(dim, sizeof(float));
+        if (!p->vector || fread(p->vector, sizeof(float), dim, fp) != dim) {
+            LOG_ERROR("Failed to read vector data for primitive %u", i);
+            ok = false;
+            break;
+        }
+        for (uint32_t k = 0; k < dim; k++) {
+            if (!isfinite(p->vector[k])) {
+                LOG_ERROR("Primitive %u contains non-finite values", i);
+                ok = false;
+                break;
             }
         }
     }
+    fclose(fp);
 
+    if (!ok) {
+        for (uint32_t i = 0; i < num_prims; i++) {
+            nimcp_free(loaded[i].vector);
+        }
+        nimcp_free(loaded);
+        return NIMCP_INVALID_PARAM;
+    }
+
+    /* Swap in the new dictionary */
+    if (comp->primitives) {
+        for (uint32_t i = 0; i < comp->num_primitives; i++) {
+            nimcp_free(comp->primitives[i].vector);
+        }
+        nimcp_free(comp->primitives);
+    }
+    comp->primitives = loaded;
     comp->num_primitives = num_prims;
     comp->dictionary_version = dict_version;
-    fclose(fp);
 
     LOG_INFO("Loaded dictionary: %u primitives from %s (version %lu)",
              num_prims, filepath, (unsigned long)dict_version);

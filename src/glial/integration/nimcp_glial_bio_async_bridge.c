@@ -11,6 +11,7 @@
 #include "utils/exception/nimcp_exception_macros.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -18,6 +19,30 @@
 #include "utils/logging/nimcp_logging.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+/* ============================================================================
+ * Bio-router plumbing (wired 2026-11-24, BRAIN_WIRED_BIOASYNC)
+ *
+ * Registered module ID lives in the wired bio-async bridge range 0x7B00-0x7BFF
+ * so this bridge never shares an inbox with a live module (the router merges
+ * registrations that reuse an ID).
+ * ============================================================================ */
+#include "async/nimcp_bio_router.h"
+
+#define GLIAL_BIO_ASYNC_WIRED_MODULE_ID 0x7B02
+
+/** Broadcast a fully-built message through the router (no-op when unregistered). */
+static void glial_bio_async_router_send(bridge_base_t* base, void* msg, size_t size) {
+    if (!base || !base->bio_ctx || !msg || size < sizeof(bio_message_header_t)) {
+        return;
+    }
+    bio_message_header_t* hdr = (bio_message_header_t*)msg;
+    if (hdr->payload_size == 0) {
+        hdr->payload_size = (uint32_t)(size - sizeof(bio_message_header_t));
+    }
+    (void)bio_router_broadcast(base->bio_ctx, msg, size);
+}
+
 
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(glial_bio_async_bridge)
 
@@ -168,6 +193,12 @@ int glial_bio_async_connect(
 
     bridge->glial_integration = glial_integration;
     bridge->router = router;
+    /* Register on the live router (idempotent). */
+    if (router && !bridge->base.bio_ctx) {
+        bridge->base.module_id = GLIAL_BIO_ASYNC_WIRED_MODULE_ID;
+        bridge->base.module_name = "glial_bio_async_bridge";
+        (void)bridge_base_connect_bio_async(&bridge->base);
+    }
     bridge->connected = true;
 
     return 0;
@@ -180,6 +211,7 @@ int glial_bio_async_disconnect(glial_bio_async_bridge_t* bridge) {
     }
 
     bridge->glial_integration = NULL;
+    (void)bridge_base_disconnect_bio_async(&bridge->base);
     bridge->router = NULL;
     bridge->connected = false;
 
@@ -203,8 +235,9 @@ int glial_bio_async_process_inbox(
         return -1;
     }
 
-    uint32_t processed = 0;
-    (void)max_messages;
+    uint32_t processed = bridge->base.bio_ctx
+        ? bio_router_process_inbox(bridge->base.bio_ctx, max_messages > 0 ? max_messages : 32u)
+        : 0u;
 
     bridge->stats.messages_received += processed;
     return (int)processed;
@@ -226,6 +259,28 @@ int glial_bio_async_update(
         bridge->time_since_broadcast_ms = 0;
     }
 
+    return 0;
+}
+
+int glial_bio_async_sync_from_integration(
+    glial_bio_async_bridge_t* bridge,
+    glial_integration_stats_t* out_stats
+) {
+    if (!bridge || !bridge->connected || !bridge->glial_integration) {
+        return -1;
+    }
+    glial_integration_stats_t gs;
+    if (glial_integration_get_stats(bridge->glial_integration, &gs) != NIMCP_SUCCESS) {
+        return -1;
+    }
+    bridge->state.active_astrocytes = gs.num_astrocytes;
+    bridge->state.active_microglia = gs.num_microglia;
+    if (isfinite(gs.avg_myelination_factor)) {
+        bridge->state.avg_myelination = gs.avg_myelination_factor;
+    }
+    if (out_stats) {
+        *out_stats = gs;
+    }
     return 0;
 }
 
@@ -258,6 +313,7 @@ int glial_bio_async_broadcast_astrocyte_signal(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.astrocyte_signals_sent++;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->last_broadcast_us = msg.timestamp_us;
 
@@ -291,6 +347,7 @@ int glial_bio_async_broadcast_calcium_wave(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.calcium_waves_sent++;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -323,6 +380,7 @@ int glial_bio_async_broadcast_myelination(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.myelination_events_sent++;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -354,6 +412,7 @@ int glial_bio_async_broadcast_prune_event(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.prune_events_sent++;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -388,6 +447,7 @@ int glial_bio_async_broadcast_surveillance(
     msg.is_activated = (threat_detected > 0.3f);
     msg.is_phagocytic = (threat_detected > 0.7f);
     msg.timestamp_us = msg.header.timestamp_us;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
 
     bridge->stats.broadcasts_sent++;
 
@@ -427,6 +487,7 @@ int glial_bio_async_broadcast_metabolic_support(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.metabolic_supports_sent++;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -462,6 +523,7 @@ int glial_bio_async_broadcast_inflammation(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->state.inflammation_level = inflammation_level;
+    glial_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;

@@ -12,6 +12,7 @@
 #include "utils/platform/nimcp_platform_mutex.h"
 #include "utils/exception/nimcp_exception_macros.h"
 #include <string.h>
+#include <math.h>
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "constants/nimcp_threshold_constants.h"
 
@@ -29,6 +30,13 @@ struct cortical_column_sleep_bridge_struct {
     sleep_system_t sleep_system;
     cortical_column_sleep_effects_t effects;
     bool callback_registered;
+
+    /* Awake values of the hypercolumn's competition parameters, captured on
+     * the first non-awake state and restored exactly on wake / destroy. */
+    bool have_awake_base;
+    cc_competition_mode_t base_mode;
+    float base_temperature;
+    float base_inhibition;
 };
 
 /* ========================================================================
@@ -205,19 +213,13 @@ cortical_column_sleep_bridge_t cortical_column_sleep_bridge_create(
     bridge->effects.in_spindle = false;
     bridge->effects.sleep_pressure = 0.0f;
 
-    /* Register callback with sleep system */
-    bool registered = sleep_register_state_callback(
-        sleep,
-        cortical_column_on_sleep_state_change,
-        bridge);
-
-    if (!registered) {
-        NIMCP_LOGGING_WARN("Failed to register cortical column sleep callback");
-        /* Continue anyway - bridge still functional, just won't get automatic updates */
-    } else {
-        bridge->callback_registered = true;
-        NIMCP_LOGGING_INFO("Cortical column sleep bridge created and callback registered");
-    }
+    /* No self-registration: sleep_wake.c delivers at most 32 state listeners
+     * per sleep system and the brain may hold many hypercolumns, so the brain
+     * drives these bridges from one group-level listener
+     * (src/core/brain/wired/nimcp_brain_wired_sleep.c), which calls
+     * cortical_column_sleep_update() + _apply_modulation() on every transition. */
+    bridge->callback_registered = false;
+    cortical_column_on_sleep_state_change(sleep_get_current_state(sleep), bridge);
 
     return bridge;
 }
@@ -262,8 +264,20 @@ int cortical_column_sleep_update(cortical_column_sleep_bridge_t bridge)
         return -1;
     }
 
-    /* Effects are updated automatically via callback */
-    /* This function exists for manual refresh if needed */
+    /* Re-sync with the sleep system: recompute every state-derived effect
+     * when the state changed since the last update (the handler takes the
+     * bridge mutex itself). */
+    sleep_state_t now_state = sleep_get_current_state(bridge->sleep_system);
+    nimcp_mutex_lock(bridge->base.mutex);
+    bool changed = (now_state != bridge->effects.current_state);
+    nimcp_mutex_unlock(bridge->base.mutex);
+    if (changed) {
+        cortical_column_on_sleep_state_change(now_state, bridge);
+    }
+
+    nimcp_mutex_lock(bridge->base.mutex);
+    bridge->effects.sleep_pressure = sleep_get_pressure(bridge->sleep_system);
+    nimcp_mutex_unlock(bridge->base.mutex);
 
     return 0;
 }
@@ -277,23 +291,79 @@ int cortical_column_sleep_apply_modulation(cortical_column_sleep_bridge_t bridge
         return -1;
     }
 
-    /* Copy state under lock, then call external functions outside lock
-     * to avoid potential deadlock if external code acquires other locks */
+    /* Sets the parameters hypercolumn_compute() reads (competition mode,
+     * softmax temperature, lateral inhibition) through the hypercolumn's
+     * locked setters. Earlier versions re-ran competition on the cached
+     * activations, which did not change later computes and ran unlocked when
+     * the hypercolumn mutex was contended. Lock order: bridge -> hypercolumn. */
+    int rc = 0;
     nimcp_mutex_lock(bridge->base.mutex);
-
     hypercolumn_t* hcol = bridge->hypercolumn;
-    bool do_competition = bridge->config.enable_competition_modulation;
-    cc_competition_mode_t comp_mode = bridge->effects.competition_mode;
-    float comp_temp = bridge->effects.competition_temperature;
+    sleep_state_t state = bridge->effects.current_state;
 
-    nimcp_mutex_unlock(bridge->base.mutex);
-
-    /* Apply competition mode and temperature (outside lock) */
-    if (do_competition) {
-        hypercolumn_run_competition(hcol, comp_mode, comp_temp);
+    if (state == SLEEP_STATE_AWAKE) {
+        if (bridge->have_awake_base) {
+            bool ok = hypercolumn_set_competition(hcol, bridge->base_mode,
+                                                  bridge->base_temperature);
+            ok = hypercolumn_set_lateral_inhibition(hcol, bridge->base_inhibition) && ok;
+            bridge->have_awake_base = false;
+            rc = ok ? 0 : -1;
+        }
+        nimcp_mutex_unlock(bridge->base.mutex);
+        return rc;
     }
 
-    return 0;
+    if (!bridge->have_awake_base) {
+        cc_competition_mode_t mode;
+        float temp = 0.0f;
+        float inhib = 0.0f;
+        if (!hypercolumn_get_competition(hcol, &mode, &temp) ||
+            !hypercolumn_get_lateral_inhibition(hcol, &inhib) ||
+            !isfinite(temp) || !isfinite(inhib)) {
+            nimcp_mutex_unlock(bridge->base.mutex);
+            return -1;
+        }
+        bridge->base_mode = mode;
+        bridge->base_temperature = temp;
+        bridge->base_inhibition = inhib;
+        bridge->have_awake_base = true;
+    }
+
+    if (bridge->config.enable_competition_modulation) {
+        /* Sleep temperature factors are relative to the awake value (1.0). */
+        float temp = bridge->base_temperature *
+                     (bridge->effects.competition_temperature / COLUMN_SLEEP_TEMP_AWAKE);
+        if (!isfinite(temp) ||
+            !hypercolumn_set_competition(hcol, bridge->effects.competition_mode, temp)) {
+            rc = -1;
+        }
+    }
+    if (bridge->config.enable_inhibition_modulation) {
+        float inhib = bridge->base_inhibition * bridge->effects.lateral_inhibition_strength;
+        if (!isfinite(inhib) || !hypercolumn_set_lateral_inhibition(hcol, inhib)) {
+            rc = -1;
+        }
+    }
+    nimcp_mutex_unlock(bridge->base.mutex);
+    return rc;
+}
+
+int cortical_column_sleep_restore_awake(cortical_column_sleep_bridge_t bridge)
+{
+    if (!bridge) {
+        return -1;
+    }
+    int rc = 0;
+    nimcp_mutex_lock(bridge->base.mutex);
+    if (bridge->have_awake_base) {
+        bool ok = hypercolumn_set_competition(bridge->hypercolumn, bridge->base_mode,
+                                              bridge->base_temperature);
+        ok = hypercolumn_set_lateral_inhibition(bridge->hypercolumn, bridge->base_inhibition) && ok;
+        bridge->have_awake_base = false;
+        rc = ok ? 0 : -1;
+    }
+    nimcp_mutex_unlock(bridge->base.mutex);
+    return rc;
 }
 
 /* ========================================================================

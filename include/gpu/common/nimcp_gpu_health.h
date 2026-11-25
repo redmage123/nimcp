@@ -177,6 +177,51 @@ bool nimcp_gpu_health_start_monitoring(gpu_health_monitor_t* monitor);
  */
 void nimcp_gpu_health_stop_monitoring(gpu_health_monitor_t* monitor);
 
+/**
+ * Restrict probing (background thread) to a single device.
+ * Probing a device creates a CUDA primary context on it, so a brain that
+ * runs on one GPU of a shared box should only probe its own device.
+ *
+ * @param device_id Device to probe, or -1 for all devices
+ */
+void nimcp_gpu_health_set_device_filter(gpu_health_monitor_t* monitor, int device_id);
+
+/**
+ * Copy the last recorded metrics for a device without probing the GPU
+ * (cheap: mutex + memcpy, safe on the training thread).
+ *
+ * @return true if metrics were copied
+ */
+bool nimcp_gpu_health_get_metrics(gpu_health_monitor_t* monitor,
+                                  int device_id,
+                                  gpu_health_metrics_t* metrics);
+
+/**
+ * Feed the cached health of one device into the brain's health agent.
+ *
+ * Reads the last metrics recorded by the monitor (no GPU call). When the
+ * status became worse than *last_reported and is DEGRADED or worse, queues one
+ * anomaly message on the agent (RESOURCE_EXHAUSTION for low memory, otherwise
+ * ANOMALY_DETECTED; suggested action REDUCE_LOAD — never a device reset).
+ * *last_reported tracks the last seen status so each degradation is reported
+ * once and recovery re-arms it.
+ *
+ * @param agent         struct nimcp_health_agent* (may be NULL: no report)
+ * @param last_reported in/out: last status seen by this caller
+ * @param metrics_out   optional copy of the cached metrics
+ * @return 1 if a message was queued, 0 if not, -1 if no metrics yet / bad args
+ */
+struct nimcp_health_agent;
+int nimcp_gpu_health_report_to_agent(gpu_health_monitor_t* monitor,
+                                     int device_id,
+                                     struct nimcp_health_agent* agent,
+                                     gpu_health_status_t* last_reported,
+                                     gpu_health_metrics_t* metrics_out);
+
+/* NOTE: nimcp_gpu_health_recover() calls cudaDeviceReset(), which destroys all
+ * of the process's allocations on that device. It is refused unless the
+ * environment variable NIMCP_GPU_HEALTH_ALLOW_RESET=1 is set. */
+
 #ifdef __cplusplus
 }
 #endif

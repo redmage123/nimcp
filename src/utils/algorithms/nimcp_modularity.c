@@ -37,41 +37,41 @@ NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(modularity)
  * HOW: Scan edges and classify by community membership
  */
 static void calculate_community_stats(const NimcpGraph* graph, const uint32_t* assignments,
-                                      uint32_t num_vertices, double* ecc, double* ac)
+                                      uint32_t num_vertices, uint32_t num_slots,
+                                      double* ecc, double* ac)
 {
     if (!graph || !assignments || !ecc || !ac) return;
 
-    memset(ecc, 0, sizeof(double) * num_vertices);
-    memset(ac, 0, sizeof(double) * num_vertices);
+    memset(ecc, 0, sizeof(double) * num_slots);
+    memset(ac, 0, sizeof(double) * num_slots);
 
+    /* An undirected graph stores each edge in both directions, so the sum of
+     * all stored edge weights is 2m. Then e_cc = (internal stored weight)/2m
+     * and a_c = (sum of member degrees)/2m. */
     double total_weight = 0.0;
 
-    // Count edges within and degree sums for each community
     for (uint32_t v = 0; v < num_vertices && v < graph->vertex_count; v++) {
         const NimcpVertex* vertex = &graph->vertices[v];
         uint32_t v_comm = assignments[v];
+        if (v_comm >= num_slots) continue;
 
         for (NimcpEdgeNode* edge = vertex->edges; edge; edge = edge->next) {
             uint32_t u = edge->dest;
-            if (u < num_vertices) {
-                uint32_t u_comm = assignments[u];
-                total_weight += edge->weight;
+            if (u >= num_vertices) continue;
+            if (!isfinite(edge->weight)) continue;
+            total_weight += edge->weight;
 
-                if (v_comm == u_comm) {
-                    ecc[v_comm] += edge->weight;
-                }
-
-                // Accumulate degree for modularity calculation
-                ac[v_comm] += edge->weight;
+            if (assignments[u] == v_comm) {
+                ecc[v_comm] += edge->weight;
             }
+            ac[v_comm] += edge->weight;
         }
     }
 
     if (total_weight > 0.0) {
-        // Normalize
-        for (uint32_t i = 0; i < num_vertices; i++) {
+        for (uint32_t i = 0; i < num_slots; i++) {
             ecc[i] /= total_weight;
-            ac[i] /= (2.0 * total_weight);  // Factor of 2 for undirected graphs
+            ac[i] /= total_weight;
         }
     }
 }
@@ -130,14 +130,21 @@ double nimcp_calculate_modularity_with_resolution(const NimcpGraph* graph,
         return 0.0;
     }
 
-    uint32_t num_communities = count_unique_communities(assignments, num_vertices);
-    if (num_communities == 0) {
+    /* Community ids need not be compact: size the per-community arrays by the
+     * largest id actually used (ids >= num_vertices are ignored). */
+    uint32_t num_slots = 0;
+    for (uint32_t i = 0; i < num_vertices; i++) {
+        if (assignments[i] < num_vertices && assignments[i] + 1 > num_slots) {
+            num_slots = assignments[i] + 1;
+        }
+    }
+    if (num_slots == 0) {
         return 0.0;
     }
 
     // Allocate temporary arrays
-    double* ecc = (double*)nimcp_malloc(sizeof(double) * num_communities);
-    double* ac = (double*)nimcp_malloc(sizeof(double) * num_communities);
+    double* ecc = (double*)nimcp_malloc(sizeof(double) * num_slots);
+    double* ac = (double*)nimcp_malloc(sizeof(double) * num_slots);
 
     if (!ecc || !ac) {
         nimcp_free(ecc);
@@ -145,11 +152,11 @@ double nimcp_calculate_modularity_with_resolution(const NimcpGraph* graph,
         return 0.0;
     }
 
-    calculate_community_stats(graph, assignments, num_vertices, ecc, ac);
+    calculate_community_stats(graph, assignments, num_vertices, num_slots, ecc, ac);
 
     // Calculate modularity: Q = sum(ecc[c] - resolution * ac[c]^2)
     double modularity = 0.0;
-    for (uint32_t c = 0; c < num_communities; c++) {
+    for (uint32_t c = 0; c < num_slots; c++) {
         modularity += ecc[c] - resolution * ac[c] * ac[c];
     }
 

@@ -36,8 +36,8 @@
  * @version 1.0.0
  */
 
-#ifndef NIMCP_SEMANTIC_COMPRESSION_H
-#define NIMCP_SEMANTIC_COMPRESSION_H
+#ifndef NIMCP_NLP_SEMANTIC_COMPRESSION_H
+#define NIMCP_NLP_SEMANTIC_COMPRESSION_H
 
 #include "utils/validation/nimcp_common.h"
 #include "async/nimcp_bio_router.h"
@@ -509,7 +509,7 @@ nimcp_result_t semantic_handle_compression_request(
  * @param out_stats Output statistics structure
  * @return NIMCP_SUCCESS or error code
  */
-nimcp_result_t semantic_get_stats(
+nimcp_result_t semantic_compressor_get_stats(
     semantic_compressor_t* comp,
     semantic_compression_stats_t* out_stats
 );
@@ -524,7 +524,7 @@ nimcp_result_t semantic_get_stats(
  * @param comp Compressor handle
  * @return NIMCP_SUCCESS or error code
  */
-nimcp_result_t semantic_reset_stats(semantic_compressor_t* comp);
+nimcp_result_t semantic_compressor_reset_stats(semantic_compressor_t* comp);
 
 /**
  * @brief Get default configuration
@@ -587,4 +587,4 @@ nimcp_result_t semantic_load_dictionary(
 }
 #endif
 
-#endif /* NIMCP_SEMANTIC_COMPRESSION_H */
+#endif /* NIMCP_NLP_SEMANTIC_COMPRESSION_H */

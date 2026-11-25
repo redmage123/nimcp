@@ -1629,6 +1629,15 @@ static int cascade_stage_content(brain_t brain,
             if (dev > 1.0f) dev = 1.0f;
             adjust += (dev - 0.25f) * 0.20f;
         }
+        /* (iv) Wired LANGUAGE group (2026-11-24): ACC conflict, amygdala
+         * arousal, basal-ganglia value, workspace, HNN coherence, hypothalamic
+         * stress, ToM, JEPA/world-model error trends, prime resonance. Sum is
+         * finite and pre-clamped to [-0.3, 0.3]; 0 when the group is off. */
+        {
+            extern float brain_wired_language_floor_adjust(struct brain_struct* brain);
+            float wl = brain_wired_language_floor_adjust(brain);
+            if (isfinite(wl)) adjust += wl;
+        }
         grounded_language_set_metacog_floor_adjust(brain->grounded_lang, adjust);
     }
 

@@ -187,6 +187,7 @@ typedef struct nimcp_double_buffer {
     nimcp_gpu_context_t* ctx;              /**< GPU context */
     bool initialized;                       /**< Initialization flag */
     bool loading_in_progress;               /**< Load operation in progress */
+    bool owns_streams;                      /**< false = streams borrowed from ctx (not destroyed) */
 } nimcp_double_buffer_t;
 
 //=============================================================================
@@ -288,6 +289,7 @@ typedef struct nimcp_transfer_manager {
     size_t pinned_alloc_count;             /**< Number of allocations */
 
     bool initialized;                       /**< Manager initialized */
+    bool owns_streams;                      /**< false = stream borrowed from ctx (not destroyed) */
 } nimcp_transfer_manager_t;
 
 //=============================================================================
@@ -328,6 +330,23 @@ NIMCP_EXPORT nimcp_transfer_manager_t* nimcp_transfer_manager_create(
  * NOTE: Waits for pending transfers to complete
  */
 NIMCP_EXPORT void nimcp_transfer_manager_destroy(nimcp_transfer_manager_t* mgr);
+
+/**
+ * @brief Create a transfer manager that rides on the context's transfer stream
+ *
+ * WHAT: Like nimcp_transfer_manager_create, but creates no CUDA streams: the
+ *       single transfer stream is borrowed from ctx (ctx->transfer_stream) and
+ *       is never destroyed by the manager.
+ * WHY:  Lets a long-lived brain add async-transfer bookkeeping without adding
+ *       streams/contexts to a shared GPU.
+ *
+ * @param ctx GPU context (must be valid)
+ * @param pinned_pool_size Pinned host pool size (0 to disable)
+ * @return Transfer manager or NULL on failure
+ */
+NIMCP_EXPORT nimcp_transfer_manager_t* nimcp_transfer_manager_create_shared(
+    nimcp_gpu_context_t* ctx,
+    size_t pinned_pool_size);
 
 /**
  * @brief Check if transfer manager is valid
@@ -517,6 +536,15 @@ NIMCP_EXPORT void nimcp_transfer_reset_stats(nimcp_transfer_manager_t* mgr);
  *   nimcp_double_buffer_destroy(db);
  */
 NIMCP_EXPORT nimcp_double_buffer_t* nimcp_double_buffer_create(
+    nimcp_gpu_context_t* ctx, size_t buffer_size);
+
+/**
+ * @brief Create double buffer on the context's existing streams
+ *
+ * Uses ctx->transfer_stream / ctx->compute_stream (borrowed, never destroyed)
+ * instead of creating two new streams.
+ */
+NIMCP_EXPORT nimcp_double_buffer_t* nimcp_double_buffer_create_shared(
     nimcp_gpu_context_t* ctx, size_t buffer_size);
 
 /**

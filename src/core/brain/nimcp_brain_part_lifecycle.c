@@ -253,6 +253,24 @@ void brain_destroy(brain_t brain)
         extern void brain_nonhuman_destroy(struct brain_struct* brain);
         brain_nonhuman_destroy(brain);
     }
+    {
+        /* Wired-module groups (2026-11-24) hold bridges onto subsystems freed
+         * below: drop them now, after every driver thread has stopped. */
+        extern void brain_wired_destroy_all(struct brain_struct* brain);
+        brain_wired_destroy_all(brain);
+    }
+    {
+        /* The memory KG emitter caches one process-global brain pointer
+         * (set in memory_kg_init_roots). It was never cleared, so a brain
+         * created after this one — e.g. a checkpoint reload, which never
+         * re-registers — emitted into this freed brain's KG (SIGSEGV in
+         * brain_kg_set_access_level, 2026-11-25). */
+        extern struct brain_struct* memory_kg_events_get_registered_brain(void);
+        extern void memory_kg_events_set_registered_brain(struct brain_struct* brain);
+        if (memory_kg_events_get_registered_brain() == brain) {
+            memory_kg_events_set_registered_brain(NULL);
+        }
+    }
 
     // Save final snapshot if configured (BEFORE destroying anything)
     if (brain->config.snapshot_dir && brain->config.save_final_snapshot) {

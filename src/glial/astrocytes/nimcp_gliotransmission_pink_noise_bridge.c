@@ -14,6 +14,15 @@
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "utils/math/nimcp_math_helpers.h"
 
+/* Current pink-noise API: generate_sample(gen, &out) -> bool. Never returns NaN/Inf. */
+static inline float pnb_sample(pink_noise_generator_t gen) {
+    float s = 0.0f;
+    if (!gen || !pink_noise_generate_sample(gen, &s) || !isfinite(s)) {
+        return 0.0f;
+    }
+    return s;
+}
+
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(gliotransmission_pink_noise_bridge)
 
 glio_pink_noise_bridge_t* glio_pink_noise_create(const glio_pink_noise_config_t* config) {
@@ -23,7 +32,7 @@ glio_pink_noise_bridge_t* glio_pink_noise_create(const glio_pink_noise_config_t*
     bridge->config = config ? *config : glio_pink_noise_default_config();
 
     pink_noise_config_t nc;
-    pink_noise_default_config(&nc);
+    nc = pink_noise_default_config();
     nc.alpha = bridge->config.noise_alpha;
     nc.amplitude = bridge->config.noise_amplitude;
     nc.seed = bridge->config.seed;
@@ -69,10 +78,10 @@ int glio_pink_noise_update(glio_pink_noise_bridge_t* bridge) {
 
     float amp = bridge->config.noise_amplitude;
 
-    bridge->glu_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.glutamate_noise_scale;
-    bridge->atp_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.atp_noise_scale;
-    bridge->dser_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.dserine_noise_scale;
-    bridge->ca_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.calcium_noise_scale;
+    bridge->glu_noise = pnb_sample(bridge->noise_gen) * bridge->config.glutamate_noise_scale;
+    bridge->atp_noise = pnb_sample(bridge->noise_gen) * bridge->config.atp_noise_scale;
+    bridge->dser_noise = pnb_sample(bridge->noise_gen) * bridge->config.dserine_noise_scale;
+    bridge->ca_noise = pnb_sample(bridge->noise_gen) * bridge->config.calcium_noise_scale;
 
     bridge->noisy_glutamate_release = 0.5f * (1.0f + amp * bridge->glu_noise);
     bridge->noisy_atp_release = 0.3f * (1.0f + amp * bridge->atp_noise);
@@ -110,6 +119,6 @@ int glio_pink_noise_reset(glio_pink_noise_bridge_t* bridge) {
     bridge->noisy_dserine_release = 0.2f;
     bridge->noisy_calcium_wave = 1.0f;
     bridge->samples_generated = 0;
-    if (bridge->noise_gen) pink_noise_reset(bridge->noise_gen);
+    if (bridge->noise_gen) pink_noise_reset(bridge->noise_gen, 0);
     return 0;
 }

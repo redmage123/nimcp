@@ -58,6 +58,26 @@
 #define GRID_SIZE(n) (((n) + BLOCK_SIZE - 1) / BLOCK_SIZE)
 #define INF_DISTANCE 1e30f
 
+/* Thrust functors (the build does not pass --extended-lambda, so __device__
+ * lambdas are not available in host code). */
+struct topo_reachable_fn {
+    __host__ __device__ bool operator()(float d) const { return d < INF_DISTANCE; }
+};
+struct topo_finite_path_value_fn {
+    __host__ __device__ float operator()(float d) const {
+        return (d > 0.0f && d < INF_DISTANCE) ? d : 0.0f;
+    }
+};
+struct topo_finite_path_pred_fn {
+    __host__ __device__ bool operator()(float d) const { return d > 0.0f && d < INF_DISTANCE; }
+};
+struct topo_positive_int_fn {
+    __host__ __device__ bool operator()(int s) const { return s > 0; }
+};
+struct topo_int_to_float_fn {
+    __host__ __device__ float operator()(int d) const { return (float)d; }
+};
+
 //=============================================================================
 // Basic Kernels
 //=============================================================================
@@ -65,7 +85,7 @@
 /**
  * @brief Initialize random states for cuRAND
  */
-__global__ void kernel_init_random(curandState* states, uint64_t seed, int n)
+static __global__ void kernel_init_random(curandState* states, uint64_t seed, int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
@@ -76,7 +96,7 @@ __global__ void kernel_init_random(curandState* states, uint64_t seed, int n)
 /**
  * @brief Compute node degrees from adjacency matrix
  */
-__global__ void kernel_compute_degree_dense(
+static __global__ void kernel_compute_degree_dense(
     const float* adjacency,
     int* degree,
     int num_nodes,
@@ -98,7 +118,7 @@ __global__ void kernel_compute_degree_dense(
 /**
  * @brief Compute node degrees from CSR format
  */
-__global__ void kernel_compute_degree_csr(
+static __global__ void kernel_compute_degree_csr(
     const int* row_ptrs,
     int* degree,
     int num_nodes)
@@ -112,7 +132,7 @@ __global__ void kernel_compute_degree_csr(
 /**
  * @brief Compute weighted degrees from CSR format
  */
-__global__ void kernel_compute_weighted_degree_csr(
+static __global__ void kernel_compute_weighted_degree_csr(
     const int* row_ptrs,
     const float* weights,
     float* weighted_degree,
@@ -137,7 +157,7 @@ __global__ void kernel_compute_weighted_degree_csr(
 /**
  * @brief Count triangles for each node (CSR format)
  */
-__global__ void kernel_count_triangles_csr(
+static __global__ void kernel_count_triangles_csr(
     const int* row_ptrs,
     const int* col_indices,
     int* triangle_count,
@@ -181,7 +201,7 @@ __global__ void kernel_count_triangles_csr(
 /**
  * @brief Compute local clustering coefficients
  */
-__global__ void kernel_clustering_coefficient(
+static __global__ void kernel_clustering_coefficient(
     const int* degree,
     const int* triangle_count,
     float* clustering,
@@ -207,7 +227,7 @@ __global__ void kernel_clustering_coefficient(
 /**
  * @brief PageRank iteration (CSR format)
  */
-__global__ void kernel_pagerank_iteration_csr(
+static __global__ void kernel_pagerank_iteration_csr(
     const int* row_ptrs,
     const int* col_indices,
     const float* current_rank,
@@ -236,7 +256,7 @@ __global__ void kernel_pagerank_iteration_csr(
 /**
  * @brief Compute PageRank convergence (L1 difference)
  */
-__global__ void kernel_pagerank_diff(
+static __global__ void kernel_pagerank_diff(
     const float* old_rank,
     const float* new_rank,
     float* diff,
@@ -274,7 +294,7 @@ __global__ void kernel_pagerank_diff(
 /**
  * @brief BFS frontier expansion (CSR format)
  */
-__global__ void kernel_bfs_expand_csr(
+static __global__ void kernel_bfs_expand_csr(
     const int* row_ptrs,
     const int* col_indices,
     const int* frontier,
@@ -311,7 +331,7 @@ __global__ void kernel_bfs_expand_csr(
 /**
  * @brief Initialize BFS distances
  */
-__global__ void kernel_bfs_init(
+static __global__ void kernel_bfs_init(
     float* distances,
     int* predecessors,
     int source,
@@ -336,7 +356,7 @@ __global__ void kernel_bfs_init(
 /**
  * @brief Dijkstra relaxation step (CSR format)
  */
-__global__ void kernel_dijkstra_relax_csr(
+__attribute__((unused)) static __global__ void kernel_dijkstra_relax_csr(
     const int* row_ptrs,
     const int* col_indices,
     const float* edge_weights,
@@ -384,7 +404,7 @@ __global__ void kernel_dijkstra_relax_csr(
 /**
  * @brief Floyd-Warshall iteration for block
  */
-__global__ void kernel_floyd_warshall_iteration(
+static __global__ void kernel_floyd_warshall_iteration(
     float* dist,
     int k,
     int num_nodes)
@@ -408,7 +428,7 @@ __global__ void kernel_floyd_warshall_iteration(
 /**
  * @brief Initialize Floyd-Warshall distance matrix from adjacency
  */
-__global__ void kernel_floyd_warshall_init(
+static __global__ void kernel_floyd_warshall_init(
     const float* adjacency,
     float* dist,
     int num_nodes)
@@ -433,7 +453,7 @@ __global__ void kernel_floyd_warshall_init(
 /**
  * @brief Initialize betweenness computation for source
  */
-__global__ void kernel_betweenness_init(
+__attribute__((unused)) static __global__ void kernel_betweenness_init(
     float* sigma,
     float* delta,
     int* dist,
@@ -456,7 +476,7 @@ __global__ void kernel_betweenness_init(
 /**
  * @brief Betweenness BFS forward pass
  */
-__global__ void kernel_betweenness_forward_csr(
+__attribute__((unused)) static __global__ void kernel_betweenness_forward_csr(
     const int* row_ptrs,
     const int* col_indices,
     float* sigma,
@@ -487,7 +507,7 @@ __global__ void kernel_betweenness_forward_csr(
 /**
  * @brief Betweenness backward accumulation
  */
-__global__ void kernel_betweenness_backward_csr(
+__attribute__((unused)) static __global__ void kernel_betweenness_backward_csr(
     const int* row_ptrs,
     const int* col_indices,
     const float* sigma,
@@ -521,7 +541,7 @@ __global__ void kernel_betweenness_backward_csr(
 /**
  * @brief Initialize communities (each node is its own community)
  */
-__global__ void kernel_init_communities(
+static __global__ void kernel_init_communities(
     int* communities,
     float* community_weights,
     const int* degree,
@@ -537,7 +557,7 @@ __global__ void kernel_init_communities(
 /**
  * @brief Compute modularity gain for moving node to neighbor's community
  */
-__device__ float compute_modularity_gain(
+static __device__ float compute_modularity_gain(
     int node,
     int new_community,
     int old_community,
@@ -587,7 +607,7 @@ __device__ float compute_modularity_gain(
 /**
  * @brief Louvain local moving phase
  */
-__global__ void kernel_louvain_local_move(
+static __global__ void kernel_louvain_local_move(
     const int* row_ptrs,
     const int* col_indices,
     const float* weights,
@@ -645,7 +665,7 @@ __global__ void kernel_louvain_local_move(
 /**
  * @brief Count community sizes
  */
-__global__ void kernel_count_community_sizes(
+static __global__ void kernel_count_community_sizes(
     const int* communities,
     int* community_sizes,
     int num_nodes,
@@ -670,7 +690,7 @@ __global__ void kernel_count_community_sizes(
 /**
  * @brief Label propagation iteration
  */
-__global__ void kernel_label_propagation_csr(
+static __global__ void kernel_label_propagation_csr(
     const int* row_ptrs,
     const int* col_indices,
     const float* weights,
@@ -725,7 +745,7 @@ __global__ void kernel_label_propagation_csr(
 /**
  * @brief Compute modularity contribution per edge
  */
-__global__ void kernel_modularity_contribution_csr(
+static __global__ void kernel_modularity_contribution_csr(
     const int* row_ptrs,
     const int* col_indices,
     const float* weights,
@@ -783,7 +803,7 @@ __global__ void kernel_modularity_contribution_csr(
 /**
  * @brief Generate Erdos-Renyi random graph
  */
-__global__ void kernel_erdos_renyi_generate(
+static __global__ void kernel_erdos_renyi_generate(
     float* adjacency,
     curandState* states,
     float edge_prob,
@@ -808,7 +828,7 @@ __global__ void kernel_erdos_renyi_generate(
 /**
  * @brief Generate ring lattice for Watts-Strogatz
  */
-__global__ void kernel_ring_lattice(
+static __global__ void kernel_ring_lattice(
     float* adjacency,
     int num_nodes,
     int k)
@@ -834,7 +854,7 @@ __global__ void kernel_ring_lattice(
 /**
  * @brief Rewire edges for Watts-Strogatz
  */
-__global__ void kernel_watts_strogatz_rewire(
+static __global__ void kernel_watts_strogatz_rewire(
     float* adjacency,
     curandState* states,
     float rewire_prob,
@@ -875,7 +895,7 @@ __global__ void kernel_watts_strogatz_rewire(
 /**
  * @brief Compute degree distribution for Barabasi-Albert preferential attachment
  */
-__global__ void kernel_compute_degree_cumsum(
+__attribute__((unused)) static __global__ void kernel_compute_degree_cumsum(
     const float* adjacency,
     float* cumsum,
     int num_nodes,
@@ -901,7 +921,7 @@ __global__ void kernel_compute_degree_cumsum(
 /**
  * @brief Convert dense adjacency to CSR row pointers
  */
-__global__ void kernel_dense_to_csr_count(
+static __global__ void kernel_dense_to_csr_count(
     const float* adjacency,
     int* row_counts,
     float threshold,
@@ -922,7 +942,7 @@ __global__ void kernel_dense_to_csr_count(
 /**
  * @brief Extract CSR column indices and values from dense adjacency
  */
-__global__ void kernel_dense_to_csr_extract(
+static __global__ void kernel_dense_to_csr_extract(
     const float* adjacency,
     const int* row_ptrs,
     int* col_indices,
@@ -947,7 +967,7 @@ __global__ void kernel_dense_to_csr_extract(
 /**
  * @brief Symmetrize adjacency matrix
  */
-__global__ void kernel_symmetrize(
+static __global__ void kernel_symmetrize(
     float* adjacency,
     int num_nodes)
 {
@@ -964,7 +984,7 @@ __global__ void kernel_symmetrize(
 /**
  * @brief Remove self-loops
  */
-__global__ void kernel_remove_self_loops(
+static __global__ void kernel_remove_self_loops(
     float* adjacency,
     int num_nodes)
 {
@@ -1005,8 +1025,8 @@ nimcp_graph_gpu_t* nimcp_graph_gpu_create(
 
     if (!sparse) {
         // Allocate dense adjacency matrix
-        int64_t dims[2] = {num_nodes, num_nodes};
-        graph->adjacency = nimcp_gpu_tensor_create(ctx, 2, dims, NIMCP_DTYPE_FLOAT32);
+        size_t dims[2] = {(size_t)(num_nodes), (size_t)(num_nodes)};
+        graph->adjacency = nimcp_gpu_tensor_create(ctx, dims, 2, NIMCP_GPU_PRECISION_FP32);
         if (!graph->adjacency) {
             LOG_ERROR("Failed to allocate adjacency matrix");
             nimcp_free(graph);
@@ -1070,8 +1090,8 @@ nimcp_graph_gpu_t* nimcp_graph_gpu_from_csr(
     graph->num_edges = num_edges;
 
     // Allocate and copy row pointers
-    int64_t row_dims[1] = {num_nodes + 1};
-    graph->row_ptrs = nimcp_gpu_tensor_create(ctx, 1, row_dims, NIMCP_DTYPE_INT32);
+    size_t row_dims[1] = {(size_t)(num_nodes + 1)};
+    graph->row_ptrs = nimcp_gpu_tensor_create(ctx, row_dims, 1, NIMCP_GPU_PRECISION_INT32);
     if (!graph->row_ptrs) {
         nimcp_graph_gpu_destroy(graph);
         return NULL;
@@ -1080,8 +1100,8 @@ nimcp_graph_gpu_t* nimcp_graph_gpu_from_csr(
                               (num_nodes + 1) * sizeof(int), cudaMemcpyHostToDevice));
 
     // Allocate and copy column indices
-    int64_t edge_dims[1] = {num_edges};
-    graph->col_indices = nimcp_gpu_tensor_create(ctx, 1, edge_dims, NIMCP_DTYPE_INT32);
+    size_t edge_dims[1] = {(size_t)(num_edges)};
+    graph->col_indices = nimcp_gpu_tensor_create(ctx, edge_dims, 1, NIMCP_GPU_PRECISION_INT32);
     if (!graph->col_indices) {
         nimcp_graph_gpu_destroy(graph);
         return NULL;
@@ -1091,7 +1111,7 @@ nimcp_graph_gpu_t* nimcp_graph_gpu_from_csr(
 
     // Copy weights if provided
     if (weights) {
-        graph->edge_weights = nimcp_gpu_tensor_create(ctx, 1, edge_dims, NIMCP_DTYPE_FLOAT32);
+        graph->edge_weights = nimcp_gpu_tensor_create(ctx, edge_dims, 1, NIMCP_GPU_PRECISION_FP32);
         if (!graph->edge_weights) {
             nimcp_graph_gpu_destroy(graph);
             return NULL;
@@ -1317,12 +1337,12 @@ bool nimcp_shortest_path_bfs(
 
     // Allocate result tensors if needed
     if (!result->distances) {
-        int64_t dims[1] = {n};
-        result->distances = nimcp_gpu_tensor_create(ctx, 1, dims, NIMCP_DTYPE_FLOAT32);
+        size_t dims[1] = {(size_t)(n)};
+        result->distances = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_FP32);
     }
     if (!result->predecessors) {
-        int64_t dims[1] = {n};
-        result->predecessors = nimcp_gpu_tensor_create(ctx, 1, dims, NIMCP_DTYPE_INT32);
+        size_t dims[1] = {(size_t)(n)};
+        result->predecessors = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_INT32);
     }
 
     // Allocate frontiers
@@ -1373,7 +1393,7 @@ bool nimcp_shortest_path_bfs(
     // Count reachable nodes
     thrust::device_ptr<float> dist_ptr((float*)result->distances->data);
     result->num_reachable = thrust::count_if(dist_ptr, dist_ptr + n,
-        [] __device__ (float d) { return d < INF_DISTANCE; });
+        topo_reachable_fn());
 
     cudaFree(d_frontier);
     cudaFree(d_next_frontier);
@@ -1400,8 +1420,8 @@ bool nimcp_shortest_path_floyd_warshall(
     int n = graph->num_nodes;
 
     // Allocate distance matrix
-    int64_t dims[2] = {n, n};
-    result->distances = nimcp_gpu_tensor_create(ctx, 2, dims, NIMCP_DTYPE_FLOAT32);
+    size_t dims[2] = {(size_t)(n), (size_t)(n)};
+    result->distances = nimcp_gpu_tensor_create(ctx, dims, 2, NIMCP_GPU_PRECISION_FP32);
     if (!result->distances) return false;
 
     // Initialize distances from adjacency
@@ -1427,10 +1447,10 @@ bool nimcp_shortest_path_floyd_warshall(
     // Compute average path length (excluding infinity and self)
     float sum = thrust::transform_reduce(
         dist_ptr, dist_ptr + n * n,
-        [] __device__ (float d) { return (d > 0.0f && d < INF_DISTANCE) ? d : 0.0f; },
+        topo_finite_path_value_fn(),
         0.0f, thrust::plus<float>());
     int count = thrust::count_if(dist_ptr, dist_ptr + n * n,
-        [] __device__ (float d) { return d > 0.0f && d < INF_DISTANCE; });
+        topo_finite_path_pred_fn());
     result->avg_path_length = (count > 0) ? sum / count : 0.0f;
 
     NIMCP_CUDA_CHECK_IMMUNE(cudaGetLastError());
@@ -1463,9 +1483,9 @@ nimcp_community_result_gpu_t* nimcp_community_detect_louvain(
     if (!result) return NULL;
 
     // Allocate result tensors
-    int64_t dims[1] = {n};
-    result->node_communities = nimcp_gpu_tensor_create(ctx, 1, dims, NIMCP_DTYPE_INT32);
-    result->community_sizes = nimcp_gpu_tensor_create(ctx, 1, dims, NIMCP_DTYPE_INT32);
+    size_t dims[1] = {(size_t)(n)};
+    result->node_communities = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_INT32);
+    result->community_sizes = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_INT32);
 
     // Allocate working arrays
     int* d_degree;
@@ -1523,7 +1543,7 @@ nimcp_community_result_gpu_t* nimcp_community_detect_louvain(
     // Count non-empty communities
     thrust::device_ptr<int> size_ptr((int*)result->community_sizes->data);
     result->num_communities = thrust::count_if(size_ptr, size_ptr + n,
-        [] __device__ (int s) { return s > 0; });
+        topo_positive_int_fn());
 
     // Compute modularity
     float* d_contribution;
@@ -1534,7 +1554,7 @@ nimcp_community_result_gpu_t* nimcp_community_detect_louvain(
     cudaMalloc(&d_degrees_f, n * sizeof(float));
     thrust::device_ptr<float> deg_f_ptr(d_degrees_f);
     thrust::transform(deg_ptr, deg_ptr + n, deg_f_ptr,
-        [] __device__ (int d) { return (float)d; });
+        topo_int_to_float_fn());
 
     kernel_modularity_contribution_csr<<<GRID_SIZE(n), BLOCK_SIZE, BLOCK_SIZE * sizeof(float)>>>(
         (int*)graph->row_ptrs->data,
@@ -1580,9 +1600,9 @@ nimcp_community_result_gpu_t* nimcp_community_detect_label_prop(
     nimcp_community_result_gpu_t* result = (nimcp_community_result_gpu_t*)nimcp_calloc(1, sizeof(nimcp_community_result_gpu_t));
     if (!result) return NULL;
 
-    int64_t dims[1] = {n};
-    result->node_communities = nimcp_gpu_tensor_create(ctx, 1, dims, NIMCP_DTYPE_INT32);
-    result->community_sizes = nimcp_gpu_tensor_create(ctx, 1, dims, NIMCP_DTYPE_INT32);
+    size_t dims[1] = {(size_t)(n)};
+    result->node_communities = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_INT32);
+    result->community_sizes = nimcp_gpu_tensor_create(ctx, dims, 1, NIMCP_GPU_PRECISION_INT32);
 
     // Initialize labels (each node is its own label)
     thrust::device_ptr<int> label_ptr((int*)result->node_communities->data);
@@ -1619,7 +1639,7 @@ nimcp_community_result_gpu_t* nimcp_community_detect_label_prop(
 
     thrust::device_ptr<int> size_ptr((int*)result->community_sizes->data);
     result->num_communities = thrust::count_if(size_ptr, size_ptr + n,
-        [] __device__ (int s) { return s > 0; });
+        topo_positive_int_fn());
 
     cudaFree(d_changed);
 
@@ -1771,8 +1791,8 @@ bool nimcp_graph_gpu_to_csr(nimcp_graph_gpu_t* graph, float threshold)
         d_row_counts, threshold, n);
 
     // Exclusive scan to get row pointers
-    int64_t row_dims[1] = {n + 1};
-    graph->row_ptrs = nimcp_gpu_tensor_create(graph->ctx, 1, row_dims, NIMCP_DTYPE_INT32);
+    size_t row_dims[1] = {(size_t)(n + 1)};
+    graph->row_ptrs = nimcp_gpu_tensor_create(graph->ctx, row_dims, 1, NIMCP_GPU_PRECISION_INT32);
 
     thrust::device_ptr<int> count_ptr(d_row_counts);
     thrust::device_ptr<int> row_ptr((int*)graph->row_ptrs->data);
@@ -1789,9 +1809,9 @@ bool nimcp_graph_gpu_to_csr(nimcp_graph_gpu_t* graph, float threshold)
     cudaMemcpy((int*)graph->row_ptrs->data + n, &nnz, sizeof(int), cudaMemcpyHostToDevice);
 
     // Allocate and fill column indices and values
-    int64_t edge_dims[1] = {nnz};
-    graph->col_indices = nimcp_gpu_tensor_create(graph->ctx, 1, edge_dims, NIMCP_DTYPE_INT32);
-    graph->edge_weights = nimcp_gpu_tensor_create(graph->ctx, 1, edge_dims, NIMCP_DTYPE_FLOAT32);
+    size_t edge_dims[1] = {(size_t)(nnz)};
+    graph->col_indices = nimcp_gpu_tensor_create(graph->ctx, edge_dims, 1, NIMCP_GPU_PRECISION_INT32);
+    graph->edge_weights = nimcp_gpu_tensor_create(graph->ctx, edge_dims, 1, NIMCP_GPU_PRECISION_FP32);
 
     kernel_dense_to_csr_extract<<<GRID_SIZE(n), BLOCK_SIZE>>>(
         (float*)graph->adjacency->data,

@@ -7325,6 +7325,16 @@ int nimcp_brain_eager_init_cognitive(nimcp_brain_t brain) {
             brain_sensory_hub_attach(b) == 0) count++;
     }
 
+    /* Wired-module groups (dead-code audit 2026-11-24): created last, so every
+     * subsystem a bridge references already exists; their sidecars load here
+     * for the same reason the .gl_lang/.kg ones do. */
+    {
+        extern int brain_wired_create_all(struct brain_struct*);
+        extern int brain_wired_load_all(struct brain_struct*, const char*);
+        count += brain_wired_create_all(b);
+        if (b->loaded_from_path[0]) (void)brain_wired_load_all(b, b->loaded_from_path);
+    }
+
     /* === Toxicity wire-up — FORCED late-binding (2026-05-21 fix) ===
      * Bug found on first pod deploy: on --resume, brain->language_layer
      * was already non-NULL from the checkpoint, so INIT_IF_NULL above

@@ -141,7 +141,8 @@ static logic_clause_t* pattern_to_clause(
     }
 
     if (num_active == 0) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "pattern_to_clause: num_active is zero");
+        /* No feature reached the support threshold: a valid outcome (the
+         * class has no consistent conjunctive pattern), not an error. */
         return NULL;
     }
 
@@ -232,9 +233,9 @@ bool brain_learn_logical_rule(
         return false;
     }
 
-    if (!brain->logic_system) {
+    if (!brain->symbolic_logic) {
         NIMCP_LOGGING_ERROR("Brain does not have symbolic logic system enabled");
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_learn_logical_rule: brain->logic_system is NULL");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_learn_logical_rule: brain->symbolic_logic is NULL");
         return false;
     }
 
@@ -342,18 +343,28 @@ bool brain_learn_logical_rule(
             }
         }
 
-        // Add rule to KB
+        // Add rule to KB. On success the KB owns premises/conclusion
+        // (symbolic_logic_destroy frees them), so detach them from the
+        // returned learned_rule_t: otherwise learned_rule_destroy() would
+        // double-free clauses the KB still references. The returned rule
+        // keeps its metadata (name, confidence, counts).
         if (rule->premises && rule->conclusion) {
             inference_rule_t* kb_rule = (inference_rule_t*)nimcp_calloc(1, sizeof(inference_rule_t));
             if (kb_rule) {
-                strncpy(kb_rule->name, rule->rule_name, LOGIC_MAX_NAME_LENGTH - 1);
+                snprintf(kb_rule->name, sizeof(kb_rule->name), "%s", rule->rule_name);
                 kb_rule->premises = rule->premises;
                 kb_rule->num_premises = rule->num_premises;
                 kb_rule->conclusion = rule->conclusion;
                 kb_rule->priority = confidence;
 
-                symbolic_logic_add_rule(brain->logic_system, kb_rule);
-                rule->support_count++;
+                if (symbolic_logic_add_rule(brain->symbolic_logic, kb_rule)) {
+                    rule->premises = NULL;
+                    rule->num_premises = 0;
+                    rule->conclusion = NULL;
+                    rule->support_count++;
+                } else {
+                    nimcp_free(kb_rule);   // rule keeps ownership of its clauses
+                }
             }
         }
 
@@ -392,9 +403,9 @@ bool brain_learn_symbolic_association(
         return false;
     }
 
-    if (!brain->logic_system) {
+    if (!brain->symbolic_logic) {
         NIMCP_LOGGING_ERROR("Brain does not have symbolic logic system enabled");
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_learn_symbolic_association: brain->logic_system is NULL");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_learn_symbolic_association: brain->symbolic_logic is NULL");
         return false;
     }
 
@@ -493,7 +504,7 @@ bool brain_learn_symbolic_association(
     rule->priority = confidence;
 
     // Add to symbolic logic KB
-    bool success = symbolic_logic_add_rule(brain->logic_system, rule);
+    bool success = symbolic_logic_add_rule(brain->symbolic_logic, rule);
 
     if (!success) {
         // Cleanup if add failed
@@ -529,9 +540,9 @@ bool brain_refine_rule_confidence(
         return false;
     }
 
-    if (!brain->logic_system) {
+    if (!brain->symbolic_logic) {
         NIMCP_LOGGING_ERROR("Brain does not have symbolic logic system enabled");
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_refine_rule_confidence: brain->logic_system is NULL");
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "brain_refine_rule_confidence: brain->symbolic_logic is NULL");
         return false;
     }
 
@@ -570,8 +581,7 @@ bool brain_compile_rule_to_neural(
         return false;
     }
 
-    strncpy((*result)->rule_name, rule->rule_name, 63);
-    (*result)->rule_name[63] = '\0';
+    snprintf((*result)->rule_name, sizeof((*result)->rule_name), "%s", rule->rule_name);
 
     // Simplified compilation: allocate placeholder neurons
     // Full implementation would create actual neural logic gates
@@ -716,7 +726,7 @@ bool brain_get_learned_rules(
         return false;
     }
 
-    if (!brain->logic_system) {
+    if (!brain->symbolic_logic) {
         *num_rules = 0;
         *rules = NULL;
         return true;

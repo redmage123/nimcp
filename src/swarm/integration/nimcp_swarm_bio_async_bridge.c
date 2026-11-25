@@ -1066,12 +1066,11 @@ int swarm_bio_bridge_process_messages(
 ) {
     if (!bridge || !bridge->base.bio_async_enabled) return 0;
 
-    /* Message processing is handled by bio_message_handler callback
-     * when registered with the router. This function exists for
-     * explicit polling if needed. */
-    (void)max_messages;
-
-    return 0;
+    /* Drain this bridge's router inbox; each message is dispatched to
+     * bio_message_handler (registered in connect) by the router. */
+    if (!bridge->base.bio_ctx) return 0;
+    return (int)bio_router_process_inbox(bridge->base.bio_ctx,
+                                         max_messages > 0 ? max_messages : 32u);
 }
 
 int swarm_bio_bridge_update(

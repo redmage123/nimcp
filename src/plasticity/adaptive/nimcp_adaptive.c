@@ -460,6 +460,11 @@ struct adaptive_network_struct {
     uint32_t rank_bank_len;        /**< filled entries */
     uint32_t rank_bank_head;       /**< next slot to overwrite */
     volatile int rank_bank_lock;   /**< spinlock (__atomic builtins) */
+
+    /* Sleep-state modulation (runtime only, never persisted; zeroed by calloc
+     * = no modulation). Set by adaptive_network_set_sleep_modulation(). */
+    float sleep_sparsity_target;   /**< >0: replaces spike_params.sparsity_target */
+    bool sleep_adaptation_frozen;  /**< true: threshold adaptation paused */
 };
 
 /* Bring the GPU weight cache up to date if CPU-side learning changed the
@@ -1962,9 +1967,14 @@ static uint32_t process_network_outputs_impl(adaptive_network_t network, float* 
             // Update statistics (O(1))
             update_statistics(state, output[i]);
 
-            // Adapt threshold if enabled (O(1)) — skip for output neurons
-            if (params->enable_adaptation && !is_output_neuron) {
-                adapt_neuron_threshold(state, network->running_sparsity, params->sparsity_target,
+            // Adapt threshold if enabled (O(1)) — skip for output neurons.
+            // Sleep-state modulation may pause adaptation or move the target.
+            if (params->enable_adaptation && !is_output_neuron &&
+                !__atomic_load_n(&network->sleep_adaptation_frozen, __ATOMIC_RELAXED)) {
+                float sleep_target;
+                __atomic_load(&network->sleep_sparsity_target, &sleep_target, __ATOMIC_RELAXED);
+                float target = (sleep_target > 0.0F) ? sleep_target : params->sparsity_target;
+                adapt_neuron_threshold(state, network->running_sparsity, target,
                                        params->min_threshold, params->max_threshold);
             }
         }
@@ -2325,6 +2335,36 @@ uint32_t adaptive_network_forward_raw(adaptive_network_t network, const float* i
 //=============================================================================
 // Sparsity and Pruning
 //=============================================================================
+
+float adaptive_network_get_sparsity_target(adaptive_network_t network)
+{
+    if (!network)
+        return -1.0F;
+    return network->config.spike_params.sparsity_target;
+}
+
+int adaptive_network_set_sleep_modulation(adaptive_network_t network,
+                                          float sparsity_target, bool freeze_adaptation)
+{
+    if (!network || !isfinite(sparsity_target) || sparsity_target < 0.0F)
+        return -1;
+    if (sparsity_target > 0.0F)
+        sparsity_target = fminf(fmaxf(sparsity_target, ADAPTIVE_SLEEP_SPARSITY_MIN),
+                                ADAPTIVE_SLEEP_SPARSITY_MAX);
+    __atomic_store(&network->sleep_sparsity_target, &sparsity_target, __ATOMIC_RELAXED);
+    __atomic_store_n(&network->sleep_adaptation_frozen, freeze_adaptation, __ATOMIC_RELAXED);
+    return 0;
+}
+
+int adaptive_network_get_sleep_modulation(adaptive_network_t network,
+                                          float* sparsity_target, bool* freeze_adaptation)
+{
+    if (!network || !sparsity_target || !freeze_adaptation)
+        return -1;
+    __atomic_load(&network->sleep_sparsity_target, sparsity_target, __ATOMIC_RELAXED);
+    *freeze_adaptation = __atomic_load_n(&network->sleep_adaptation_frozen, __ATOMIC_RELAXED);
+    return 0;
+}
 
 float adaptive_network_get_sparsity(adaptive_network_t network)
 {

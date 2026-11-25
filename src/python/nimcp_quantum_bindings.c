@@ -10,22 +10,40 @@
  * @date 2025-11-12
  */
 
+/*
+ * BUILD NOTE: this is NOT a standalone translation unit. It is a fragment of
+ * the Python extension (target nimcp_python, src/python/CMakeLists.txt) and
+ * must be #included by src/bindings/python/nimcp_python.c AFTER the
+ * BrainObject typedef, e.g.
+ *
+ *     #include "../../python/nimcp_quantum_bindings.c"
+ *
+ * and NIMCP_QUANTUM_BINDINGS_METHODS added inside Brain_methods[] (before the
+ * {NULL, NULL, 0, NULL} sentinel). It relies on nimcp_python.c having
+ * included api/nimcp_api_internal.h and core/brain/nimcp_brain_internal.h.
+ *
+ * RUNTIME NOTE: the quantum-walk fields are read when the spatial
+ * neuromodulator system is created (nimcp_brain_init_neuromod.c). Changing
+ * them after brain creation updates brain->config only; it takes effect on
+ * the next brain created from / restored with that config.
+ */
+#ifndef NIMCP_QUANTUM_BINDINGS_FRAGMENT
+#define NIMCP_QUANTUM_BINDINGS_FRAGMENT
+
 #include <Python.h>
-#include "security/nimcp_security.h"
-#include "security/nimcp_blood_brain_barrier.h"
+#include <math.h>
+#include "api/nimcp_api_internal.h"
+#include "core/brain/nimcp_brain_internal.h"
 
-#include "async/nimcp_bio_async.h"
-#include "async/nimcp_bio_router.h"
-
-#include "core/brain/nimcp_brain.h"
-#include <stddef.h>  /* for NULL */
-#include "core/brain/nimcp_brain_internal.h"  // Internal header for brain_struct access
-#include "common/nimcp_module.h"
-#include "utils/logging/nimcp_logging.h"
-#include "utils/exception/nimcp_exception_macros.h"
-#include "utils/fault_tolerance/nimcp_health_agent_macros.h"
-
-NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(quantum_bindings)
+/* Resolve the internal brain from the Python handle (nimcp_brain_t is the
+ * public handle; the internal brain_struct is handle->internal_brain). */
+static struct brain_struct* quantum_bindings_brain(BrainObject* self) {
+    if (!self || !self->brain || !self->brain->internal_brain) {
+        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized");
+        return NULL;
+    }
+    return (struct brain_struct*)self->brain->internal_brain;
+}
 
 // ============================================================================
 // Quantum Walk Configuration Methods
@@ -44,20 +62,22 @@ static PyObject* Brain_enable_quantum_walks(BrainObject* self, PyObject* args, P
     uint32_t coin_type = 0;
     float decoherence = 0.05f;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|Ifif", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|IfIf", kwlist,
                                      &steps, &mixing, &coin_type, &decoherence)) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "Brain_enable_quantum_walks: operation failed");
+        return NULL;
+    }
+    if (!isfinite(mixing) || mixing < 0.0f || mixing > 1.0f ||
+        !isfinite(decoherence) || decoherence < 0.0f || decoherence > 1.0f ||
+        coin_type > 2 || steps == 0) {
+        PyErr_SetString(PyExc_ValueError,
+                        "steps>0, mixing/decoherence in [0,1], coin_type in {0,1,2}");
         return NULL;
     }
 
-    if (!self->brain) {
-        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized");
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "Brain_enable_quantum_walks: self->brain is NULL");
+    struct brain_struct* brain_impl = quantum_bindings_brain(self);
+    if (!brain_impl) {
         return NULL;
     }
-
-    // Cast from opaque handle to internal struct (using proper internal header)
-    struct brain_struct* brain_impl = (struct brain_struct*)self->brain;
 
     // Configure quantum walks
     brain_impl->config.enable_quantum_walk_diffusion = true;
@@ -75,14 +95,10 @@ static PyObject* Brain_enable_quantum_walks(BrainObject* self, PyObject* args, P
  * Python signature: brain.disable_quantum_walks()
  */
 static PyObject* Brain_disable_quantum_walks(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
-    if (!self->brain) {
-        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized");
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "Brain_disable_quantum_walks: self->brain is NULL");
+    struct brain_struct* brain_impl = quantum_bindings_brain(self);
+    if (!brain_impl) {
         return NULL;
     }
-
-    // Cast from opaque handle to internal struct (using proper internal header)
-    struct brain_struct* brain_impl = (struct brain_struct*)self->brain;
     brain_impl->config.enable_quantum_walk_diffusion = false;
 
     Py_RETURN_NONE;
@@ -95,20 +111,13 @@ static PyObject* Brain_disable_quantum_walks(BrainObject* self, PyObject* Py_UNU
  * Returns: dict with keys: enabled, steps, mixing, coin_type, decoherence
  */
 static PyObject* Brain_get_quantum_walk_config(BrainObject* self, PyObject* Py_UNUSED(ignored)) {
-    if (!self->brain) {
-        PyErr_SetString(PyExc_RuntimeError, "Brain not initialized");
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "Brain_get_quantum_walk_config: self->brain is NULL");
+    struct brain_struct* brain_impl = quantum_bindings_brain(self);
+    if (!brain_impl) {
         return NULL;
     }
 
-    // Cast from opaque handle to internal struct (using proper internal header)
-    struct brain_struct* brain_impl = (struct brain_struct*)self->brain;
-
-    // Create dictionary
     PyObject* dict = PyDict_New();
     if (!dict) {
-        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "dict is NULL");
-
         return NULL;
     }
 
@@ -117,13 +126,11 @@ static PyObject* Brain_get_quantum_walk_config(BrainObject* self, PyObject* Py_U
         PyObject* _val = (value_expr); \
         if (!_val) { \
             Py_DECREF(dict); \
-            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "Brain_get_quantum_walk_config: _val is NULL"); \
             return NULL; \
         } \
         if (PyDict_SetItemString(dict, (key), _val) < 0) { \
             Py_DECREF(_val); \
             Py_DECREF(dict); \
-            NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "Brain_get_quantum_walk_config: validation failed"); \
             return NULL; \
         } \
         Py_DECREF(_val); \
@@ -146,45 +153,18 @@ static PyObject* Brain_get_quantum_walk_config(BrainObject* self, PyObject* Py_U
 }
 
 // ============================================================================
-// Method Definitions to Add to Brain_methods
+// Method table entries — splice into Brain_methods[] in nimcp_python.c
 // ============================================================================
 
-/**
- * Add these entries to Brain_methods array in nimcp_types.c:
- */
+#define NIMCP_QUANTUM_BINDINGS_METHODS \
+    {"enable_quantum_walks", (PyCFunction)(void(*)(void))Brain_enable_quantum_walks, \
+     METH_VARARGS | METH_KEYWORDS, \
+     "enable_quantum_walks(steps=50, mixing=0.2, coin_type=0, decoherence=0.05) -> None. " \
+     "Sets brain->config quantum-walk neuromodulator diffusion (Phase C2.1); read when the " \
+     "spatial neuromodulator system is created."}, \
+    {"disable_quantum_walks", (PyCFunction)Brain_disable_quantum_walks, METH_NOARGS, \
+     "disable_quantum_walks() -> None. Revert config to classical diffusion."}, \
+    {"get_quantum_walk_config", (PyCFunction)Brain_get_quantum_walk_config, METH_NOARGS, \
+     "get_quantum_walk_config() -> dict(enabled, steps, mixing, coin_type, decoherence)."},
 
-/*
-static PyMethodDef Brain_quantum_methods[] = {
-    {"enable_quantum_walks", (PyCFunction)Brain_enable_quantum_walks, METH_VARARGS | METH_KEYWORDS,
-     "Enable quantum walk diffusion for neuromodulators (Phase C2.1)\n\n"
-     "Quantum walks provide O(√N) speedup for neuromodulator propagation.\n"
-     "Best for large networks (>500 neurons) where quantum advantage outweighs overhead.\n\n"
-     "Args:\n"
-     "    steps (int): Number of quantum evolution steps (default: 50)\n"
-     "    mixing (float): Quantum-classical mixing ratio [0=pure quantum, 1=classical] (default: 0.2)\n"
-     "    coin_type (int): Coin operator [0=Hadamard, 1=Grover, 2=Fourier] (default: 0)\n"
-     "    decoherence (float): Decoherence rate [0=none, 1=instant classical] (default: 0.05)\n\n"
-     "Returns:\n"
-     "    None\n\n"
-     "Example:\n"
-     "    brain = nimcp.Brain('model', size=2, task=0, inputs=10, outputs=3)\n"
-     "    brain.enable_quantum_walks(steps=100, mixing=0.1)  # 90% quantum, 10% classical"},
-
-    {"disable_quantum_walks", (PyCFunction)Brain_disable_quantum_walks, METH_NOARGS,
-     "Disable quantum walk diffusion, revert to classical\n\n"
-     "Returns:\n"
-     "    None\n\n"
-     "Example:\n"
-     "    brain.disable_quantum_walks()"},
-
-    {"get_quantum_walk_config", (PyCFunction)Brain_get_quantum_walk_config, METH_NOARGS,
-     "Get current quantum walk configuration\n\n"
-     "Returns:\n"
-     "    dict: Configuration with keys: enabled, steps, mixing, coin_type, decoherence\n\n"
-     "Example:\n"
-     "    config = brain.get_quantum_walk_config()\n"
-     "    print(f\"Quantum walks enabled: {config['enabled']}\")"},
-
-    // ... (add before the final {NULL, NULL, 0, NULL} entry)
-};
-*/
+#endif /* NIMCP_QUANTUM_BINDINGS_FRAGMENT */

@@ -187,6 +187,31 @@ uint32_t adaptive_network_forward_raw(adaptive_network_t network, const float* i
 float adaptive_network_get_sparsity(adaptive_network_t network);
 
 /**
+ * @brief Configured (awake) sparsity target, spike_params.sparsity_target
+ * @return target in [0,1], or -1 on NULL
+ */
+float adaptive_network_get_sparsity_target(adaptive_network_t network);
+
+/**
+ * @brief Sleep-state modulation of threshold adaptation (runtime only)
+ *
+ * WHAT: Overrides the sparsity target and/or pauses threshold adaptation in
+ *       the non-readonly forward pass (process_network_outputs). Never written
+ *       to checkpoints; spike_params is left untouched.
+ * HOW:  sparsity_target 0 = no override; otherwise clamped to
+ *       [ADAPTIVE_SLEEP_SPARSITY_MIN, ADAPTIVE_SLEEP_SPARSITY_MAX]. Non-finite
+ *       or negative values are rejected (-1, no change). (0, false) restores
+ *       the awake behaviour exactly.
+ * @return 0 on success, -1 on error
+ */
+#define ADAPTIVE_SLEEP_SPARSITY_MIN 0.01f
+#define ADAPTIVE_SLEEP_SPARSITY_MAX 0.99f
+int adaptive_network_set_sleep_modulation(adaptive_network_t network,
+                                          float sparsity_target, bool freeze_adaptation);
+int adaptive_network_get_sleep_modulation(adaptive_network_t network,
+                                          float* sparsity_target, bool* freeze_adaptation);
+
+/**
  * @brief Prune weak connections
  *
  * @param network Adaptive network

@@ -124,17 +124,11 @@ visual_sleep_bridge_t visual_sleep_bridge_create(
         return NULL;
     }
 
-    /* Register callback for automatic state updates */
-    bridge->callback_registered = sleep_register_state_callback(
-        sleep_system,
-        visual_on_sleep_state_change,
-        bridge);
-
-    if (!bridge->callback_registered) {
-        NIMCP_LOGGING_WARN("Failed to register sleep state callback - will use polling");
-    } else {
-        NIMCP_LOGGING_DEBUG("Registered sleep state callback for visual cortex bridge");
-    }
+    /* No self-registration: sleep_wake.c delivers at most 32 state listeners
+     * per sleep system, so the brain drives this bridge from one group-level
+     * listener (src/core/brain/wired/nimcp_brain_wired_sleep.c), which calls
+     * visual_sleep_update() on every transition. */
+    bridge->callback_registered = false;
 
     /* Get initial state immediately */
     sleep_state_t initial_state = sleep_get_current_state(sleep_system);

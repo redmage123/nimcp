@@ -22,13 +22,35 @@
 #include <stdio.h>
 #include <time.h>
 
-/* Try to include nimcp_memory if available, otherwise use stdlib */
-#ifdef NIMCP_HAS_MEMORY_H
 #include "utils/memory/nimcp_memory.h"
 
 #include <stddef.h>  /* for NULL */
 #include "utils/logging/nimcp_logging.h"
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+/* ============================================================================
+ * Bio-router plumbing (wired 2026-11-24, BRAIN_WIRED_BIOASYNC)
+ *
+ * Registered module ID lives in the wired bio-async bridge range 0x7B00-0x7BFF
+ * so this bridge never shares an inbox with a live module (the router merges
+ * registrations that reuse an ID).
+ * ============================================================================ */
+#include "async/nimcp_bio_router.h"
+
+#define UTILS_BIO_BRIDGE_WIRED_MODULE_ID 0x7B0A
+
+/** Broadcast a fully-built message through the router (no-op when unregistered). */
+static void utils_bio_bridge_router_send(bridge_base_t* base, void* msg, size_t size) {
+    if (!base || !base->bio_ctx || !msg || size < sizeof(bio_message_header_t)) {
+        return;
+    }
+    bio_message_header_t* hdr = (bio_message_header_t*)msg;
+    if (hdr->payload_size == 0) {
+        hdr->payload_size = (uint32_t)(size - sizeof(bio_message_header_t));
+    }
+    (void)bio_router_broadcast(base->bio_ctx, msg, size);
+}
+
 
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(utils_bio_async_bridge)
 
@@ -37,17 +59,12 @@ NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(utils_bio_async_bridge)
 #define UTILS_MALLOC(size) nimcp_malloc(size)
 #define UTILS_CALLOC(n, size) nimcp_calloc(n, size)
 #define UTILS_FREE(ptr) nimcp_free(ptr)
-#else
-#define UTILS_MALLOC(size) nimcp_malloc(size)
-#define UTILS_CALLOC(n, size) nimcp_calloc(n, size)
-#define UTILS_FREE(ptr) nimcp_free(ptr)
-#endif
 
 /* ============================================================================
  * Module ID for Utils Bridge
  * ============================================================================ */
 
-#define UTILS_BIO_MODULE_ID 0x5001  /* Utils bio-async module ID */
+#define UTILS_BIO_MODULE_ID UTILS_BIO_BRIDGE_WIRED_MODULE_ID  /* was 0x5001 (collides with BIO_MODULE_ID_RSC) */
 
 /* ============================================================================
  * Internal State
@@ -333,6 +350,12 @@ int utils_bio_bridge_connect(
     }
 
     bridge->router = router;
+    /* Register on the live router (idempotent). */
+    if (router && !bridge->base.bio_ctx) {
+        bridge->base.module_id = UTILS_BIO_BRIDGE_WIRED_MODULE_ID;
+        bridge->base.module_name = "utils_bio_bridge";
+        (void)bridge_base_connect_bio_async(&bridge->base);
+    }
     bridge->connected = true;
 
     /* Reset alert flags on connect */
@@ -348,6 +371,7 @@ int utils_bio_bridge_disconnect(utils_bio_bridge_t* bridge) {
         return -1;
     }
 
+    (void)bridge_base_disconnect_bio_async(&bridge->base);
     bridge->router = NULL;
     bridge->connected = false;
 
@@ -371,8 +395,9 @@ int utils_bio_bridge_process_inbox(
         return -1;
     }
 
-    uint32_t processed = 0;
-    (void)max_messages;  /* Placeholder - would process from router inbox */
+    uint32_t processed = bridge->base.bio_ctx
+        ? bio_router_process_inbox(bridge->base.bio_ctx, max_messages > 0 ? max_messages : 32u)
+        : 0u;
 
     bridge->stats.messages_received += processed;
     return (int)processed;
@@ -460,6 +485,7 @@ int utils_bio_bridge_broadcast_memory_alloc(
     msg.timestamp_us = get_timestamp_us();
 
     bridge->stats.memory_events_sent++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->last_broadcast_us = msg.timestamp_us;
 
@@ -502,6 +528,7 @@ int utils_bio_bridge_broadcast_memory_free(
     msg.timestamp_us = get_timestamp_us();
 
     bridge->stats.memory_events_sent++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -571,6 +598,7 @@ int utils_bio_bridge_broadcast_pool_status(
     msg.bytes_allocated = allocated;
     msg.bytes_free = capacity > allocated ? capacity - allocated : 0;
     msg.timestamp_us = get_timestamp_us();
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
 
     bridge->stats.broadcasts_sent++;
     return 0;
@@ -608,6 +636,7 @@ int utils_bio_bridge_broadcast_timer_event(
     msg.timestamp_us = msg.fired_time_us;
 
     bridge->stats.timer_events_sent++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     return 0;
 }
@@ -639,6 +668,7 @@ int utils_bio_bridge_broadcast_timer_schedule(
     msg.timestamp_us = get_timestamp_us();
 
     bridge->stats.timer_events_sent++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     return 0;
 }
@@ -724,6 +754,7 @@ int utils_bio_bridge_broadcast_log_ex(
     msg.timestamp_us = get_timestamp_us();
 
     bridge->stats.log_entries_sent++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     return 0;
 }
@@ -768,6 +799,7 @@ int utils_bio_bridge_broadcast_metrics(
     msg.timestamp_us = msg.period_end_us;
 
     bridge->stats.metrics_broadcasts++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     return 0;
 }
@@ -801,6 +833,7 @@ int utils_bio_bridge_broadcast_service_status(
     msg.timestamp_us = get_timestamp_us();
 
     bridge->stats.service_updates++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     return 0;
 }
@@ -865,6 +898,7 @@ int utils_bio_bridge_send_heartbeat(
     msg.timestamp_us = get_timestamp_us();
 
     bridge->stats.heartbeats_sent++;
+    utils_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     return 0;
 }

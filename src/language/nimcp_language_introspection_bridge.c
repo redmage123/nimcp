@@ -1,46 +1,57 @@
 /**
  * @file nimcp_language_introspection_bridge.c
- * @brief Introspection/metacognition integration
- * @date 2026-10-21
+ * @brief Introspection (metacognitive monitoring of language competence).
+ *
+ * WHAT: The brain's knowledge of how well it currently understands language
+ *       (grounded-language running comprehension confidence), weighted by
+ *       how actively the introspection module is self-monitoring, shifts the
+ *       produce floor: knowing that it understands -> willing to answer;
+ *       knowing that it does not -> "I don't know".
+ * WHY:  Metacognitive feeling-of-knowing gates report (Koriat 1993; Fleming
+ *       & Dolan 2012).
+ * HOW:  brain->introspection: introspection_get_history_stats utilization u
+ *       (self-monitoring activity). monitor = 0.5 + 0.5*u.
+ *       floor_adjust = -0.10*(conf - 0.5)*monitor.
+ *
+ * Rewritten 2026-11-24 (dead-code wiring): the 2026-10-21 version returned
+ * constants and duplicated grounded_language_integrate_introspection.
  */
-#include "language/nimcp_grounded_language.h"
 #include "core/brain/nimcp_brain_internal.h"
+#include "cognitive/introspection/nimcp_introspection.h"
+#include "language/nimcp_grounded_language_internal.h"
+#include "language/bridges/nimcp_language_cognitive_wired.h"
 #include "utils/memory/nimcp_memory.h"
-#include "utils/logging/nimcp_logging.h"
-#include <math.h>
 
-typedef struct {
-    float self_monitoring; float cognitive_state_awareness;
-    float confidence; float epistemic_certainty;
-} introspection_state_t;
+typedef struct { int unused; } lang_intro_state_t;
 
-int introspection_extract_metacognition(brain_t brain, introspection_state_t* out) {
-    if (!brain || !out) return -1;
-    out->self_monitoring = 0.6f; out->cognitive_state_awareness = 0.65f;
-    out->confidence = 0.7f; out->epistemic_certainty = 0.55f;
-    return 0;
+static void* intro_create(struct brain_struct* brain) {
+    if (!brain || !brain->introspection || !brain->grounded_lang) { return NULL; }
+    return nimcp_calloc(1, sizeof(lang_intro_state_t));
 }
 
-int grounded_language_integrate_introspection(brain_t brain, void* gl, void* state) {
-    if (!brain || !gl || !state) return -1;
-    extern bool grounded_language_introspection_enabled(const void* gl);
-    if (!grounded_language_introspection_enabled(gl)) return 0;
+static void intro_destroy(void* st) { if (st) { nimcp_free(st); } }
 
-    typedef struct { float* content_intent; uint32_t dim; } cs_t;
-    cs_t* cs = (cs_t*)state;
-    introspection_state_t intro = {0};
-    if (introspection_extract_metacognition(brain, &intro) != 0) return -1;
-
-    const float w = 0.19f;
-    if (cs->dim > 720) {
-        cs->content_intent[695] += w * intro.self_monitoring;
-        cs->content_intent[696] += w * intro.cognitive_state_awareness;
-        cs->content_intent[697] += w * intro.confidence;
-        cs->content_intent[698] += w * intro.epistemic_certainty;
+static int intro_update(void* st, struct brain_struct* brain,
+                        const lang_cog_input_t* in, lang_cog_signal_t* out) {
+    lang_cog_signal_neutral(out);
+    if (!st || !brain || !brain->introspection || !in) { return -1; }
+    uint32_t cur = 0, cap = 0;
+    float util = 0.0f;
+    if (!introspection_get_history_stats(brain->introspection, &cur, &cap, &util)) {
+        util = 0.0f;
     }
-    NIMCP_LOGGING_DEBUG("Introspection: confidence=%.2f epistemic=%.2f",
-                        intro.confidence, intro.epistemic_certainty);
+    util = lang_cog_clampf(lang_cog_finite_or(util, 0.0f), 0.0f, 1.0f);
+    float conf = lang_cog_clampf(in->comprehension_conf, 0.0f, 1.0f);
+    float monitor = 0.5f + 0.5f * util;
+    out->floor_adjust = lang_cog_clampf(-0.10f * (conf - 0.5f) * monitor, -0.05f, 0.05f);
+    out->primary   = conf;
+    out->secondary = util;
+    out->valid     = true;
     return 0;
 }
 
-bool grounded_language_introspection_enabled(const void* gl) { return (gl != NULL); }
+const lang_cog_bridge_vt_t lang_introspection_bridge_vt = {
+    .name = "introspection", .gl_bit = GL_BRIDGE_INTROSPECTION,
+    .create = intro_create, .destroy = intro_destroy, .update = intro_update,
+    .recall = NULL, .save = NULL, .load = NULL,
+};

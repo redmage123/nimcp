@@ -433,7 +433,7 @@ static nimcp_error_t handle_async_message(
     bridge->stats.messages_received++;
 
     /* Handle coordination messages */
-    switch (header->type) {
+    switch ((uint32_t)header->type) {
         case ASYNC_MSG_COORD_STATUS_QUERY:
             /* Could send status response here */
             break;
@@ -1296,7 +1296,7 @@ int async_integration_connect_bio_async(async_integration_t* bridge)
     /* Register handlers for coordination messages */
     bio_router_register_category_handler(
         bridge->bio_context,
-        0x0700,  /* ASYNC_MSG base */
+        ASYNC_MSG_TASK_SUBMIT,  /* ASYNC_MSG base (0x7E00; was 0x0700 = BIO_MSG_SHUTDOWN_REQUEST) */
         handle_async_message
     );
 

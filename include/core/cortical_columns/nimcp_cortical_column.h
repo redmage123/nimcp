@@ -437,6 +437,36 @@ void hypercolumn_get_distribution(
 //=============================================================================
 
 /**
+ * @brief Get / set the competition parameters hypercolumn_compute() uses
+ *
+ * WHAT: competition_mode and softmax temperature read by hypercolumn_compute
+ *       (brain_decide's cortical column path) on every call.
+ * WHY:  Sleep-state modulation (core/brain/wired, cortical_column_sleep_bridge)
+ *       softens competition in drowsy/NREM/REM and restores it on wake.
+ * HOW:  Under the hypercolumn's own mutex. set rejects an invalid mode and a
+ *       non-finite or non-positive temperature (returns false, no change) and
+ *       clamps temperature to [HYPERCOLUMN_MIN_TEMPERATURE, HYPERCOLUMN_MAX_TEMPERATURE].
+ */
+#define HYPERCOLUMN_MIN_TEMPERATURE 0.01f
+#define HYPERCOLUMN_MAX_TEMPERATURE 100.0f
+bool hypercolumn_get_competition(hypercolumn_t* hcol, cc_competition_mode_t* mode,
+                                 float* temperature);
+bool hypercolumn_set_competition(hypercolumn_t* hcol, cc_competition_mode_t mode,
+                                 float temperature);
+
+/**
+ * @brief Get / set the Mexican-hat lateral inhibition amplitude
+ *
+ * WHAT: lateral_inhibition_strength read by hypercolumn_compute's lateral
+ *       inhibition step on every call.
+ * HOW:  Under the hypercolumn's own mutex. set rejects non-finite values and
+ *       clamps to [0, HYPERCOLUMN_MAX_LATERAL_INHIBITION].
+ */
+#define HYPERCOLUMN_MAX_LATERAL_INHIBITION 10.0f
+bool hypercolumn_get_lateral_inhibition(hypercolumn_t* hcol, float* strength);
+bool hypercolumn_set_lateral_inhibition(hypercolumn_t* hcol, float strength);
+
+/**
  * @brief Apply lateral inhibition to minicolumn
  *
  * WHAT: Reduce minicolumn activation based on neighbor activity

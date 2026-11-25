@@ -348,7 +348,7 @@ static uint32_t add_primitive_unlocked(
     entry->primitive.vector_dim = vector_dim;
     entry->primitive.confidence = 1.0f;
     entry->primitive.usage_count = 0;
-    entry->primitive.last_used = nimcp_time_get_current_time_ns();
+    entry->primitive.last_used = nimcp_time_now_ns();
 
     /* Add to hash table */
     uint32_t hash_idx = hash_vector(meaning_vector, vector_dim) % compressor->hash_size;
@@ -565,6 +565,8 @@ nimcp_compressed_signal_t* nimcp_semantic_compressor_compress(
     compressed->num_primitives = 0;
 
     /* Compress signal using primitives */
+    float err_sum = 0.0f;     /* sum of squared reconstruction error */
+    float energy_sum = 0.0f;  /* sum of squared signal energy */
     size_t offset = 0;
     while (offset < len) {
         size_t remaining = len - offset;
@@ -573,16 +575,50 @@ nimcp_compressed_signal_t* nimcp_semantic_compressor_compress(
         float* segment = extract_segment(signal, len, offset, seg_len);
         if (!segment) break;
 
-        /* Find or create primitive for this segment */
-        float distance;
-        primitive_entry_t* best = find_best_primitive(compressor, segment, seg_len, &distance);
+        /* Skip non-finite segments: never let NaN/Inf into the codebook */
+        bool finite = true;
+        float seg_energy = 0.0f;
+        for (size_t k = 0; k < seg_len; k++) {
+            if (!isfinite(segment[k])) { finite = false; break; }
+            seg_energy += segment[k] * segment[k];
+        }
+        if (!finite) {
+            nimcp_free(segment);
+            offset += seg_len;
+            continue;
+        }
 
-        if (best) {
+        /* Find or create primitive for this segment.
+         * A segment reuses its nearest primitive only when the relative
+         * reconstruction error is within the configured quality budget;
+         * otherwise a new primitive is allocated (if capacity remains). */
+        float distance = FLT_MAX;
+        primitive_entry_t* best = find_best_primitive(compressor, segment, (uint32_t)seg_len, &distance);
+        float seg_norm = sqrtf(seg_energy);
+        float tolerance = (1.0f - compressor->config.quality_level) * seg_norm + EPSILON;
+        bool reuse = (best != NULL) &&
+                     (distance <= tolerance ||
+                      compressor->active_primitive_count >= compressor->config.max_primitives);
+
+        if (reuse) {
             /* Use existing primitive - bounds check before storing */
             if (compressed->num_primitives < max_primitives) {
                 compressed->primitive_ids[compressed->num_primitives++] = best->primitive.primitive_id;
                 best->primitive.usage_count++;
-                best->primitive.last_used = nimcp_time_get_current_time_ns();
+                best->primitive.last_used = nimcp_time_now_ns();
+            }
+            /* Prototype adaptation: move the primitive toward the segment */
+            float lr = compressor->config.primitive_learning_rate;
+            if (isfinite(lr) && lr > 0.0f && lr < 1.0f) {
+                float* mv = best->primitive.meaning_vector;
+                for (size_t k = 0; k < seg_len; k++) {
+                    mv[k] += lr * (segment[k] - mv[k]);
+                }
+            }
+            float err = calculate_reconstruction_error(segment, best->primitive.meaning_vector, seg_len);
+            if (isfinite(err)) {
+                err_sum += err * (float)seg_len;
+                energy_sum += seg_energy;
             }
         } else {
             /* Create new primitive if space available
@@ -592,6 +628,7 @@ nimcp_compressed_signal_t* nimcp_semantic_compressor_compress(
             if (new_id > 0 && compressed->num_primitives < max_primitives) {
                 compressed->primitive_ids[compressed->num_primitives++] = new_id;
             }
+            energy_sum += seg_energy;  /* exact match: zero error */
         }
 
         nimcp_free(segment);
@@ -600,22 +637,37 @@ nimcp_compressed_signal_t* nimcp_semantic_compressor_compress(
 
     /* Apply delta coding if enabled */
     if (compressor->config.enable_delta) {
-        compressed->deltas = compute_deltas(signal, len, &compressed->num_deltas);
+        size_t delta_count = 0;
+        compressed->deltas = compute_deltas(signal, len, &delta_count);
+        compressed->num_deltas = (uint32_t)delta_count;
     }
+
+    /* Quality = 1 - relative RMS reconstruction error */
+    compressed->quality_metric = (energy_sum > EPSILON)
+        ? 1.0f - sqrtf(err_sum / energy_sum) : 1.0f;
+    if (!isfinite(compressed->quality_metric)) compressed->quality_metric = 0.0f;
+    if (compressed->quality_metric < 0.0f) compressed->quality_metric = 0.0f;
 
     /* Calculate sizes */
     compressed->original_size = len * sizeof(float);
     compressed->compressed_size = compressed->num_primitives * sizeof(uint32_t) +
                                    compressed->num_deltas * sizeof(float);
 
-    compressed->timestamp = nimcp_time_get_current_time_ns();
+    compressed->timestamp = nimcp_time_now_ns();
 
     /* Update statistics */
     compressor->stats.total_compressions++;
     compressor->stats.total_bytes_in += compressed->original_size;
     compressor->stats.total_bytes_out += compressed->compressed_size;
 
-    if (compressed->original_size > 0) {
+    {
+        double n_loss = (double)compressor->stats.total_compressions;
+        double loss = 1.0 - (double)compressed->quality_metric;
+        compressor->stats.avg_semantic_loss = (float)(
+            ((double)compressor->stats.avg_semantic_loss * (n_loss - 1.0) + loss) / n_loss);
+    }
+
+    if (compressed->original_size > 0 && compressed->compressed_size > 0) {
         double ratio = (double)compressed->original_size / (double)compressed->compressed_size;
         /* Use double precision for intermediate calculation to avoid overflow
          * with rolling average when total_compressions is large */
@@ -629,7 +681,7 @@ nimcp_compressed_signal_t* nimcp_semantic_compressor_compress(
 
     nimcp_platform_mutex_unlock(&compressor->mutex);
 
-    LOG_INFO(COMPRESSION_MODULE,
+    LOG_DEBUG(COMPRESSION_MODULE,
              "Compressed %zu bytes -> %zu bytes (ratio: %.2fx)",
              compressed->original_size,
              compressed->compressed_size,
@@ -728,7 +780,7 @@ nimcp_decompressed_signal_t* nimcp_semantic_compressor_decompress(
                      compressed->deltas, compressed->num_deltas);
     }
 
-    decompressed->timestamp = nimcp_time_get_current_time_ns();
+    decompressed->timestamp = nimcp_time_now_ns();
     decompressed->semantic_loss = 0.0f;  /* Would need original signal to calculate */
     decompressed->reconstruction_error = 0.0f;
 
@@ -737,7 +789,7 @@ nimcp_decompressed_signal_t* nimcp_semantic_compressor_decompress(
 
     nimcp_platform_mutex_unlock(&compressor->mutex);
 
-    LOG_INFO(COMPRESSION_MODULE, "Decompressed to %zu samples", decompressed->len);
+    LOG_DEBUG(COMPRESSION_MODULE, "Decompressed to %zu samples", decompressed->len);
 
     return decompressed;
 }
@@ -836,7 +888,7 @@ uint32_t nimcp_semantic_compressor_prune_primitives(
 
     nimcp_platform_mutex_unlock(&compressor->mutex);
 
-    LOG_INFO(COMPRESSION_MODULE, "Pruned %u primitives with usage < %u", pruned, min_usage);
+    LOG_DEBUG(COMPRESSION_MODULE, "Pruned %u primitives with usage < %u", pruned, min_usage);
 
     return pruned;
 }
@@ -886,65 +938,28 @@ float nimcp_semantic_similarity(
 
 nimcp_result_t nimcp_semantic_compressor_register_bio_async(
     nimcp_semantic_compressor_t* compressor) {
-
     NIMCP_CHECK_THROW(compressor != NULL, NIMCP_ERROR_NULL_POINTER,
                       "nimcp_semantic_compressor_register_bio_async: compressor is NULL");
 
-    LOG_INFO(COMPRESSION_MODULE, "Registering with bio-async system");
-
-    /* Initialize bio context */
-    compressor->bio_ctx.module_name = COMPRESSION_MODULE;
-    compressor->bio_ctx.channel = compressor->config.bio_channel;
-    compressor->bio_ctx.module_id = 0;  /* Will be assigned by router */
-
-    /* Register with bio-router */
-    nimcp_result_t result = nimcp_bio_router_register_module(&compressor->bio_ctx);
-    if (result != NIMCP_SUCCESS) {
-        LOG_ERROR(COMPRESSION_MODULE, "Failed to register with bio-router: %d", result);
-        return result;
-    }
-
-    compressor->bio_async_registered = true;
-
-    LOG_INFO(COMPRESSION_MODULE, "Successfully registered with bio-async");
-
-    return NIMCP_SUCCESS;
+    /* Bio-async integration is not available: the router requires a
+     * bio_module_id_t, and nimcp_bio_messages.h defines no id for this
+     * compressor (and no handlers exist for BIOMSG_COMPRESS_* requests).
+     * The compressor is fully usable synchronously; it is driven by the
+     * brain's wired COMPUTE group (src/core/brain/wired/). */
+    compressor->bio_ctx = NULL;
+    compressor->bio_async_registered = false;
+    LOG_DEBUG(COMPRESSION_MODULE,
+              "bio-async registration unavailable (no bio_module_id_t assigned)");
+    return NIMCP_NOT_INITIALIZED;
 }
 
 uint32_t nimcp_semantic_compressor_process_inbox(
     nimcp_semantic_compressor_t* compressor) {
-
-    if (!compressor || !compressor->bio_async_registered) {
+    if (!compressor || !compressor->bio_async_registered || !compressor->bio_ctx) {
         return 0;
     }
-
-    uint32_t processed = 0;
-
-    /* Process messages from bio-async inbox */
-    bio_message_t msg;
-    while (nimcp_bio_router_poll_message(&compressor->bio_ctx, &msg) == NIMCP_SUCCESS) {
-        /* Handle different message types */
-        switch (msg.header.msg_type) {
-            case BIOMSG_COMPRESS_REQUEST:
-                LOG_DEBUG(COMPRESSION_MODULE, "Received compress request");
-                /* Would handle async compression here */
-                break;
-
-            case BIOMSG_DECOMPRESS_REQUEST:
-                LOG_DEBUG(COMPRESSION_MODULE, "Received decompress request");
-                /* Would handle async decompression here */
-                break;
-
-            default:
-                LOG_WARN(COMPRESSION_MODULE, "Unknown message type: 0x%04x",
-                         msg.header.msg_type);
-                break;
-        }
-
-        processed++;
-    }
-
-    return processed;
+    /* Handlers (if any) are dispatched by the router */
+    return bio_router_process_inbox(compressor->bio_ctx, 32);
 }
 
 /* ============================================================================

@@ -12,9 +12,15 @@
 
 /* All these functions have the same signature and return 0 for no-op success */
 
+/* The 14 cognitive bridges are live in the wired LANGUAGE group (2026-11-24):
+ * their combined gain + prime-resonance recall is applied ONCE per cascade
+ * content stage, through this first hook. The other 13 hooks stay no-ops so
+ * the gain is not applied 14 times. */
+extern int brain_wired_language_apply_cascade(struct brain_struct* brain, void* production_cascade_state);
 int grounded_language_integrate_acc(brain_t brain, void* gl, void* state) {
-    (void)brain; (void)gl; (void)state;
-    return 0;
+    (void)gl;
+    if (!brain || !state) return 0;
+    return brain_wired_language_apply_cascade(brain, state);
 }
 
 int grounded_language_integrate_amygdala(brain_t brain, void* gl, void* state) {

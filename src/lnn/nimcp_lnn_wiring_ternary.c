@@ -598,6 +598,7 @@ int lnn_ternary_wiring_set(
     else wiring->n_absent++;
 
     trit_matrix_set(wiring->adjacency, from, to, strength);
+    update_stats(wiring);  /* keep actual_sparsity / actual_ei_ratio current */
     return LNN_SUCCESS;
 }
 

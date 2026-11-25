@@ -51,35 +51,6 @@ static void compute_degrees(
 }
 
 /**
- * @brief Compute sum of edge weights within community
- */
-static void compute_community_edges(
-    const trit_matrix_t* adj,
-    const uint32_t* community_ids,
-    uint32_t num_nodes,
-    uint32_t community,
-    int32_t* sum_pos,
-    int32_t* sum_neg
-) {
-    int32_t pos = 0, neg = 0;
-
-    for (uint32_t i = 0; i < num_nodes; i++) {
-        if (community_ids[i] != community) continue;
-
-        for (uint32_t j = i + 1; j < num_nodes; j++) {
-            if (community_ids[j] != community) continue;
-
-            trit_t val = trit_matrix_get(adj, i, j);
-            if (val == TRIT_POSITIVE) pos++;
-            else if (val == TRIT_NEGATIVE) neg++;
-        }
-    }
-
-    if (sum_pos) *sum_pos = pos;
-    if (sum_neg) *sum_neg = neg;
-}
-
-/**
  * @brief Compute total edges in graph
  */
 static void compute_total_edges(
@@ -244,8 +215,37 @@ community_ternary_result_t* community_ternary_detect(
 
     float resolution = config->resolution;
 
-    /* Phase 1: Local optimization (Louvain) */
-    bool improved = true;
+    /* Phase 1: Local optimization (Louvain).
+     *
+     * Same signed gain as community_ternary_modularity_gain(), but with node
+     * degrees, total edge counts and per-community degree sums precomputed
+     * and maintained incrementally, so one sweep is O(n^2) instead of
+     * O(n^2 * edges). */
+    int32_t* kp = nimcp_calloc(n, sizeof(int32_t));
+    int32_t* kn = nimcp_calloc(n, sizeof(int32_t));
+    int64_t* comm_kp = nimcp_calloc(n, sizeof(int64_t));
+    int64_t* comm_kn = nimcp_calloc(n, sizeof(int64_t));
+    int32_t* e_pos = nimcp_calloc(n, sizeof(int32_t));
+    int32_t* e_neg = nimcp_calloc(n, sizeof(int32_t));
+    uint32_t* touched = nimcp_malloc(n * sizeof(uint32_t));
+    if (!kp || !kn || !comm_kp || !comm_kn || !e_pos || !e_neg || !touched) {
+        nimcp_free(kp); nimcp_free(kn); nimcp_free(comm_kp); nimcp_free(comm_kn);
+        nimcp_free(e_pos); nimcp_free(e_neg); nimcp_free(touched);
+        community_ternary_result_free(result);
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NO_MEMORY, "community_ternary_detect: work arrays");
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < n; i++) {
+        compute_degrees(adjacency, i, &kp[i], &kn[i]);
+        comm_kp[i] = kp[i];
+        comm_kn[i] = kn[i];
+    }
+
+    const float m = (float)(m_pos + m_neg);
+    const float two_m = 2.0f * m;
+
+    bool improved = (m > 0.0f);
     uint32_t iteration = 0;
 
     while (improved && iteration < config->max_iterations) {
@@ -254,37 +254,61 @@ community_ternary_result_t* community_ternary_detect(
 
         for (uint32_t i = 0; i < n; i++) {
             uint32_t current_comm = result->community_ids[i];
-            float best_gain = 0.0f;
-            uint32_t best_comm = current_comm;
 
-            /* Try moving to each neighbor's community */
+            /* Signed edge counts from node i to each neighbouring community */
+            uint32_t n_touched = 0;
             for (uint32_t j = 0; j < n; j++) {
                 if (j == i) continue;
-
                 trit_t edge = trit_matrix_get(adjacency, i, j);
-                if (edge == TRIT_UNKNOWN) continue;  /* No edge */
+                if (edge == TRIT_UNKNOWN) continue;
+                uint32_t c = result->community_ids[j];
+                if (e_pos[c] == 0 && e_neg[c] == 0) touched[n_touched++] = c;
+                if (edge == TRIT_POSITIVE) e_pos[c]++;
+                else e_neg[c]++;
+            }
 
-                uint32_t target_comm = result->community_ids[j];
-                if (target_comm == current_comm) continue;
+            /* Degree sums of the current community excluding node i */
+            float sum_in_pos = (float)(comm_kp[current_comm] - kp[i]);
+            float sum_in_neg = (float)(comm_kn[current_comm] - kn[i]);
+            float loss = (float)(e_pos[current_comm] - e_neg[current_comm])
+                       - resolution * ((float)kp[i] * sum_in_pos -
+                                       (float)kn[i] * sum_in_neg) / two_m;
 
-                /* Compute modularity gain */
-                float gain = community_ternary_modularity_gain(
-                    adjacency, result->community_ids, i, target_comm, resolution
-                );
-
+            float best_gain = 0.0f;
+            uint32_t best_comm = current_comm;
+            for (uint32_t t = 0; t < n_touched; t++) {
+                uint32_t c = touched[t];
+                if (c == current_comm) continue;
+                float into = (float)(e_pos[c] - e_neg[c])
+                           - resolution * ((float)kp[i] * (float)comm_kp[c] -
+                                           (float)kn[i] * (float)comm_kn[c]) / two_m;
+                float gain = (into - loss) / m;
                 if (gain > best_gain + config->min_modularity_gain) {
                     best_gain = gain;
-                    best_comm = target_comm;
+                    best_comm = c;
                 }
+            }
+
+            for (uint32_t t = 0; t < n_touched; t++) {
+                e_pos[touched[t]] = 0;
+                e_neg[touched[t]] = 0;
             }
 
             /* Make the move if improvement found */
             if (best_comm != current_comm) {
+                comm_kp[current_comm] -= kp[i];
+                comm_kn[current_comm] -= kn[i];
+                comm_kp[best_comm] += kp[i];
+                comm_kn[best_comm] += kn[i];
                 result->community_ids[i] = best_comm;
                 improved = true;
             }
         }
     }
+
+    nimcp_free(kp); nimcp_free(kn);
+    nimcp_free(comm_kp); nimcp_free(comm_kn);
+    nimcp_free(e_pos); nimcp_free(e_neg); nimcp_free(touched);
 
     /* Renumber communities consecutively */
     uint32_t* community_map = nimcp_malloc(n * sizeof(uint32_t));
@@ -337,16 +361,30 @@ community_ternary_result_t* community_ternary_detect(
         result->community_sizes[result->community_ids[i]]++;
     }
 
-    /* Compute per-community statistics */
-    for (uint32_t c = 0; c < num_communities; c++) {
-        community_ternary_edge_counts(
-            adjacency, result->community_ids, c,
-            &result->internal_positive[c],
-            &result->internal_negative[c],
-            &result->external_positive[c],
-            &result->external_negative[c]
-        );
+    /* Compute per-community statistics in one O(n^2) pass.
+     * Same attribution as community_ternary_edge_counts(): every edge (i<j)
+     * is counted for the community of i, internal if j shares it. */
+    memset(result->internal_positive, 0, num_communities * sizeof(uint32_t));
+    memset(result->internal_negative, 0, num_communities * sizeof(uint32_t));
+    memset(result->external_positive, 0, num_communities * sizeof(uint32_t));
+    memset(result->external_negative, 0, num_communities * sizeof(uint32_t));
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t ci = result->community_ids[i];
+        for (uint32_t j = i + 1; j < n; j++) {
+            trit_t val = trit_matrix_get(adjacency, i, j);
+            if (val == TRIT_UNKNOWN) continue;
+            bool internal = (result->community_ids[j] == ci);
+            if (val == TRIT_POSITIVE) {
+                if (internal) result->internal_positive[ci]++;
+                else result->external_positive[ci]++;
+            } else {
+                if (internal) result->internal_negative[ci]++;
+                else result->external_negative[ci]++;
+            }
+        }
+    }
 
+    for (uint32_t c = 0; c < num_communities; c++) {
         if (result->internal_negative[c] > 0) {
             result->ei_ratio[c] = (float)result->internal_positive[c] /
                                   (float)result->internal_negative[c];
@@ -407,28 +445,36 @@ float community_ternary_modularity_signed(
 
     float m = (float)(m_pos + m_neg);
 
+    /* Precompute signed degrees once (O(n^2) total instead of O(n^3)) */
+    int32_t* deg_pos = nimcp_malloc(n * sizeof(int32_t));
+    int32_t* deg_neg = nimcp_malloc(n * sizeof(int32_t));
+    if (!deg_pos || !deg_neg) {
+        nimcp_free(deg_pos);
+        nimcp_free(deg_neg);
+        return 0.0f;
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        compute_degrees(adjacency, i, &deg_pos[i], &deg_neg[i]);
+    }
+
     /* Compute modularity */
     float Q = 0.0f;
 
     for (uint32_t i = 0; i < n; i++) {
-        int32_t ki_pos, ki_neg;
-        compute_degrees(adjacency, i, &ki_pos, &ki_neg);
-
         for (uint32_t j = i + 1; j < n; j++) {
             if (community_ids[i] != community_ids[j]) continue;
 
-            int32_t kj_pos, kj_neg;
-            compute_degrees(adjacency, j, &kj_pos, &kj_neg);
-
             trit_t a_ij = trit_matrix_get(adjacency, i, j);
             float expected = resolution * (
-                (float)(ki_pos * kj_pos - ki_neg * kj_neg) / (2.0f * m)
+                (float)(deg_pos[i] * deg_pos[j] - deg_neg[i] * deg_neg[j]) / (2.0f * m)
             );
 
             Q += 2.0f * ((float)a_ij - expected);
         }
     }
 
+    nimcp_free(deg_pos);
+    nimcp_free(deg_neg);
     return Q / (2.0f * m);
 }
 

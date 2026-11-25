@@ -1313,6 +1313,13 @@ int retina_circuit_set_illuminance(retina_circuit_t* r, float illuminance)
     return 0;
 }
 
+int retina_circuit_get_illuminance(const retina_circuit_t* r, float* out)
+{
+    if (!r || !out) return -1;
+    *out = r->cfg.illuminance;
+    return 0;
+}
+
 optic_nerve_t* retina_circuit_get_optic_nerve(retina_circuit_t* r)
 {
     return r ? r->nerve : NULL;

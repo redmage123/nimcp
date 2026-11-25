@@ -47,6 +47,14 @@ int brain_vision_see(struct brain_struct* brain, const uint8_t* pixels, uint32_t
 
 bool brain_vision_get_stats(struct brain_struct* brain, brain_vision_stats_t* out);
 
+/** Light level reaching the photoreceptors (retina config.illuminance, read by
+ *  every retina_circuit_see). Under the vision mutex. set rejects non-finite
+ *  or negative values and clamps to [0, BRAIN_VISION_MAX_ILLUMINANCE].
+ *  Used by sleep-state modulation (eyelids closed). Return 0 / -1. */
+#define BRAIN_VISION_MAX_ILLUMINANCE 1.0e6f
+int brain_vision_get_illuminance(struct brain_struct* brain, float* out);
+int brain_vision_set_illuminance(struct brain_struct* brain, float illuminance);
+
 /** <checkpoint>.retina sidecar. load: 1 if absent. */
 int brain_vision_save(struct brain_struct* brain, const char* checkpoint_path);
 int brain_vision_load(struct brain_struct* brain, const char* checkpoint_path);

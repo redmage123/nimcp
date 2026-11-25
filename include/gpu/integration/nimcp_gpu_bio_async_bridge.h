@@ -83,26 +83,28 @@ extern "C" {
 #define GPU_BIO_ERROR_INVALID_OPERATION         (GPU_BIO_ERROR_BASE + 10)
 
 /* ============================================================================
- * GPU Message Types (0x1F00 - 0x1FFF)
+ * GPU Message Types (0x7C00 - 0x7CFF)
+ * (moved 2026-11-24 from 0x1F00 which collides with the live genius-profile
+ * BIO_MSG_GENIUS_* message range)
  * ============================================================================ */
 
 /**
  * @brief GPU-specific bio-async message types
  *
  * These extend bio_message_type_t for GPU operations.
- * Range 0x1F00 - 0x1FFF reserved for GPU messages.
+ * Range 0x7C00 - 0x7CFF reserved for GPU messages.
  */
 typedef enum {
-    /* Compute messages (0x1F00 - 0x1F1F) */
-    GPU_MSG_COMPUTE_REQUEST = 0x1F00,       /**< Request GPU compute operation */
+    /* Compute messages (0x7C00 - 0x7C1F) */
+    GPU_MSG_COMPUTE_REQUEST = 0x7C00,       /**< Request GPU compute operation */
     GPU_MSG_COMPUTE_COMPLETE,               /**< Compute operation completed */
     GPU_MSG_COMPUTE_FAILED,                 /**< Compute operation failed */
     GPU_MSG_COMPUTE_PROGRESS,               /**< Compute progress update */
     GPU_MSG_KERNEL_LAUNCH,                  /**< Kernel launch notification */
     GPU_MSG_KERNEL_COMPLETE,                /**< Kernel execution complete */
 
-    /* Transfer messages (0x1F20 - 0x1F3F) */
-    GPU_MSG_TRANSFER_REQUEST = 0x1F20,      /**< Request memory transfer */
+    /* Transfer messages (0x7C20 - 0x7C3F) */
+    GPU_MSG_TRANSFER_REQUEST = 0x7C20,      /**< Request memory transfer */
     GPU_MSG_TRANSFER_COMPLETE,              /**< Transfer completed */
     GPU_MSG_TRANSFER_FAILED,                /**< Transfer failed */
     GPU_MSG_TRANSFER_PROGRESS,              /**< Transfer progress update */
@@ -114,8 +116,8 @@ typedef enum {
     GPU_MSG_BROADCAST_COMPLETE,             /**< Broadcast completed */
     GPU_MSG_GATHER_COMPLETE,                /**< Gather completed */
 
-    /* Status messages (0x1F40 - 0x1F5F) */
-    GPU_MSG_STATUS_QUERY = 0x1F40,          /**< Query GPU status */
+    /* Status messages (0x7C40 - 0x7C5F) */
+    GPU_MSG_STATUS_QUERY = 0x7C40,          /**< Query GPU status */
     GPU_MSG_STATUS_RESPONSE,                /**< GPU status response */
     GPU_MSG_UTILIZATION_UPDATE,             /**< Utilization level update */
     GPU_MSG_MEMORY_UPDATE,                  /**< Memory usage update */
@@ -126,8 +128,8 @@ typedef enum {
     GPU_MSG_DEVICE_OFFLINE,                 /**< Device went offline */
     GPU_MSG_DEVICE_RESET,                   /**< Device was reset */
 
-    /* Multi-GPU coordination (0x1F60 - 0x1F7F) */
-    GPU_MSG_MULTIGPU_SYNC_REQUEST = 0x1F60, /**< Request multi-GPU sync */
+    /* Multi-GPU coordination (0x7C60 - 0x7C7F) */
+    GPU_MSG_MULTIGPU_SYNC_REQUEST = 0x7C60, /**< Request multi-GPU sync */
     GPU_MSG_MULTIGPU_SYNC_COMPLETE,         /**< Sync completed */
     GPU_MSG_PARTITION_REQUEST,              /**< Request work partitioning */
     GPU_MSG_PARTITION_COMPLETE,             /**< Partitioning completed */
@@ -139,8 +141,8 @@ typedef enum {
     GPU_MSG_LOAD_IMBALANCE_DETECTED,        /**< Load imbalance detected */
     GPU_MSG_COORDINATION_ERROR,             /**< Multi-GPU coordination error */
 
-    /* Resource messages (0x1F80 - 0x1F9F) */
-    GPU_MSG_MEMORY_ALLOC_REQUEST = 0x1F80,  /**< Request memory allocation */
+    /* Resource messages (0x7C80 - 0x7C9F) */
+    GPU_MSG_MEMORY_ALLOC_REQUEST = 0x7C80,  /**< Request memory allocation */
     GPU_MSG_MEMORY_ALLOC_COMPLETE,          /**< Allocation completed */
     GPU_MSG_MEMORY_FREE_REQUEST,            /**< Request memory free */
     GPU_MSG_MEMORY_FREE_COMPLETE,           /**< Free completed */
@@ -149,8 +151,8 @@ typedef enum {
     GPU_MSG_STREAM_DESTROY,                 /**< Stream destroyed */
     GPU_MSG_RESOURCE_EXHAUSTED,             /**< Resources exhausted */
 
-    /* Neural-specific GPU messages (0x1FA0 - 0x1FBF) */
-    GPU_MSG_NEURON_BATCH_REQUEST = 0x1FA0,  /**< Process neuron batch */
+    /* Neural-specific GPU messages (0x7CA0 - 0x7CBF) */
+    GPU_MSG_NEURON_BATCH_REQUEST = 0x7CA0,  /**< Process neuron batch */
     GPU_MSG_NEURON_BATCH_COMPLETE,          /**< Neuron batch completed */
     GPU_MSG_SYNAPSE_UPDATE_REQUEST,         /**< Synapse weight update */
     GPU_MSG_SYNAPSE_UPDATE_COMPLETE,        /**< Synapse update completed */
@@ -170,10 +172,11 @@ typedef enum {
 /**
  * @brief GPU-specific module identifiers
  *
- * Range 0x1F00 - 0x1FFF for GPU modules
+ * Range 0x7B40 - 0x7B4F (wired bio-async bridge range; 0x1F00 collides with
+ * BIO_MODULE_OCTOPUS / BIO_MODULE_VAE_CORE)
  */
 typedef enum {
-    BIO_MODULE_GPU_BRIDGE = 0x1F00,         /**< Main GPU bio-async bridge */
+    BIO_MODULE_GPU_BRIDGE = 0x7B40,         /**< Main GPU bio-async bridge */
     BIO_MODULE_GPU_COMPUTE,                 /**< GPU compute module */
     BIO_MODULE_GPU_TRANSFER,                /**< GPU transfer module */
     BIO_MODULE_GPU_STATUS,                  /**< GPU status monitor */

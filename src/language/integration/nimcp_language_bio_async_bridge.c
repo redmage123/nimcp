@@ -433,7 +433,7 @@ int language_bio_bridge_broadcast_word(
     );
 
     msg.word_id = word->id;
-    strncpy(msg.word_form, word->form, LANG_BIO_MAX_WORD_LEN - 1);
+    snprintf(msg.word_form, sizeof(msg.word_form), "%s", word->form);
     msg.pos = word->pos;
     msg.confidence = word->confidence;
     msg.frequency = word->frequency;
@@ -475,7 +475,7 @@ int language_bio_bridge_broadcast_concept(
     );
 
     msg.concept_id = concept->id;
-    strncpy(msg.concept_name, concept->name, LANG_BIO_MAX_CONCEPT_NAME_LEN - 1);
+    snprintf(msg.concept_name, sizeof(msg.concept_name), "%s", concept->name);
     msg.activation = concept->activation;
     msg.relevance = concept->relevance;
     msg.role = concept->role;

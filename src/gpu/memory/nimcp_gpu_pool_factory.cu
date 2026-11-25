@@ -76,7 +76,7 @@ static size_t get_available_gpu_memory(nimcp_gpu_context_t* ctx) {
 /**
  * @brief Get total GPU memory
  */
-static size_t get_total_gpu_memory(nimcp_gpu_context_t* ctx) {
+__attribute__((unused)) static size_t get_total_gpu_memory(nimcp_gpu_context_t* ctx) {
     if (!ctx) return SIZE_8GB;
     return ctx->total_memory;
 }
@@ -146,7 +146,7 @@ nimcp_pool_factory_hints_t nimcp_pool_factory_hints_default(void) {
 
     hints.usage = NIMCP_POOL_USAGE_PERSISTENT;
     hints.model_size = NIMCP_MODEL_SIZE_MEDIUM;
-    hints.phase = NIMCP_PHASE_TRAINING;
+    hints.phase = NIMCP_POOL_PHASE_TRAINING;
     hints.max_memory_bytes = 0;  // Auto-detect
     hints.memory_fraction = 0.9f;
     hints.prefer_speed = false;
@@ -179,7 +179,7 @@ nimcp_pool_factory_hints_t nimcp_pool_factory_hints_training(
 
     hints.usage = NIMCP_POOL_USAGE_COMPOSITE;
     hints.model_size = model_size;
-    hints.phase = NIMCP_PHASE_TRAINING;
+    hints.phase = NIMCP_POOL_PHASE_TRAINING;
 
     hints.activation_sizes.batch_size = batch_size;
     hints.activation_sizes.seq_len = seq_len;
@@ -238,7 +238,7 @@ nimcp_pool_factory_hints_t nimcp_pool_factory_hints_inference(
 
     hints.usage = NIMCP_POOL_USAGE_INFERENCE;
     hints.model_size = model_size;
-    hints.phase = NIMCP_PHASE_INFERENCE;
+    hints.phase = NIMCP_POOL_PHASE_INFERENCE;
     hints.prefer_speed = true;
 
     hints.activation_sizes.batch_size = max_batch_size;

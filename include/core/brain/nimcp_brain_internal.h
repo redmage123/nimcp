@@ -1995,6 +1995,7 @@ struct brain_struct {
     void*                                   cochlea_output_buffer;        // Wave 8A+ (2026-04-24): cochlea_output_t* — shared zero-fill output buffer passed to all 11 NULL-rejecting bridges; owned by brain, created/destroyed with cochlea. Void* because cochlea_output_t is an anonymous-struct typedef.
     void*                                   hearing;                      // brain_hearing_t* (nimcp_brain_hearing.c, 2026-11-23): cochlea output -> Wernicke predictor (e-prop SNN); created with the cochlea, saved as the .hear sidecar
     void*                                   vision;                       // brain_vision_t* (nimcp_brain_vision.c, 2026-11-23): retina -> optic nerve -> sensory hub; .retina sidecar
+    void*                                   wired[8];                     // brain_wired.h groups (dead-code audit 2026-11-24): per-group private state, index = brain_wired_group_t; size = BRAIN_WIRED_SLOTS
     void*                                   sensory_hub;                  // brain_sensory_hub_t* (nimcp_brain_sensory_hub.c, 2026-11-23): fans hearing/vision out to router, immune, columns, lobes, language, hippocampus, subcortex, logic, KG, health
     bool                                    dormant_subsystems_initialized; // eager init created the never-created subsystems (2026-11-23)
 

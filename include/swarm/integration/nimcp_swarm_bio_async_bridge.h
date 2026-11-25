@@ -96,7 +96,7 @@ extern "C" {
  *============================================================================*/
 
 /** @brief Bio-async module ID for swarm bio-async bridge */
-#define BIO_MODULE_SWARM_BIO_ASYNC_BRIDGE    0x0B30
+#define BIO_MODULE_SWARM_BIO_ASYNC_BRIDGE    0x7B09  /* was 0x0B30; wired bio-async bridge range */
 
 /** @brief Bio-async module ID for swarm agent coordinator */
 #define BIO_MODULE_SWARM_AGENT_COORDINATOR   0x0B31
@@ -139,7 +139,8 @@ extern "C" {
 #define SWARM_BIO_ERROR_NOT_CONNECTED        (SWARM_BIO_ERROR_BASE + 9)
 
 /*=============================================================================
- * SWARM MESSAGE TYPES (Extend BIO_MSG_SWARM_* range 0x0B00)
+ * SWARM MESSAGE TYPES (0x7DC0-0x7DFF; moved 2026-11-24 from 0x0BC0, which sits
+ * in the shared BIO_MSG_SWARM_* / Portia 0x0B00-0x0BFF range)
  *============================================================================*/
 
 /**
@@ -149,7 +150,7 @@ extern "C" {
  */
 typedef enum {
     /** Agent state synchronization messages */
-    SWARM_MSG_AGENT_STATE = 0x0BC0,          /**< Agent state broadcast */
+    SWARM_MSG_AGENT_STATE = 0x7DC0,          /**< Agent state broadcast */
     SWARM_MSG_AGENT_HEARTBEAT,               /**< Agent heartbeat/presence */
     SWARM_MSG_AGENT_CAPABILITY,              /**< Agent capability announcement */
     SWARM_MSG_AGENT_JOINED,                  /**< Agent joined swarm */
@@ -157,21 +158,21 @@ typedef enum {
     SWARM_MSG_AGENT_POSITION,                /**< Agent position update */
 
     /** Consensus coordination messages */
-    SWARM_MSG_CONSENSUS_REQUEST = 0x0BD0,    /**< Request consensus on topic */
+    SWARM_MSG_CONSENSUS_REQUEST = 0x7DD0,    /**< Request consensus on topic */
     SWARM_MSG_CONSENSUS_VOTE,                /**< Cast consensus vote */
     SWARM_MSG_CONSENSUS_RESULT,              /**< Consensus result broadcast */
     SWARM_MSG_CONSENSUS_ABORT,               /**< Abort consensus process */
     SWARM_MSG_CONSENSUS_QUORUM_CHECK,        /**< Check quorum status */
 
     /** Pheromone/stigmergy messages */
-    SWARM_MSG_PHEROMONE = 0x0BE0,            /**< Pheromone deposit/update */
+    SWARM_MSG_PHEROMONE = 0x7DE0,            /**< Pheromone deposit/update */
     SWARM_MSG_PHEROMONE_GRADIENT,            /**< Pheromone gradient query/response */
     SWARM_MSG_PHEROMONE_DECAY,               /**< Pheromone decay notification */
     SWARM_MSG_STIGMERGY_MARK,                /**< Place stigmergic marker */
     SWARM_MSG_STIGMERGY_QUERY,               /**< Query stigmergic environment */
 
     /** Coordination messages */
-    SWARM_MSG_COORDINATION_REQUEST = 0x0BF0, /**< Request coordination action */
+    SWARM_MSG_COORDINATION_REQUEST = 0x7DF0, /**< Request coordination action */
     SWARM_MSG_COORDINATION_ACK,              /**< Acknowledge coordination */
     SWARM_MSG_FORMATION_UPDATE,              /**< Formation update */
     SWARM_MSG_LEADER_ANNOUNCE,               /**< Leader announcement */

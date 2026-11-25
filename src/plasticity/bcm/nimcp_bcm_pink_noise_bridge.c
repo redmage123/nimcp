@@ -29,6 +29,15 @@
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "utils/math/nimcp_math_helpers.h"
 
+/* Current pink-noise API: generate_sample(gen, &out) -> bool. Never returns NaN/Inf. */
+static inline float pnb_sample(pink_noise_generator_t gen) {
+    float s = 0.0f;
+    if (!gen || !pink_noise_generate_sample(gen, &s) || !isfinite(s)) {
+        return 0.0f;
+    }
+    return s;
+}
+
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(bcm_pink_noise_bridge)
 
 /* Security integration */
@@ -79,7 +88,7 @@ bcm_pink_noise_bridge_t* bcm_pink_noise_create(
 
     // Create pink noise generator
     pink_noise_config_t noise_config;
-    pink_noise_default_config(&noise_config);
+    noise_config = pink_noise_default_config();
     noise_config.alpha = bridge->config.noise_alpha;
     noise_config.amplitude = bridge->config.noise_amplitude;
     noise_config.seed = bridge->config.seed;
@@ -167,17 +176,17 @@ int bcm_pink_noise_update(bcm_pink_noise_bridge_t* bridge) {
 
     // Generate noise samples for each parameter
     if (bridge->config.noise_targets & BCM_NOISE_TARGET_THRESHOLD) {
-        bridge->threshold_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->threshold_noise = pnb_sample(bridge->noise_gen);
         bridge->threshold_noise *= bridge->config.threshold_noise_scale;
     }
 
     if (bridge->config.noise_targets & BCM_NOISE_TARGET_LR) {
-        bridge->lr_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->lr_noise = pnb_sample(bridge->noise_gen);
         bridge->lr_noise *= bridge->config.lr_noise_scale;
     }
 
     if (bridge->config.noise_targets & BCM_NOISE_TARGET_TIME_CONSTANTS) {
-        bridge->tau_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->tau_noise = pnb_sample(bridge->noise_gen);
         bridge->tau_noise *= bridge->config.tau_noise_scale;
     }
 
@@ -369,7 +378,7 @@ int bcm_pink_noise_reset(bcm_pink_noise_bridge_t* bridge) {
 
     // Reset noise generator
     if (bridge->noise_gen) {
-        pink_noise_reset(bridge->noise_gen);
+        pink_noise_reset(bridge->noise_gen, 0);
     }
 
     NIMCP_LOGGING_DEBUG("BCM pink noise bridge reset");

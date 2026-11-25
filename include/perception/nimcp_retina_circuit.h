@@ -137,6 +137,8 @@ int retina_circuit_see(retina_circuit_t* r, const uint8_t* pixels, uint32_t w,
 
 /** Absolute light level (see config.illuminance). */
 int retina_circuit_set_illuminance(retina_circuit_t* r, float illuminance);
+/** Current absolute light level; returns -1 (and leaves *out) on NULL args. */
+int retina_circuit_get_illuminance(const retina_circuit_t* r, float* out);
 int retina_circuit_get_counts(const retina_circuit_t* r, retina_circuit_counts_t* out);
 optic_nerve_t* retina_circuit_get_optic_nerve(retina_circuit_t* r); /**< borrowed; NULL if disabled */
 

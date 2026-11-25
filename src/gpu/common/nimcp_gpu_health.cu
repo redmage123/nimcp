@@ -7,11 +7,14 @@
 #include "gpu/common/nimcp_cuda_utils.h"
 #include "utils/logging/nimcp_logging.h"
 #include "utils/memory/nimcp_memory.h"
-#include "platform/threading/nimcp_thread.h"
+#include "utils/thread/nimcp_thread.h"
+#include "utils/fault_tolerance/nimcp_health_agent.h"
 
 #include <cuda_runtime.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #define LOG_MODULE "GPU_HEALTH"
 #define MAX_GPUS 8
@@ -23,15 +26,39 @@ struct gpu_health_monitor {
     gpu_health_status_t callback_min_status;
 
     uint32_t check_interval_ms;
-    bool monitoring_active;
-    nimcp_thread_t* monitor_thread;
+    volatile bool monitoring_active;   /* read by monitor thread; __atomic builtins (no C11 _Atomic in .cu) */
+    bool thread_started;
+    nimcp_thread_t monitor_thread;
     nimcp_mutex_t* metrics_mutex;
+    int device_filter;                 /* -1 = all devices, else probe only this device */
 };
+
+/* Only probe devices the caller cares about: touching another device creates a
+ * primary context there (hundreds of MB of VRAM on a shared GPU). */
+static bool device_selected(const gpu_health_monitor_t* monitor, int device_id)
+{
+    return monitor->device_filter < 0 || monitor->device_filter == device_id;
+}
 
 /**
  * Perform a quick GPU health probe
  */
+static bool probe_gpu_health_on_device(int device_id, gpu_health_metrics_t* metrics);
+
+/* Wrapper: restores the calling thread's current device so a probe never
+ * changes which GPU the caller's subsequent CUDA calls target. */
 static bool probe_gpu_health(int device_id, gpu_health_metrics_t* metrics)
+{
+    int prev_device = -1;
+    bool have_prev = (cudaGetDevice(&prev_device) == cudaSuccess);
+    bool ok = probe_gpu_health_on_device(device_id, metrics);
+    if (have_prev && prev_device != device_id) {
+        cudaSetDevice(prev_device);
+    }
+    return ok;
+}
+
+static bool probe_gpu_health_on_device(int device_id, gpu_health_metrics_t* metrics)
 {
     cudaError_t err = cudaSetDevice(device_id);
     if (err != cudaSuccess) {
@@ -124,12 +151,13 @@ static void* monitoring_thread_func(void* arg)
 {
     gpu_health_monitor_t* monitor = (gpu_health_monitor_t*)arg;
 
-    while (monitor->monitoring_active) {
+    while (__atomic_load_n(&monitor->monitoring_active, __ATOMIC_ACQUIRE)) {
         /* Check all GPUs */
         int device_count = 0;
         cudaGetDeviceCount(&device_count);
 
         for (int i = 0; i < device_count && i < MAX_GPUS; i++) {
+            if (!device_selected(monitor, i)) continue;
             nimcp_mutex_lock(monitor->metrics_mutex);
             gpu_health_metrics_t old_status = monitor->metrics[i];
             bool check_ok = probe_gpu_health(i, &monitor->metrics[i]);
@@ -152,8 +180,13 @@ static void* monitoring_thread_func(void* arg)
             }
         }
 
-        /* Sleep until next check */
-        nimcp_thread_sleep(monitor->check_interval_ms);
+        /* Sleep until next check, in 100 ms slices so stop() returns promptly */
+        uint32_t slept = 0;
+        while (slept < monitor->check_interval_ms &&
+               __atomic_load_n(&monitor->monitoring_active, __ATOMIC_ACQUIRE)) {
+            usleep(100 * 1000);
+            slept += 100;
+        }
     }
 
     return NULL;
@@ -168,6 +201,7 @@ gpu_health_monitor_t* nimcp_gpu_health_init(uint32_t check_interval_ms)
     monitor->check_interval_ms = check_interval_ms;
     monitor->callback_min_status = GPU_HEALTH_DEGRADED;
     monitor->metrics_mutex = nimcp_mutex_create(NULL);
+    monitor->device_filter = -1;
 
     if (!monitor->metrics_mutex) {
         nimcp_free(monitor);
@@ -191,7 +225,7 @@ void nimcp_gpu_health_destroy(gpu_health_monitor_t* monitor)
 {
     if (!monitor) return;
 
-    if (monitor->monitoring_active) {
+    if (monitor->thread_started) {
         nimcp_gpu_health_stop_monitoring(monitor);
     }
 
@@ -272,6 +306,16 @@ bool nimcp_gpu_health_recover(gpu_health_monitor_t* monitor, int device_id)
 {
     if (!monitor || device_id < 0 || device_id >= MAX_GPUS) return false;
 
+    /* cudaDeviceReset destroys EVERY allocation of this process on the device
+     * (the live brain's weights, streams, cuBLAS handles). Never do it unless
+     * the operator explicitly opted in. */
+    const char* allow = getenv("NIMCP_GPU_HEALTH_ALLOW_RESET");
+    if (!allow || strcmp(allow, "1") != 0) {
+        NIMCP_LOG_WARN("GPU %d recovery requested but device reset is disabled "
+                       "(set NIMCP_GPU_HEALTH_ALLOW_RESET=1 to allow)", device_id);
+        return false;
+    }
+
     NIMCP_LOG_WARN("Attempting GPU %d recovery", device_id);
 
     monitor->metrics[device_id].last_recovery_attempt = time(NULL);
@@ -327,17 +371,15 @@ gpu_health_status_t nimcp_gpu_health_get_status(gpu_health_monitor_t* monitor,
 
 bool nimcp_gpu_health_start_monitoring(gpu_health_monitor_t* monitor)
 {
-    if (!monitor || monitor->monitoring_active) return false;
+    if (!monitor || monitor->thread_started) return false;
 
-    monitor->monitoring_active = true;
-    monitor->monitor_thread = nimcp_thread_create(monitoring_thread_func,
-                                                   monitor,
-                                                   "gpu_health");
-
-    if (!monitor->monitor_thread) {
-        monitor->monitoring_active = false;
+    __atomic_store_n(&monitor->monitoring_active, true, __ATOMIC_RELEASE);
+    if (nimcp_thread_create(&monitor->monitor_thread, monitoring_thread_func,
+                            monitor, NULL) != NIMCP_SUCCESS) {
+        __atomic_store_n(&monitor->monitoring_active, false, __ATOMIC_RELEASE);
         return false;
     }
+    monitor->thread_started = true;
 
     NIMCP_LOG_INFO("GPU health monitoring thread started");
     return true;
@@ -345,14 +387,61 @@ bool nimcp_gpu_health_start_monitoring(gpu_health_monitor_t* monitor)
 
 void nimcp_gpu_health_stop_monitoring(gpu_health_monitor_t* monitor)
 {
-    if (!monitor || !monitor->monitoring_active) return;
+    if (!monitor || !monitor->thread_started) return;
 
-    monitor->monitoring_active = false;
-
-    if (monitor->monitor_thread) {
-        nimcp_thread_join(monitor->monitor_thread);
-        monitor->monitor_thread = NULL;
-    }
+    __atomic_store_n(&monitor->monitoring_active, false, __ATOMIC_RELEASE);
+    nimcp_thread_join(monitor->monitor_thread, NULL);
+    monitor->thread_started = false;
 
     NIMCP_LOG_INFO("GPU health monitoring thread stopped");
+}
+
+void nimcp_gpu_health_set_device_filter(gpu_health_monitor_t* monitor, int device_id)
+{
+    if (!monitor) return;
+    nimcp_mutex_lock(monitor->metrics_mutex);
+    monitor->device_filter = (device_id >= 0 && device_id < MAX_GPUS) ? device_id : -1;
+    nimcp_mutex_unlock(monitor->metrics_mutex);
+}
+
+bool nimcp_gpu_health_get_metrics(gpu_health_monitor_t* monitor,
+                                  int device_id,
+                                  gpu_health_metrics_t* metrics)
+{
+    if (!monitor || !metrics || device_id < 0 || device_id >= MAX_GPUS) return false;
+    nimcp_mutex_lock(monitor->metrics_mutex);
+    *metrics = monitor->metrics[device_id];
+    nimcp_mutex_unlock(monitor->metrics_mutex);
+    return true;
+}
+
+int nimcp_gpu_health_report_to_agent(gpu_health_monitor_t* monitor,
+                                     int device_id,
+                                     struct nimcp_health_agent* agent,
+                                     gpu_health_status_t* last_reported,
+                                     gpu_health_metrics_t* metrics_out)
+{
+    if (!monitor || !last_reported) return -1;
+
+    gpu_health_metrics_t m;
+    if (!nimcp_gpu_health_get_metrics(monitor, device_id, &m)) return -1;
+    if (metrics_out) *metrics_out = m;
+    if (m.last_check == 0) return -1;            /* not probed yet */
+
+    gpu_health_status_t prev = *last_reported;
+    *last_reported = m.status;
+    if (m.status <= prev || m.status < GPU_HEALTH_DEGRADED || !agent) return 0;
+
+    bool low_mem = (strncmp(m.status_message, "Low memory", 10) == 0);
+    health_agent_severity_t sev =
+        (m.status >= GPU_HEALTH_FAILED)   ? HEALTH_SEVERITY_CRITICAL :
+        (m.status >= GPU_HEALTH_CRITICAL) ? HEALTH_SEVERITY_ERROR :
+                                            HEALTH_SEVERITY_WARNING;
+    health_agent_message_t msg = nimcp_health_agent_create_message(
+        low_mem ? HEALTH_MSG_RESOURCE_EXHAUSTION : HEALTH_MSG_ANOMALY_DETECTED,
+        sev,
+        low_mem ? HEALTH_SOURCE_MEMORY : HEALTH_SOURCE_UNKNOWN,
+        "GPU%d health %d: %.90s", device_id, (int)m.status, m.status_message);
+    msg.suggested_action = HEALTH_RECOVERY_REDUCE_LOAD;   /* never a device reset */
+    return nimcp_health_agent_report_anomaly((nimcp_health_agent_t*)agent, &msg) == 0 ? 1 : 0;
 }

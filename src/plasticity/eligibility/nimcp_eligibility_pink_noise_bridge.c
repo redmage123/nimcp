@@ -22,6 +22,15 @@
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "utils/math/nimcp_math_helpers.h"
 
+/* Current pink-noise API: generate_sample(gen, &out) -> bool. Never returns NaN/Inf. */
+static inline float pnb_sample(pink_noise_generator_t gen) {
+    float s = 0.0f;
+    if (!gen || !pink_noise_generate_sample(gen, &s) || !isfinite(s)) {
+        return 0.0f;
+    }
+    return s;
+}
+
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(eligibility_pink_noise_bridge)
 
 /* Security integration */
@@ -40,7 +49,7 @@ elig_pink_noise_bridge_t* elig_pink_noise_create(const elig_pink_noise_config_t*
     bridge->config = config ? *config : elig_pink_noise_default_config();
 
     pink_noise_config_t nc;
-    pink_noise_default_config(&nc);
+    nc = pink_noise_default_config();
     nc.alpha = bridge->config.noise_alpha;
     nc.amplitude = bridge->config.noise_amplitude;
     nc.seed = bridge->config.seed;
@@ -98,17 +107,17 @@ int elig_pink_noise_update(elig_pink_noise_bridge_t* bridge) {
     float amp = bridge->config.noise_amplitude;
 
     if (bridge->config.noise_targets & ELIG_NOISE_TARGET_DECAY) {
-        bridge->decay_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.decay_noise_scale;
+        bridge->decay_noise = pnb_sample(bridge->noise_gen) * bridge->config.decay_noise_scale;
         bridge->noisy_decay_rate = 0.1f * (1.0f + amp * bridge->decay_noise);
         bridge->noisy_decay_rate = nimcp_clampf(bridge->noisy_decay_rate, bridge->config.decay_min, bridge->config.decay_max);
     }
     if (bridge->config.noise_targets & ELIG_NOISE_TARGET_THRESHOLD) {
-        bridge->threshold_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.threshold_noise_scale;
+        bridge->threshold_noise = pnb_sample(bridge->noise_gen) * bridge->config.threshold_noise_scale;
         bridge->noisy_threshold = 0.5f * (1.0f + amp * bridge->threshold_noise);
         bridge->noisy_threshold = nimcp_clampf(bridge->noisy_threshold, 0.1f, 1.0f);
     }
     if (bridge->config.noise_targets & ELIG_NOISE_TARGET_BOOST) {
-        bridge->boost_noise = pink_noise_sample(bridge->noise_gen) * bridge->config.boost_noise_scale;
+        bridge->boost_noise = pnb_sample(bridge->noise_gen) * bridge->config.boost_noise_scale;
         bridge->noisy_boost = 1.0f * (1.0f + amp * bridge->boost_noise);
         bridge->noisy_boost = nimcp_clampf(bridge->noisy_boost, 0.5f, 2.0f);
     }
@@ -141,6 +150,6 @@ int elig_pink_noise_reset(elig_pink_noise_bridge_t* bridge) {
     bridge->noisy_boost = 1.0f;
     bridge->samples_generated = 0;
     bridge->avg_noise_amplitude = 0.0f;
-    if (bridge->noise_gen) pink_noise_reset(bridge->noise_gen);
+    if (bridge->noise_gen) pink_noise_reset(bridge->noise_gen, 0);
     return 0;
 }

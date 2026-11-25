@@ -1,46 +1,48 @@
 /**
  * @file nimcp_language_episodic_replay_bridge.c
- * @brief Episodic replay/consolidation integration
- * @date 2026-10-21
+ * @brief Episodic replay buffer <-> language (telemetry only).
+ *
+ * WHAT: Reports the episodic replay buffer occupancy (pending consolidation
+ *       pressure) next to the language state.
+ * WHY:  The 2026-10-21 version blended constant "replay activity" numbers
+ *       into content_intent. The replay module exposes no per-episode read
+ *       API (only record / consolidate / buffer size), and its replay path
+ *       feeds stored features straight into brain_learn_vector, so writing
+ *       language vectors into it would inject wrong-dimension training
+ *       examples. With no honest language-facing signal available, this
+ *       bridge is deliberately neutral: it emits telemetry, no modulation.
+ * HOW:  brain->episodic_replay: nimcp_episodic_replay_get_buffer_size /
+ *       EPISODIC_REPLAY_DEFAULT_CAPACITY.
  */
-#include "language/nimcp_grounded_language.h"
 #include "core/brain/nimcp_brain_internal.h"
+#include "cognitive/memory/nimcp_episodic_replay.h"
+#include "language/nimcp_grounded_language_internal.h"
+#include "language/bridges/nimcp_language_cognitive_wired.h"
 #include "utils/memory/nimcp_memory.h"
-#include "utils/logging/nimcp_logging.h"
-#include <math.h>
 
-typedef struct {
-    float replay_activity; float consolidation_strength;
-    float memory_reactivation; float knowledge_extraction;
-} episodic_replay_state_t;
+typedef struct { int unused; } lang_er_state_t;
 
-int episodic_replay_extract_consolidation(brain_t brain, episodic_replay_state_t* out) {
-    if (!brain || !out) return -1;
-    out->replay_activity = 0.5f; out->consolidation_strength = 0.6f;
-    out->memory_reactivation = 0.55f; out->knowledge_extraction = 0.65f;
+static void* er_create(struct brain_struct* brain) {
+    if (!brain || !brain->episodic_replay) { return NULL; }
+    return nimcp_calloc(1, sizeof(lang_er_state_t));
+}
+
+static void er_destroy(void* st) { if (st) { nimcp_free(st); } }
+
+static int er_update(void* st, struct brain_struct* brain,
+                     const lang_cog_input_t* in, lang_cog_signal_t* out) {
+    lang_cog_signal_neutral(out);
+    if (!st || !brain || !brain->episodic_replay || !in) { return -1; }
+    uint32_t n = nimcp_episodic_replay_get_buffer_size(
+                     (const nimcp_episodic_replay_t*)brain->episodic_replay);
+    out->primary   = lang_cog_clampf((float)n / (float)EPISODIC_REPLAY_DEFAULT_CAPACITY, 0.0f, 1.0f);
+    out->secondary = (float)n;
+    out->valid     = true;   /* neutral floor/gain: telemetry only */
     return 0;
 }
 
-int grounded_language_integrate_episodic_replay(brain_t brain, void* gl, void* state) {
-    if (!brain || !gl || !state) return -1;
-    extern bool grounded_language_episodic_replay_enabled(const void* gl);
-    if (!grounded_language_episodic_replay_enabled(gl)) return 0;
-
-    typedef struct { float* content_intent; uint32_t dim; } cs_t;
-    cs_t* cs = (cs_t*)state;
-    episodic_replay_state_t replay = {0};
-    if (episodic_replay_extract_consolidation(brain, &replay) != 0) return -1;
-
-    const float w = 0.18f;
-    if (cs->dim > 850) {
-        cs->content_intent[825] += w * replay.replay_activity;
-        cs->content_intent[826] += w * replay.consolidation_strength;
-        cs->content_intent[827] += w * replay.memory_reactivation;
-        cs->content_intent[828] += w * replay.knowledge_extraction;
-    }
-    NIMCP_LOGGING_DEBUG("Episodic replay: consolidation=%.2f knowledge=%.2f",
-                        replay.consolidation_strength, replay.knowledge_extraction);
-    return 0;
-}
-
-bool grounded_language_episodic_replay_enabled(const void* gl) { return (gl != NULL); }
+const lang_cog_bridge_vt_t lang_episodic_replay_bridge_vt = {
+    .name = "episodic_replay", .gl_bit = GL_BRIDGE_EPISODIC_REPLAY,
+    .create = er_create, .destroy = er_destroy, .update = er_update,
+    .recall = NULL, .save = NULL, .load = NULL,
+};

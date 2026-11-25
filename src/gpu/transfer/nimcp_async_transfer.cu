@@ -95,6 +95,7 @@ nimcp_transfer_manager_t* nimcp_transfer_manager_create(
 
     mgr->ctx = ctx;
     mgr->num_streams = num_streams;
+    mgr->owns_streams = true;
     mgr->next_stream = 0;
     mgr->pending_count = 0;
     mgr->next_request_id = 1;
@@ -159,6 +160,58 @@ nimcp_transfer_manager_t* nimcp_transfer_manager_create(
     return mgr;
 }
 
+nimcp_transfer_manager_t* nimcp_transfer_manager_create_shared(
+    nimcp_gpu_context_t* ctx,
+    size_t pinned_pool_size)
+{
+    if (!nimcp_gpu_recovery_is_initialized()) {
+        nimcp_gpu_recovery_init(NULL);
+    }
+
+    if (!nimcp_gpu_context_is_valid(ctx)) {
+        LOG_ERROR("Invalid GPU context");
+        return NULL;
+    }
+
+    nimcp_transfer_manager_t* mgr = (nimcp_transfer_manager_t*)nimcp_calloc(
+        1, sizeof(nimcp_transfer_manager_t));
+    if (!mgr) {
+        LOG_ERROR("Failed to allocate transfer manager");
+        return NULL;
+    }
+
+    mgr->ctx = ctx;
+    mgr->num_streams = 1;
+    mgr->owns_streams = false;
+    mgr->transfer_streams[0] = ctx->transfer_stream;   /* borrowed */
+    mgr->next_stream = 0;
+    mgr->pending_count = 0;
+    mgr->next_request_id = 1;
+
+    for (size_t i = 0; i < NIMCP_TRANSFER_MAX_PENDING; i++) {
+        mgr->pending[i].request_id = NIMCP_TRANSFER_INVALID_ID;
+        mgr->pending[i].status = NIMCP_TRANSFER_STATUS_COMPLETED;
+        mgr->pending[i].completion_event = NULL;
+    }
+
+    mgr->pinned_pool_size = pinned_pool_size;
+    if (pinned_pool_size > 0) {
+        cudaError_t err = cudaHostAlloc(&mgr->pinned_pool, pinned_pool_size, cudaHostAllocDefault);
+        if (!check_cuda(err, "cudaHostAlloc")) {
+            LOG_WARN("Failed to allocate pinned pool of %zu bytes, continuing without pool",
+                     pinned_pool_size);
+            mgr->pinned_pool = NULL;
+            mgr->pinned_pool_size = 0;
+        }
+    }
+
+    mgr->initialized = true;
+
+    LOG_INFO("Transfer manager created on shared context stream, %zu KB pinned pool",
+             mgr->pinned_pool_size / 1024);
+    return mgr;
+}
+
 void nimcp_transfer_manager_destroy(nimcp_transfer_manager_t* mgr) {
     if (!mgr) return;
 
@@ -169,8 +222,8 @@ void nimcp_transfer_manager_destroy(nimcp_transfer_manager_t* mgr) {
         cudaSetDevice(mgr->ctx->device_id);
     }
 
-    // Destroy streams
-    for (int i = 0; i < mgr->num_streams; i++) {
+    // Destroy streams (only those we created)
+    for (int i = 0; mgr->owns_streams && i < mgr->num_streams; i++) {
         if (mgr->transfer_streams[i]) {
             cudaStreamDestroy(mgr->transfer_streams[i]);
         }
@@ -737,9 +790,73 @@ nimcp_double_buffer_t* nimcp_double_buffer_create(
     }
 
     db->initialized = true;
+    db->owns_streams = true;
 
     LOG_INFO("Double buffer created: %zu bytes per buffer", buffer_size);
 
+    return db;
+}
+
+nimcp_double_buffer_t* nimcp_double_buffer_create_shared(
+    nimcp_gpu_context_t* ctx, size_t buffer_size)
+{
+    if (!nimcp_gpu_recovery_is_initialized()) {
+        nimcp_gpu_recovery_init(NULL);
+    }
+
+    if (!nimcp_gpu_context_is_valid(ctx) || buffer_size == 0) {
+        LOG_ERROR("Invalid parameters for double buffer");
+        return NULL;
+    }
+
+    nimcp_double_buffer_t* db = (nimcp_double_buffer_t*)nimcp_calloc(
+        1, sizeof(nimcp_double_buffer_t));
+    if (!db) {
+        LOG_ERROR("Failed to allocate double buffer");
+        return NULL;
+    }
+
+    db->ctx = ctx;
+    db->buffer_size = buffer_size;
+    db->active_index = 0;
+    db->loading_index = 1;
+    db->owns_streams = false;
+    db->compute_stream = ctx->compute_stream;     /* borrowed */
+    db->transfer_stream = ctx->transfer_stream;   /* borrowed */
+
+    cudaError_t err = cudaSetDevice(ctx->device_id);
+    if (!check_cuda(err, "cudaSetDevice")) {
+        nimcp_free(db);
+        return NULL;
+    }
+
+    for (int i = 0; i < 2; i++) {
+        err = cudaMalloc(&db->buffers[i], buffer_size);
+        if (!check_cuda(err, "cudaMalloc")) {
+            if (i > 0) cudaFree(db->buffers[0]);
+            nimcp_free(db);
+            return NULL;
+        }
+    }
+
+    for (int i = 0; i < 2; i++) {
+        if (cudaEventCreateWithFlags(&db->transfer_done[i], cudaEventDisableTiming) != cudaSuccess ||
+            cudaEventCreateWithFlags(&db->compute_done[i], cudaEventDisableTiming) != cudaSuccess) {
+            LOG_ERROR("cudaEventCreate failed for shared double buffer");
+            for (int j = 0; j < 2; j++) {
+                if (db->transfer_done[j]) cudaEventDestroy(db->transfer_done[j]);
+                if (db->compute_done[j]) cudaEventDestroy(db->compute_done[j]);
+            }
+            cudaFree(db->buffers[0]);
+            cudaFree(db->buffers[1]);
+            nimcp_free(db);
+            return NULL;
+        }
+    }
+
+    db->initialized = true;
+    LOG_INFO("Double buffer created on shared context streams: %zu bytes per buffer",
+             buffer_size);
     return db;
 }
 
@@ -759,9 +876,11 @@ void nimcp_double_buffer_destroy(nimcp_double_buffer_t* db) {
         if (db->compute_done[i]) cudaEventDestroy(db->compute_done[i]);
     }
 
-    // Destroy streams
-    if (db->transfer_stream) cudaStreamDestroy(db->transfer_stream);
-    if (db->compute_stream) cudaStreamDestroy(db->compute_stream);
+    // Destroy streams (only those we created)
+    if (db->owns_streams) {
+        if (db->transfer_stream) cudaStreamDestroy(db->transfer_stream);
+        if (db->compute_stream) cudaStreamDestroy(db->compute_stream);
+    }
 
     // Free buffers
     for (int i = 0; i < 2; i++) {
@@ -1255,6 +1374,8 @@ void nimcp_transfer_get_stats(const nimcp_transfer_manager_t* mgr, size_t* total
 void nimcp_transfer_reset_stats(nimcp_transfer_manager_t* mgr) { (void)mgr; }
 
 nimcp_double_buffer_t* nimcp_double_buffer_create(nimcp_gpu_context_t* ctx, size_t buffer_size) { (void)ctx; (void)buffer_size; return NULL; }
+nimcp_double_buffer_t* nimcp_double_buffer_create_shared(nimcp_gpu_context_t* ctx, size_t buffer_size) { (void)ctx; (void)buffer_size; return NULL; }
+nimcp_transfer_manager_t* nimcp_transfer_manager_create_shared(nimcp_gpu_context_t* ctx, size_t pinned_pool_size) { (void)ctx; (void)pinned_pool_size; return NULL; }
 void nimcp_double_buffer_destroy(nimcp_double_buffer_t* db) { (void)db; }
 int nimcp_double_buffer_start_load(nimcp_double_buffer_t* db, const void* host_data, size_t size) { (void)db; (void)host_data; (void)size; return -1; }
 int nimcp_double_buffer_start_load_callback(nimcp_double_buffer_t* db, const void* host_data, size_t size, nimcp_transfer_callback_t callback, void* user_data) { (void)db; (void)host_data; (void)size; (void)callback; (void)user_data; return -1; }

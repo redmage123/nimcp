@@ -25,6 +25,7 @@ typedef struct {
     uint32_t num_communities;   /**< Total number of communities found */
     double modularity;          /**< Modularity score of the partition */
     uint32_t iterations;        /**< Number of iterations to converge */
+    uint32_t num_vertices;      /**< Length of the assignments array */
 } NimcpCommunityPartition;
 
 /**

@@ -51,6 +51,43 @@ nimcp_brain_t nimcp_brain_load(const char* filepath) {
         nimcp_brain_factory_init_gpu_subsystem(handle->internal_brain);
     }
 
+    /* Bio-async on resume (2026-11-25). brain_load allocates a fresh brain and
+     * skips the factory init waves, so bio-async messaging (router module,
+     * per-brain context) and the bio-async orchestrator were never set up on
+     * a resumed brain — every bio-async adapter ran disconnected. Mirror the
+     * factory's wave 13 + wave 23. NIMCP_LOAD_BIO_ASYNC=0 restores the old
+     * behaviour. */
+    {
+        brain_t b = handle->internal_brain;
+        const char* env = getenv("NIMCP_LOAD_BIO_ASYNC");
+        bool want = !(env && env[0] == '0') && !b->config.minimal_mode;
+        if (want && !b->bio_async_ctx) {
+            if (!bio_router_is_initialized()) {
+                bio_router_config_t rc = bio_router_default_config();
+                rc.max_modules = 64;
+                rc.inbox_capacity = 128;
+                rc.outbox_capacity = 128;
+                rc.max_message_size = 4096;
+                rc.worker_threads = 2;
+                rc.enable_logging = true;
+                rc.enable_statistics = true;
+                rc.routing_timeout_ms = 100.0F;
+                (void)bio_router_init(&rc);
+            }
+            if (bio_router_is_initialized()) {
+                extern nimcp_error_t brain_bio_async_init(brain_t brain);
+                b->bio_async_enabled = (brain_bio_async_init(b) == NIMCP_SUCCESS);
+            }
+            if (b->bio_async_enabled && !b->bio_async_orchestrator) {
+                extern bool nimcp_brain_factory_init_bio_async_orchestrator_subsystem(brain_t brain);
+                (void)nimcp_brain_factory_init_bio_async_orchestrator_subsystem(b);
+            }
+            fprintf(stderr, "[LOAD] bio-async on resume: enabled=%d router=%s orchestrator=%s\n",
+                    (int)b->bio_async_enabled, b->bio_router ? "yes" : "no",
+                    b->bio_async_orchestrator ? "yes" : "no");
+        }
+    }
+
     // NOTE: GPU inference (weight cache + adaptive network) is initialized
     // via nimcp_brain_eager_init_cognitive() AFTER full brain restoration,
     // because adaptive_network_get_config() may crash on partially-restored state.

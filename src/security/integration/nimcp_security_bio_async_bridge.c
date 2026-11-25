@@ -17,6 +17,30 @@
 #include "utils/logging/nimcp_logging.h"
 #include "utils/bridge/nimcp_bridge_boilerplate.h"
 
+/* ============================================================================
+ * Bio-router plumbing (wired 2026-11-24, BRAIN_WIRED_BIOASYNC)
+ *
+ * Registered module ID lives in the wired bio-async bridge range 0x7B00-0x7BFF
+ * so this bridge never shares an inbox with a live module (the router merges
+ * registrations that reuse an ID).
+ * ============================================================================ */
+#include "async/nimcp_bio_router.h"
+
+#define SECURITY_BIO_BRIDGE_WIRED_MODULE_ID 0x7B07
+
+/** Broadcast a fully-built message through the router (no-op when unregistered). */
+static void security_bio_bridge_router_send(bridge_base_t* base, void* msg, size_t size) {
+    if (!base || !base->bio_ctx || !msg || size < sizeof(bio_message_header_t)) {
+        return;
+    }
+    bio_message_header_t* hdr = (bio_message_header_t*)msg;
+    if (hdr->payload_size == 0) {
+        hdr->payload_size = (uint32_t)(size - sizeof(bio_message_header_t));
+    }
+    (void)bio_router_broadcast(base->bio_ctx, msg, size);
+}
+
+
 BRIDGE_BOILERPLATE_MESH_ONLY(security_bio_async_bridge, MESH_ADAPTER_CATEGORY_SECURITY)
 
 
@@ -218,6 +242,12 @@ int security_bio_bridge_connect(
     }
 
     bridge->router = router;
+    /* Register on the live router (idempotent). */
+    if (router && !bridge->base.bio_ctx) {
+        bridge->base.module_id = SECURITY_BIO_BRIDGE_WIRED_MODULE_ID;
+        bridge->base.module_name = "security_bio_bridge";
+        (void)bridge_base_connect_bio_async(&bridge->base);
+    }
     bridge->connected = true;
 
     return 0;
@@ -229,6 +259,7 @@ int security_bio_bridge_disconnect(security_bio_bridge_t* bridge) {
         return -1;
     }
 
+    (void)bridge_base_disconnect_bio_async(&bridge->base);
     bridge->router = NULL;
     bridge->connected = false;
 
@@ -252,8 +283,9 @@ int security_bio_bridge_process_inbox(
         return -1;
     }
 
-    uint32_t processed = 0;
-    (void)max_messages;  /* Placeholder for actual message processing */
+    uint32_t processed = bridge->base.bio_ctx
+        ? bio_router_process_inbox(bridge->base.bio_ctx, max_messages > 0 ? max_messages : 32u)
+        : 0u;
 
     bridge->stats.messages_received += processed;
     return (int)processed;
@@ -338,6 +370,7 @@ int security_bio_bridge_broadcast_threat(
     }
 
     bridge->stats.threat_alerts_sent++;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->last_heartbeat_us = msg.timestamp_us;
 
@@ -382,6 +415,7 @@ int security_bio_bridge_broadcast_anomaly(
     }
 
     bridge->stats.anomaly_alerts_sent++;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -424,6 +458,7 @@ int security_bio_bridge_initiate_lockdown(
     bridge->internal.lockdown_start_time = msg.timestamp_us;
 
     bridge->stats.lockdowns_initiated++;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -459,6 +494,7 @@ int security_bio_bridge_end_lockdown(
     /* Update internal state */
     bridge->internal.lockdown_active = false;
     bridge->internal.last_lockdown_end_time = msg.timestamp_us;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
 
     bridge->stats.broadcasts_sent++;
 
@@ -578,6 +614,7 @@ int security_bio_bridge_broadcast_level_change(
     if (new_level > old_level) {
         msg.header.flags |= BIO_MSG_FLAG_URGENT;
     }
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
 
     bridge->stats.broadcasts_sent++;
 
@@ -619,6 +656,7 @@ int security_bio_bridge_propose_consensus(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.consensus_proposals++;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -656,6 +694,7 @@ int security_bio_bridge_broadcast_consensus_update(
     msg.is_complete = is_complete;
     msg.result = result;
     msg.timestamp_us = msg.header.timestamp_us;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
 
     bridge->stats.broadcasts_sent++;
 
@@ -688,6 +727,7 @@ int security_bio_bridge_broadcast_heartbeat(security_bio_bridge_t* bridge) {
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->last_heartbeat_us = msg.timestamp_us;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -718,6 +758,7 @@ int security_bio_bridge_broadcast_metrics(security_bio_bridge_t* bridge) {
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->last_metrics_us = msg.timestamp_us;
+    security_bio_bridge_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;

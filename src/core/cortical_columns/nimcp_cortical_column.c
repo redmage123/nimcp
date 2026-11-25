@@ -1356,6 +1356,60 @@ void minicolumn_get_stats(minicolumn_t* col, minicolumn_stats_t* stats) {
  * WHY:  Monitor competition dynamics
  * HOW:  Copy internal stats to output
  */
+/* Sleep-state modulation accessors (see header). */
+bool hypercolumn_get_competition(hypercolumn_t* hcol, cc_competition_mode_t* mode,
+                                 float* temperature) {
+    if (!hcol || !hcol->initialized || !mode || !temperature) {
+        return false;
+    }
+    nimcp_platform_mutex_lock(&hcol->mutex);
+    *mode = hcol->competition_mode;
+    *temperature = hcol->temperature;
+    nimcp_platform_mutex_unlock(&hcol->mutex);
+    return true;
+}
+
+bool hypercolumn_set_competition(hypercolumn_t* hcol, cc_competition_mode_t mode,
+                                 float temperature) {
+    if (!hcol || !hcol->initialized) {
+        return false;
+    }
+    if (mode != CC_COMPETITION_WINNER_TAKE_ALL && mode != CC_COMPETITION_K_WINNERS &&
+        mode != CC_COMPETITION_SOFTMAX && mode != CC_COMPETITION_NONE) {
+        return false;
+    }
+    if (!isfinite(temperature) || temperature <= 0.0F) {
+        return false;
+    }
+    temperature = fminf(fmaxf(temperature, HYPERCOLUMN_MIN_TEMPERATURE), HYPERCOLUMN_MAX_TEMPERATURE);
+    nimcp_platform_mutex_lock(&hcol->mutex);
+    hcol->competition_mode = mode;
+    hcol->temperature = temperature;
+    nimcp_platform_mutex_unlock(&hcol->mutex);
+    return true;
+}
+
+bool hypercolumn_get_lateral_inhibition(hypercolumn_t* hcol, float* strength) {
+    if (!hcol || !hcol->initialized || !strength) {
+        return false;
+    }
+    nimcp_platform_mutex_lock(&hcol->mutex);
+    *strength = hcol->lateral_inhibition_strength;
+    nimcp_platform_mutex_unlock(&hcol->mutex);
+    return true;
+}
+
+bool hypercolumn_set_lateral_inhibition(hypercolumn_t* hcol, float strength) {
+    if (!hcol || !hcol->initialized || !isfinite(strength)) {
+        return false;
+    }
+    strength = fminf(fmaxf(strength, 0.0F), HYPERCOLUMN_MAX_LATERAL_INHIBITION);
+    nimcp_platform_mutex_lock(&hcol->mutex);
+    hcol->lateral_inhibition_strength = strength;
+    nimcp_platform_mutex_unlock(&hcol->mutex);
+    return true;
+}
+
 void hypercolumn_get_stats(hypercolumn_t* hcol, cc_hypercolumn_stats_t* stats) {
     // Guard: validate inputs
     if (!hcol) {

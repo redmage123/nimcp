@@ -11,6 +11,7 @@
 #include "utils/exception/nimcp_exception_macros.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -18,6 +19,30 @@
 #include "utils/logging/nimcp_logging.h"
 #include "utils/memory/nimcp_memory.h"
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
+
+/* ============================================================================
+ * Bio-router plumbing (wired 2026-11-24, BRAIN_WIRED_BIOASYNC)
+ *
+ * Registered module ID lives in the wired bio-async bridge range 0x7B00-0x7BFF
+ * so this bridge never shares an inbox with a live module (the router merges
+ * registrations that reuse an ID).
+ * ============================================================================ */
+#include "async/nimcp_bio_router.h"
+
+#define SLEEP_BIO_ASYNC_WIRED_MODULE_ID 0x7B08
+
+/** Broadcast a fully-built message through the router (no-op when unregistered). */
+static void sleep_bio_async_router_send(bridge_base_t* base, void* msg, size_t size) {
+    if (!base || !base->bio_ctx || !msg || size < sizeof(bio_message_header_t)) {
+        return;
+    }
+    bio_message_header_t* hdr = (bio_message_header_t*)msg;
+    if (hdr->payload_size == 0) {
+        hdr->payload_size = (uint32_t)(size - sizeof(bio_message_header_t));
+    }
+    (void)bio_router_broadcast(base->bio_ctx, msg, size);
+}
+
 
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(sleep_bio_async_bridge)
 
@@ -169,6 +194,12 @@ int sleep_bio_async_connect(
 
     bridge->sleep_system = sleep_system;
     bridge->router = router;
+    /* Register on the live router (idempotent). */
+    if (router && !bridge->base.bio_ctx) {
+        bridge->base.module_id = SLEEP_BIO_ASYNC_WIRED_MODULE_ID;
+        bridge->base.module_name = "sleep_bio_async_bridge";
+        (void)bridge_base_connect_bio_async(&bridge->base);
+    }
     bridge->connected = true;
 
     return 0;
@@ -184,6 +215,7 @@ int sleep_bio_async_disconnect(sleep_bio_async_bridge_t* bridge) {
     }
 
     bridge->sleep_system = NULL;
+    (void)bridge_base_disconnect_bio_async(&bridge->base);
     bridge->router = NULL;
     bridge->connected = false;
 
@@ -207,8 +239,9 @@ int sleep_bio_async_process_inbox(
         return -1;
     }
 
-    uint32_t processed = 0;
-    (void)max_messages;
+    uint32_t processed = bridge->base.bio_ctx
+        ? bio_router_process_inbox(bridge->base.bio_ctx, max_messages > 0 ? max_messages : 32u)
+        : 0u;
 
     bridge->stats.messages_received += processed;
     return (int)processed;
@@ -236,6 +269,34 @@ int sleep_bio_async_update(
         bridge->time_since_broadcast_ms = 0;
     }
 
+    return 0;
+}
+
+int sleep_bio_async_sync_from_system(sleep_bio_async_bridge_t* bridge) {
+    if (!bridge || !bridge->connected || !bridge->sleep_system) {
+        return 0;  /* Nothing to mirror: not an error on brains without sleep. */
+    }
+
+    /* Both getters take the sleep system's own lock internally; call them
+     * without holding anything of ours. */
+    sleep_state_t stage = sleep_get_current_state(bridge->sleep_system);
+    float pressure = sleep_get_pressure(bridge->sleep_system);
+    if (!isfinite(pressure)) {
+        return 0;  /* Never propagate NaN/Inf onto the router. */
+    }
+    if (pressure < 0.0f) pressure = 0.0f;
+    if (pressure > 1.0f) pressure = 1.0f;
+
+    bridge->state.sleep_pressure = pressure;
+    /* The sleep system exposes no separate adenosine accessor; adenosine is
+     * the driver of homeostatic sleep pressure (Process S), so mirror it. */
+    bridge->state.adenosine_level = pressure;
+
+    if (stage != bridge->state.current_stage) {
+        sleep_state_t prev = bridge->state.current_stage;
+        (void)sleep_bio_async_broadcast_stage_transition(bridge, prev, stage);
+        return 1;
+    }
     return 0;
 }
 
@@ -269,6 +330,7 @@ int sleep_bio_async_broadcast_stage_transition(
 
     bridge->state.current_stage = current_stage;
     bridge->stats.stage_transitions_sent++;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->last_broadcast_us = msg.timestamp_us;
 
@@ -296,6 +358,7 @@ int sleep_bio_async_broadcast_consolidation_start(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.consolidation_events_sent++;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -324,6 +387,7 @@ int sleep_bio_async_broadcast_consolidation_complete(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.consolidation_events_sent++;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -356,6 +420,7 @@ int sleep_bio_async_broadcast_replay(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.replay_events_sent++;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -388,6 +453,7 @@ int sleep_bio_async_broadcast_homeostasis(
     msg.timestamp_us = msg.header.timestamp_us;
 
     bridge->stats.homeostasis_updates_sent++;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;
@@ -417,6 +483,7 @@ int sleep_bio_async_broadcast_adenosine(
 
     bridge->state.adenosine_level = adenosine_level;
     bridge->state.sleep_pressure = sleep_pressure;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
 
     bridge->stats.broadcasts_sent++;
     bridge->last_broadcast_us = msg.timestamp_us;
@@ -454,6 +521,7 @@ int sleep_bio_async_broadcast_oscillation(
     msg.gamma_power = (dominant_frequency_hz >= 30.0f) ? 0.4f : 0.1f;
 
     bridge->state.dominant_frequency_hz = dominant_frequency_hz;
+    sleep_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
 
     return 0;

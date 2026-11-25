@@ -34,7 +34,7 @@
 //=============================================================================
 // Recovery Initialization Helper
 //=============================================================================
-static void ensure_recovery_initialized(void) {
+__attribute__((unused)) static void ensure_recovery_initialized(void) {
     if (!nimcp_gpu_recovery_is_initialized()) {
         nimcp_gpu_recovery_init(NULL);
     }

@@ -22,6 +22,15 @@
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "utils/math/nimcp_math_helpers.h"
 
+/* Current pink-noise API: generate_sample(gen, &out) -> bool. Never returns NaN/Inf. */
+static inline float pnb_sample(pink_noise_generator_t gen) {
+    float s = 0.0f;
+    if (!gen || !pink_noise_generate_sample(gen, &s) || !isfinite(s)) {
+        return 0.0f;
+    }
+    return s;
+}
+
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(metaplasticity_pink_noise_bridge)
 
 /* Security integration */
@@ -41,7 +50,7 @@ meta_pink_noise_bridge_t* meta_pink_noise_create(const meta_pink_noise_config_t*
     }
 
     pink_noise_config_t noise_config;
-    pink_noise_default_config(&noise_config);
+    noise_config = pink_noise_default_config();
     noise_config.alpha = bridge->config.noise_alpha;
     noise_config.amplitude = bridge->config.noise_amplitude;
     noise_config.seed = bridge->config.seed;
@@ -103,15 +112,15 @@ int meta_pink_noise_update(meta_pink_noise_bridge_t* bridge) {
     }
 
     if (bridge->config.noise_targets & META_NOISE_TARGET_THETA_BASE) {
-        bridge->theta_base_noise = pink_noise_sample(bridge->noise_gen) *
+        bridge->theta_base_noise = pnb_sample(bridge->noise_gen) *
             bridge->config.theta_base_noise_scale;
     }
     if (bridge->config.noise_targets & META_NOISE_TARGET_THETA_EFF) {
-        bridge->theta_eff_noise = pink_noise_sample(bridge->noise_gen) *
+        bridge->theta_eff_noise = pnb_sample(bridge->noise_gen) *
             bridge->config.theta_eff_noise_scale;
     }
     if (bridge->config.noise_targets & (META_NOISE_TARGET_TAU_BASE | META_NOISE_TARGET_TAU_HIST)) {
-        bridge->tau_noise = pink_noise_sample(bridge->noise_gen) *
+        bridge->tau_noise = pnb_sample(bridge->noise_gen) *
             bridge->config.tau_noise_scale;
     }
 
@@ -199,6 +208,6 @@ int meta_pink_noise_reset(meta_pink_noise_bridge_t* bridge) {
     bridge->parameters_modulated = 0;
     bridge->avg_noise_amplitude = 0.0f;
     bridge->max_noise_amplitude = 0.0f;
-    if (bridge->noise_gen) pink_noise_reset(bridge->noise_gen);
+    if (bridge->noise_gen) pink_noise_reset(bridge->noise_gen, 0);
     return 0;
 }

@@ -355,7 +355,10 @@ weight_update_delta_t* weight_update_delta_create(
         return NULL;
     }
 
-    delta->delta_weights = (float**)nimcp_calloc(num_pre, sizeof(float*));
+    /* num_pre + 1: the trailing NULL row is the sentinel that
+     * weight_update_delta_destroy() walks to (the struct has no num_pre);
+     * without it destroy read one pointer past the array. */
+    delta->delta_weights = (float**)nimcp_calloc((size_t)num_pre + 1, sizeof(float*));
     if (!delta->delta_weights) {
         NIMCP_LOGGING_ERROR("weight_update_delta_create: row array alloc failed");
         nimcp_free(delta);

@@ -19,6 +19,30 @@
 #include "utils/memory/nimcp_memory.h"
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 
+/* ============================================================================
+ * Bio-router plumbing (wired 2026-11-24, BRAIN_WIRED_BIOASYNC)
+ *
+ * Registered module ID lives in the wired bio-async bridge range 0x7B00-0x7BFF
+ * so this bridge never shares an inbox with a live module (the router merges
+ * registrations that reuse an ID).
+ * ============================================================================ */
+#include "async/nimcp_bio_router.h"
+
+#define PERCEPTION_BIO_ASYNC_WIRED_MODULE_ID 0x7B05
+
+/** Broadcast a fully-built message through the router (no-op when unregistered). */
+static void perception_bio_async_router_send(bridge_base_t* base, void* msg, size_t size) {
+    if (!base || !base->bio_ctx || !msg || size < sizeof(bio_message_header_t)) {
+        return;
+    }
+    bio_message_header_t* hdr = (bio_message_header_t*)msg;
+    if (hdr->payload_size == 0) {
+        hdr->payload_size = (uint32_t)(size - sizeof(bio_message_header_t));
+    }
+    (void)bio_router_broadcast(base->bio_ctx, msg, size);
+}
+
+
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(perception_bio_async_bridge)
 
 #define LOG_MODULE "PERCEPTION_BIO_ASYNC_BRIDGE"
@@ -258,6 +282,12 @@ int perception_bio_async_connect(
     }
 
     bridge->router = router;
+    /* Register on the live router (idempotent). */
+    if (router && !bridge->base.bio_ctx) {
+        bridge->base.module_id = PERCEPTION_BIO_ASYNC_WIRED_MODULE_ID;
+        bridge->base.module_name = "perception_bio_async_bridge";
+        (void)bridge_base_connect_bio_async(&bridge->base);
+    }
     bridge->connected = true;
 
     /* Register module contexts would happen here if router is active */
@@ -272,6 +302,7 @@ int perception_bio_async_disconnect(perception_bio_bridge_t* bridge) {
         return -1;
     }
 
+    (void)bridge_base_disconnect_bio_async(&bridge->base);
     bridge->router = NULL;
     bridge->connected = false;
 
@@ -300,8 +331,9 @@ int perception_bio_async_process_inbox(
         return -1;
     }
 
-    uint32_t processed = 0;
-    (void)max_messages;
+    uint32_t processed = bridge->base.bio_ctx
+        ? bio_router_process_inbox(bridge->base.bio_ctx, max_messages > 0 ? max_messages : 32u)
+        : 0u;
 
     /* Process incoming attention modulation and prediction update requests */
     /* TODO: Integrate with bio_router inbox when available */
@@ -398,6 +430,7 @@ int perception_bio_async_broadcast_visual_feature(
     if (subs > 0) {
         bridge->stats.modality_stats[PERCEPT_MODALITY_VISUAL].features_sent++;
         bridge->stats.messages_sent++;
+        perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
         bridge->stats.broadcasts_sent++;
     }
 
@@ -447,6 +480,7 @@ int perception_bio_async_broadcast_visual_object(
     bridge->stats.modality_stats[PERCEPT_MODALITY_VISUAL].objects_detected++;
     bridge->stats.objects_tracked++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.header.timestamp_us;
 
@@ -482,6 +516,7 @@ int perception_bio_async_broadcast_visual_attention(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_VISUAL].attention_shifts++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &header, sizeof(header));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = header.timestamp_us;
 
@@ -520,6 +555,7 @@ int perception_bio_async_broadcast_auditory_feature(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_AUDITORY].features_sent++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.header.timestamp_us;
 
@@ -554,6 +590,7 @@ int perception_bio_async_broadcast_word_recognized(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_AUDITORY].features_sent++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.header.timestamp_us;
 
@@ -586,6 +623,7 @@ int perception_bio_async_broadcast_auditory_spatial(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_AUDITORY].features_sent++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.header.timestamp_us;
 
@@ -620,6 +658,7 @@ int perception_bio_async_broadcast_touch(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_SOMATOSENSORY].features_sent++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &header, sizeof(header));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = header.timestamp_us;
 
@@ -655,6 +694,7 @@ int perception_bio_async_broadcast_pain(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_SOMATOSENSORY].features_sent++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &header, sizeof(header));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = header.timestamp_us;
 
@@ -686,6 +726,7 @@ int perception_bio_async_broadcast_proprioception(
     /* Update stats */
     bridge->stats.modality_stats[PERCEPT_MODALITY_SOMATOSENSORY].features_sent++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &header, sizeof(header));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = header.timestamp_us;
 
@@ -791,6 +832,7 @@ int perception_bio_async_broadcast_binding_result(
     }
 
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.timestamp_us;
 
@@ -838,6 +880,7 @@ int perception_bio_async_broadcast_multimodal_object(
 
     /* Update stats */
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.header.timestamp_us;
 
@@ -887,6 +930,7 @@ int perception_bio_async_broadcast_salience(
 
     /* Update stats */
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &msg, sizeof(msg));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = msg.timestamp_us;
 
@@ -926,6 +970,7 @@ int perception_bio_async_broadcast_novelty(
 
     /* Update stats */
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &header, sizeof(header));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = header.timestamp_us;
 
@@ -964,6 +1009,7 @@ int perception_bio_async_broadcast_cross_modal_attention(
     bridge->stats.modality_stats[source_modality].attention_shifts++;
     bridge->stats.modality_stats[target_modality].attention_shifts++;
     bridge->stats.messages_sent++;
+    perception_bio_async_router_send(&bridge->base, &header, sizeof(header));
     bridge->stats.broadcasts_sent++;
     bridge->stats.last_broadcast_time_us = header.timestamp_us;
 

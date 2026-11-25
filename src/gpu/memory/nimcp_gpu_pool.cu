@@ -65,7 +65,7 @@
 /**
  * @brief Kernel to zero memory asynchronously
  */
-__global__ void kernel_memzero(uint32_t* data, size_t num_words) {
+static __global__ void kernel_memzero(uint32_t* data, size_t num_words) {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = blockDim.x * gridDim.x;
 
@@ -77,7 +77,7 @@ __global__ void kernel_memzero(uint32_t* data, size_t num_words) {
 /**
  * @brief Kernel to copy memory within GPU
  */
-__global__ void kernel_memcpy(uint32_t* dst, const uint32_t* src, size_t num_words) {
+static __global__ void kernel_memcpy(uint32_t* dst, const uint32_t* src, size_t num_words) {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = blockDim.x * gridDim.x;
 
@@ -91,7 +91,7 @@ __global__ void kernel_memcpy(uint32_t* dst, const uint32_t* src, size_t num_wor
  *
  * Each thread handles one block's worth of data
  */
-__global__ void kernel_compact_block(
+__attribute__((unused)) static __global__ void kernel_compact_block(
     uint8_t* dst,
     const uint8_t* src,
     const size_t* offsets,
@@ -114,7 +114,7 @@ __global__ void kernel_compact_block(
 /**
  * @brief Launch async memory zeroing
  */
-static void launch_memzero_async(void* ptr, size_t size, cudaStream_t stream) {
+__attribute__((unused)) static void launch_memzero_async(void* ptr, size_t size, cudaStream_t stream) {
     if (!ptr || size == 0) return;
 
     size_t num_words = (size + 3) / 4;
@@ -128,7 +128,7 @@ static void launch_memzero_async(void* ptr, size_t size, cudaStream_t stream) {
 /**
  * @brief Launch async memory copy
  */
-static void launch_memcpy_async(void* dst, const void* src, size_t size, cudaStream_t stream) {
+__attribute__((unused)) static void launch_memcpy_async(void* dst, const void* src, size_t size, cudaStream_t stream) {
     if (!dst || !src || size == 0) return;
 
     size_t num_words = (size + 3) / 4;
@@ -165,7 +165,7 @@ static inline size_t align_up(size_t size, size_t alignment) {
 /**
  * @brief Check if value is power of 2
  */
-static inline bool is_power_of_2(size_t value) {
+__attribute__((unused)) static inline bool is_power_of_2(size_t value) {
     return value != 0 && (value & (value - 1)) == 0;
 }
 
@@ -1591,7 +1591,7 @@ void* nimcp_gpu_pool_alloc_tagged(
     // Track allocation
     nimcp_gpu_block_t* block = pool_get_block_struct(pool);
     if (!block) {
-        pool->allocator->ops->nimcp_free(pool->allocator, ptr);
+        pool->allocator->ops->free(pool->allocator, ptr);
         nimcp_platform_mutex_unlock((nimcp_platform_mutex_t*)pool->mutex);
         return NULL;
     }
@@ -1689,7 +1689,7 @@ void nimcp_gpu_pool_free(nimcp_gpu_pool_t* pool, void* ptr) {
     pool_return_block_struct(pool, block);
 
     // Delegate to allocator
-    pool->allocator->ops->nimcp_free(pool->allocator, ptr);
+    pool->allocator->ops->free(pool->allocator, ptr);
 
     // Update stats
     if (pool->config.enable_stats) {

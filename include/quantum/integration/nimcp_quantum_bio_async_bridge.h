@@ -451,6 +451,11 @@ int quantum_bio_async_disconnect(quantum_bio_async_bridge_t* bridge);
  */
 bool quantum_bio_async_is_connected(const quantum_bio_async_bridge_t* bridge);
 
+/**
+ * @brief Router module context (NULL when not registered on a live router)
+ */
+bio_module_context_t quantum_bio_async_get_context(const quantum_bio_async_bridge_t* bridge);
+
 /* ============================================================================
  * Message Processing API
  * ============================================================================ */

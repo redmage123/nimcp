@@ -23,6 +23,15 @@
 #include "utils/fault_tolerance/nimcp_health_agent_macros.h"
 #include "utils/math/nimcp_math_helpers.h"
 
+/* Current pink-noise API: generate_sample(gen, &out) -> bool. Never returns NaN/Inf. */
+static inline float pnb_sample(pink_noise_generator_t gen) {
+    float s = 0.0f;
+    if (!gen || !pink_noise_generate_sample(gen, &s) || !isfinite(s)) {
+        return 0.0f;
+    }
+    return s;
+}
+
 NIMCP_DECLARE_HEALTH_AGENT_ATOMIC(homeostatic_pink_noise_bridge)
 
 /* Security integration */
@@ -48,7 +57,7 @@ homeo_pink_noise_bridge_t* homeo_pink_noise_create(
     }
 
     pink_noise_config_t noise_config;
-    pink_noise_default_config(&noise_config);
+    noise_config = pink_noise_default_config();
     noise_config.alpha = bridge->config.noise_alpha;
     noise_config.amplitude = bridge->config.noise_amplitude;
     noise_config.seed = bridge->config.seed;
@@ -131,22 +140,22 @@ int homeo_pink_noise_update(homeo_pink_noise_bridge_t* bridge) {
 
     // Generate noise samples
     if (bridge->config.noise_targets & HOMEO_NOISE_TARGET_RATE) {
-        bridge->target_rate_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->target_rate_noise = pnb_sample(bridge->noise_gen);
         bridge->target_rate_noise *= bridge->config.target_rate_noise_scale;
     }
 
     if (bridge->config.noise_targets & HOMEO_NOISE_SCALING_TAU) {
-        bridge->scaling_tau_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->scaling_tau_noise = pnb_sample(bridge->noise_gen);
         bridge->scaling_tau_noise *= bridge->config.scaling_tau_noise_scale;
     }
 
     if (bridge->config.noise_targets & HOMEO_NOISE_SCALING_EXP) {
-        bridge->scaling_exp_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->scaling_exp_noise = pnb_sample(bridge->noise_gen);
         bridge->scaling_exp_noise *= bridge->config.scaling_exp_noise_scale;
     }
 
     if (bridge->config.noise_targets & HOMEO_NOISE_RATE_AVG_TAU) {
-        bridge->rate_avg_tau_noise = pink_noise_sample(bridge->noise_gen);
+        bridge->rate_avg_tau_noise = pnb_sample(bridge->noise_gen);
         bridge->rate_avg_tau_noise *= bridge->config.rate_avg_tau_noise_scale;
     }
 
@@ -302,7 +311,7 @@ int homeo_pink_noise_reset(homeo_pink_noise_bridge_t* bridge) {
     bridge->avg_target_rate_shift = 0.0f;
 
     if (bridge->noise_gen) {
-        pink_noise_reset(bridge->noise_gen);
+        pink_noise_reset(bridge->noise_gen, 0);
     }
 
     return 0;

@@ -978,6 +978,10 @@ class BrainProxy:
         resp = self._send({"cmd": "get_sensory_hub_stats"})
         return resp.get("stats", {})
 
+    def get_wired_status(self):
+        resp = self._send({"cmd": "get_wired_status"})
+        return resp.get("status", {})
+
     def get_vision_stats(self):
         resp = self._send({"cmd": "get_vision_stats"})
         return resp.get("stats", {})

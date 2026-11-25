@@ -3760,6 +3760,13 @@ class BrainService:
             return {"stats": {"enabled": False, "error": "binding too old"}}
         return {"stats": self.brain.get_sensory_hub_stats()}
 
+    def _cmd_get_wired_status(self, _req):
+        """Wired-module groups (dead-code audit 2026-11-24): per-group status."""
+        if not hasattr(self.brain, "get_wired_status"):
+            return {"status": {}, "error": "binding too old"}
+        import json as _json
+        return {"status": _json.loads(self.brain.get_wired_status() or "{}")}
+
     def _cmd_get_vision_stats(self, _req):
         """Vision (retina/optic nerve) counters. Read-only."""
         if not hasattr(self.brain, "get_vision_stats"):

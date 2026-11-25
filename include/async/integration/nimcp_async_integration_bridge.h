@@ -71,6 +71,7 @@
 #include "async/nimcp_future.h"
 #include "utils/thread/nimcp_thread.h"
 #include "utils/memory/nimcp_memory.h"
+#include "utils/bridge/nimcp_bridge_base.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,7 +86,9 @@ extern "C" {
 #define ASYNC_INTEGRATION_MODULE_VERSION    "1.0.0"
 
 /** Bio-async module ID for async integration bridge */
-#define BIO_MODULE_ASYNC_INTEGRATION        0x0700
+/* 0x7B00: wired bio-async bridge range 0x7B00-0x7BFF (0x0700 collides with
+ * BIO_MSG_SHUTDOWN_REQUEST / swarm consciousness message values). */
+#define BIO_MODULE_ASYNC_INTEGRATION        0x7B00
 
 /** Default configuration values */
 #define ASYNC_INTEGRATION_DEFAULT_MAX_TASKS             256
@@ -136,37 +139,37 @@ typedef struct async_integration_bridge async_integration_t;
  * HOW:  Message categories for different async operations
  */
 typedef enum {
-    /* Task coordination messages (0x0700 - 0x070F) */
-    ASYNC_MSG_TASK_SUBMIT = 0x0700,         /**< Submit task to queue */
+    /* Task coordination messages (0x7E00 - 0x7E0F) */
+    ASYNC_MSG_TASK_SUBMIT = 0x7E00,         /**< Submit task to queue */
     ASYNC_MSG_TASK_COMPLETE,                /**< Task completed */
     ASYNC_MSG_TASK_FAILED,                  /**< Task execution failed */
     ASYNC_MSG_TASK_CANCELLED,               /**< Task was cancelled */
     ASYNC_MSG_TASK_PROGRESS,                /**< Task progress update */
     ASYNC_MSG_TASK_PRIORITY_CHANGE,         /**< Task priority changed */
 
-    /* Promise/Future coordination (0x0710 - 0x071F) */
-    ASYNC_MSG_PROMISE_CREATED = 0x0710,     /**< New promise created */
+    /* Promise/Future coordination (0x7E10 - 0x7E1F) */
+    ASYNC_MSG_PROMISE_CREATED = 0x7E10,     /**< New promise created */
     ASYNC_MSG_PROMISE_RESOLVED,             /**< Promise resolved with value */
     ASYNC_MSG_PROMISE_REJECTED,             /**< Promise rejected with error */
     ASYNC_MSG_FUTURE_WAIT_START,            /**< Future wait operation started */
     ASYNC_MSG_FUTURE_WAIT_COMPLETE,         /**< Future wait completed */
     ASYNC_MSG_FUTURE_CONFIDENCE_UPDATE,     /**< Future confidence decayed */
 
-    /* Queue coordination (0x0720 - 0x072F) */
-    ASYNC_MSG_QUEUE_STATUS = 0x0720,        /**< Queue status update */
+    /* Queue coordination (0x7E20 - 0x7E2F) */
+    ASYNC_MSG_QUEUE_STATUS = 0x7E20,        /**< Queue status update */
     ASYNC_MSG_QUEUE_BACKPRESSURE,           /**< Queue experiencing backpressure */
     ASYNC_MSG_QUEUE_DRAINED,                /**< Queue emptied */
     ASYNC_MSG_LOAD_BALANCE_REQUEST,         /**< Request load balancing */
     ASYNC_MSG_LOAD_BALANCE_RESPONSE,        /**< Load balancing result */
 
-    /* Phase synchronization (0x0730 - 0x073F) */
-    ASYNC_MSG_PHASE_SYNC_REQUEST = 0x0730,  /**< Request phase synchronization */
+    /* Phase synchronization (0x7E30 - 0x7E3F) */
+    ASYNC_MSG_PHASE_SYNC_REQUEST = 0x7E30,  /**< Request phase synchronization */
     ASYNC_MSG_PHASE_SYNC_ACHIEVED,          /**< Phase coherence achieved */
     ASYNC_MSG_PHASE_SYNC_TIMEOUT,           /**< Phase sync timed out */
     ASYNC_MSG_COHERENCE_UPDATE,             /**< Coherence level update */
 
-    /* Coordination control (0x0740 - 0x074F) */
-    ASYNC_MSG_COORD_START = 0x0740,         /**< Start coordination */
+    /* Coordination control (0x7E40 - 0x7E4F) */
+    ASYNC_MSG_COORD_START = 0x7E40,         /**< Start coordination */
     ASYNC_MSG_COORD_STOP,                   /**< Stop coordination */
     ASYNC_MSG_COORD_PAUSE,                  /**< Pause coordination */
     ASYNC_MSG_COORD_RESUME,                 /**< Resume coordination */
@@ -511,6 +514,7 @@ typedef struct {
  * NOTE: Opaque structure - access via API only
  */
 struct async_integration_bridge {
+    bridge_base_t base;                 /**< MUST be first: base bridge (mutex) */
     async_integration_config_t config;  /**< Configuration */
     bool running;                       /**< Running state */
     bool initialized;                   /**< Initialization state */

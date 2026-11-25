@@ -8,6 +8,7 @@
  */
 
 #include "utils/algorithms/nimcp_louvain.h"
+#include "utils/algorithms/nimcp_modularity.h"
 #include "security/nimcp_security.h"
 #include "security/nimcp_blood_brain_barrier.h"
 
@@ -43,52 +44,14 @@ typedef struct {
     uint32_t num_communities;        /**< Current number of communities */
     uint32_t max_vertex;             /**< Maximum vertex index */
     double total_weight;             /**< Sum of all edge weights */
-    uint32_t* neighbor_communities;  /**< Temporary array for neighbor communities */
+    uint32_t* neighbor_communities;  /**< Temporary list of touched neighbor communities */
     double* neighbor_weights;        /**< Weights to neighbor communities */
+    double* degrees;                 /**< Weighted degree k_i of each vertex */
 } LouvainContext;
 
 //=============================================================================
 // Internal Helper Functions
 //=============================================================================
-
-/**
- * WHAT: Calculate modularity gain for moving vertex
- * WHY: Evaluate community reassignment quality
- * HOW: Compute change in modularity Q after move
- */
-static inline double calculate_modularity_gain(LouvainContext* ctx, uint32_t vertex,
-                                               uint32_t new_comm, uint32_t old_comm,
-                                               const NimcpGraph* graph, double resolution)
-{
-    if (!ctx || !graph) return 0.0;
-
-    if (vertex >= ctx->max_vertex) {
-        return 0.0;
-    }
-
-    const NimcpVertex* v = &graph->vertices[vertex];
-    if (!v) return 0.0;
-
-    // Get neighbors and their communities
-    double internal_edges = 0.0;
-    for (NimcpEdgeNode* edge = v->edges; edge; edge = edge->next) {
-        uint32_t neighbor = edge->dest;
-        if (neighbor < ctx->max_vertex && ctx->assignments[neighbor] == new_comm) {
-            internal_edges += edge->weight;
-        }
-    }
-
-    // Modularity gain formula
-    if (ctx->community_weights[new_comm] <= 0.0) {
-        return 0.0;
-    }
-
-    double gain = (internal_edges / ctx->total_weight) -
-                  resolution * (ctx->community_weights[new_comm] * v->edge_count) /
-                      (ctx->total_weight * ctx->total_weight);
-
-    return gain;
-}
 
 /**
  * WHAT: Initialize community assignments (each vertex is its own community)
@@ -131,14 +94,16 @@ static LouvainContext* louvain_context_create(const NimcpGraph* graph)
     ctx->community_sizes = (uint32_t*)nimcp_malloc(sizeof(uint32_t) * ctx->max_vertex);
     ctx->neighbor_communities = (uint32_t*)nimcp_malloc(sizeof(uint32_t) * ctx->max_vertex);
     ctx->neighbor_weights = (double*)nimcp_malloc(sizeof(double) * ctx->max_vertex);
+    ctx->degrees = (double*)nimcp_malloc(sizeof(double) * ctx->max_vertex);
 
     if (!ctx->assignments || !ctx->community_weights || !ctx->community_sizes ||
-        !ctx->neighbor_communities || !ctx->neighbor_weights) {
+        !ctx->neighbor_communities || !ctx->neighbor_weights || !ctx->degrees) {
         nimcp_free(ctx->assignments);
         nimcp_free(ctx->community_weights);
         nimcp_free(ctx->community_sizes);
         nimcp_free(ctx->neighbor_communities);
         nimcp_free(ctx->neighbor_weights);
+        nimcp_free(ctx->degrees);
         nimcp_free(ctx);
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "louvain_context_create: operation failed");
         return NULL;
@@ -148,11 +113,21 @@ static LouvainContext* louvain_context_create(const NimcpGraph* graph)
     memset(ctx->community_weights, 0, sizeof(double) * ctx->max_vertex);
     memset(ctx->community_sizes, 0, sizeof(uint32_t) * ctx->max_vertex);
 
+    memset(ctx->neighbor_weights, 0, sizeof(double) * ctx->max_vertex);
+
+    /* Weighted degree k_i = sum of outgoing edge weights (an undirected graph
+     * stores each edge in both directions, so sum(k_i) = 2m). Non-finite or
+     * negative weights are ignored. */
     for (uint32_t i = 0; i < ctx->max_vertex; i++) {
+        double k = 0.0;
+        for (NimcpEdgeNode* e = graph->vertices[i].edges; e; e = e->next) {
+            if (isfinite(e->weight) && e->weight > 0.0f) k += e->weight;
+        }
         ctx->assignments[i] = i;
         ctx->community_sizes[i] = 1;
-        ctx->community_weights[i] = (double)graph->vertices[i].edge_count;
-        ctx->total_weight += graph->vertices[i].edge_count;
+        ctx->degrees[i] = k;
+        ctx->community_weights[i] = k;
+        ctx->total_weight += k;
     }
 
     // Calculate total weight (sum of degrees)
@@ -179,6 +154,7 @@ static void louvain_context_destroy(LouvainContext* ctx)
     nimcp_free(ctx->community_sizes);
     nimcp_free(ctx->neighbor_communities);
     nimcp_free(ctx->neighbor_weights);
+    nimcp_free(ctx->degrees);
     nimcp_free(ctx);
 }
 
@@ -205,43 +181,53 @@ static bool louvain_optimization_phase(LouvainContext* ctx, const NimcpGraph* gr
 
     *improvements = 0;
 
-    for (uint32_t v = 0; v < ctx->max_vertex; v++) {
-        if (v >= graph->vertex_count || !graph->vertices) {
-            continue;
+    const double two_m = ctx->total_weight;
+    if (two_m <= 0.0) {
+        return false;
+    }
+
+    for (uint32_t v = 0; v < ctx->max_vertex && v < graph->vertex_count; v++) {
+        uint32_t old_comm = ctx->assignments[v];
+        double k_v = ctx->degrees[v];
+        if (k_v <= 0.0) {
+            continue;  /* isolated vertex: stays in its own community */
         }
 
-        uint32_t old_comm = ctx->assignments[v];
-
-        // Find best community for this vertex
-        double best_gain = 0.0;
-        uint32_t best_comm = old_comm;
-
-        // Try moving to each neighbor's community
-        memset(ctx->neighbor_communities, 0xff, sizeof(uint32_t) * ctx->max_vertex);
-        memset(ctx->neighbor_weights, 0, sizeof(double) * ctx->max_vertex);
-
+        /* Accumulate edge weight from v to each neighbouring community */
+        uint32_t n_touched = 0;
         const NimcpVertex* vertex = &graph->vertices[v];
         for (NimcpEdgeNode* edge = vertex->edges; edge; edge = edge->next) {
             uint32_t neighbor = edge->dest;
-            if (neighbor < ctx->max_vertex) {
-                uint32_t neighbor_comm = ctx->assignments[neighbor];
-                if (neighbor_comm < ctx->max_vertex) {
-                    ctx->neighbor_weights[neighbor_comm] += edge->weight;
-                }
+            if (neighbor >= ctx->max_vertex || neighbor == v) continue;
+            if (!isfinite(edge->weight) || edge->weight <= 0.0f) continue;
+            uint32_t c = ctx->assignments[neighbor];
+            if (ctx->neighbor_weights[c] == 0.0) {
+                ctx->neighbor_communities[n_touched++] = c;
             }
+            ctx->neighbor_weights[c] += edge->weight;
         }
 
-        // Evaluate each neighbor community
-        for (uint32_t c = 0; c < ctx->max_vertex; c++) {
-            if (ctx->community_weights[c] <= 0.0) {
-                continue;
-            }
+        /* Remove v from its community, then pick the community with the best
+         * standard Louvain gain:  k_v,in(c) - resolution * Sigma_tot(c) * k_v / 2m */
+        ctx->community_weights[old_comm] -= k_v;
 
-            double gain = calculate_modularity_gain(ctx, v, c, old_comm, graph, resolution);
-            if (gain > best_gain) {
+        uint32_t best_comm = old_comm;
+        double best_gain = ctx->neighbor_weights[old_comm] -
+                           resolution * ctx->community_weights[old_comm] * k_v / two_m;
+        for (uint32_t t = 0; t < n_touched; t++) {
+            uint32_t c = ctx->neighbor_communities[t];
+            double gain = ctx->neighbor_weights[c] -
+                          resolution * ctx->community_weights[c] * k_v / two_m;
+            if (gain > best_gain + 1e-12) {
                 best_gain = gain;
                 best_comm = c;
             }
+        }
+
+        ctx->community_weights[best_comm] += k_v;
+
+        for (uint32_t t = 0; t < n_touched; t++) {
+            ctx->neighbor_weights[ctx->neighbor_communities[t]] = 0.0;
         }
 
         // Move vertex if improvement found
@@ -263,7 +249,9 @@ static bool louvain_optimization_phase(LouvainContext* ctx, const NimcpGraph* gr
  */
 static uint32_t louvain_compact_communities(LouvainContext* ctx)
 {
-    NIMCP_VALIDATE(ctx, 0);
+    if (!ctx) {
+        return 0;
+    }
 
     // Find used communities
     uint32_t* community_map = (uint32_t*)nimcp_malloc(sizeof(uint32_t) * ctx->max_vertex);
@@ -291,42 +279,6 @@ static uint32_t louvain_compact_communities(LouvainContext* ctx)
     nimcp_free(community_map);
     ctx->num_communities = new_id;
     return new_id;
-}
-
-/**
- * WHAT: Calculate modularity of current partition
- * WHY: Measure quality of community structure
- * HOW: Sum modularity contributions of all edges
- */
-static double calculate_modularity(LouvainContext* ctx, const NimcpGraph* graph)
-{
-    NIMCP_VALIDATE(ctx, 0.0);
-    NIMCP_VALIDATE(graph, 0.0);
-
-    double modularity = 0.0;
-
-    if (ctx->total_weight <= 0.0) {
-        return 0.0;
-    }
-
-    for (uint32_t v = 0; v < ctx->max_vertex && v < graph->vertex_count; v++) {
-        const NimcpVertex* vertex = &graph->vertices[v];
-        uint32_t v_comm = ctx->assignments[v];
-
-        for (NimcpEdgeNode* edge = vertex->edges; edge; edge = edge->next) {
-            uint32_t u = edge->dest;
-            if (u < ctx->max_vertex) {
-                uint32_t u_comm = ctx->assignments[u];
-
-                if (v_comm == u_comm) {
-                    double edge_weight = edge->weight / ctx->total_weight;
-                    modularity += edge_weight;
-                }
-            }
-        }
-    }
-
-    return modularity;
 }
 
 //=============================================================================
@@ -398,7 +350,9 @@ NimcpCommunityPartition* nimcp_louvain_detect(const NimcpGraph* graph, double re
 
     memcpy(result->assignments, ctx->assignments, sizeof(uint32_t) * ctx->max_vertex);
     result->num_communities = ctx->num_communities;
-    result->modularity = calculate_modularity(ctx, graph);
+    result->num_vertices = ctx->max_vertex;
+    result->modularity = nimcp_calculate_modularity_with_resolution(
+        graph, result->assignments, ctx->max_vertex, resolution);
     result->iterations = phase;
 
     louvain_context_destroy(ctx);
@@ -436,7 +390,7 @@ uint32_t nimcp_get_community_members(const NimcpCommunityPartition* partition,
     }
 
     uint32_t count = 0;
-    for (uint32_t i = 0; i < partition->num_communities && count < max_members; i++) {
+    for (uint32_t i = 0; partition->assignments && i < partition->num_vertices && count < max_members; i++) {
         if (partition->assignments[i] == community_id) {
             members[count++] = i;
         }
@@ -451,6 +405,11 @@ NimcpCommunityPartition* nimcp_louvain_refine(const NimcpGraph* graph,
 {
     if (!graph || !partition) {
         NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "nimcp_louvain_refine: required parameter is NULL (graph, partition)");
+        return NULL;
+    }
+    if (!partition->assignments || graph->vertex_count == 0 ||
+        partition->num_vertices != graph->vertex_count) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_INVALID_PARAM, "nimcp_louvain_refine: partition does not match graph");
         return NULL;
     }
 
@@ -487,6 +446,19 @@ NimcpCommunityPartition* nimcp_louvain_refine(const NimcpGraph* graph,
 
     memcpy(ctx->assignments, partition->assignments, sizeof(uint32_t) * graph->vertex_count);
 
+    /* Rebuild community totals for the supplied partition */
+    memset(ctx->community_weights, 0, sizeof(double) * ctx->max_vertex);
+    memset(ctx->community_sizes, 0, sizeof(uint32_t) * ctx->max_vertex);
+    for (uint32_t i = 0; i < ctx->max_vertex; i++) {
+        uint32_t c = ctx->assignments[i];
+        if (c >= ctx->max_vertex) {
+            c = i;  /* out-of-range id: treat vertex as a singleton */
+            ctx->assignments[i] = c;
+        }
+        ctx->community_weights[c] += ctx->degrees[i];
+        ctx->community_sizes[c]++;
+    }
+
     for (uint32_t i = 0; i < additional_iterations; i++) {
         uint32_t improvements = 0;
         if (!louvain_optimization_phase(ctx, graph, 1.0, &improvements)) {
@@ -495,8 +467,12 @@ NimcpCommunityPartition* nimcp_louvain_refine(const NimcpGraph* graph,
         result->iterations++;
     }
 
+    louvain_compact_communities(ctx);
     memcpy(result->assignments, ctx->assignments, sizeof(uint32_t) * graph->vertex_count);
-    result->modularity = calculate_modularity(ctx, graph);
+    result->num_communities = ctx->num_communities;
+    result->num_vertices = graph->vertex_count;
+    result->modularity = nimcp_calculate_modularity(graph, result->assignments,
+                                                    graph->vertex_count);
 
     louvain_context_destroy(ctx);
 

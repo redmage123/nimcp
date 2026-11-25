@@ -227,7 +227,10 @@ int quantum_bio_async_connect(
     /* Register with the bio-router */
     if (router && bio_router_is_initialized()) {
         bio_module_info_t info = {
-            .module_id = BIO_MODULE_ELIGIBILITY_QUANTUM,
+            /* 0x7B06: wired bio-async bridge range. BIO_MODULE_ELIGIBILITY_QUANTUM
+             * belongs to the quantum eligibility module itself; registering under it
+             * would merge this bridge into that module's inbox. */
+            .module_id = 0x7B06,
             .module_name = "quantum_bio_async",
             .inbox_capacity = 0,  /* Use default */
             .user_data = bridge
@@ -261,6 +264,10 @@ int quantum_bio_async_disconnect(quantum_bio_async_bridge_t* bridge) {
 
 bool quantum_bio_async_is_connected(const quantum_bio_async_bridge_t* bridge) {
     return bridge ? bridge->connected : false;
+}
+
+bio_module_context_t quantum_bio_async_get_context(const quantum_bio_async_bridge_t* bridge) {
+    return bridge ? bridge->module_ctx : NULL;
 }
 
 /* ============================================================================
@@ -765,7 +772,7 @@ int quantum_bio_async_subscribe_module(
 
     if (bridge->subscription_count >= bridge->subscription_capacity) {
         if (bridge->base.mutex) nimcp_mutex_unlock(bridge->base.mutex);
-        NIMCP_THROW(NIMCP_ERROR_BUFFER_FULL, "Subscription capacity exceeded");
+        NIMCP_THROW(NIMCP_ERROR_QUEUE_FULL, "Subscription capacity exceeded");
         return -1;
     }
 

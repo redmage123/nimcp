@@ -445,6 +445,20 @@ int glial_bio_async_update(
     uint32_t delta_ms
 );
 
+/**
+ * @brief Mirror the connected glial integration's live counters into the bridge
+ *
+ * Calls glial_integration_get_stats() (takes the integration's own lock) and
+ * caches astrocyte/microglia counts and mean myelination (non-finite values
+ * rejected). Optionally copies the full stats to out_stats.
+ *
+ * @return 0 on success, -1 if not connected or no glial integration
+ */
+int glial_bio_async_sync_from_integration(
+    glial_bio_async_bridge_t* bridge,
+    glial_integration_stats_t* out_stats
+);
+
 /* ============================================================================
  * Broadcast API
  * ============================================================================ */

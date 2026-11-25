@@ -358,19 +358,14 @@ cortical_layers_sleep_bridge_t cortical_layers_sleep_bridge_create(
         bridge->effects.layer_effects.layer_connectivity[i] = 1.0f;
     }
 
-    /* Register callback with sleep system */
-    bool registered = sleep_register_state_callback(
-        sleep,
-        cortical_layers_on_sleep_state_change,
-        bridge);
-
-    if (!registered) {
-        NIMCP_LOGGING_WARN("Failed to register cortical layers sleep callback");
-        /* Continue anyway - bridge still functional, just won't get automatic updates */
-    } else {
-        bridge->callback_registered = true;
-        NIMCP_LOGGING_INFO("Cortical layers sleep bridge created and callback registered");
-    }
+    /* No self-registration: sleep_wake.c delivers at most 32 state listeners
+     * per sleep system, so the brain drives this bridge from one group-level
+     * listener (src/core/brain/wired/nimcp_brain_wired_sleep.c), which calls
+     * cortical_layers_sleep_update() on every transition. update() re-syncs
+     * the effects with the sleep system's current state. */
+    bridge->callback_registered = false;
+    cortical_layers_on_sleep_state_change(sleep_get_current_state(sleep), bridge);
+    NIMCP_LOGGING_INFO("Cortical layers sleep bridge created");
 
     return bridge;
 }
@@ -415,7 +410,19 @@ int cortical_layers_sleep_update(cortical_layers_sleep_bridge_t bridge)
         return -1;
     }
 
+    /* Re-sync with the sleep system: recompute every state-derived effect
+     * when the state changed since the last update (the handler takes the
+     * bridge mutex itself, so call it before locking). */
+    sleep_state_t now_state = sleep_get_current_state(bridge->sleep_system);
     nimcp_mutex_lock(bridge->base.mutex);
+    bool changed = (now_state != bridge->effects.current_state);
+    nimcp_mutex_unlock(bridge->base.mutex);
+    if (changed) {
+        cortical_layers_on_sleep_state_change(now_state, bridge);
+    }
+
+    nimcp_mutex_lock(bridge->base.mutex);
+    bridge->effects.sleep_pressure = sleep_get_pressure(bridge->sleep_system);
 
     /* Update layer-specific effects if enabled */
     if (bridge->config.enable_layer_specific) {

@@ -1,254 +1,80 @@
 /**
  * @file nimcp_language_jepa_bridge.c
- * @brief JEPA (Joint Embedding Predictive Architecture) ↔ language integration
+ * @brief JEPA latent predictor surprise <-> language.
  *
- * WHAT: Predictive semantics from JEPA world model for anticipatory language
- * WHY:  Enables fluent continuation, contrastive learning, counterfactual generation
- * HOW:  JEPA predicts next semantic state → blend into production target
- *
- * JEPA language integration:
- *   - State prediction: s_t → s_{t+1} for fluent continuation
- *   - Contrastive pairs: positive (paraphrase) vs negative (contradiction)
- *   - Action conditioning: "if X then Y" from action-conditioned predictions
- *   - Uncertainty: prediction confidence guides exploration vs exploitation
- *
- * @author NIMCP Development Team
- * @date 2026-10-21
+ * WHAT: When the brain's JEPA predictor is currently doing worse than its
+ *       long-run average (rising prediction loss = surprise) the produce
+ *       floor rises; when it is predicting well it falls.
+ * WHY:  Predictive-processing account of confidence: speakers commit when
+ *       their generative model is predicting well (Pickering & Garrod 2013).
+ *       The predictor is trained on the brain's feature space, not the
+ *       language semantic space, so its predictions cannot be blended into
+ *       content_intent (the 2026-10-21 version faked them with momentum +
+ *       rand()); its loss trajectory is the honest signal.
+ * HOW:  brain->jepa_predictor: jepa_predictor_get_stats avg_loss L.
+ *       Fast EMA (0.2) vs slow EMA (0.01); ratio = fast/slow.
+ *       floor_adjust = 0.10*clamp(ratio - 1, -0.5, 1). Slow EMA persists.
  */
-
-#include "language/nimcp_grounded_language.h"
-#include "language/nimcp_grounded_language_internal.h"
 #include "core/brain/nimcp_brain_internal.h"
+#include "cognitive/jepa/nimcp_jepa_predictor.h"
+#include "language/nimcp_grounded_language_internal.h"
+#include "language/bridges/nimcp_language_cognitive_wired.h"
 #include "utils/memory/nimcp_memory.h"
-#include "utils/error/nimcp_error_handler.h"
-#include "utils/logging/nimcp_logging.h"
 
-#include <math.h>
 #include <string.h>
 
-/**
- * @brief JEPA prediction result for semantic state
- */
 typedef struct {
-    float* predicted_state;      /**< Predicted next semantic state */
-    float prediction_confidence; /**< Prediction certainty [0,1] */
-    float prediction_entropy;    /**< Uncertainty in prediction */
-    uint32_t dim;                /**< State dimensionality */
-} jepa_semantic_prediction_t;
+    float fast, slow, n;
+} lang_jepa_state_t;
 
-/**
- * @brief Predict next semantic state from current using JEPA
- *
- * Uses JEPA world model to predict semantic evolution:
- *   s_{t+1} = f_JEPA(s_t)
- *
- * @param brain         Brain with JEPA bridges
- * @param current_state Current semantic state vector
- * @param dim           State dimensionality
- * @param out_pred      Output prediction structure (allocated by caller)
- * @return 0 on success, -1 on error
- */
-int jepa_predict_next_semantic_state(brain_t brain,
-                                       const float* current_state,
-                                       uint32_t dim,
-                                       jepa_semantic_prediction_t* out_pred) {
-    if (!brain || !current_state || !out_pred) return -1;
+static void* jepa_create(struct brain_struct* brain) {
+    if (!brain || !brain->jepa_predictor) { return NULL; }
+    return nimcp_calloc(1, sizeof(lang_jepa_state_t));
+}
 
-    /* Check if JEPA bridges are available.
-     * JEPA bridges are tick-driven in brain_learn_vector (Phase 4n-t).
-     * We query their current state for prediction. */
+static void jepa_destroy(void* st) { if (st) { nimcp_free(st); } }
 
-    /* Allocate predicted state vector */
-    out_pred->predicted_state = nimcp_malloc(dim * sizeof(float));
-    if (!out_pred->predicted_state) return -1;
-    out_pred->dim = dim;
-
-    /* JEPA prediction via world model forward pass.
-     * The JEPA bridges maintain internal state; we extract their
-     * prediction of next state given current semantic context.
-     *
-     * Placeholder implementation: Linear extrapolation + noise.
-     * Full implementation: Query jepa_omni_bridge, jepa_engram_bridge, etc. */
-
-    float momentum = 0.9f; /* Temporal smoothing */
-    float noise_scale = 0.05f; /* Exploration noise */
-
-    for (uint32_t i = 0; i < dim; i++) {
-        /* Predicted state = momentum * current + noise */
-        float noise = noise_scale * ((float)rand() / RAND_MAX - 0.5f);
-        out_pred->predicted_state[i] = momentum * current_state[i] + noise;
-    }
-
-    /* Prediction confidence: high when state is stable, low when uncertain.
-     * Compute from state variance or JEPA uncertainty estimates. */
-    float state_variance = 0.0f;
-    for (uint32_t i = 0; i < dim && i < 32; i++) {
-        float deviation = current_state[i] - 0.0f; /* Mean assumed zero */
-        state_variance += deviation * deviation;
-    }
-    state_variance /= fminf(dim, 32);
-
-    /* High variance → low confidence */
-    out_pred->prediction_confidence = 1.0f / (1.0f + state_variance);
-
-    /* Prediction entropy: measure of uncertainty */
-    out_pred->prediction_entropy = -out_pred->prediction_confidence *
-                                     logf(out_pred->prediction_confidence + 1e-8f);
-
-    NIMCP_LOGGING_DEBUG("JEPA prediction: confidence=%.3f entropy=%.3f variance=%.3f",
-                        out_pred->prediction_confidence,
-                        out_pred->prediction_entropy,
-                        state_variance);
-
+static int jepa_update(void* st, struct brain_struct* brain,
+                       const lang_cog_input_t* in, lang_cog_signal_t* out) {
+    lang_cog_signal_neutral(out);
+    lang_jepa_state_t* s = (lang_jepa_state_t*)st;
+    if (!s || !brain || !brain->jepa_predictor || !in) { return -1; }
+    jepa_predictor_stats_t js;
+    memset(&js, 0, sizeof(js));
+    if (jepa_predictor_get_stats(brain->jepa_predictor, &js) != 0) { return -1; }
+    if (js.updates_applied == 0) { out->valid = true; return 0; }   /* untrained: neutral */
+    float L = lang_cog_finite_or(js.avg_loss, -1.0f);
+    if (L < 0.0f) { return -1; }
+    if (s->n < 1.0f) { s->fast = L; s->slow = L; }
+    s->fast = 0.8f * s->fast + 0.2f * L;
+    s->slow = 0.99f * s->slow + 0.01f * L;
+    s->n += 1.0f;
+    float ratio = s->fast / (s->slow + 1e-6f);
+    out->floor_adjust = 0.10f * lang_cog_clampf(ratio - 1.0f, -0.5f, 1.0f);
+    out->primary   = lang_cog_clampf(ratio, 0.0f, 10.0f);
+    out->secondary = L;
+    out->valid     = true;
     return 0;
 }
 
-/**
- * @brief Generate contrastive semantic pairs for language learning
- *
- * Creates positive pairs (paraphrase/similar) and negative pairs
- * (contradictory/dissimilar) for contrastive language learning.
- *
- * Positive pair: "The cat sat" ↔ "A feline rested"
- * Negative pair: "The cat sat" ↔ "The dog ran"
- *
- * @param gl             Grounded language instance
- * @param anchor_text    Anchor text for contrastive pairs
- * @param out_positive   Output positive pair text (caller allocates buffer)
- * @param out_negative   Output negative pair text (caller allocates buffer)
- * @param buffer_size    Size of output buffers
- * @return 0 on success, -1 on error
- */
-int jepa_generate_contrastive_pairs(grounded_language_t* gl,
-                                      const char* anchor_text,
-                                      char* out_positive,
-                                      char* out_negative,
-                                      size_t buffer_size) {
-    if (!gl || !anchor_text || !out_positive || !out_negative) return -1;
+static int jepa_save(const void* st, FILE* f) {
+    const lang_jepa_state_t* s = (const lang_jepa_state_t*)st;
+    float blob[3] = { s->fast, s->slow, s->n };
+    return lang_cog_write_floats(f, blob, 3);
+}
 
-    /* Comprehend anchor text to get semantic state */
-    gl_comprehension_result_t anchor_comp;
-    if (grounded_language_comprehend(gl, anchor_text, &anchor_comp) != 0) {
-        return -1;
-    }
-
-    /* Generate positive pair: small perturbation in semantic space.
-     * This is paraphrasing via semantic neighbor sampling. */
-    float* pos_state = nimcp_malloc(gl->semantic_dim * sizeof(float));
-    if (!pos_state) return -1;
-
-    const float pos_epsilon = 0.1f; /* Small perturbation for paraphrase */
-    for (uint32_t i = 0; i < gl->semantic_dim; i++) {
-        float noise = pos_epsilon * ((float)rand() / RAND_MAX - 0.5f);
-        pos_state[i] = anchor_comp.semantic_vector[i] + noise;
-    }
-
-    /* Produce text from positive state */
-    gl_produce_result_t pos_result;
-    extern int grounded_language_produce_from_state(grounded_language_t* gl,
-                                                      const float* state,
-                                                      uint32_t dim,
-                                                      gl_produce_result_t* out);
-    if (grounded_language_produce_from_state(gl, pos_state, gl->semantic_dim,
-                                              &pos_result) == 0) {
-        strncpy(out_positive, pos_result.text, buffer_size - 1);
-        out_positive[buffer_size - 1] = '\0';
-    }
-    nimcp_free(pos_state);
-
-    /* Generate negative pair: large perturbation or semantic negation.
-     * This is contradiction via distant semantic point. */
-    float* neg_state = nimcp_malloc(gl->semantic_dim * sizeof(float));
-    if (!neg_state) return -1;
-
-    const float neg_epsilon = 1.0f; /* Large perturbation for contradiction */
-    for (uint32_t i = 0; i < gl->semantic_dim; i++) {
-        float noise = neg_epsilon * ((float)rand() / RAND_MAX - 0.5f);
-        neg_state[i] = -anchor_comp.semantic_vector[i] + noise; /* Semantic negation */
-    }
-
-    /* Produce text from negative state */
-    gl_produce_result_t neg_result;
-    if (grounded_language_produce_from_state(gl, neg_state, gl->semantic_dim,
-                                              &neg_result) == 0) {
-        strncpy(out_negative, neg_result.text, buffer_size - 1);
-        out_negative[buffer_size - 1] = '\0';
-    }
-    nimcp_free(neg_state);
-
-    NIMCP_LOGGING_DEBUG("JEPA contrastive: anchor='%s' pos='%s' neg='%s'",
-                        anchor_text, out_positive, out_negative);
-
+static int jepa_load(void* st, FILE* f) {
+    lang_jepa_state_t* s = (lang_jepa_state_t*)st;
+    float blob[3];
+    if (lang_cog_read_floats(f, blob, 3) != 0) { return -1; }
+    s->fast = blob[0] > 0.0f ? blob[0] : 0.0f;
+    s->slow = blob[1] > 0.0f ? blob[1] : 0.0f;
+    s->n    = blob[2] > 0.0f ? blob[2] : 0.0f;
     return 0;
 }
 
-/**
- * @brief Integrate JEPA predictive semantics into grounded language
- *
- * Blends JEPA-predicted next semantic state into language production target
- * for fluent, anticipatory continuation.
- *
- * @param brain  Brain with JEPA bridges
- * @param gl     Grounded language instance
- * @param state  Cascade state with content_intent
- * @return 0 on success, -1 on error
- */
-int grounded_language_integrate_jepa_predictive(brain_t brain,
-                                                  grounded_language_t* gl,
-                                                  void* cascade_state) {
-    if (!brain || !gl || !cascade_state) return -1;
-
-    /* Check if JEPA coupling is enabled */
-    extern bool grounded_language_jepa_predictive_enabled(const grounded_language_t* gl);
-    if (!grounded_language_jepa_predictive_enabled(gl)) {
-        return 0; /* Coupling disabled */
-    }
-
-    /* Get cascade state */
-    typedef struct {
-        float* content_intent;
-        uint32_t dim;
-    } cascade_state_t;
-    cascade_state_t* cs = (cascade_state_t*)cascade_state;
-
-    /* Predict next semantic state from current content_intent */
-    jepa_semantic_prediction_t pred;
-    if (jepa_predict_next_semantic_state(brain, cs->content_intent,
-                                          cs->dim, &pred) != 0) {
-        return -1;
-    }
-
-    /* Blend predicted state into content_intent:
-     * High confidence → use prediction (fluent continuation)
-     * Low confidence → explore (creative deviation) */
-    const float w_prediction = 0.25f;
-    float blend_weight = w_prediction * pred.prediction_confidence;
-
-    for (uint32_t i = 0; i < cs->dim; i++) {
-        cs->content_intent[i] = (1.0f - blend_weight) * cs->content_intent[i] +
-                                 blend_weight * pred.predicted_state[i];
-    }
-
-    /* Log JEPA integration */
-    NIMCP_LOGGING_DEBUG("JEPA predictive: confidence=%.3f blend_weight=%.3f "
-                        "entropy=%.3f",
-                        pred.prediction_confidence, blend_weight,
-                        pred.prediction_entropy);
-
-    /* Free allocated prediction */
-    if (pred.predicted_state) nimcp_free(pred.predicted_state);
-
-    return 0;
-}
-
-/**
- * @brief Query whether JEPA predictive coupling is enabled
- *
- * @param gl  Grounded language instance
- * @return true if JEPA predictive integration is active
- */
-bool grounded_language_jepa_predictive_enabled(const grounded_language_t* gl) {
-    extern bool grounded_language_is_bridge_enabled(const grounded_language_t* gl,
-                                                      uint32_t mask);
-    return grounded_language_is_bridge_enabled(gl, (1u << 12)); /* GL_BRIDGE_JEPA */
-}
+const lang_cog_bridge_vt_t lang_jepa_bridge_vt = {
+    .name = "jepa", .gl_bit = GL_BRIDGE_JEPA,
+    .create = jepa_create, .destroy = jepa_destroy, .update = jepa_update,
+    .recall = NULL, .save = jepa_save, .load = jepa_load,
+};

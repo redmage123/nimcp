@@ -57,7 +57,7 @@ static inline uint64_t get_time_ns(void) {
 /**
  * @brief Check CUDA error and log
  */
-static inline bool check_cuda(cudaError_t err, const char* op) {
+__attribute__((unused)) static inline bool check_cuda(cudaError_t err, const char* op) {
     if (err != cudaSuccess) {
         LOG_ERROR("CUDA error in %s: %s", op, cudaGetErrorString(err));
         return false;
@@ -210,6 +210,10 @@ static void* prefetch_loader_thread(void* arg) {
     LOG_INFO("Prefetch loader thread exiting");
 
     pthread_mutex_lock(&mgr->mutex);
+    /* Finite run finished (or stop requested): mark not running so consumers
+     * waiting in get_batch see end-of-data instead of waiting for a timeout.
+     * The thread is still joined by nimcp_prefetch_stop (thread_created). */
+    mgr->running = false;
     mgr->state = NIMCP_PREFETCH_STATE_STOPPED;
     pthread_cond_broadcast(&mgr->cond_consumer);
     pthread_mutex_unlock(&mgr->mutex);
@@ -312,7 +316,11 @@ nimcp_prefetch_manager_t* nimcp_prefetch_create_ex(
         nimcp_prefetch_buffer_t* buf = &mgr->buffers[i];
         buf->tensor_size = tensor_sizes[i];
 
-        buf->double_buffer = nimcp_double_buffer_create(ctx, tensor_sizes[i]);
+        /* A caller-supplied transfer manager that borrows the context's stream
+         * means "stay on the context's streams": do the same for the buffers. */
+        buf->double_buffer = (transfer_mgr && !transfer_mgr->owns_streams)
+            ? nimcp_double_buffer_create_shared(ctx, tensor_sizes[i])
+            : nimcp_double_buffer_create(ctx, tensor_sizes[i]);
         if (!buf->double_buffer) {
             LOG_ERROR("Failed to create double buffer for tensor %d", i);
             // Cleanup already created buffers
@@ -473,6 +481,11 @@ int nimcp_prefetch_start_with_count(
         return -1;
     }
 
+    /* Reap a loader thread that already finished a previous finite run. */
+    if (mgr->thread_created) {
+        nimcp_prefetch_stop(mgr);
+    }
+
     pthread_mutex_lock(&mgr->mutex);
 
     if (mgr->running) {
@@ -515,13 +528,15 @@ void nimcp_prefetch_stop(nimcp_prefetch_manager_t* mgr) {
 
     pthread_mutex_lock(&mgr->mutex);
 
-    if (!mgr->running) {
+    if (!mgr->running && !mgr->thread_created) {
         pthread_mutex_unlock(&mgr->mutex);
         return;
     }
 
-    mgr->running = false;
-    mgr->state = NIMCP_PREFETCH_STATE_STOPPING;
+    if (mgr->running) {
+        mgr->running = false;
+        mgr->state = NIMCP_PREFETCH_STATE_STOPPING;
+    }
 
     // Wake up producer thread
     pthread_cond_signal(&mgr->cond_producer);

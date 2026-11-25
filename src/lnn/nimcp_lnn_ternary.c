@@ -194,9 +194,14 @@ lnn_ternary_matrix_t* lnn_ternary_matrix_from_float(
         return NULL;
     }
 
-    const uint32_t* dims = nimcp_tensor_dims(float_weights);
-    uint32_t rows = dims[0];
-    uint32_t cols = dims[1];
+    const nimcp_tensor_shape_t* shape = nimcp_tensor_shape(float_weights);
+    if (!shape || shape->dims[0] == 0 || shape->dims[1] == 0) {
+        NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_DIMENSION_MISMATCH,
+                             "lnn_ternary_matrix_from_float: empty or shapeless tensor");
+        return NULL;
+    }
+    uint32_t rows = shape->dims[0];
+    uint32_t cols = shape->dims[1];
 
     /* Compute statistics */
     float scale = compute_scale_factor(float_weights);
@@ -656,18 +661,77 @@ int lnn_ternary_config_validate(const lnn_ternary_config_t* config) {
 }
 
 /*=============================================================================
- * Layer Integration (Stub - requires layer structure modification)
+ * Layer Integration
+ *
+ * lnn_layer_t carries no ternary storage, so quantizing a layer is "fake
+ * quantization": the selected float weight matrices are replaced in place by
+ * their dequantized ternary values (scale * {-1,0,+1}). The float forward path
+ * is unchanged. This is an explicit opt-in operation; nothing calls it
+ * implicitly. Read-only ternary analysis of a live layer (no weight writes)
+ * is done by the brain's wired COMPUTE group instead.
  *===========================================================================*/
 
+static int quantize_tensor_in_place(nimcp_tensor_t* w, const lnn_ternary_config_t* config) {
+    if (!w) return LNN_SUCCESS;  /* matrix not present on this layer */
+    if (nimcp_tensor_rank(w) != 2) return LNN_ERROR_INVALID_DIMENSION;
+
+    lnn_ternary_matrix_t* mat = lnn_ternary_matrix_from_float(
+        w, config->threshold, config->pack_mode, true);
+    if (!mat) return LNN_ERROR_OUT_OF_MEMORY;
+
+    nimcp_tensor_t* deq = lnn_ternary_matrix_to_float(mat);
+    if (!deq) {
+        lnn_ternary_matrix_destroy(mat);
+        return LNN_ERROR_OUT_OF_MEMORY;
+    }
+
+    const float* src = nimcp_tensor_data_const(deq);
+    float* dst = nimcp_tensor_data(w);
+    size_t numel = nimcp_tensor_numel(w);
+    float extra = (config->scale_factor > 0.0f) ? config->scale_factor : 1.0f;
+    for (size_t i = 0; i < numel; i++) {
+        float v = src[i] * extra;
+        dst[i] = isfinite(v) ? v : 0.0f;
+    }
+
+    nimcp_tensor_destroy(deq);
+    lnn_ternary_matrix_destroy(mat);
+    return LNN_SUCCESS;
+}
+
+int lnn_layer_quantize_to_ternary(
+    lnn_layer_t* layer,
+    const lnn_ternary_config_t* config
+) {
+    if (!layer || !config) {
+        return LNN_ERROR_NULL_POINTER;
+    }
+    if (lnn_ternary_config_validate(config) != LNN_SUCCESS) {
+        return LNN_ERROR_INVALID_CONFIG;
+    }
+
+    int rc = LNN_SUCCESS;
+    if (config->apply_to_W_in && rc == LNN_SUCCESS) {
+        rc = quantize_tensor_in_place(layer->W_in, config);
+    }
+    if (config->apply_to_W_rec && rc == LNN_SUCCESS) {
+        rc = quantize_tensor_in_place(layer->W_rec, config);
+    }
+    if (config->apply_to_W_tau && rc == LNN_SUCCESS) {
+        rc = quantize_tensor_in_place(layer->W_tau, config);
+    }
+    return rc;
+}
+
 bool lnn_layer_is_ternary(const lnn_layer_t* layer) {
-    /* TODO: Check layer's ternary config flag */
+    /* Layers hold no ternary storage (see lnn_layer_quantize_to_ternary). */
     (void)layer;
     return false;
 }
 
 const lnn_ternary_matrix_t* lnn_layer_get_ternary_W_rec(const lnn_layer_t* layer) {
-    /* TODO: Return layer's ternary W_rec if enabled */
+    /* Layers hold no ternary storage; build one with
+     * lnn_ternary_matrix_from_float(layer->W_rec, ...) instead. */
     (void)layer;
-    NIMCP_THROW_TO_IMMUNE(NIMCP_ERROR_NULL_POINTER, "lnn_layer_get_ternary_W_rec: operation failed");
     return NULL;
 }

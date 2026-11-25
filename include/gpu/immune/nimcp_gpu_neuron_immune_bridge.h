@@ -124,7 +124,11 @@
 
 /* Module integrations */
 #include "cognitive/immune/nimcp_brain_immune.h"
-#include "gpu/nimcp_gpu_neuron.h"
+/* Only the opaque GPU network handle is needed here. Including
+ * gpu/nimcp_gpu_neuron.h from this header clashes with brain-internal headers
+ * (spike_train_t, NIMCP_DEVICE...), so the handle typedef is repeated (an
+ * identical typedef redeclaration is valid C11); the .c includes the full API. */
+typedef struct gpu_neural_network_struct* gpu_neural_network_t;
 #include "utils/platform/nimcp_platform_mutex.h"
 #include "async/nimcp_bio_router.h"
 #include "async/nimcp_bio_messages.h"

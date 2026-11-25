@@ -58,7 +58,7 @@
 /**
  * @brief Atomic min for floats using CAS loop
  */
-__device__ void atomicMinFloat(float* addr, float value) {
+static __device__ void atomicMinFloat(float* addr, float value) {
     int* addr_as_int = (int*)addr;
     int old = *addr_as_int;
     int assumed;
@@ -73,7 +73,7 @@ __device__ void atomicMinFloat(float* addr, float value) {
 /**
  * @brief Atomic max for floats using CAS loop
  */
-__device__ void atomicMaxFloat(float* addr, float value) {
+static __device__ void atomicMaxFloat(float* addr, float value) {
     int* addr_as_int = (int*)addr;
     int old = *addr_as_int;
     int assumed;
@@ -88,14 +88,14 @@ __device__ void atomicMaxFloat(float* addr, float value) {
 /**
  * @brief Clamp value to INT8 range
  */
-__device__ __forceinline__ int8_t clamp_int8(int32_t val) {
-    return (int8_t)max(-128, min(127, val));
+__host__ __device__ __forceinline__ int8_t clamp_int8(int32_t val) {
+    return (int8_t)(val < -128 ? -128 : (val > 127 ? 127 : val));
 }
 
 /**
  * @brief Round and clamp to INT8
  */
-__device__ __forceinline__ int8_t quantize_val(float val, float scale, int32_t zero_point) {
+__attribute__((unused)) static __device__ __forceinline__ int8_t quantize_val(float val, float scale, int32_t zero_point) {
     int32_t q = __float2int_rn(val / scale) + zero_point;
     return clamp_int8(q);
 }
@@ -103,7 +103,7 @@ __device__ __forceinline__ int8_t quantize_val(float val, float scale, int32_t z
 /**
  * @brief Dequantize INT8 to float
  */
-__device__ __forceinline__ float dequantize_val(int8_t val, float scale, int32_t zero_point) {
+__attribute__((unused)) static __device__ __forceinline__ float dequantize_val(int8_t val, float scale, int32_t zero_point) {
     return scale * (float)(val - zero_point);
 }
 
@@ -114,7 +114,7 @@ __device__ __forceinline__ float dequantize_val(int8_t val, float scale, int32_t
 /**
  * @brief Quantize FP32 to INT8 (per-tensor)
  */
-__global__ void kernel_quantize_int8(
+static __global__ void kernel_quantize_int8(
     const float* __restrict__ input,
     int8_t* __restrict__ output,
     float scale,
@@ -134,7 +134,7 @@ __global__ void kernel_quantize_int8(
  *
  * Data layout: [N, C, HW] where channel is the quantization axis
  */
-__global__ void kernel_quantize_int8_per_channel(
+static __global__ void kernel_quantize_int8_per_channel(
     const float* __restrict__ input,
     int8_t* __restrict__ output,
     const float* __restrict__ scales,
@@ -161,7 +161,7 @@ __global__ void kernel_quantize_int8_per_channel(
 /**
  * @brief Dequantize INT8 to FP32 (per-tensor)
  */
-__global__ void kernel_dequantize_int8(
+static __global__ void kernel_dequantize_int8(
     const int8_t* __restrict__ input,
     float* __restrict__ output,
     float scale,
@@ -178,7 +178,7 @@ __global__ void kernel_dequantize_int8(
 /**
  * @brief Dequantize INT8 to FP32 (per-channel)
  */
-__global__ void kernel_dequantize_int8_per_channel(
+static __global__ void kernel_dequantize_int8_per_channel(
     const int8_t* __restrict__ input,
     float* __restrict__ output,
     const float* __restrict__ scales,
@@ -205,7 +205,7 @@ __global__ void kernel_dequantize_int8_per_channel(
  *
  * Uses straight-through estimator (STE) - gradient passes through unchanged
  */
-__global__ void kernel_fake_quantize_int8(
+static __global__ void kernel_fake_quantize_int8(
     const float* __restrict__ input,
     float* __restrict__ output,
     float scale,
@@ -235,7 +235,7 @@ __global__ void kernel_fake_quantize_int8(
  * Note: For production, use cuBLASLt for tensor core acceleration
  * This kernel is for fallback/validation purposes
  */
-__global__ void kernel_gemm_int8(
+__attribute__((unused)) static __global__ void kernel_gemm_int8(
     const int8_t* __restrict__ A,
     const int8_t* __restrict__ B,
     int32_t* __restrict__ C,
@@ -260,7 +260,7 @@ __global__ void kernel_gemm_int8(
  */
 #define TILE_SIZE 16
 
-__global__ void kernel_gemm_int8_tiled(
+static __global__ void kernel_gemm_int8_tiled(
     const int8_t* __restrict__ A,
     const int8_t* __restrict__ B,
     int32_t* __restrict__ C,
@@ -312,7 +312,7 @@ __global__ void kernel_gemm_int8_tiled(
 /**
  * @brief INT8 GEMM with dequantization to FP32 output
  */
-__global__ void kernel_gemm_int8_dequant(
+static __global__ void kernel_gemm_int8_dequant(
     const int8_t* __restrict__ A,
     const int8_t* __restrict__ B,
     float* __restrict__ C,
@@ -378,7 +378,7 @@ __global__ void kernel_gemm_int8_dequant(
 /**
  * @brief INT8 GEMM with requantization to INT8 output
  */
-__global__ void kernel_gemm_int8_requant(
+static __global__ void kernel_gemm_int8_requant(
     const int8_t* __restrict__ A,
     const int8_t* __restrict__ B,
     int8_t* __restrict__ C,
@@ -450,7 +450,7 @@ __global__ void kernel_gemm_int8_requant(
  *
  * For production, use cuDNN or cuBLASLt im2col approach
  */
-__global__ void kernel_conv2d_int8(
+static __global__ void kernel_conv2d_int8(
     const int8_t* __restrict__ input,
     const int8_t* __restrict__ weight,
     int32_t* __restrict__ output,
@@ -498,7 +498,7 @@ __global__ void kernel_conv2d_int8(
 /**
  * @brief INT8 element-wise add with requantization
  */
-__global__ void kernel_add_int8_requant(
+static __global__ void kernel_add_int8_requant(
     const int8_t* __restrict__ a,
     const int8_t* __restrict__ b,
     int8_t* __restrict__ c,
@@ -530,7 +530,7 @@ __global__ void kernel_add_int8_requant(
  *
  * For INT8, ReLU clamps to zero_point (which represents 0 in real values)
  */
-__global__ void kernel_relu_int8(
+static __global__ void kernel_relu_int8(
     const int8_t* __restrict__ x,
     int8_t* __restrict__ y,
     size_t n,
@@ -547,7 +547,7 @@ __global__ void kernel_relu_int8(
 /**
  * @brief INT8 ReLU6 activation (clamped ReLU)
  */
-__global__ void kernel_relu6_int8(
+static __global__ void kernel_relu6_int8(
     const int8_t* __restrict__ x,
     int8_t* __restrict__ y,
     size_t n,
@@ -566,7 +566,7 @@ __global__ void kernel_relu6_int8(
 /**
  * @brief INT8 fused linear + ReLU
  */
-__global__ void kernel_linear_relu_int8(
+static __global__ void kernel_linear_relu_int8(
     const int8_t* __restrict__ input,
     const int8_t* __restrict__ weight,
     const float* __restrict__ bias,  // Bias in FP32
@@ -625,7 +625,7 @@ __global__ void kernel_linear_relu_int8(
 /**
  * @brief Compute min/max values for calibration
  */
-__global__ void kernel_minmax_reduce(
+static __global__ void kernel_minmax_reduce(
     const float* __restrict__ data,
     float* __restrict__ min_out,
     float* __restrict__ max_out,
@@ -671,7 +671,7 @@ __global__ void kernel_minmax_reduce(
 /**
  * @brief Build histogram for calibration
  */
-__global__ void kernel_histogram(
+static __global__ void kernel_histogram(
     const float* __restrict__ data,
     int* __restrict__ histogram,
     size_t n,
@@ -692,7 +692,7 @@ __global__ void kernel_histogram(
 /**
  * @brief Compute per-channel min/max
  */
-__global__ void kernel_minmax_per_channel(
+__attribute__((unused)) static __global__ void kernel_minmax_per_channel(
     const float* __restrict__ data,
     float* __restrict__ min_out,
     float* __restrict__ max_out,
@@ -742,7 +742,7 @@ __global__ void kernel_minmax_per_channel(
 /**
  * @brief Compute MSE between original and quantized values
  */
-__global__ void kernel_compute_mse(
+static __global__ void kernel_compute_mse(
     const float* __restrict__ original,
     const int8_t* __restrict__ quantized,
     float* __restrict__ mse_out,

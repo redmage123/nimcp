@@ -136,13 +136,13 @@ typedef enum nimcp_model_size_e {
 /**
  * @brief Training phase for optimization hints
  */
-typedef enum nimcp_training_phase_e {
-    NIMCP_PHASE_WARMUP = 0,         /**< Initial warmup phase */
-    NIMCP_PHASE_TRAINING,           /**< Main training loop */
-    NIMCP_PHASE_VALIDATION,         /**< Validation/eval mode */
-    NIMCP_PHASE_INFERENCE,          /**< Inference only */
-    NIMCP_PHASE_COUNT
-} nimcp_training_phase_t;
+typedef enum nimcp_pool_training_phase_e {
+    NIMCP_POOL_PHASE_WARMUP = 0,         /**< Initial warmup phase */
+    NIMCP_POOL_PHASE_TRAINING,           /**< Main training loop */
+    NIMCP_POOL_PHASE_VALIDATION,         /**< Validation/eval mode */
+    NIMCP_POOL_PHASE_INFERENCE,          /**< Inference only */
+    NIMCP_POOL_PHASE_COUNT
+} nimcp_pool_training_phase_t;
 
 //=============================================================================
 // Factory Hints and Configuration
@@ -169,7 +169,7 @@ typedef struct nimcp_pool_factory_hints_s {
     // Usage pattern
     nimcp_pool_usage_t usage;           /**< Primary usage pattern */
     nimcp_model_size_t model_size;      /**< Model size category */
-    nimcp_training_phase_t phase;       /**< Current training phase */
+    nimcp_pool_training_phase_t phase;       /**< Current training phase */
 
     // Memory budget
     size_t max_memory_bytes;            /**< Maximum memory to use (0 = auto) */

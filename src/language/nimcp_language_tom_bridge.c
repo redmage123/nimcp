@@ -1,46 +1,46 @@
 /**
  * @file nimcp_language_tom_bridge.c
- * @brief Theory of Mind integration
- * @date 2026-10-21
+ * @brief Theory of Mind (perspective taking) <-> language.
+ *
+ * WHAT: Good self/other perspective separation makes the speaker willing to
+ *       address a listener; poor separation makes it more conservative.
+ * WHY:  Audience design depends on modelling the listener's knowledge
+ *       (Clark 1996; Frith & Frith 2006).
+ * HOW:  brain->theory_of_mind: tom_get_perspective_score p in [0,1].
+ *       floor_adjust = -0.05*(2p - 1).
+ *
+ * Rewritten 2026-11-24 (dead-code wiring): the 2026-10-21 version returned
+ * constants and duplicated grounded_language_integrate_tom.
  */
-#include "language/nimcp_grounded_language.h"
 #include "core/brain/nimcp_brain_internal.h"
+#include "cognitive/nimcp_theory_of_mind.h"
+#include "language/nimcp_grounded_language_internal.h"
+#include "language/bridges/nimcp_language_cognitive_wired.h"
 #include "utils/memory/nimcp_memory.h"
-#include "utils/logging/nimcp_logging.h"
-#include <math.h>
 
-typedef struct {
-    float belief_attribution; float intention_recognition;
-    float false_belief_understanding; float perspective_taking;
-} tom_state_t;
+typedef struct { int unused; } lang_tom_state_t;
 
-int tom_extract_mental_states(brain_t brain, tom_state_t* out) {
-    if (!brain || !out) return -1;
-    out->belief_attribution = 0.7f; out->intention_recognition = 0.65f;
-    out->false_belief_understanding = 0.5f; out->perspective_taking = 0.6f;
+static void* tom_bridge_create(struct brain_struct* brain) {
+    if (!brain || !brain->theory_of_mind) { return NULL; }
+    return nimcp_calloc(1, sizeof(lang_tom_state_t));
+}
+
+static void tom_bridge_destroy(void* st) { if (st) { nimcp_free(st); } }
+
+static int tom_bridge_update(void* st, struct brain_struct* brain,
+                             const lang_cog_input_t* in, lang_cog_signal_t* out) {
+    lang_cog_signal_neutral(out);
+    if (!st || !brain || !brain->theory_of_mind || !in) { return -1; }
+    float p = lang_cog_clampf(lang_cog_finite_or(
+                  tom_get_perspective_score(brain->theory_of_mind), 0.5f), 0.0f, 1.0f);
+    out->floor_adjust = -0.05f * (2.0f * p - 1.0f);
+    out->primary = p;
+    out->valid   = true;
     return 0;
 }
 
-int grounded_language_integrate_tom(brain_t brain, void* gl, void* state) {
-    if (!brain || !gl || !state) return -1;
-    extern bool grounded_language_tom_enabled(const void* gl);
-    if (!grounded_language_tom_enabled(gl)) return 0;
-
-    typedef struct { float* content_intent; uint32_t dim; } cs_t;
-    cs_t* cs = (cs_t*)state;
-    tom_state_t tom = {0};
-    if (tom_extract_mental_states(brain, &tom) != 0) return -1;
-
-    const float w = 0.22f;
-    if (cs->dim > 690) {
-        cs->content_intent[660] += w * tom.belief_attribution;
-        cs->content_intent[661] += w * tom.intention_recognition;
-        cs->content_intent[662] += w * tom.false_belief_understanding;
-        cs->content_intent[663] += w * tom.perspective_taking;
-    }
-    NIMCP_LOGGING_DEBUG("ToM: belief=%.2f perspective=%.2f",
-                        tom.belief_attribution, tom.perspective_taking);
-    return 0;
-}
-
-bool grounded_language_tom_enabled(const void* gl) { return (gl != NULL); }
+const lang_cog_bridge_vt_t lang_tom_bridge_vt = {
+    .name = "tom", .gl_bit = GL_BRIDGE_TOM,
+    .create = tom_bridge_create, .destroy = tom_bridge_destroy, .update = tom_bridge_update,
+    .recall = NULL, .save = NULL, .load = NULL,
+};

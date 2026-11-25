@@ -141,6 +141,13 @@
 #include "async/nimcp_bio_router.h"
 #include "async/nimcp_bio_messages.h"
 
+/* No Shannon "channel" object exists in information/nimcp_shannon.h; the bridge
+ * only stores this as an opaque optional handle and never dereferences it. */
+#ifndef NIMCP_SHANNON_CHANNEL_T_DEFINED
+#define NIMCP_SHANNON_CHANNEL_T_DEFINED
+typedef struct shannon_channel_s shannon_channel_t;
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -88,7 +88,7 @@ extern "C" {
  * ============================================================================ */
 
 /** Module ID for language bridge in bio-async system (0x0810 range) */
-#define BIO_MODULE_ID_LANGUAGE_BRIDGE       0x0817
+#define BIO_MODULE_ID_LANGUAGE_BRIDGE       0x7B04  /* wired bio-async bridge range 0x7B00-0x7BFF */
 
 /** Maximum number of module subscriptions */
 #define LANG_BIO_MAX_SUBSCRIPTIONS          64
